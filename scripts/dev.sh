@@ -78,14 +78,6 @@ market_env() {
   export TM_HTTP_ADDR=127.0.0.1:8080 TM_EDGE_ADDR=127.0.0.1:8090 TM_EDGE_PUBLIC_URL=http://127.0.0.1:8090
   export TM_EDGE_SPOOL_DIR="$DATA/edge-spool"
   if [[ -f web/dist/index.html ]]; then export TM_HTTP_WEB_DIR="$ROOT/web/dist"; fi
-  # 支付渠道指向替身（商户号、密钥与 cmd/fake-thirdparty 一致）
-  export TM_PAYMENT_PUBLIC_URL=$API
-  export TM_ALIPAY_APP_ID=2021000000000001 TM_ALIPAY_GATEWAY=$THIRDPARTY/gateway.do
-  export TM_ALIPAY_PRIVATE_KEY_FILE="$KEYS/alipay_app_private.pem" TM_ALIPAY_PUBLIC_KEY_FILE="$KEYS/alipay_platform_public.pem"
-  export TM_WECHAT_APP_ID=wx0000000000dev01 TM_WECHAT_MCH_ID=1900000001 TM_WECHAT_MCH_SERIAL_NO=DEVMERCHANTSERIAL0001
-  export TM_WECHAT_PRIVATE_KEY_FILE="$KEYS/wechat_merchant_private.pem" TM_WECHAT_API_V3_KEY=devapiv3keydevapiv3keydevapiv3ke
-  export TM_WECHAT_PUBLIC_KEY_ID=PUB_KEY_ID_0000000000000000000001 TM_WECHAT_PUBLIC_KEY_FILE="$KEYS/wechat_platform_public.pem"
-  export TM_WECHAT_BASE_URL=$THIRDPARTY
 }
 
 api() { # method path [json]
@@ -127,6 +119,16 @@ login_admin() {
     -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | sed -E 's/.*"token":"([^"]+)".*/\1/')"
 }
 
+# 支付配置：通知地址指向本机控制面，支付宝与微信支付商户接入替身（请求体由 fake-thirdparty 生成）
+seed_payments() {
+  [[ -f "$DATA/seeded-payments" ]] && return
+  login_admin
+  api PUT /api/admin/settings "{\"payment_public_url\":\"$API\"}" >/dev/null
+  api PUT /api/admin/payments/merchants/alipay "@$KEYS/merchant-alipay.json" >/dev/null
+  api PUT /api/admin/payments/merchants/wechat "@$KEYS/merchant-wechat.json" >/dev/null
+  touch "$DATA/seeded-payments"
+}
+
 # 第三方检测：BazaarLink 指向替身（Edge 是本机 http 地址，需要允许非 https 目标），Claude 的上架检测、管理员检测、
 # 卖家复测与申诉复测追加身份检测
 seed_thirdparty() {
@@ -157,6 +159,7 @@ up() {
   start worker bin/worker
   start edge bin/edge
   seed
+  seed_payments
   seed_thirdparty
   cat <<INFO
 

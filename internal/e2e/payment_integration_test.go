@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/DueGin/token-market/internal/payment"
-	"github.com/DueGin/token-market/internal/platform/config"
 	"github.com/DueGin/token-market/internal/testutil/fakepay"
 )
 
@@ -29,8 +28,8 @@ type rechargeView struct {
 	} `json:"payment"`
 }
 
-// withPayments 接入支付宝与微信支付替身。
-func withPayments(t *testing.T) (*fakepay.Server, func(cfg *config.Config)) {
+// withPayments 启动支付宝与微信支付替身，返回在后台"支付配置"中接入它们的函数（同时检查配置接口）。
+func withPayments(t *testing.T) (*fakepay.Server, func(e *env, admin *client)) {
 	keys, app, merchant, err := fakepay.GenerateKeys()
 	if err != nil {
 		t.Fatal(err)
@@ -38,12 +37,41 @@ func withPayments(t *testing.T) (*fakepay.Server, func(cfg *config.Config)) {
 	fake := fakepay.New(fakepay.Config{Keys: keys, AlipayAppID: "2021000000000001", WechatAppID: "wx0001", WechatMchID: "1900000001",
 		WechatMchSerial: "MCHSERIAL0001"})
 	t.Cleanup(fake.Close)
-	return fake, func(cfg *config.Config) {
-		cfg.Payment.Alipay = config.AlipayConfig{AppID: "2021000000000001", Gateway: fake.AlipayGateway(),
-			PrivateKey: payment.EncodePrivateKeyPEM(app), AlipayPublicKey: payment.EncodePublicKeyPEM(&keys.AlipayPlatform.PublicKey)}
-		cfg.Payment.Wechat = config.WechatConfig{AppID: "wx0001", MchID: "1900000001", MchSerialNo: "MCHSERIAL0001",
-			PrivateKey: payment.EncodePrivateKeyPEM(merchant), APIv3Key: keys.WechatAPIv3Key, BaseURL: fake.WechatBaseURL(),
-			PublicKeyID: keys.WechatPublicKey, PublicKey: payment.EncodePublicKeyPEM(&keys.WechatPlatform.PublicKey)}
+	return fake, func(e *env, admin *client) {
+		t.Helper()
+		appKey := payment.EncodePrivateKeyPEM(app)
+		alipayBody := map[string]any{"enabled": true, "private_key": appKey, "alipay": map[string]any{"app_id": "2021000000000001",
+			"gateway": fake.AlipayGateway(), "mode": "public_key", "alipay_public_key": payment.EncodePublicKeyPEM(&keys.AlipayPlatform.PublicKey)}}
+		// 启用时必须能用这份配置构建客户端：无效私钥被拒绝
+		admin.expect(400, "PUT", "/api/admin/payments/merchants/alipay", map[string]any{"enabled": true, "private_key": "not a key",
+			"alipay": alipayBody["alipay"]})
+		admin.must("PUT", "/api/admin/payments/merchants/alipay", alipayBody, nil)
+		admin.must("PUT", "/api/admin/payments/merchants/wechat", map[string]any{"enabled": true, "private_key": payment.EncodePrivateKeyPEM(merchant),
+			"api_v3_key": keys.WechatAPIv3Key, "wechat": map[string]any{"app_id": "wx0001", "mch_id": "1900000001", "mch_serial_no": "MCHSERIAL0001",
+				"public_key_id": keys.WechatPublicKey, "public_key": payment.EncodePublicKeyPEM(&keys.WechatPlatform.PublicKey),
+				"base_url": fake.WechatBaseURL()}}, nil)
+		// 没有通知地址时商户不可用
+		var ms map[string]struct {
+			Enabled    bool   `json:"enabled"`
+			Ready      bool   `json:"ready"`
+			Problem    string `json:"problem"`
+			HasPrivate bool   `json:"has_private_key"`
+		}
+		admin.must("GET", "/api/admin/payments/merchants", nil, &ms)
+		if ms["alipay"].Ready || !strings.Contains(ms["alipay"].Problem, "通知地址") {
+			t.Fatalf("merchant without notify url: %+v", ms)
+		}
+		admin.must("PUT", "/api/admin/settings", map[string]any{"payment_public_url": e.api.URL + "/"}, nil)
+		_, raw := admin.call("GET", "/api/admin/payments/merchants", nil, &ms)
+		if !ms["alipay"].Ready || !ms["wechat"].Ready || !ms["alipay"].HasPrivate || strings.Contains(raw, "PRIVATE KEY") ||
+			strings.Contains(raw, keys.WechatAPIv3Key) {
+			t.Fatalf("merchants should be ready without exposing secrets: %s", raw)
+		}
+		admin.must("POST", "/api/admin/payments/merchants/alipay/test", nil, nil)
+		admin.must("POST", "/api/admin/payments/merchants/wechat/test", nil, nil)
+		// 只修改非敏感字段时密钥保持不变
+		admin.must("PUT", "/api/admin/payments/merchants/alipay", map[string]any{"alipay": alipayBody["alipay"]}, nil)
+		admin.must("POST", "/api/admin/payments/merchants/alipay/test", nil, nil)
 	}
 }
 
@@ -88,9 +116,17 @@ func browse(t *testing.T, link string) (*http.Response, string) {
 }
 
 func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
-	fake, opt := withPayments(t)
-	e := setup(t, opt)
+	fake, configure := withPayments(t)
+	e := setup(t)
 	admin := e.login("admin@market.test", "admin-password-1")
+	var mc0 struct {
+		Channels []string `json:"payment_channels"`
+	}
+	e.anon().must("GET", "/api/market/config", nil, &mc0)
+	if strings.Join(mc0.Channels, ",") != "manual" {
+		t.Fatalf("only manual payment before merchants are configured: %v", mc0.Channels)
+	}
+	configure(e, admin)
 	admin.must("PUT", "/api/admin/settings", map[string]any{"refund_lock_seconds": 0}, nil)
 	buyer := e.newUser("payer@market.test")
 
@@ -280,6 +316,15 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 	// 关闭某个支付方式后买家不可再用
 	admin.must("PUT", "/api/admin/settings", map[string]any{"payment_channels": map[string]bool{"wechat_native": false}}, nil)
 	buyer.expect(400, "POST", "/api/buyer/recharge", map[string]any{"amount": 1, "channel": "wechat_native"})
+
+	// 停用支付宝商户：不再创建新订单，但已创建的订单付款后照常入账
+	pending := recharge(4, "alipay_f2f")
+	admin.must("PUT", "/api/admin/payments/merchants/alipay", map[string]any{"enabled": false}, nil)
+	buyer.expect(400, "POST", "/api/buyer/recharge", map[string]any{"amount": 1, "channel": "alipay_page"})
+	browse(t, pending.Payment.QRCode)
+	if s := e.orderStatus(pending.ID); s != "crediting" {
+		t.Fatalf("order of a disabled merchant should still be credited: %s", s)
+	}
 }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }

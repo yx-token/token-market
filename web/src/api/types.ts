@@ -136,6 +136,37 @@ export interface PaymentNotification {
   created_at: string
 }
 
+export interface AlipayMerchant {
+  app_id: string
+  gateway: string
+  mode: 'public_key' | 'cert'
+  alipay_public_key: string
+  app_cert: string
+  alipay_cert: string
+  alipay_root_cert: string
+}
+
+export interface WechatMerchant {
+  app_id: string
+  mch_id: string
+  mch_serial_no: string
+  public_key_id: string
+  public_key: string
+  base_url: string
+}
+
+export interface MerchantView {
+  provider: string
+  enabled: boolean
+  alipay?: AlipayMerchant
+  wechat?: WechatMerchant
+  has_private_key: boolean
+  has_api_v3_key?: boolean
+  ready: boolean
+  problem?: string
+  updated_at?: string
+}
+
 export interface PaymentStatus {
   channels: PaymentChannelStatus[]
   public_url: string
@@ -433,6 +464,7 @@ export interface Settings {
   balance_mismatch_tolerance: number
   allow_no_proxy: boolean
   price_models: string[]
+  payment_public_url: string
   payment_channels: Record<string, boolean>
   recharge_min: number
   recharge_max: number

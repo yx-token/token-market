@@ -58,7 +58,7 @@ func run(configPath string, log *slog.Logger) error {
 
 	api := &httpapi.Server{
 		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools,
-		Keys: a.Keys, Funds: a.Funds, Market: a.Market, Quality: a.Quality, Risk: a.Risk, Kicker: a.Kicker, Log: log,
+		Keys: a.Keys, Funds: a.Funds, Payments: a.Payments, Market: a.Market, Quality: a.Quality, Risk: a.Risk, Kicker: a.Kicker, Log: log,
 		TrustedProxies: cfg.HTTP.TrustedProxies, WebDir: cfg.HTTP.WebDir, EdgeURL: cfg.Edge.PublicURL,
 	}
 	srv := &http.Server{

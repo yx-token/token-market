@@ -91,10 +91,6 @@ func setup(t *testing.T, opts ...func(cfg *config.Config)) *env {
 	fake := fakesub2api.New(replicaPool, "admin-key-for-test")
 	t.Cleanup(fake.Close)
 
-	// 控制面先占好端口：支付回调地址需要在构建前确定
-	api := httptest.NewUnstartedServer(nil)
-	t.Cleanup(api.Close)
-
 	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
 	cfg := &config.Config{
 		Env:      "test",
@@ -105,8 +101,7 @@ func setup(t *testing.T, opts ...func(cfg *config.Config)) *env {
 			BootstrapAdminEmail: "admin@market.test", BootstrapAdminPassword: "admin-password-1"},
 		Sub2API: config.Sub2APIConfig{BaseURL: fake.URL(), GatewayURL: fake.URL(), AdminAPIKey: fake.AdminKey,
 			ReplicaDSN: replicaDSN, Timeout: 10 * time.Second, ShadowEmailDomain: "shadow.market.test"},
-		Worker:  config.WorkerConfig{ProbeConcurrency: 2},
-		Payment: config.PaymentConfig{PublicURL: "http://" + api.Listener.Addr().String()},
+		Worker: config.WorkerConfig{ProbeConcurrency: 2},
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -137,10 +132,10 @@ func setup(t *testing.T, opts ...func(cfg *config.Config)) *env {
 
 	srv := &httpapi.Server{
 		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools,
-		Keys: a.Keys, Funds: a.Funds, Market: a.Market, Quality: a.Quality, Risk: a.Risk, Kicker: a.Kicker, Log: log,
+		Keys: a.Keys, Funds: a.Funds, Payments: a.Payments, Market: a.Market, Quality: a.Quality, Risk: a.Risk, Kicker: a.Kicker, Log: log,
 	}
-	api.Config.Handler = srv.Handler()
-	api.Start()
+	api := httptest.NewServer(srv.Handler())
+	t.Cleanup(api.Close)
 
 	// 题库：每题要求回答固定口令，替身默认按口令作答。首次配置的上游必须通过上架检测才能挂单。
 	for i := 1; i <= 12; i++ {

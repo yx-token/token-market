@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -31,7 +33,9 @@ type Settings struct {
 	BalanceMismatchTolerance   float64            `json:"balance_mismatch_tolerance"`    // 余额对账容差
 	AllowNoProxy               bool               `json:"allow_no_proxy"`                // 没有可用代理时是否允许上架（仅开发环境）
 	PriceModels                []string           `json:"price_models"`                  // 市场展示官方价格的模型（价格取自 sub2api 内置价目表）
-	// 支付方式开关：alipay_page / alipay_f2f / wechat_native / manual。在线渠道还需要在配置文件中配置商户信息才可用
+	// PaymentPublicURL 是控制面对外地址：支付异步通知发到 <地址>/api/payments/{alipay|wechat}/notify，网页支付完成后跳回钱包
+	PaymentPublicURL string `json:"payment_public_url"`
+	// 支付方式开关：alipay_page / alipay_f2f / wechat_native / manual。在线渠道还需要在"支付配置"中配置并启用商户才可用
 	PaymentChannels             map[string]bool `json:"payment_channels"`
 	RechargeMin                 float64         `json:"recharge_min"`                   // 单笔充值下限（元）
 	RechargeMax                 float64         `json:"recharge_max"`                   // 单笔充值上限（元）
@@ -90,6 +94,12 @@ func (s Settings) Validate() error {
 	case s.RefundOriginalRouteDays < 0:
 		return errors.New("refund_original_route_days must be >= 0")
 	}
+	if s.PaymentPublicURL != "" {
+		u, err := url.Parse(s.PaymentPublicURL)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.RawQuery != "" {
+			return errors.New("payment_public_url must be an http(s) url")
+		}
+	}
 	for ch := range s.PaymentChannels {
 		switch ch {
 		case "alipay_page", "alipay_f2f", "wechat_native", "manual":
@@ -141,6 +151,7 @@ func Update(ctx context.Context, db DB, patch json.RawMessage) (Settings, error)
 	if err := json.Unmarshal(patch, &s); err != nil {
 		return s, fmt.Errorf("decode patch: %w", err)
 	}
+	s.PaymentPublicURL = strings.TrimRight(strings.TrimSpace(s.PaymentPublicURL), "/")
 	if err := s.Validate(); err != nil {
 		return s, err
 	}

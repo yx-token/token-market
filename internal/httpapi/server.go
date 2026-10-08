@@ -18,6 +18,7 @@ import (
 	"github.com/DueGin/token-market/internal/buyer"
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/market"
+	"github.com/DueGin/token-market/internal/payment/merchants"
 	"github.com/DueGin/token-market/internal/platform/auth"
 	"github.com/DueGin/token-market/internal/platform/clientip"
 	"github.com/DueGin/token-market/internal/platform/httpx"
@@ -38,6 +39,7 @@ type Server struct {
 	Pools    *scheduling.PoolService
 	Keys     *buyer.KeyService
 	Funds    *billing.Funds
+	Payments *merchants.Store
 	Market   *market.Service
 	Quality  *quality.Engine
 	Risk     *risk.Service
@@ -179,6 +181,9 @@ func (s *Server) Handler() http.Handler {
 		{"POST /api/admin/recharges/{id}/confirm", s.confirmRecharge},
 		{"POST /api/admin/recharges/{id}/sync", s.syncRecharge},
 		{"GET /api/admin/payments/status", s.paymentStatus},
+		{"GET /api/admin/payments/merchants", s.listMerchants},
+		{"PUT /api/admin/payments/merchants/{provider}", s.updateMerchant},
+		{"POST /api/admin/payments/merchants/{provider}/test", s.testMerchant},
 		{"POST /api/admin/refund-payouts/{id}/retry", s.retryPayout},
 		{"POST /api/admin/refund-payouts/{id}/manual", s.payoutToManual},
 		{"GET /api/admin/refunds", s.adminRefunds},

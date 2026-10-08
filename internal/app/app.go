@@ -14,7 +14,7 @@ import (
 	"github.com/DueGin/token-market/internal/edgecfg"
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/market"
-	"github.com/DueGin/token-market/internal/payment"
+	"github.com/DueGin/token-market/internal/payment/merchants"
 	"github.com/DueGin/token-market/internal/platform/auth"
 	"github.com/DueGin/token-market/internal/platform/config"
 	"github.com/DueGin/token-market/internal/platform/crypto"
@@ -41,7 +41,7 @@ type App struct {
 	Redis       *redis.Client
 	Keyring     *crypto.Keyring
 	Issuer      *auth.Issuer
-	Payments    *payment.Registry
+	Payments    *merchants.Store
 	Admin       *adminclient.Client
 	User        *userclient.Client
 	Prov        *provision.Provisioner
@@ -127,16 +127,13 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		return nil, err
 	}
 
-	if a.Payments, err = BuildPayments(cfg.Payment); err != nil {
-		return nil, err
-	}
-
 	gate := &compatGate{db: a.DB, ttl: 5 * time.Second}
 	a.Admin = adminclient.New(cfg.Sub2API.BaseURL, cfg.Sub2API.AdminAPIKey, cfg.Sub2API.Timeout, adminclient.WithWriteGate(gate.Check))
 	a.User = userclient.New(cfg.Sub2API.BaseURL, cfg.Sub2API.Timeout, nil)
 	a.Prov = &provision.Provisioner{Admin: a.Admin, Replica: a.Replica}
 	a.Kicker = scheduling.RedisKicker{Redis: a.Redis}
 	a.Settings = func(ctx context.Context) (settings.Settings, error) { return settings.Load(ctx, a.DB) }
+	a.Payments = &merchants.Store{DB: a.DB, Keyring: a.Keyring, Settings: a.Settings, Log: log}
 	edgeStore := edgecfg.Store{Redis: a.Redis}
 
 	a.Accounts = account.NewService(a.DB, a.Keyring, a.Issuer)
@@ -155,7 +152,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 	}
 	a.Funds = &billing.Funds{
 		DB: a.DB, Replica: a.Replica, Shadow: a.Shadow, Keys: a.Keys, Keyring: a.Keyring,
-		KYC: a.Accounts, Risk: a.Risk, Settings: a.Settings, Payments: a.Payments, PublicURL: cfg.Payment.PublicURL, Log: log,
+		KYC: a.Accounts, Risk: a.Risk, Settings: a.Settings, Payments: a.Payments, Log: log,
 	}
 	a.Market = &market.Service{DB: a.DB, Commission: func(ctx context.Context) (float64, error) {
 		st, err := a.Settings(ctx)

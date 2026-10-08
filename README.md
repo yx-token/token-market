@@ -53,7 +53,7 @@ cp deploy/.env.example deploy/.env    # 填写密钥与 sub2api 连接信息
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 ```
 
-只需对外暴露 api（控制面与前端，`:8080`）和 edge（买家调用模型，`:8090`），并把负载均衡地址配置为 `TRUSTED_PROXIES`。不使用容器时，三个服务共用一份配置（见 `config.example.yaml`），分别运行 `bin/api`、`bin/worker`、`bin/edge`。
+只需对外暴露 api（控制面与前端，`:8080`）和 edge（买家调用模型，`:8090`），并把负载均衡地址配置为 `TRUSTED_PROXIES`。不使用容器时，三个服务共用一份配置（见 `config.example.yaml`），分别运行 `bin/api`、`bin/worker`、`bin/edge`。支付宝、微信支付商户在管理后台"支付配置"中填写，不需要写进配置文件。
 
 依赖：PostgreSQL（本系统库）、Redis、sub2api（Admin API Key、只读库账号；sub2api 需关闭登录验证码，管理员需完成合规确认）。sub2api 配置要求见 [02 架构](docs/02-architecture.md) 第 6 节。
 

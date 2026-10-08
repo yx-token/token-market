@@ -39,11 +39,27 @@ type Funds struct {
 	KYC      KYCChecker
 	Risk     RiskChecker
 	Settings func(ctx context.Context) (settings.Settings, error)
-	// Payments 是已配置的支付渠道；PublicURL 是控制面对外地址，用于网页支付完成后跳回钱包
-	Payments  *payment.Registry
-	PublicURL string
-	Log       *slog.Logger
-	Now       func() time.Time
+	// Payments 返回当前生效的支付渠道（站内"支付配置"，按配置动态构建）
+	Payments PaymentRegistry
+	Log      *slog.Logger
+	Now      func() time.Time
+}
+
+type PaymentRegistry interface {
+	Registry(ctx context.Context) (*payment.Registry, error)
+}
+
+// registry 返回当前的支付渠道；读取配置失败时记录日志并按没有在线渠道处理。
+func (f *Funds) registry(ctx context.Context) *payment.Registry {
+	if f.Payments == nil {
+		return nil
+	}
+	reg, err := f.Payments.Registry(ctx)
+	if err != nil {
+		f.Log.Error("load payment merchants", "err", err)
+		return nil
+	}
+	return reg
 }
 
 func (f *Funds) now() time.Time {

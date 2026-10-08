@@ -36,6 +36,9 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) error {
 		return httpx.BadRequest("INVALID_SETTINGS", err.Error())
 	}
 	s.audit(r, "settings.update", "settings", json.RawMessage(raw))
+	if s.Payments != nil {
+		s.Payments.Invalidate() // 支付通知地址可能变化
+	}
 	if s.Kicker != nil {
 		s.Kicker.Kick(r.Context())
 	}

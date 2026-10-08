@@ -88,7 +88,7 @@ func (f *Funds) RechargeChannels(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	configured := f.Payments.Configured()
+	configured := f.registry(ctx).Configured()
 	var out []string
 	for _, ch := range payment.AllChannels {
 		if !st.PaymentChannels[ch] {
@@ -140,15 +140,15 @@ func (f *Funds) CreateRecharge(ctx context.Context, userID int64, amount float64
 		return nil, err
 	}
 	if channel != payment.ChannelManual {
-		if err := f.startPayment(ctx, id, channel, amt, ip, *expires); err != nil {
+		if err := f.startPayment(ctx, id, channel, amt, ip, *expires, st.PaymentPublicURL); err != nil {
 			return nil, err
 		}
 	}
 	return f.GetRecharge(ctx, userID, id)
 }
 
-func (f *Funds) startPayment(ctx context.Context, id int64, channel, amt, ip string, expires time.Time) error {
-	p := f.Payments.Get(payment.ProviderOf(channel))
+func (f *Funds) startPayment(ctx context.Context, id int64, channel, amt, ip string, expires time.Time, publicURL string) error {
+	p := f.registry(ctx).Get(payment.ProviderOf(channel))
 	if p == nil {
 		return httpx.BadRequest("CHANNEL_UNAVAILABLE", "payment channel is not configured")
 	}
@@ -159,8 +159,8 @@ func (f *Funds) startPayment(ctx context.Context, id int64, channel, amt, ip str
 		return err
 	}
 	order := payment.Order{OutTradeNo: outTradeNo, AmountFen: fen, Subject: "Token Market 余额充值", ExpireAt: expires, ClientIP: ip}
-	if f.PublicURL != "" {
-		order.ReturnURL = fmt.Sprintf("%s/buyer/wallet?order=%d", f.PublicURL, id)
+	if publicURL != "" {
+		order.ReturnURL = fmt.Sprintf("%s/buyer/wallet?order=%d", publicURL, id)
 	}
 	if _, err := f.DB.Exec(ctx, "UPDATE recharge_orders SET out_trade_no = $2 WHERE id = $1", id, outTradeNo); err != nil {
 		return err
@@ -312,7 +312,7 @@ func (f *Funds) CancelRecharge(ctx context.Context, userID, orderID int64) error
 	if o.Status != "pending" {
 		return httpx.Conflict("ORDER_NOT_PENDING", "order is not pending")
 	}
-	if p := f.Payments.Get(o.Provider); p != nil && o.OutTradeNo != nil {
+	if p := f.registry(ctx).Get(o.Provider); p != nil && o.OutTradeNo != nil {
 		if err := p.Close(ctx, *o.OutTradeNo); err != nil {
 			t, qerr := p.Query(ctx, *o.OutTradeNo)
 			if qerr == nil && t.State == payment.TradePaid {
@@ -407,7 +407,7 @@ func (f *Funds) RecordNotification(ctx context.Context, provider string, t *paym
 
 // syncOrder 主动查单：已支付则入账，已关闭则过期；超过支付时限仍未支付时向渠道关单。closeExpired 为 false 时只查不关。
 func (f *Funds) syncOrder(ctx context.Context, o *rechargeRow, closeExpired bool) error {
-	p := f.Payments.Get(o.Provider)
+	p := f.registry(ctx).Get(o.Provider)
 	if p == nil || o.OutTradeNo == nil {
 		return nil
 	}

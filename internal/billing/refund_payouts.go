@@ -64,6 +64,7 @@ func (f *Funds) planPayouts(ctx context.Context, tx pgx.Tx, refundID, userID int
 	if err != nil {
 		return err
 	}
+	reg := f.registry(ctx)
 	if st.RefundOriginalRoute {
 		rows, err := tx.Query(ctx, `SELECT id, channel, amount::text, refunded_amount::text FROM recharge_orders
 			WHERE user_id = $1 AND status = 'credited' AND channel <> 'manual' AND out_trade_no IS NOT NULL
@@ -94,7 +95,7 @@ func (f *Funds) planPayouts(ctx context.Context, tx pgx.Tx, refundID, userID int
 			if remaining <= 0 {
 				break
 			}
-			if f.Payments.Get(payment.ProviderOf(c.channel)) == nil {
+			if reg.Get(payment.ProviderOf(c.channel)) == nil {
 				continue // 渠道已下线，无法原路退回
 			}
 			total, err := payment.Fen(c.amount)
@@ -170,8 +171,9 @@ func (f *Funds) AdvanceRefundPayouts(ctx context.Context) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	reg := f.registry(ctx)
 	for _, it := range items {
-		p := f.Payments.Get(payment.ProviderOf(it.channel))
+		p := reg.Get(payment.ProviderOf(it.channel))
 		if p == nil {
 			if err := f.setPayout(ctx, it.id, "failed", nil, "payment channel is not configured", it.attempts, 0); err != nil {
 				return err

@@ -72,7 +72,7 @@ token-market/
 - sub2api 不暴露公网。买家流量只能经过 Edge 进入。
 - Edge 和 sub2api 同机房部署，转发多出的延迟在毫秒级。
 - 探测请求由 market-worker 直接发给 sub2api 网关，不经过 Edge（见 [05 质量检测](05-quality.md)）；第三方检测站在公网，只能经 Edge（用一次性临时令牌）访问被测账号。
-- 支付宝 / 微信支付的异步通知发到 market-api 的 `/api/payments/{alipay|wechat}/notify`，`payment.public_url` 必须是公网可访问的地址。
+- 支付宝 / 微信支付的异步通知发到 market-api 的 `/api/payments/{alipay|wechat}/notify`，后台"支付配置"中的支付通知地址必须是公网可访问的地址。
 - 端口：market-api `http.addr`（默认 :8080）；market-edge `edge.addr`（:8090）与管理端口 `edge.admin_addr`（:8091）；market-worker 管理端口 `worker.admin_addr`（:8092，`/healthz` 显示是否持有主锁，`/debug/vars` 输出任务运行次数、失败次数、最近成功时间，以及出站队列积压、死信、待处理异常、入账延迟、兼容自检状态等积压指标）。管理端口只在内网开放。
 
 ## 3. 与 sub2api 的集成通道

@@ -140,13 +140,14 @@ type Provider interface {
 	AckNotify(w http.ResponseWriter, err error)
 }
 
-// Registry 是已配置的渠道。
+// Registry 是已配置的渠道。停用的渠道不再接受新订单，但已有订单的通知、查单、关单、退款照常处理。
 type Registry struct {
 	providers map[string]Provider
+	disabled  map[string]bool
 }
 
 func NewRegistry(ps ...Provider) *Registry {
-	r := &Registry{providers: map[string]Provider{}}
+	r := &Registry{providers: map[string]Provider{}, disabled: map[string]bool{}}
 	for _, p := range ps {
 		if p != nil {
 			r.providers[p.Name()] = p
@@ -155,7 +156,14 @@ func NewRegistry(ps ...Provider) *Registry {
 	return r
 }
 
-// Get 返回渠道，未配置时返回 nil。
+// Disable 把渠道标记为停用（不再创建新订单）。
+func (r *Registry) Disable(name string) {
+	if r != nil {
+		r.disabled[name] = true
+	}
+}
+
+// Get 返回渠道（含停用的），未配置时返回 nil。
 func (r *Registry) Get(name string) Provider {
 	if r == nil {
 		return nil
@@ -163,13 +171,21 @@ func (r *Registry) Get(name string) Provider {
 	return r.providers[name]
 }
 
-// Configured 返回已配置的支付方式（不含人工确认）。
+// Enabled 表示渠道已配置且启用，可以创建新订单。
+func (r *Registry) Enabled(name string) bool {
+	return r.Get(name) != nil && !r.disabled[name]
+}
+
+// Configured 返回可以创建新订单的支付方式（不含人工确认）。
 func (r *Registry) Configured() map[string]bool {
 	out := map[string]bool{}
 	if r == nil {
 		return out
 	}
-	for _, p := range r.providers {
+	for name, p := range r.providers {
+		if r.disabled[name] {
+			continue
+		}
 		for _, c := range p.Channels() {
 			out[c] = true
 		}

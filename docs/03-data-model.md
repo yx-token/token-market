@@ -455,6 +455,14 @@ recharge_orders (                        -- 充值单
   created_at, paid_at, credited_at
 );
 
+payment_merchants (                      -- 站内配置的支付商户
+  provider     text primary key,           -- alipay / wechat
+  enabled      boolean not null,           -- 停用后不再创建新订单，已有订单照常处理
+  config       jsonb not null,             -- AppID、商户号、网关、加签方式、公钥与证书
+  secrets_enc  bytea,                      -- 加密的私钥、APIv3 密钥
+  updated_by bigint, updated_at timestamptz
+);
+
 payment_notifications (                  -- 渠道异步通知的处理记录
   id bigserial primary key, provider text, out_trade_no text, trade_no text, state text, amount_fen bigint,
   result text not null,                  -- credited / duplicate / expired / ignored / amount_mismatch / unknown_order / invalid / error

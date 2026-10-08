@@ -26,44 +26,6 @@ type Config struct {
 	Sub2API  Sub2APIConfig  `yaml:"sub2api"`
 	Worker   WorkerConfig   `yaml:"worker"`
 	Edge     EdgeConfig     `yaml:"edge"`
-	Payment  PaymentConfig  `yaml:"payment"`
-}
-
-// PaymentConfig 是支付渠道的商户配置。渠道是否对买家开放由管理后台的开关决定，这里只放密钥等静态配置。
-type PaymentConfig struct {
-	// PublicURL 是 market-api 对外的地址，用于拼接支付异步通知与网页支付完成后的跳转地址
-	PublicURL string       `yaml:"public_url"`
-	Alipay    AlipayConfig `yaml:"alipay"`
-	Wechat    WechatConfig `yaml:"wechat"`
-}
-
-// AlipayConfig 支付宝开放平台应用。填写 app_id 即启用；公钥模式配置 alipay_public_key，
-// 证书模式配置 app_cert_file、alipay_cert_file、alipay_root_cert_file。
-type AlipayConfig struct {
-	AppID               string   `yaml:"app_id"`
-	Gateway             string   `yaml:"gateway"` // 默认正式环境；沙箱为 https://openapi-sandbox.dl.alipaydev.com/gateway.do
-	PrivateKey          string   `yaml:"private_key"`
-	PrivateKeyFile      string   `yaml:"private_key_file"`
-	AlipayPublicKey     string   `yaml:"alipay_public_key"`
-	AlipayPublicKeyFile string   `yaml:"alipay_public_key_file"`
-	AppCertFile         string   `yaml:"app_cert_file"`
-	AlipayCertFile      string   `yaml:"alipay_cert_file"`
-	AlipayRootCertFile  string   `yaml:"alipay_root_cert_file"`
-	Channels            []string `yaml:"channels"` // alipay_page（电脑网站支付）、alipay_f2f（当面付），默认两者
-}
-
-// WechatConfig 微信支付商户（APIv3）。填写 mch_id 即启用；配置了微信支付公钥时用公钥验签，否则自动下载平台证书。
-type WechatConfig struct {
-	AppID          string `yaml:"app_id"`
-	MchID          string `yaml:"mch_id"`
-	MchSerialNo    string `yaml:"mch_serial_no"`
-	PrivateKey     string `yaml:"private_key"`
-	PrivateKeyFile string `yaml:"private_key_file"`
-	APIv3Key       string `yaml:"api_v3_key"`
-	PublicKeyID    string `yaml:"public_key_id"`
-	PublicKey      string `yaml:"public_key"`
-	PublicKeyFile  string `yaml:"public_key_file"`
-	BaseURL        string `yaml:"base_url"`
 }
 
 type AuthConfig struct {
@@ -188,25 +150,6 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 		"TM_EDGE_ADMIN_ADDR":          &cfg.Edge.AdminAddr,
 		"TM_WORKER_ADMIN_ADDR":        &cfg.Worker.AdminAddr,
 		"TM_EDGE_SPOOL_DIR":           &cfg.Edge.SpoolDir,
-		"TM_PAYMENT_PUBLIC_URL":       &cfg.Payment.PublicURL,
-		"TM_ALIPAY_APP_ID":            &cfg.Payment.Alipay.AppID,
-		"TM_ALIPAY_GATEWAY":           &cfg.Payment.Alipay.Gateway,
-		"TM_ALIPAY_PRIVATE_KEY":       &cfg.Payment.Alipay.PrivateKey,
-		"TM_ALIPAY_PRIVATE_KEY_FILE":  &cfg.Payment.Alipay.PrivateKeyFile,
-		"TM_ALIPAY_PUBLIC_KEY":        &cfg.Payment.Alipay.AlipayPublicKey,
-		"TM_ALIPAY_PUBLIC_KEY_FILE":   &cfg.Payment.Alipay.AlipayPublicKeyFile,
-		"TM_ALIPAY_APP_CERT_FILE":     &cfg.Payment.Alipay.AppCertFile,
-		"TM_ALIPAY_CERT_FILE":         &cfg.Payment.Alipay.AlipayCertFile,
-		"TM_ALIPAY_ROOT_CERT_FILE":    &cfg.Payment.Alipay.AlipayRootCertFile,
-		"TM_WECHAT_APP_ID":            &cfg.Payment.Wechat.AppID,
-		"TM_WECHAT_MCH_ID":            &cfg.Payment.Wechat.MchID,
-		"TM_WECHAT_MCH_SERIAL_NO":     &cfg.Payment.Wechat.MchSerialNo,
-		"TM_WECHAT_PRIVATE_KEY":       &cfg.Payment.Wechat.PrivateKey,
-		"TM_WECHAT_PRIVATE_KEY_FILE":  &cfg.Payment.Wechat.PrivateKeyFile,
-		"TM_WECHAT_API_V3_KEY":        &cfg.Payment.Wechat.APIv3Key,
-		"TM_WECHAT_PUBLIC_KEY_ID":     &cfg.Payment.Wechat.PublicKeyID,
-		"TM_WECHAT_PUBLIC_KEY_FILE":   &cfg.Payment.Wechat.PublicKeyFile,
-		"TM_WECHAT_BASE_URL":          &cfg.Payment.Wechat.BaseURL,
 	}
 	for name, dst := range str {
 		if v, ok := lookup(name); ok {
@@ -334,7 +277,6 @@ func applyDefaults(cfg *Config) {
 	if cfg.Edge.InvalidKeyLimit == 0 {
 		cfg.Edge.InvalidKeyLimit = 30
 	}
-	cfg.Payment.PublicURL = strings.TrimRight(cfg.Payment.PublicURL, "/")
 }
 
 // Validate 只校验各进程都必需的配置；进程特有的必填项由各自的 main 检查。
@@ -350,9 +292,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Sub2API.BaseURL != "" && !strings.HasPrefix(c.Sub2API.BaseURL, "http://") && !strings.HasPrefix(c.Sub2API.BaseURL, "https://") {
 		return errors.New("sub2api.base_url must start with http:// or https://")
-	}
-	if (c.Payment.Alipay.AppID != "" || c.Payment.Wechat.MchID != "") && c.Payment.PublicURL == "" {
-		return errors.New("payment.public_url is required when alipay or wechat pay is configured")
 	}
 	return nil
 }

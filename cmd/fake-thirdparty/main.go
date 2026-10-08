@@ -5,13 +5,14 @@
 //
 //	fake-thirdparty --keys-dir data/dev/pay-keys [--listen 127.0.0.1:18082] [--public-url http://127.0.0.1:18082]
 //
-// 首次启动在 keys-dir 生成密钥：商户侧使用 alipay_app_private.pem、alipay_platform_public.pem、
-// wechat_merchant_private.pem、wechat_platform_public.pem；替身自己使用其余文件。
+// 首次启动在 keys-dir 生成密钥，并写出 merchant-alipay.json、merchant-wechat.json：
+// 管理后台"支付配置"接口（PUT /api/admin/payments/merchants/{alipay|wechat}）的请求体，接入这个替身（scripts/dev.sh 会自动提交）。
 package main
 
 import (
 	"context"
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"flag"
 	"log/slog"
@@ -56,6 +57,9 @@ func run(keysDir, listen, publicURL string, log *slog.Logger) error {
 	}
 	if publicURL == "" {
 		publicURL = "http://" + listen
+	}
+	if err := writeMerchants(keysDir, publicURL); err != nil {
+		return err
 	}
 	pay := fakepay.NewUnstarted(fakepay.Config{Keys: keys, AlipayAppID: alipayAppID, WechatAppID: wechatAppID, WechatMchID: wechatMchID,
 		WechatMchSerial: wechatSerial, PublicURL: publicURL, Log: log})
@@ -138,4 +142,42 @@ func loadKeys(dir string) (fakepay.Keys, error) {
 	}
 	return fakepay.Keys{AlipayPlatform: alipayPlatform, AlipayApp: &app.PublicKey, WechatPlatform: wechatPlatform,
 		WechatMerchant: &merchant.PublicKey, WechatAPIv3Key: wechatAPIv3Key, WechatPublicKey: wechatPubKeyID}, nil
+}
+
+// writeMerchants 写出接入替身的商户配置（含商户私钥，仅供开发环境）。
+func writeMerchants(dir, publicURL string) error {
+	read := func(name string) (string, error) {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		return string(b), err
+	}
+	appKey, err := read("alipay_app_private.pem")
+	if err != nil {
+		return err
+	}
+	alipayPub, err := read("alipay_platform_public.pem")
+	if err != nil {
+		return err
+	}
+	merchantKey, err := read("wechat_merchant_private.pem")
+	if err != nil {
+		return err
+	}
+	wechatPub, err := read("wechat_platform_public.pem")
+	if err != nil {
+		return err
+	}
+	bodies := map[string]any{
+		"merchant-alipay.json": map[string]any{"enabled": true, "private_key": appKey, "alipay": map[string]any{
+			"app_id": alipayAppID, "gateway": publicURL + "/gateway.do", "mode": "public_key", "alipay_public_key": alipayPub}},
+		"merchant-wechat.json": map[string]any{"enabled": true, "private_key": merchantKey, "api_v3_key": wechatAPIv3Key, "wechat": map[string]any{
+			"app_id": wechatAppID, "mch_id": wechatMchID, "mch_serial_no": wechatSerial, "public_key_id": wechatPubKeyID,
+			"public_key": wechatPub, "base_url": publicURL}},
+	}
+	for name, body := range bodies {
+		raw, _ := json.MarshalIndent(body, "", "  ")
+		if err := os.WriteFile(filepath.Join(dir, name), raw, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
 }

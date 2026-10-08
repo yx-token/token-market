@@ -38,6 +38,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/admin/quality', component: () => import('@/views/admin/QualityView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/upstreams', component: () => import('@/views/admin/UpstreamsView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/users', component: () => import('@/views/admin/UsersView.vue'), meta: { auth: true, admin: true } },
+  { path: '/admin/payments', component: () => import('@/views/admin/PaymentsView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/funds', component: () => import('@/views/admin/FundsView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/billing', component: () => import('@/views/admin/BillingView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/risk', component: () => import('@/views/admin/RiskView.vue'), meta: { auth: true, admin: true } },

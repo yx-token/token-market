@@ -155,7 +155,7 @@
 | 上游 | `GET /api/admin/upstreams`、`POST /api/admin/upstreams/:id/suspend`、`/unsuspend`、`DELETE /api/admin/upstreams/:id` |
 | 用户与实名 | `GET /api/admin/kyc`、`POST /api/admin/kyc/:id/review`、`POST /api/admin/users/:id/status`（冻结 / 解冻） |
 | 充值 | `GET /api/admin/recharges`、`POST /api/admin/recharges/:id/confirm`（只用于人工充值单）、`POST /api/admin/recharges/:id/sync`（向渠道查单） |
-| 支付渠道 | `GET /api/admin/payments/status`（各支付方式的商户配置、开关、是否可用，最近 50 条通知处理记录） |
+| 支付配置 | `GET /api/admin/payments/merchants`（支付宝、微信支付商户配置，密钥只返回是否已设置；`ready` 与 `problem` 说明是否可用）、`PUT /api/admin/payments/merchants/:provider`（`enabled`、`alipay` / `wechat` 配置、`private_key`、`api_v3_key`，密钥留空表示不变）、`POST /api/admin/payments/merchants/:provider/test`（测试连接）、`GET /api/admin/payments/status`（各支付方式是否可用，最近 50 条通知处理记录）；通知地址、支付方式开关、充值上下限、支付时限、原路退回在系统设置中（`payment_public_url`、`payment_channels`、`recharge_min`、`recharge_max`、`recharge_order_timeout_minutes`、`refund_original_route`、`refund_original_route_days`） |
 | 退款 | `GET /api/admin/refunds`、`POST /api/admin/refunds/:id/paid`（登记人工打款部分的流水号）、`POST /api/admin/refund-payouts/:id/retry`（重试失败的原路退款）、`POST /api/admin/refund-payouts/:id/manual`（失败的原路退款改为人工打款） |
 | 提现 | `GET /api/admin/withdrawals`、`POST /api/admin/withdrawals/:id/review`（`approve` 为真通过，否则驳回并退回可提现）、`POST /api/admin/withdrawals/:id/paid`（`failed` 为真表示打款失败） |
 | 计费异常与调账 | `GET /api/admin/anomalies`、`POST /api/admin/anomalies/:id/resolve`、`POST /api/admin/adjustments`（必须填写原因，可关联异常） |

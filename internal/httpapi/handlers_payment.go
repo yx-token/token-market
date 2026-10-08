@@ -6,13 +6,21 @@ import (
 	"time"
 
 	"github.com/DueGin/token-market/internal/payment"
+	"github.com/DueGin/token-market/internal/payment/merchants"
 	"github.com/DueGin/token-market/internal/platform/httpx"
 )
 
 // paymentNotify 处理渠道的异步通知：验签 → 推进订单 → 按渠道要求应答。不经过登录鉴权，安全性完全依赖验签。
 func (s *Server) paymentNotify(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("provider")
-	p := s.Funds.Payments.Get(name)
+	reg, err := s.Payments.Registry(r.Context())
+	if err != nil {
+		s.Log.Error("load payment merchants", "err", err)
+		http.Error(w, "payment configuration unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	// 停用的商户仍处理通知：已创建的订单可能还会付款
+	p := reg.Get(name)
 	if p == nil {
 		http.NotFound(w, r)
 		return
@@ -69,7 +77,11 @@ func (s *Server) paymentStatus(w http.ResponseWriter, r *http.Request) error {
 	for _, c := range available {
 		avail[c] = true
 	}
-	configured := s.Funds.Payments.Configured()
+	reg, err := s.Payments.Registry(r.Context())
+	if err != nil {
+		return err
+	}
+	configured := reg.Configured()
 	var channels []paymentChannelStatus
 	for _, c := range payment.AllChannels {
 		channels = append(channels, paymentChannelStatus{Channel: c, Provider: payment.ProviderOf(c),
@@ -92,7 +104,7 @@ func (s *Server) paymentStatus(w http.ResponseWriter, r *http.Request) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	return ok(w, map[string]any{"channels": channels, "public_url": s.Funds.PublicURL, "notifications": notes})
+	return ok(w, map[string]any{"channels": channels, "public_url": st.PaymentPublicURL, "notifications": notes})
 }
 
 func (s *Server) syncRecharge(w http.ResponseWriter, r *http.Request) error {
@@ -132,4 +144,41 @@ func (s *Server) payoutToManual(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.audit(r, "refund_payout.manual", fmt.Sprintf("refund_payout:%d", id), nil)
 	return ok(w, p)
+}
+
+func (s *Server) listMerchants(w http.ResponseWriter, r *http.Request) error {
+	out := map[string]*merchants.View{}
+	for _, p := range []string{payment.ProviderAlipay, payment.ProviderWechat} {
+		v, err := s.Payments.Get(r.Context(), p)
+		if err != nil {
+			return err
+		}
+		out[p] = v
+	}
+	return ok(w, out)
+}
+
+func (s *Server) updateMerchant(w http.ResponseWriter, r *http.Request) error {
+	var in merchants.Input
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	provider := r.PathValue("provider")
+	v, err := s.Payments.Update(r.Context(), provider, in, adminID(r))
+	if err != nil {
+		return err
+	}
+	// 审计日志不记录密钥
+	s.audit(r, "payment_merchant.update", "payment_merchant:"+provider, map[string]any{
+		"enabled": in.Enabled, "alipay": in.Alipay, "wechat": in.Wechat,
+		"private_key_changed": in.PrivateKey != "", "api_v3_key_changed": in.APIv3Key != "",
+	})
+	return ok(w, v)
+}
+
+func (s *Server) testMerchant(w http.ResponseWriter, r *http.Request) error {
+	if err := s.Payments.Test(r.Context(), r.PathValue("provider")); err != nil {
+		return err
+	}
+	return ok(w, map[string]string{"status": "ok"})
 }

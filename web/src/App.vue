@@ -43,6 +43,7 @@ const sections: Record<string, { title: string; items: NavItem[] }> = {
       { to: '/admin/vendors', text: '厂商' },
       { to: '/admin/proxies', text: '代理' },
       { to: '/admin/funds', text: '充值、退款、提现' },
+      { to: '/admin/payments', text: '支付配置' },
       { to: '/admin/billing', text: '计费异常与调账' },
       { to: '/admin/users', text: '用户与实名' },
       { to: '/admin/risk', text: '风控' },
