@@ -110,7 +110,7 @@ async function withdraw() {
     </div>
 
     <ModalDialog v-model:open="showWithdraw" title="申请提现">
-      <div v-if="auth.user?.kyc_status !== 'verified'" class="rounded bg-amber-50 p-3 text-sm text-amber-800">
+      <div v-if="auth.user?.kyc_status !== 'verified'" class="callout callout-warn">
         提现前需要完成实名认证。<RouterLink to="/me" class="link">去认证</RouterLink>
       </div>
       <p class="text-sm text-slate-600">可提现 {{ money(earnings.data.value?.available) }}，最低 {{ money(cfg.config.withdraw_min) }}。</p>

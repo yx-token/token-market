@@ -149,11 +149,11 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
       <button v-if="!['removing', 'removed'].includes(u.status)" class="btn-ghost text-red-600" :disabled="busy" @click="remove">删除</button>
     </PageHeader>
 
-    <div v-if="u.status === 'verifying'" class="mb-4 rounded-md bg-sky-50 p-3 text-sm text-sky-800">正在进行上架检测（平台探测之后可能还有第三方身份检测，通常几分钟），完成后页面会自动刷新。检测通过前不能挂单。</div>
-    <div v-if="u.failure_reason && ['verify_failed', 'suspended', 'failed'].includes(u.status)" class="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800">
+    <div v-if="u.status === 'verifying'" class="mb-4 callout callout-info">正在进行上架检测（平台探测之后可能还有第三方身份检测，通常几分钟），完成后页面会自动刷新。检测通过前不能挂单。</div>
+    <div v-if="u.failure_reason && ['verify_failed', 'suspended', 'failed'].includes(u.status)" class="mb-4 callout callout-err">
       {{ u.failure_reason }}
     </div>
-    <div v-if="u.health === 'unavailable'" class="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+    <div v-if="u.health === 'unavailable'" class="mb-4 callout callout-warn">
       账号当前不可用（{{ u.health_reason }}）。如果是授权失效，请点击"重新授权"。
     </div>
 
@@ -186,7 +186,7 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
           <span v-if="u.listing.mode === 'consignment'" class="text-slate-500">{{ u.listing.join_default_pool ? '已加入默认分组' : '未加入默认分组' }}</span>
           <RouterLink :to="`/seller/listings`" class="link ml-auto">价格历史</RouterLink>
         </div>
-        <div v-if="u.listing.status === 'pending_confirm' && u.quote" class="mt-3 rounded-md bg-amber-50 p-3 text-sm">
+        <div v-if="u.listing.status === 'pending_confirm' && u.quote" class="mt-3 callout callout-warn">
           平台回收报价：<b>{{ multiplier(u.quote.multiplier) }}</b>（等级 {{ u.quote.grade }}，有效期至 {{ dateTime(u.quote.valid_until) }}）。
           接受后按实际用量 × 回收倍率结算。
           <div class="mt-2 flex gap-2">

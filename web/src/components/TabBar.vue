@@ -4,16 +4,19 @@ const active = defineModel<string>({ required: true })
 </script>
 
 <template>
-  <div class="mb-4 flex gap-1 border-b border-slate-200" role="tablist">
+  <div class="mb-5 flex gap-6 overflow-x-auto overflow-y-hidden shadow-[inset_0_-1px_0_var(--rule-strong)]" role="tablist">
     <button
       v-for="t in tabs"
       :key="t.key"
       role="tab"
       :aria-selected="active === t.key"
-      :class="['-mb-px border-b-2 px-3 py-2 text-sm', active === t.key ? 'border-brand-600 font-medium text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700']"
+      :class="[
+        'flex items-center gap-1.5 whitespace-nowrap border-b-2 pb-2.5 pt-1 text-[14px] transition-colors',
+        active === t.key ? 'border-brand-500 font-medium text-ink-900' : 'border-transparent text-ink-500 hover:text-ink-900',
+      ]"
       @click="active = t.key"
     >
-      {{ t.text }}<span v-if="t.count" class="ml-1 rounded-full bg-red-100 px-1.5 text-xs text-red-700">{{ t.count }}</span>
+      {{ t.text }}<span v-if="t.count" class="bg-brand-500 px-1.5 font-mono text-[10.5px] leading-[16px] text-white">{{ t.count }}</span>
     </button>
   </div>
 </template>

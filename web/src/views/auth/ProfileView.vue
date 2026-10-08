@@ -24,20 +24,20 @@ async function submitKYC() {
 
 <template>
   <div class="mx-auto max-w-2xl">
-    <PageHeader title="账号" />
+    <PageHeader title="账号" description="登录信息与实名认证。" />
     <div class="card mb-5">
-      <dl class="grid grid-cols-2 gap-3 text-sm">
-        <dt class="text-slate-500">邮箱</dt>
+      <dl class="kv">
+        <dt>邮箱</dt>
         <dd>{{ auth.user?.email }}</dd>
-        <dt class="text-slate-500">注册时间</dt>
+        <dt>注册时间</dt>
         <dd>{{ dateTime(auth.user?.created_at) }}</dd>
-        <dt class="text-slate-500">实名状态</dt>
+        <dt>实名状态</dt>
         <dd><StatusBadge kind="kycStatus" :value="auth.user?.kyc_status" /></dd>
       </dl>
     </div>
     <div v-if="auth.user?.kyc_status !== 'verified'" class="card">
       <h2 class="card-title">实名认证</h2>
-      <p class="mb-4 text-sm text-slate-500">卖家提现前需要完成实名认证。证件号加密存储，仅用于身份核验与防止重复认证。</p>
+      <p class="callout mb-5">卖家提现前需要完成实名认证。证件号加密存储，仅用于身份核验与防止重复认证。</p>
       <form class="space-y-4" @submit.prevent="submitKYC">
         <div>
           <label class="label" for="name">真实姓名</label>

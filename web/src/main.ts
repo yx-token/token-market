@@ -4,6 +4,13 @@ import App from './App.vue'
 import { router } from './router'
 import { setUnauthorizedHandler } from './api/client'
 import { useAuth } from './stores/auth'
+import '@fontsource/noto-serif-sc/700.css'
+import '@fontsource/schibsted-grotesk/latin-400.css'
+import '@fontsource/schibsted-grotesk/latin-500.css'
+import '@fontsource/schibsted-grotesk/latin-600.css'
+import '@fontsource/schibsted-grotesk/latin-700.css'
+import '@fontsource/spline-sans-mono/latin-400.css'
+import '@fontsource/spline-sans-mono/latin-500.css'
 import './style.css'
 
 const app = createApp(App)

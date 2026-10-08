@@ -59,8 +59,8 @@ function setTriState(f: Record<string, unknown>, key: string, v: string) {
 
     <div v-for="p in providers.data.value ?? []" :key="p.name" class="card mb-5">
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <h2 class="text-base font-semibold">{{ p.label }}</h2>
-        <span :class="['rounded px-2 py-0.5 text-xs', p.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500']">
+        <h2 class="card-title !mb-0">{{ p.label }}</h2>
+        <span :class="['chip', p.enabled ? 'chip-green' : 'chip-gray']">
           {{ p.enabled ? '已启用' : '未启用' }}
         </span>
         <a :href="p.docs_url" target="_blank" rel="noopener noreferrer" class="link text-sm">文档</a>

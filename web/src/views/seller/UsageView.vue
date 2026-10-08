@@ -137,7 +137,7 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
 
     <div class="card mt-5">
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <h2 class="text-base font-semibold">调用记录</h2>
+        <h2 class="card-title !mb-0">调用记录</h2>
         <select v-model="channel" class="input ml-auto w-40" aria-label="来源">
           <option value="">全部来源</option>
           <option value="buyer">买家</option>

@@ -30,7 +30,7 @@ const severityTone: Record<string, string> = { critical: 'text-red-600', warning
 </script>
 
 <template>
-  <div class="rounded border border-slate-200 p-3 text-sm">
+  <div class="border border-ink-200 border-l-[3px] border-l-ink-900 bg-white p-3 text-sm">
     <div class="flex flex-wrap items-center gap-2">
       <span class="font-medium">{{ providerNames[provider] ?? provider }}</span>
       <StatusBadge kind="tpStatus" :value="status" />
@@ -41,32 +41,32 @@ const severityTone: Record<string, string> = { critical: 'text-red-600', warning
       <a v-if="reportUrl" :href="reportUrl" target="_blank" rel="noopener noreferrer" class="link ml-auto">查看检测站报告</a>
     </div>
     <p v-if="error" class="mt-2 text-red-600">{{ error }}</p>
-    <dl v-if="summary" class="mt-2 grid grid-cols-2 gap-x-6 gap-y-1">
+    <dl v-if="summary" class="kv mt-2">
       <template v-if="summary.verdict_status">
-        <dt class="text-slate-500">身份判定</dt>
+        <dt>身份判定</dt>
         <dd>{{ verdictStatusText[summary.verdict_status] ?? summary.verdict_status }}</dd>
       </template>
       <template v-if="summary.true_model || summary.true_family">
-        <dt class="text-slate-500">检测站认为实际是</dt>
+        <dt>检测站认为实际是</dt>
         <dd>{{ summary.true_model || summary.true_family }}</dd>
       </template>
       <template v-if="summary.confidence !== undefined">
-        <dt class="text-slate-500">置信度</dt>
+        <dt>置信度</dt>
         <dd>{{ summary.confidence }}</dd>
       </template>
       <template v-if="summary.items">
-        <dt class="text-slate-500">探针</dt>
+        <dt>探针</dt>
         <dd>
           共 {{ summary.items.total ?? 0 }} 道：通过 {{ summary.items.passed ?? 0 }}，未通过 {{ summary.items.failed ?? 0 }}，警告
           {{ summary.items.warning ?? 0 }}，出错 {{ summary.items.error ?? 0 }}
         </dd>
       </template>
       <template v-if="summary.tokens">
-        <dt class="text-slate-500">消耗 token</dt>
+        <dt>消耗 token</dt>
         <dd>输入 {{ tokens(summary.tokens.input) }} / 输出 {{ tokens(summary.tokens.output) }}</dd>
       </template>
       <template v-if="summary.risk_flags?.length">
-        <dt class="text-slate-500">风险标记</dt>
+        <dt>风险标记</dt>
         <dd>{{ summary.risk_flags.join('，') }}</dd>
       </template>
     </dl>

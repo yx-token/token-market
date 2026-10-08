@@ -158,13 +158,15 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
       <button class="btn-primary" @click="openCreate">创建 Key</button>
     </PageHeader>
 
-    <div class="card mb-5 text-sm">
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-slate-500">调用地址</span>
-        <code class="rounded bg-slate-100 px-2 py-0.5">{{ baseURL }}</code>
-        <button class="btn-ghost btn-sm" @click="copy(baseURL)">复制</button>
+    <div class="mb-5 border border-ink-900 bg-ink-900 bg-grid-ink px-5 py-4 text-ink-200 shadow-hard-red">
+      <div class="flex flex-wrap items-end gap-x-6 gap-y-2">
+        <div class="min-w-0">
+          <div class="font-mono text-[10.5px] uppercase tracking-[0.18em] text-ink-400">调用地址 · Base URL</div>
+          <div class="mt-1 break-all font-mono text-[19px] font-medium text-white">{{ baseURL }}</div>
+        </div>
+        <button class="btn btn-sm ml-auto border-ink-500 bg-transparent text-white hover:border-brand-400 hover:text-brand-300" @click="copy(baseURL)">复制地址</button>
       </div>
-      <p class="hint">兼容官方协议：Anthropic Messages（/v1/messages）、OpenAI Chat Completions 与 Responses、Gemini。把 SDK 的 Base URL 换成上面的地址，Key 换成这里创建的 Key 即可。</p>
+      <p class="mt-3 border-t border-ink-700 pt-3 text-xs leading-relaxed text-ink-300">兼容官方协议：Anthropic Messages（/v1/messages）、OpenAI Chat Completions 与 Responses、Gemini。把 SDK 的 Base URL 换成上面的地址，Key 换成这里创建的 Key 即可。</p>
     </div>
 
     <div v-if="keys.loading.value && !keys.data.value?.length" class="py-10 text-center text-slate-400">加载中…</div>
@@ -175,7 +177,7 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
           <div class="font-medium">{{ k.name }}</div>
           <code class="text-xs text-slate-500">{{ k.key_prefix }}…</code>
           <StatusBadge kind="keyStatus" :value="k.status" />
-          <span v-if="k.limit_blocked_until" class="rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-700">
+          <span v-if="k.limit_blocked_until" class="chip chip-red">
             已限额：{{ k.limit_block_reason }}（至 {{ dateTime(k.limit_blocked_until) }}）
           </span>
           <span class="text-xs text-slate-400">创建于 {{ dateTime(k.created_at) }}</span>
@@ -187,10 +189,11 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
         </div>
         <ol class="mt-3 flex flex-wrap items-center gap-2 text-sm">
           <li v-for="h in k.hops ?? []" :key="h.position" class="flex items-center gap-2">
-            <span v-if="h.position > 1" class="text-slate-300">→</span>
-            <span class="rounded border border-slate-200 px-2 py-1">
-              {{ hopText(h) }}
-              <StatusBadge kind="hopState" :value="h.state" class="ml-1" />
+            <span v-if="h.position > 1" class="font-mono text-ink-400">→</span>
+            <span class="flex items-center border border-ink-300 bg-paper">
+              <span class="self-stretch border-r border-ink-300 bg-white px-1.5 py-1 font-mono text-[10.5px] text-ink-500">{{ String(h.position).padStart(2, '0') }}</span>
+              <span class="px-2 py-1">{{ hopText(h) }}</span>
+              <StatusBadge kind="hopState" :value="h.state" class="mr-1.5" />
             </span>
           </li>
         </ol>
@@ -214,7 +217,7 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
         <div class="label">路由</div>
         <RouteEditor v-model:type="form.type" v-model:pool="form.pool" v-model:hops="form.hops" :listings="listings" :pools="pools" :max-hops="cfg.config.max_hops" />
       </div>
-      <details class="rounded border border-slate-200 p-3">
+      <details class="border border-ink-200 bg-paper/60 p-3">
         <summary class="cursor-pointer text-sm font-medium text-slate-700">限制（可选）</summary>
         <div class="mt-3 grid grid-cols-2 gap-3">
           <div>
@@ -253,10 +256,10 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
     <ModalDialog :open="!!created" title="Key 已创建" @update:open="(v: boolean) => !v && (created = null)">
       <p class="text-sm text-amber-700">请立即保存，Key 只显示这一次。</p>
       <div class="flex items-center gap-2">
-        <code class="flex-1 break-all rounded bg-slate-100 p-2 text-sm">{{ created?.key }}</code>
+        <code class="flex-1 break-all border border-ink-900 !bg-white !px-3 !py-2 text-sm">{{ created?.key }}</code>
         <button class="btn-secondary btn-sm" @click="copy(created!.key)">复制</button>
       </div>
-      <pre class="overflow-x-auto rounded bg-slate-900 p-3 text-xs text-slate-100">curl {{ baseURL }}/v1/messages \
+      <pre class="codeblock">curl {{ baseURL }}/v1/messages \
   -H "x-api-key: {{ created?.key }}" \
   -H "anthropic-version: 2023-06-01" \
   -H "content-type: application/json" \

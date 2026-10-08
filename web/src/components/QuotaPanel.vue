@@ -52,35 +52,35 @@ function resetsIn(v?: string) {
   return d > 0 ? `${d} 天 ${hh} 小时后重置` : hh > 0 ? `${hh} 小时 ${mm} 分后重置` : `${mm} 分钟后重置`
 }
 function barClass(u: number) {
+  if (u >= 90) return 'bg-brand-500'
   if (stopAt.value !== null && u >= stopAt.value) return 'bg-amber-500'
-  if (u >= 90) return 'bg-red-500'
-  return 'bg-brand-500'
+  return 'bg-ink-800'
 }
 </script>
 
 <template>
   <div class="card">
     <div class="mb-3 flex flex-wrap items-center gap-3">
-      <h2 class="text-base font-semibold">账号额度</h2>
-      <span v-if="q?.plan_level" class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{{ q.plan_level }}</span>
+      <h2 class="card-title !mb-0">账号额度</h2>
+      <span v-if="q?.plan_level" class="chip chip-ink">{{ q.plan_level }}</span>
       <span v-if="q?.source" class="text-xs text-slate-400">
         {{ sourceText[q.source] ?? q.source }} · {{ dateTime(q.sampled_at || q.fetched_at) }}
       </span>
       <button class="btn-ghost btn-sm ml-auto" :disabled="loading" @click="load(true)">{{ loading ? '查询中…' : '刷新' }}</button>
     </div>
-    <div v-for="a in q?.alerts ?? []" :key="a" class="mb-2 rounded bg-red-50 p-2 text-sm text-red-700">{{ alertText[a] ?? a }}</div>
+    <div v-for="a in q?.alerts ?? []" :key="a" class="callout callout-err mb-2">{{ alertText[a] ?? a }}</div>
     <p v-if="q?.error" class="mb-2 text-sm text-amber-700">{{ q.error }}</p>
     <p v-if="q && !q.windows.length && !q.error" class="text-sm text-slate-400">官方暂未提供这个账号的窗口用量。</p>
     <div class="space-y-4">
       <div v-for="w in q?.windows ?? []" :key="w.key">
         <div class="mb-1 flex flex-wrap items-baseline gap-2 text-sm">
           <span class="font-medium">{{ w.label }}</span>
-          <span class="text-slate-600">已用 {{ w.utilization.toFixed(1) }}%</span>
+          <span class="num text-ink-700">已用 {{ w.utilization.toFixed(1) }}%</span>
           <span v-if="w.limit_requests" class="text-xs text-slate-400">（{{ w.used_requests }} / {{ w.limit_requests }} 次）</span>
           <span class="ml-auto text-xs text-slate-400">{{ resetsIn(w.resets_at) }}</span>
         </div>
-        <div class="relative h-2 overflow-hidden rounded bg-slate-100">
-          <div :class="['h-full rounded', barClass(w.utilization)]" :style="{ width: `${Math.min(100, w.utilization)}%` }" />
+        <div class="relative h-2 overflow-hidden bg-ink-100 [background-image:repeating-linear-gradient(90deg,transparent_0_9.6%,rgba(23,20,15,.12)_9.6%_10%)]">
+          <div :class="['h-full transition-[width] duration-700', barClass(w.utilization)]" :style="{ width: `${Math.min(100, w.utilization)}%` }" />
           <div v-if="stopAt !== null" class="absolute top-0 h-full w-0.5 bg-slate-500" :style="{ left: `${stopAt}%` }" :title="`用量达到 ${stopAt}% 时暂停调度`" />
         </div>
         <div v-if="w.requests !== undefined" class="mt-1 text-xs text-slate-500">

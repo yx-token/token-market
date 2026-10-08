@@ -173,12 +173,12 @@ async function probe() {
         <template #cell-platform="{ row }">{{ label('platform', row.platform).text }}</template>
         <template #cell-auth_type="{ row }">{{ row.auth_type ? label('authType', row.auth_type).text : '全部' }}</template>
         <template #cell-enabled="{ row }">
-          <button :class="['btn-sm rounded px-2', row.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500']" :disabled="busy" @click="quick(row, 'enabled')">
+          <button :class="['switch', row.enabled ? 'chip-green' : 'chip-gray']" :disabled="busy" @click="quick(row, 'enabled')">
             {{ row.enabled ? '开' : '关' }}
           </button>
         </template>
         <template #cell-scheduled_enabled="{ row }">
-          <button :class="['btn-sm rounded px-2', row.scheduled_enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500']" :disabled="busy" @click="quick(row, 'scheduled_enabled')">
+          <button :class="['switch', row.scheduled_enabled ? 'chip-green' : 'chip-gray']" :disabled="busy" @click="quick(row, 'scheduled_enabled')">
             {{ row.scheduled_enabled ? '开' : '关' }}
           </button>
         </template>
@@ -307,7 +307,7 @@ async function probe() {
         <div class="mb-1 text-sm font-medium text-slate-700">第三方检测</div>
         <p class="hint mb-2">平台探测完成后，在选中的检测类型中追加第三方身份检测；最终结论取平台探测与第三方检测中更严重的一项，检测站失败或证据不足时不影响结论。"判为降智"会停止调度（开启自动停止时），"判为疑似"会降低流量。协议按平台自动选择时 Claude 用 Anthropic Messages，其余用 OpenAI Chat Completions。</p>
         <p v-if="!providers.data.value?.length" class="text-sm text-slate-400">暂无可接入的检测站</p>
-        <div v-for="pr in providers.data.value ?? []" :key="pr.name" class="mb-3 rounded border border-slate-200 p-3 text-sm">
+        <div v-for="pr in providers.data.value ?? []" :key="pr.name" class="mb-3 border border-ink-200 bg-paper/60 p-3 text-sm">
           <template v-if="thirdParty[pr.name]">
             <label class="flex items-center gap-2 font-medium">
               <input v-model="thirdParty[pr.name].enabled" type="checkbox" /> {{ pr.label }}

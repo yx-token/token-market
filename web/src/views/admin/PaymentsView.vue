@@ -109,10 +109,10 @@ async function test(provider: string) {
 }
 
 function stateText(m?: MerchantView) {
-  if (!m || !m.updated_at) return { text: '未配置', cls: 'bg-slate-100 text-slate-500' }
-  if (!m.ready) return { text: '配置不完整', cls: 'bg-amber-100 text-amber-700' }
-  if (!m.enabled) return { text: '已停用', cls: 'bg-slate-100 text-slate-500' }
-  return { text: '已启用', cls: 'bg-emerald-100 text-emerald-700' }
+  if (!m || !m.updated_at) return { text: '未配置', cls: 'chip-gray' }
+  if (!m.ready) return { text: '配置不完整', cls: 'chip-yellow' }
+  if (!m.enabled) return { text: '已停用', cls: 'chip-gray' }
+  return { text: '已启用', cls: 'chip-green' }
 }
 </script>
 
@@ -168,8 +168,8 @@ function stateText(m?: MerchantView) {
 
     <div class="card mb-5">
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <h2 class="text-base font-semibold">支付宝</h2>
-        <span :class="['rounded px-2 py-0.5 text-xs', stateText(merchants.alipay).cls]">{{ stateText(merchants.alipay).text }}</span>
+        <h2 class="card-title !mb-0">支付宝</h2>
+        <span :class="['chip', stateText(merchants.alipay).cls]">{{ stateText(merchants.alipay).text }}</span>
         <span v-if="merchants.alipay?.problem && merchants.alipay?.updated_at" class="text-xs text-amber-700">{{ merchants.alipay.problem }}</span>
         <span v-if="merchants.alipay?.updated_at" class="ml-auto text-xs text-slate-400">更新于 {{ dateTime(merchants.alipay.updated_at) }}</span>
       </div>
@@ -218,8 +218,8 @@ function stateText(m?: MerchantView) {
 
     <div class="card mb-5">
       <div class="mb-3 flex flex-wrap items-center gap-3">
-        <h2 class="text-base font-semibold">微信支付</h2>
-        <span :class="['rounded px-2 py-0.5 text-xs', stateText(merchants.wechat).cls]">{{ stateText(merchants.wechat).text }}</span>
+        <h2 class="card-title !mb-0">微信支付</h2>
+        <span :class="['chip', stateText(merchants.wechat).cls]">{{ stateText(merchants.wechat).text }}</span>
         <span v-if="merchants.wechat?.problem && merchants.wechat?.updated_at" class="text-xs text-amber-700">{{ merchants.wechat.problem }}</span>
         <span v-if="merchants.wechat?.updated_at" class="ml-auto text-xs text-slate-400">更新于 {{ dateTime(merchants.wechat.updated_at) }}</span>
       </div>

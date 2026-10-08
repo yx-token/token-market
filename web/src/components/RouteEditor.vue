@@ -51,9 +51,15 @@ defineExpose({ error })
 
 <template>
   <div class="space-y-3">
-    <div class="flex gap-4 text-sm">
-      <label class="flex items-center gap-1"><input v-model="type" type="radio" value="default" /> 平台默认分组</label>
-      <label class="flex items-center gap-1"><input v-model="type" type="radio" value="chain" /> 指定卖家（按顺序故障转移）</label>
+    <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <label :class="['choice flex cursor-pointer items-start gap-2.5', type === 'default' && 'choice-on']">
+        <input v-model="type" type="radio" value="default" class="mt-0.5" />
+        <span><span class="font-medium">平台默认分组</span><span class="block text-xs text-ink-500">由平台挑选可用上游，保障可用</span></span>
+      </label>
+      <label :class="['choice flex cursor-pointer items-start gap-2.5', type === 'chain' && 'choice-on']">
+        <input v-model="type" type="radio" value="chain" class="mt-0.5" />
+        <span><span class="font-medium">指定卖家</span><span class="block text-xs text-ink-500">按顺序故障转移，可用默认分组兜底</span></span>
+      </label>
     </div>
     <div v-if="type === 'default'">
       <select v-model="pool" class="input" aria-label="默认分组">
@@ -63,7 +69,7 @@ defineExpose({ error })
     </div>
     <div v-else class="space-y-2">
       <div v-for="(h, i) in hops" :key="i" class="flex items-center gap-2">
-        <span class="w-12 shrink-0 text-xs text-slate-500">第 {{ i + 1 }} 跳</span>
+        <span class="w-12 shrink-0 font-mono text-[11px] text-ink-500">第 {{ String(i + 1).padStart(2, '0') }} 跳</span>
         <select v-if="!h.pool" class="input" :value="h.listingId ?? ''" :aria-label="`第 ${i + 1} 跳挂单`" @change="setListing(i, ($event.target as HTMLSelectElement).value)">
           <option value="" disabled>选择卖家挂单</option>
           <option v-for="l in listingOptions(h.listingId)" :key="l.listing_id" :value="l.listing_id">

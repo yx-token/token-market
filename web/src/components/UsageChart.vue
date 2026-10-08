@@ -22,7 +22,7 @@ const fmt = (d: UsageTotals) =>
 
 <template>
   <div>
-    <div class="mb-2 flex gap-1 text-xs">
+    <div class="seg mb-3">
       <button
         v-for="m in [
           { k: 'payout', t: '收益' },
@@ -31,7 +31,7 @@ const fmt = (d: UsageTotals) =>
         ]"
         :key="m.k"
         type="button"
-        :class="['rounded px-2 py-1', metric === m.k ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200']"
+        :class="{ on: metric === m.k }"
         @click="metric = m.k as typeof metric"
       >
         {{ m.t }}

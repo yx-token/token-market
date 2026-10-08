@@ -85,13 +85,13 @@ function goDetail() {
   <ModalDialog v-model:open="open" title="接入上游" wide>
     <template v-if="step === 'choose'">
       <p class="text-sm text-slate-500">只接受官方订阅账号（OAuth 授权）与国产 Coding Plan 订阅 key。平台为每个上游分配专用代理，账号凭证由底层网关保管。</p>
-      <div v-if="vendors.length === 0" class="rounded bg-amber-50 p-3 text-sm text-amber-800">平台暂未开放任何厂商接入。</div>
+      <div v-if="vendors.length === 0" class="callout callout-warn">平台暂未开放任何厂商接入。</div>
       <div class="grid grid-cols-2 gap-2 md:grid-cols-3">
         <button
           v-for="v in vendors"
           :key="v.platform"
           type="button"
-          :class="['rounded-md border p-3 text-left text-sm', platform === v.platform ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300']"
+          :class="['choice', platform === v.platform && 'choice-on']"
           @click="platform = v.platform"
         >
           <div class="font-medium">{{ label('platform', v.platform).text }}</div>
@@ -134,10 +134,10 @@ function goDetail() {
     </template>
 
     <template v-else>
-      <div v-if="upstream?.status === 'verifying'" class="rounded bg-emerald-50 p-3 text-sm text-emerald-800">
+      <div v-if="upstream?.status === 'verifying'" class="callout callout-ok">
         授权完成，正在进行上架检测（通常几分钟内完成）。检测通过后就可以挂单了，检测报告可以在上游详情中查看。
       </div>
-      <div v-else class="rounded bg-amber-50 p-3 text-sm text-amber-800">
+      <div v-else class="callout callout-warn">
         当前状态：{{ label('upstreamStatus', upstream?.status).text }}。{{ upstream?.failure_reason ?? '' }}
       </div>
     </template>

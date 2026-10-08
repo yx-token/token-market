@@ -139,12 +139,12 @@ const title = computed(() => (current.value ? `充值订单 #${current.value.id}
       </div>
       <div>
         <div class="label">支付方式</div>
-        <div v-if="!channels.length" class="rounded bg-amber-50 p-3 text-sm text-amber-800">暂无可用的支付方式，请联系平台。</div>
+        <div v-if="!channels.length" class="callout callout-warn">暂无可用的支付方式，请联系平台。</div>
         <div class="space-y-2">
           <label
             v-for="c in channels"
             :key="c"
-            :class="['flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm', channel === c ? 'border-brand-500 bg-brand-50' : 'border-slate-200']"
+            :class="['choice flex cursor-pointer items-start gap-3', channel === c && 'choice-on']"
           >
             <input v-model="channel" type="radio" :value="c" class="mt-1" :aria-label="label('paymentChannel', c).text" />
             <span>
@@ -162,10 +162,10 @@ const title = computed(() => (current.value ? `充值订单 #${current.value.id}
         <StatusBadge kind="rechargeStatus" :value="current.status" />
       </div>
 
-      <div v-if="current.status === 'crediting' || current.status === 'credited'" class="rounded bg-emerald-50 p-4 text-center text-emerald-800" data-testid="pay-success">
+      <div v-if="current.status === 'crediting' || current.status === 'credited'" class="callout callout-ok text-center" data-testid="pay-success">
         支付成功，{{ current.status === 'credited' ? '余额已到账' : '余额正在到账（通常几秒内完成）' }}。
       </div>
-      <div v-else-if="current.status !== 'pending'" class="rounded bg-slate-50 p-4 text-center text-slate-600">
+      <div v-else-if="current.status !== 'pending'" class="callout text-center">
         订单{{ label('rechargeStatus', current.status).text }}{{ current.close_reason ? `（${label('closeReason', current.close_reason).text}）` : '' }}。如需充值请重新下单。
       </div>
       <template v-else-if="current.payment?.kind === 'qrcode' && current.payment.qr_code">
@@ -179,7 +179,7 @@ const title = computed(() => (current.value ? `充值订单 #${current.value.id}
         <p class="text-sm text-slate-600">请在支付宝收银台完成付款。付款完成后会自动跳回本页面；如果没有跳回，可以点击"继续支付"或稍后刷新。</p>
         <p v-if="remaining" class="text-xs text-slate-400">剩余支付时间 {{ remaining }}</p>
       </template>
-      <p v-else class="rounded bg-amber-50 p-3 text-sm text-amber-800">
+      <p v-else class="callout callout-warn">
         {{ current.payment?.instructions || '请按平台公布的收款方式付款并备注订单号，管理员确认到账后自动入账。' }}订单号 #{{ current.id }}。
       </p>
     </template>
