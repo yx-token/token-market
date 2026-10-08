@@ -6,7 +6,11 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
+	"path"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DueGin/token-market/internal/account"
@@ -41,6 +45,10 @@ type Server struct {
 	Log      *slog.Logger
 	// TrustedProxies 是前置负载均衡的地址，只有来自它们的请求才采信 X-Forwarded-For
 	TrustedProxies []string
+	// WebDir 是前端构建产物目录，为空时不提供前端页面
+	WebDir string
+	// EdgeURL 是买家调用模型的地址，在前端展示
+	EdgeURL string
 
 	// 防爆破：登录失败按 IP 与邮箱计数，注册按 IP 计数（进程内，各实例独立）
 	loginFailsByIP    *ratelimit.Failures
@@ -68,6 +76,7 @@ func (s *Server) Handler() http.Handler {
 		{"POST /api/auth/register", s.register},
 		{"POST /api/auth/login", s.login},
 		{"GET /api/market/prices", s.marketPrices},
+		{"GET /api/market/config", s.marketConfig},
 		{"GET /api/market/listings", s.marketListings},
 		{"GET /api/market/listings/{id}", s.marketListing},
 		{"GET /api/market/pools", s.marketPools},
@@ -188,6 +197,12 @@ func (s *Server) Handler() http.Handler {
 	for _, r := range admin {
 		mux.Handle(r.pattern, httpx.Authenticate(s.Issuer, s.Accounts.CheckActive, httpx.RequireAdmin(r.h)))
 	}
+	mux.Handle("/api/", httpx.Handler(func(http.ResponseWriter, *http.Request) error {
+		return httpx.NotFound("NOT_FOUND", "endpoint not found")
+	}))
+	if s.WebDir != "" {
+		mux.Handle("/", spaHandler(s.WebDir))
+	}
 	return httpx.Recover(httpx.RealIP(clientip.New(s.TrustedProxies), httpx.AccessLog(s.Log, mux)))
 }
 
@@ -229,4 +244,25 @@ func ok(w http.ResponseWriter, v any) error {
 func created(w http.ResponseWriter, v any) error {
 	httpx.WriteJSON(w, http.StatusCreated, v)
 	return nil
+}
+
+// spaHandler 提供前端静态文件；找不到的路径返回 index.html，由前端路由处理。
+func spaHandler(dir string) http.Handler {
+	files := http.FileServer(http.Dir(dir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.NotFound(w, r)
+			return
+		}
+		p := path.Clean("/" + r.URL.Path)
+		if info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p))); err == nil && !info.IsDir() {
+			if strings.HasPrefix(p, "/assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // 文件名带内容哈希
+			}
+			files.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeFile(w, r, filepath.Join(dir, "index.html"))
+	})
 }

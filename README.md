@@ -31,28 +31,41 @@ Go + PostgreSQL + Redis，独立仓库、独立数据库。对接的 sub2api 基
 
 ## 状态
 
-第一期（M0–M5）后端已完成：卖家上架、调度、买家 Key 与 Edge、结算与对账、质量检测、兼容闸门。前端尚未实现。详见 [11 路线图](docs/11-roadmap.md)，其中列出了需要运营方完成的事项（sub2api 管理员合规确认、真实厂商授权联调、支付通道、题库、压测）。
+第一期（M0–M5）与前端已完成：卖家上架、调度、买家 Key 与 Edge、结算与对账、质量检测、兼容闸门，以及市场、买家中心、卖家中心、管理后台的页面。详见 [11 路线图](docs/11-roadmap.md)，其中列出了需要运营方完成的事项（sub2api 管理员合规确认、真实厂商授权联调、支付通道、题库、压测）。
 
-## 运行
+## 快速体验（本地）
 
-三个服务共用一份配置（见 `config.example.yaml`，敏感项用环境变量覆盖）：
+不需要真实的 sub2api 与厂商账号：`scripts/dev.sh` 启动 PostgreSQL / Redis 容器、sub2api 替身（`cmd/fake-sub2api`，在 sub2api v0.2.14 的真实表结构上模拟 Admin API、用户 API 与网关）和三个服务，并写入演示数据（开放厂商、代理、默认分组、本地可通过的题库）。
 
 ```bash
-make build
-bin/api    -config config.yaml   # 控制面接口，启动时执行本系统迁移、创建初始管理员、写入内置题库
-bin/worker -config config.yaml   # 后台任务（可多副本，自动选主）
-bin/edge   -config config.yaml   # 买家 API 入口
+make dev-up        # 构建前端与后端并启动；打开 http://127.0.0.1:8080
+make dev-down
 ```
 
-依赖：PostgreSQL（本系统库）、Redis、sub2api（Admin API Key、只读库账号；sub2api 需关闭登录验证码，管理员需完成合规确认）。上线前把 sub2api 的分组与账号交由本系统管理（`tm-` 前缀），sub2api 配置要求见 [02 架构](docs/02-architecture.md) 第 6 节。
+管理员 `admin@dev.local` / `admin-password-1`。可以注册一个卖家接入 Claude（授权码随便填一个词，同一个词代表同一个官方账号），等上架检测通过后挂单；再注册一个买家充值（管理员在后台确认到账）、创建 Key，用页面上给出的 curl 调用 `http://127.0.0.1:8090`。前端开发用 `cd web && pnpm dev`（http://127.0.0.1:5173，/api 代理到 :8080）。
+
+## 部署
+
+一个镜像包含全部组件（`Dockerfile`），`deploy/docker-compose.yml` 是部署示例（本系统的 PostgreSQL、Redis、api、worker、edge；sub2api 单独部署）：
+
+```bash
+cp deploy/.env.example deploy/.env    # 填写密钥与 sub2api 连接信息
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+```
+
+只需对外暴露 api（控制面与前端，`:8080`）和 edge（买家调用模型，`:8090`），并把负载均衡地址配置为 `TRUSTED_PROXIES`。不使用容器时，三个服务共用一份配置（见 `config.example.yaml`），分别运行 `bin/api`、`bin/worker`、`bin/edge`。
+
+依赖：PostgreSQL（本系统库）、Redis、sub2api（Admin API Key、只读库账号；sub2api 需关闭登录验证码，管理员需完成合规确认）。sub2api 配置要求见 [02 架构](docs/02-architecture.md) 第 6 节。
 
 ## 开发
 
-需要 Go 1.26+、Docker（集成测试用的 PostgreSQL 与 Redis）、本地 sub2api 仓库（兼容检查与集成测试用）。
+需要 Go 1.26+、Node 22 与 pnpm、Docker（PostgreSQL 与 Redis）、本地 sub2api 仓库（兼容检查、集成测试与开发环境用）。
 
 ```bash
-make build              # 构建 bin/api、bin/worker、bin/edge、bin/s2a-compat
+make build              # 构建 bin/api、bin/worker、bin/edge、bin/s2a-compat、bin/fake-sub2api
 make test               # 单元测试
+make web-test           # 前端单元测试（vitest）
+make web-build          # 前端类型检查与构建（web/dist）
 make test-db-up         # 启动测试用 PostgreSQL（55432）与 Redis（56379）
 make test-integration   # 集成测试：本系统迁移、出站表、契约查询，以及基于 sub2api 替身的端到端测试
 make lint
@@ -78,7 +91,9 @@ TM_SMOKE_GROUP_ID=1 go test -tags smoke ./internal/sub2api/ -v
 ### 目录
 
 ```
-cmd/            api、worker、edge、s2a-compat
+cmd/            api、worker、edge、s2a-compat、fake-sub2api（开发用替身）
+web/            前端（Vue 3 + TypeScript + Vite + Tailwind）
+deploy/         docker compose 部署示例
 contract/       对 sub2api 的依赖契约：contract.yaml 与只读查询
 internal/
   app/          组装各进程的依赖与服务
@@ -99,6 +114,6 @@ internal/
   testutil/     临时数据库、sub2api 替身
   e2e/          端到端测试
 migrations/     本系统数据库迁移
-scripts/        运维脚本
+scripts/        受控升级 sub2api、本地开发环境
 docs/           设计文档
 ```

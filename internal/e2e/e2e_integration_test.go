@@ -571,6 +571,23 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 	if len(detail) != 2 || detail[0].EndReason != "retry" || detail[1].EndReason != "completed" {
 		t.Fatalf("request detail should show the failover: %+v", detail)
 	}
+	// 用量明细里的 sub2api 请求 ID 也能查到同一次请求
+	var usageItems []struct {
+		RequestID string `json:"request_id"`
+		Channel   string `json:"channel"`
+	}
+	buyer.must("GET", "/api/buyer/usage", nil, &usageItems)
+	for _, u := range usageItems {
+		if u.Channel == "pool" {
+			var viaUsage []struct {
+				Hop int `json:"hop"`
+			}
+			buyer.must("GET", "/api/buyer/usage/"+url.PathEscape(u.RequestID), nil, &viaUsage)
+			if len(viaUsage) != 2 {
+				t.Fatalf("request detail by sub2api request id: %+v", viaUsage)
+			}
+		}
+	}
 
 	// 解冻与提现
 	if _, err := billing.Unfreeze(ctx, e.app.DB, 7, time.Now().Add(8*24*time.Hour)); err != nil {

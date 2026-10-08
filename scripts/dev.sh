@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# 本地开发 / 演示环境：PostgreSQL 与 Redis（docker）、sub2api 替身、market-api、market-worker、market-edge，并写入演示数据。
+# sub2api 替身不访问任何真实上游（网关按约定作答并按真实规则记账），只用于开发与演示，不能用于生产。
+#
+# 用法：
+#   scripts/dev.sh up       启动全部服务（首次会建库并写入演示数据）
+#   scripts/dev.sh down     停止服务
+#   scripts/dev.sh reset    停止服务并删除开发数据库
+#   scripts/dev.sh status   查看进程
+#
+# 前端开发：另开终端执行 cd web && pnpm dev，浏览器打开 http://127.0.0.1:5173（/api 代理到 :8080）。
+# 也可以先 cd web && pnpm build，market-api 会直接提供 web/dist（http://127.0.0.1:8080）。
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+SUB2API_REPO="${SUB2API_REPO:-$ROOT/../github-fork/sub2api}"
+DATA="$ROOT/data/dev"
+PG_DSN_BASE="postgres://tm:tm@127.0.0.1:55432"
+MARKET_DB=tm_dev
+FAKE_DB=tm_dev_sub2api
+ADMIN_EMAIL=admin@dev.local
+ADMIN_PASSWORD=admin-password-1
+API=http://127.0.0.1:8080
+mkdir -p "$DATA"
+
+ensure_containers() {
+  docker start tm-test-pg >/dev/null 2>&1 || docker run -d --name tm-test-pg -e POSTGRES_USER=tm -e POSTGRES_PASSWORD=tm -e POSTGRES_DB=tm -p 55432:5432 postgres:16-alpine >/dev/null
+  docker start tm-test-redis >/dev/null 2>&1 || docker run -d --name tm-test-redis -p 56379:6379 redis:7-alpine >/dev/null
+  for _ in $(seq 1 30); do
+    docker exec tm-test-pg pg_isready -U tm >/dev/null 2>&1 && return
+    sleep 1
+  done
+  echo "PostgreSQL 未就绪" >&2
+  exit 1
+}
+
+ensure_db() {
+  local exists
+  exists="$(docker exec tm-test-pg psql -U tm -d tm -Atc "SELECT 1 FROM pg_database WHERE datname = '$1'")"
+  [[ "$exists" == "1" ]] || docker exec tm-test-pg psql -U tm -d tm -qc "CREATE DATABASE $1"
+}
+
+start() { # name, command...
+  local name=$1
+  shift
+  if [[ -f "$DATA/$name.pid" ]] && kill -0 "$(cat "$DATA/$name.pid")" 2>/dev/null; then
+    echo "  $name 已在运行"
+    return
+  fi
+  nohup "$@" >"$DATA/$name.log" 2>&1 &
+  echo $! >"$DATA/$name.pid"
+  echo "  $name 已启动（日志 data/dev/$name.log）"
+}
+
+wait_http() { # 任何 HTTP 响应都算就绪
+  for _ in $(seq 1 120); do
+    curl -s -o /dev/null "$1" 2>/dev/null && return
+    sleep 1
+  done
+  echo "等待 $1 超时" >&2
+  exit 1
+}
+
+market_env() {
+  export TM_ENV=dev
+  export TM_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
+  export TM_REDIS_ADDR=127.0.0.1:56379 TM_REDIS_DB=2
+  export TM_SUB2API_BASE_URL=http://127.0.0.1:18081 TM_SUB2API_ADMIN_API_KEY=dev-admin-key
+  export TM_SUB2API_REPLICA_DSN="$PG_DSN_BASE/$FAKE_DB?sslmode=disable"
+  export TM_CRYPTO_ACTIVE_KEY_ID=k1 TM_CRYPTO_KEYS="k1:ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleS0="
+  export TM_CRYPTO_HASH_PEPPER=dev-pepper
+  export TM_AUTH_JWT_SECRET=dev-jwt-secret-dev-jwt-secret-dev-jwt-secret
+  export TM_BOOTSTRAP_ADMIN_EMAIL=$ADMIN_EMAIL TM_BOOTSTRAP_ADMIN_PASSWORD=$ADMIN_PASSWORD
+  export TM_HTTP_ADDR=127.0.0.1:8080 TM_EDGE_ADDR=127.0.0.1:8090 TM_EDGE_PUBLIC_URL=http://127.0.0.1:8090
+  export TM_EDGE_SPOOL_DIR="$DATA/edge-spool"
+  if [[ -f web/dist/index.html ]]; then export TM_HTTP_WEB_DIR="$ROOT/web/dist"; fi
+}
+
+api() { # method path [json]
+  curl -fsS -X "$1" "$API$2" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' ${3:+-d "$3"}
+}
+
+seed() {
+  [[ -f "$DATA/seeded" ]] && return
+  echo "写入演示数据…"
+  TOKEN="$(curl -fsS -X POST "$API/api/auth/login" -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | sed -E 's/.*"token":"([^"]+)".*/\1/')"
+  # 等 worker 完成首次兼容自检，之前对 sub2api 的写入会被拒绝（安全模式）
+  for _ in $(seq 1 60); do
+    api GET /api/admin/sub2api/status | grep -q '"guard_state":"normal"' && break
+    sleep 1
+  done
+  for p in anthropic openai gemini kimi zhipu; do
+    api PUT "/api/admin/vendors/$p" '{"enabled":true}' >/dev/null
+  done
+  for i in $(seq 1 8); do
+    api POST /api/admin/proxies "{\"name\":\"dev-proxy-$i\",\"protocol\":\"socks5\",\"host\":\"10.255.0.$i\",\"port\":1080,\"region\":\"dev\"}" >/dev/null
+  done
+  api POST /api/admin/pools '{"name":"tm-pool-claude","platform":"anthropic","sell_multiplier":0.8}' >/dev/null
+  api POST /api/admin/pools '{"name":"tm-pool-gpt","platform":"openai","sell_multiplier":0.7}' >/dev/null
+  api POST /api/admin/pools '{"name":"tm-pool-all","platform":"composite","sell_multiplier":0.9}' >/dev/null
+  # 替身只会回答"口令题"：把内置题库下线，换成口令题，让上架检测能在本地通过
+  for id in $(api GET '/api/admin/probe-items?status=active' | grep -o '"id":[0-9]*' | cut -d: -f2); do
+    api POST "/api/admin/probe-items/$id/retire" >/dev/null
+  done
+  for i in $(seq 1 12); do
+    api POST /api/admin/probe-items "{\"suite\":\"iq\",\"category\":\"recall\",\"prompt\":\"Q$i: reply with the code PONG$i and nothing else\",\"grader\":{\"type\":\"contains\",\"answer\":\"PONG$i\"},\"max_tokens\":32}" >/dev/null
+  done
+  api PUT /api/admin/settings '{"refund_lock_seconds":5,"price_change_cooldown_minutes":1}' >/dev/null
+  touch "$DATA/seeded"
+}
+
+up() {
+  [[ -d "$SUB2API_REPO/.git" ]] || { echo "找不到 sub2api 仓库：$SUB2API_REPO（用 SUB2API_REPO 指定）" >&2; exit 1; }
+  ensure_containers
+  ensure_db $MARKET_DB
+  ensure_db $FAKE_DB
+  echo "构建…"
+  go build -o bin/ ./cmd/...
+  echo "启动服务…"
+  start fake-sub2api bin/fake-sub2api --dsn "$PG_DSN_BASE/$FAKE_DB?sslmode=disable" --sub2api-repo "$SUB2API_REPO" --listen 127.0.0.1:18081
+  wait_http "http://127.0.0.1:18081/api/v1/admin/system/version"
+  market_env
+  start api bin/api
+  wait_http "$API/healthz"
+  start worker bin/worker
+  start edge bin/edge
+  seed
+  cat <<INFO
+
+开发环境已就绪：
+  控制面 / 前端  $API        （前端开发服务器：cd web && pnpm dev → http://127.0.0.1:5173）
+  买家调用地址   http://127.0.0.1:8090
+  管理员         $ADMIN_EMAIL / $ADMIN_PASSWORD
+  sub2api 替身   http://127.0.0.1:18081（Admin Key: dev-admin-key）
+提示：worker 首次兼容自检通过后才会写入 sub2api；新上游的上架检测约 30 秒一轮，用量入账有约 2 分钟安全延迟。
+INFO
+}
+
+down() {
+  for name in edge worker api fake-sub2api; do
+    if [[ -f "$DATA/$name.pid" ]]; then
+      kill "$(cat "$DATA/$name.pid")" 2>/dev/null || true
+      rm -f "$DATA/$name.pid"
+      echo "  $name 已停止"
+    fi
+  done
+}
+
+case "${1:-}" in
+  up) up ;;
+  down) down ;;
+  reset)
+    down
+    docker exec tm-test-pg psql -U tm -d tm -qc "DROP DATABASE IF EXISTS $MARKET_DB WITH (FORCE)" -c "DROP DATABASE IF EXISTS $FAKE_DB WITH (FORCE)"
+    docker exec tm-test-redis redis-cli -n 2 flushdb >/dev/null
+    rm -rf "$DATA"
+    echo "已重置"
+    ;;
+  status)
+    for name in fake-sub2api api worker edge; do
+      if [[ -f "$DATA/$name.pid" ]] && kill -0 "$(cat "$DATA/$name.pid")" 2>/dev/null; then echo "$name: 运行中"; else echo "$name: 未运行"; fi
+    done
+    ;;
+  *) sed -n '2,13p' "$0"; exit 1 ;;
+esac

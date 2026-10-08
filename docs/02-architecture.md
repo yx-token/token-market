@@ -7,7 +7,7 @@
 | **market-api** | 控制面 HTTP 接口：买家、卖家、管理后台 | 否 |
 | **market-worker** | 后台任务：用量拉取、结算、探测调度、评分判定、回收报价、调度执行器、状态对账、兼容自检。多副本时用 PostgreSQL advisory lock 选主，只有持锁的副本运行任务 | 否 |
 | **market-edge** | 买家 API 入口：鉴权买家 Key、解析卖家链、转发到 sub2api、故障转移 | **是** |
-| **market-web** | 前端：市场、买家控制台、卖家门户、管理后台（第一期未实现，技术栈待定） | 否 |
+| **market-web** | 前端：市场、买家中心、卖家中心、管理后台。Vue 3 + TypeScript + Vite + Pinia + Tailwind（与 sub2api 前端同一技术栈），构建产物由 market-api 直接提供 | 否 |
 | **s2a-compat** | 命令行工具：sub2api 升级前的兼容检查 | 否 |
 | PostgreSQL（market） | 本系统数据库 | 否（Edge 不直接访问） |
 | Redis（market） | 缓存、任务队列、Edge 路由配置分发 | Edge 读取 |
@@ -22,7 +22,8 @@ token-market/
 │   ├── api/          # market-api
 │   ├── worker/       # market-worker
 │   ├── edge/         # market-edge
-│   └── s2a-compat/   # 兼容闸门
+│   ├── s2a-compat/   # 兼容闸门
+│   └── fake-sub2api/ # 开发与演示用的 sub2api 替身（不能用于生产）
 ├── internal/
 │   ├── app/          # 按配置组装各进程共用的依赖与服务；同步写入 sub2api 的兼容门控
 │   ├── httpapi/      # 控制面 HTTP 接口（路由与处理函数）
@@ -44,7 +45,9 @@ token-market/
 │   └── e2e/          # 端到端测试
 ├── contract/         # sub2api 契约：contract.yaml、queries/*.sql
 ├── migrations/       # 本系统数据库迁移
-├── scripts/          # 受控升级 sub2api 等运维脚本
+├── web/              # 前端（src/api 接口封装、src/views 页面、src/components 公共组件）
+├── deploy/           # docker compose 部署示例
+├── scripts/          # 受控升级 sub2api、本地开发环境
 └── docs/
 ```
 

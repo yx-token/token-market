@@ -7,6 +7,7 @@ env: dev                                # prod 时强制要求 crypto.hash_peppe
 http:
   addr: ":8080"                         # market-api
   trusted_proxies: []                   # 前置负载均衡的 IP / CIDR；只有来自它们的请求才采信 X-Forwarded-For
+  web_dir: ""                           # 前端构建产物目录（web/dist），设置后 market-api 同时提供前端页面
 
 database:
   dsn: "postgres://tm:tm@127.0.0.1:5432/token_market?sslmode=disable"
@@ -52,6 +53,7 @@ worker:
   balance_reconcile_interval: 30m       # 买家余额恒等式核对
 
 edge:
+  public_url: "https://api.example.com" # 买家调用模型使用的地址，在买家控制台展示
   addr: ":8090"                         # 买家 API 入口
   admin_addr: ":8091"                   # /healthz、/debug/vars
   connect_timeout: 3s

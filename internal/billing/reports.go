@@ -2,6 +2,8 @@ package billing
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 
 	"github.com/DueGin/token-market/internal/platform/httpx"
@@ -68,7 +70,19 @@ type AttemptView struct {
 }
 
 // RequestDetail 返回一次买家请求的逐跳明细：每一跳是否产生费用，以 sub2api 记录为准。
-func RequestDetail(ctx context.Context, db DB, userID int64, edgeRequestID string) ([]AttemptView, error) {
+// requestID 可以是 Edge 请求 ID（响应头 X-TM-Request-ID），也可以是用量明细中的 sub2api 请求 ID（client:…）。
+func RequestDetail(ctx context.Context, db DB, userID int64, requestID string) ([]AttemptView, error) {
+	edgeRequestID := requestID
+	if sub, ok := strings.CutPrefix(requestID, "client:"); ok {
+		err := db.QueryRow(ctx, `SELECT a.edge_request_id FROM edge_attempts a JOIN buyer_keys bk ON bk.id = a.buyer_key_id AND bk.user_id = $1
+			WHERE a.sub2api_request_id = $2 LIMIT 1`, userID, sub).Scan(&edgeRequestID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, httpx.NotFound("REQUEST_NOT_FOUND", "request not found")
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	rows, err := db.Query(ctx, `SELECT a.hop, a.listing_id, a.pool_id, a.http_status, a.end_reason, a.committed, a.sub2api_request_id,
 			ur.sub2api_usage_id IS NOT NULL, COALESCE(ur.actual_cost, 0)::float8, a.started_at
 		FROM edge_attempts a

@@ -142,7 +142,7 @@ response_headers:                        # Edge 对账依赖的响应头
 | 余额接口幂等 | 同一 `Idempotency-Key` 调两次，余额只增加一次 |
 | 自定义 key | `custom_key` 创建的 key 可正常调用 |
 
-**用 sub2api 替身在真实表结构上验证**（`internal/testutil/fakesub2api` + `internal/e2e`，构建标签 `integration`）：替身在应用了 v0.2.14 全部迁移的数据库上实现本系统用到的 Admin API、用户 API 与网关，行为对照上表（失败请求不写用量、`X-Client-Request-ID`、余额接口幂等、`custom_key` 冲突、扣费可扣成负数、组内按优先级选账号），端到端测试覆盖上架、调度、Edge 故障转移、入账、对账、退款、提现、质量检测与申诉。替身只能证明本系统对这些行为的理解自洽；对真实 sub2api 的行为验证仍需在预发环境跑冒烟测试（需要管理员完成合规确认）。
+**用 sub2api 替身在真实表结构上验证**（`internal/testutil/fakesub2api` + `internal/e2e`，构建标签 `integration`）：替身在应用了 v0.2.14 全部迁移的数据库上实现本系统用到的 Admin API、用户 API 与网关，行为对照上表（失败请求不写用量、`X-Client-Request-ID`、余额接口幂等、`custom_key` 冲突、扣费可扣成负数、组内按优先级选账号），端到端测试覆盖上架、调度、Edge 故障转移、入账、对账、退款、提现、质量检测与申诉。同一个替身也以 `cmd/fake-sub2api` 的形式用于本地开发与演示（`scripts/dev.sh`）。替身只能证明本系统对这些行为的理解自洽；对真实 sub2api 的行为验证仍需在预发环境跑冒烟测试（需要管理员完成合规确认）。
 
 **已在 sub2api 0.2.14 上实测**（`internal/sub2api/smoke_test.go`，构建标签 `smoke`）：影子用户登录与刷新令牌；用 `custom_key` 创建、停用、启用、删除 key，重复的 `custom_key` 被拒绝；网关错误响应带 `X-Client-Request-ID`，失败请求没有写 usage_log；余额不足时网关返回 HTTP 403，`code` 为字符串 `INSUFFICIENT_BALANCE`。Admin API 部分需要管理员先完成合规确认才能实测。
 

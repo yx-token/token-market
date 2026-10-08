@@ -683,19 +683,20 @@ func (e *Engine) buildSummary(run runRow, u *upstreamRow, a Assessment, attribut
 	if a.ReasoningRatio != nil {
 		suites["reasoning"] = map[string]any{"ratio_to_baseline": *a.ReasoningRatio}
 	}
+	// 建议以代码形式保存，由前端翻译成文案
 	var suggestions []string
 	switch {
 	case a.Verdict == "unavailable":
-		suggestions = append(suggestions, "the account did not respond normally; check whether the authorization was revoked or the subscription expired, then re-authorize")
+		suggestions = append(suggestions, "check_authorization")
 	case a.Verdict == "degraded" && attribution == "account":
-		suggestions = append(suggestions, "check whether this account is heavily used elsewhere or shared with others", "consider re-authorizing the account")
+		suggestions = append(suggestions, "check_shared_usage", "reauthorize")
 	case attribution == "proxy":
-		suggestions = append(suggestions, "the platform will rotate the proxy; no action needed")
+		suggestions = append(suggestions, "proxy_rotation")
 	case attribution == "vendor_wide":
-		suggestions = append(suggestions, "the vendor appears degraded for all accounts; this does not affect your rating")
+		suggestions = append(suggestions, "vendor_wide")
 	}
 	if u.privacyOK != nil && !*u.privacyOK {
-		suggestions = append(suggestions, "disable training data usage on this account")
+		suggestions = append(suggestions, "disable_training")
 	}
 	out := map[string]any{
 		"verdict":    a.Verdict,

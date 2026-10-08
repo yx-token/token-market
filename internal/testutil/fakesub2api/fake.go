@@ -36,7 +36,8 @@ type Server struct {
 	AdminKey string
 	Version  string
 
-	HTTP *httptest.Server
+	HTTP    *httptest.Server
+	handler http.Handler
 
 	mu       sync.Mutex
 	idem     map[string]cached
@@ -53,17 +54,32 @@ type cached struct {
 	body   []byte
 }
 
+// New 创建替身并在随机端口上启动（测试用）。
 func New(db *pgxpool.Pool, adminKey string) *Server {
+	s := NewUnstarted(db, adminKey)
+	s.HTTP = httptest.NewServer(s.Handler())
+	return s
+}
+
+// NewUnstarted 创建替身但不监听端口，由调用方用 Handler 自行提供服务（开发环境的 cmd/fake-sub2api）。
+func NewUnstarted(db *pgxpool.Pool, adminKey string) *Server {
 	s := &Server{
 		DB: db, AdminKey: adminKey, Version: "0.2.14",
 		idem: map[string]cached{}, tokens: map[string]int64{}, refresh: map[string]int64{},
 		sessions: map[string]bool{}, failing: map[int64]int{},
 	}
-	s.HTTP = httptest.NewServer(s.routes())
+	s.handler = s.routes()
 	return s
 }
 
-func (s *Server) Close() { s.HTTP.Close() }
+// Handler 返回替身的 HTTP 处理器（Admin API、用户 API、网关）。
+func (s *Server) Handler() http.Handler { return s.handler }
+
+func (s *Server) Close() {
+	if s.HTTP != nil {
+		s.HTTP.Close()
+	}
+}
 
 func (s *Server) URL() string { return s.HTTP.URL }
 

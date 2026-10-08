@@ -38,6 +38,8 @@ type AuthConfig struct {
 
 // EdgeConfig 是 market-edge 的配置。
 type EdgeConfig struct {
+	// PublicURL 是买家调用模型时使用的地址（Edge 对外的域名），在买家控制台展示
+	PublicURL        string        `yaml:"public_url"`
 	Addr             string        `yaml:"addr"`
 	AdminAddr        string        `yaml:"admin_addr"`         // 健康检查与指标
 	ConnectTimeout   time.Duration `yaml:"connect_timeout"`    // 每跳连接 sub2api 的超时
@@ -53,6 +55,8 @@ type EdgeConfig struct {
 
 type HTTPConfig struct {
 	Addr string `yaml:"addr"`
+	// WebDir 是前端构建产物目录（web/dist）；设置后 market-api 同时提供前端页面
+	WebDir string `yaml:"web_dir"`
 	// TrustedProxies 是前置负载均衡的 IP 或 CIDR，只有来自它们的请求才采信 X-Forwarded-For
 	TrustedProxies []string `yaml:"trusted_proxies"`
 }
@@ -128,6 +132,7 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 	str := map[string]*string{
 		"TM_ENV":                      &cfg.Env,
 		"TM_HTTP_ADDR":                &cfg.HTTP.Addr,
+		"TM_HTTP_WEB_DIR":             &cfg.HTTP.WebDir,
 		"TM_DATABASE_DSN":             &cfg.Database.DSN,
 		"TM_REDIS_ADDR":               &cfg.Redis.Addr,
 		"TM_REDIS_PASSWORD":           &cfg.Redis.Password,
@@ -141,6 +146,9 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 		"TM_BOOTSTRAP_ADMIN_PASSWORD": &cfg.Auth.BootstrapAdminPassword,
 		"TM_SUB2API_GATEWAY_URL":      &cfg.Sub2API.GatewayURL,
 		"TM_EDGE_ADDR":                &cfg.Edge.Addr,
+		"TM_EDGE_PUBLIC_URL":          &cfg.Edge.PublicURL,
+		"TM_EDGE_ADMIN_ADDR":          &cfg.Edge.AdminAddr,
+		"TM_WORKER_ADMIN_ADDR":        &cfg.Worker.AdminAddr,
 		"TM_EDGE_SPOOL_DIR":           &cfg.Edge.SpoolDir,
 	}
 	for name, dst := range str {

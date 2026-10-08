@@ -2,7 +2,7 @@ SUB2API_REPO ?= ../github-fork/sub2api
 TEST_DATABASE_DSN ?= postgres://tm:tm@127.0.0.1:55432/tm?sslmode=disable
 TEST_REDIS_ADDR ?= 127.0.0.1:56379
 
-.PHONY: build test test-integration lint test-db-up test-db-down compat-check
+.PHONY: build test test-integration lint test-db-up test-db-down compat-check web-build web-test dev-up dev-down image
 
 build:
 	go build -o bin/ ./cmd/...
@@ -30,3 +30,21 @@ test-db-down:
 compat-check:
 	go run ./cmd/s2a-compat check --sub2api-repo "$(SUB2API_REPO)" --current "$(CURRENT)" --target "$(TARGET)" \
 		$(if $(TARGET_VERSION),--target-version "$(TARGET_VERSION)")
+
+# 前端
+web-build:
+	cd web && pnpm install --frozen-lockfile && pnpm run build
+
+web-test:
+	cd web && pnpm test
+
+# 本地开发 / 演示环境（sub2api 替身 + 全部服务，见 scripts/dev.sh）
+dev-up: web-build
+	scripts/dev.sh up
+
+dev-down:
+	scripts/dev.sh down
+
+# 镜像（无法直连 Docker Hub 时：make image REGISTRY=<镜像源>/）
+image:
+	docker build $(if $(REGISTRY),--build-arg REGISTRY=$(REGISTRY)) -t token-market:latest .

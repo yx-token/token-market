@@ -1,0 +1,136 @@
+// 控制面接口（路径与 docs/10-api.md、internal/httpapi/server.go 一致）。
+import { http, type Query } from './client'
+import type * as T from './types'
+
+type Ok = { status: string }
+
+export const auth = {
+  register: (email: string, password: string) => http.post<T.User>('/api/auth/register', { email, password }),
+  login: (email: string, password: string) => http.post<T.LoginResult>('/api/auth/login', { email, password }),
+  refresh: () => http.post<T.LoginResult>('/api/auth/refresh'),
+  me: () => http.get<T.User>('/api/me'),
+  submitKYC: (real_name: string, id_number: string) => http.post<Ok>('/api/me/kyc', { real_name, id_number }),
+}
+
+export const market = {
+  config: () => http.get<T.MarketConfig>('/api/market/config'),
+  listings: (q?: Query) => http.get<T.MarketItem[] | null>('/api/market/listings', q),
+  listing: (id: number) => http.get<T.MarketItem>(`/api/market/listings/${id}`),
+  pools: () => http.get<T.PoolItem[] | null>('/api/market/pools'),
+  vendors: () => http.get<T.VendorView[] | null>('/api/market/vendors'),
+  prices: () => http.get<T.Price[] | null>('/api/market/prices'),
+}
+
+export const buyer = {
+  wallet: () => http.get<T.Wallet>('/api/buyer/wallet'),
+  recharge: (amount: number) =>
+    http.post<{ order: T.RechargeOrder; payment: { provider: string; instructions: string } }>('/api/buyer/recharge', { amount }),
+  getRecharge: (id: number) => http.get<T.RechargeOrder>(`/api/buyer/recharge/${id}`),
+  cancelRecharge: (id: number) => http.post<Ok>(`/api/buyer/recharge/${id}/cancel`),
+  requestRefund: (note: string) => http.post<T.Refund>('/api/buyer/refunds', { note }),
+  refunds: () => http.get<T.Refund[] | null>('/api/buyer/refunds'),
+  keys: () => http.get<T.BuyerKey[] | null>('/api/buyer/keys'),
+  key: (id: number) => http.get<T.BuyerKey>(`/api/buyer/keys/${id}`),
+  createKey: (body: { name: string; route: T.RouteInput; limits: T.Limits }) => http.post<T.CreatedKey>('/api/buyer/keys', body),
+  updateKey: (id: number, body: { name?: string; route?: T.RouteInput; limits?: T.Limits }) =>
+    http.put<T.BuyerKey>(`/api/buyer/keys/${id}`, body),
+  setKeyEnabled: (id: number, enabled: boolean) => http.post<T.BuyerKey>(`/api/buyer/keys/${id}/${enabled ? 'enable' : 'disable'}`),
+  deleteKey: (id: number) => http.del<Ok>(`/api/buyer/keys/${id}`),
+  usage: (q?: Query) => http.get<T.UsageItem[] | null>('/api/buyer/usage', q),
+  requestDetail: (rid: string) => http.get<T.AttemptView[] | null>(`/api/buyer/usage/${encodeURIComponent(rid)}`),
+  bills: (days = 30) => http.get<T.BillDay[] | null>('/api/buyer/bills', { days }),
+}
+
+export const seller = {
+  vendors: () => http.get<T.VendorView[] | null>('/api/seller/vendors'),
+  upstreams: () => http.get<T.Upstream[] | null>('/api/seller/upstreams'),
+  upstream: (id: number) => http.get<T.UpstreamDetail>(`/api/seller/upstreams/${id}`),
+  createUpstream: (platform: string, auth_type: string) => http.post<T.Upstream>('/api/seller/upstreams', { platform, auth_type }),
+  startOAuth: (id: number) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/oauth/start`),
+  completeOAuth: (id: number, code: string) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/oauth/complete`, { code }),
+  reauthorize: (id: number) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/reauthorize`),
+  submitCodingKey: (id: number, api_key: string) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/coding-key`, { api_key }),
+  retryVerification: (id: number) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/retry-verification`),
+  setSelfReserve: (id: number, self_reserve_percent: number) =>
+    http.put<T.Upstream>(`/api/seller/upstreams/${id}/settings`, { self_reserve_percent }),
+  removeUpstream: (id: number) => http.del<Ok>(`/api/seller/upstreams/${id}`),
+  createListing: (id: number, body: { mode: string; multiplier?: number; join_default_pool?: boolean }) =>
+    http.post<{ listing: T.Listing; quote?: T.Quote }>(`/api/seller/upstreams/${id}/listing`, body),
+  quote: (id: number) => http.get<T.Quote | null>(`/api/seller/upstreams/${id}/quote`),
+  reports: (id: number) => http.get<T.Report[] | null>(`/api/seller/upstreams/${id}/reports`),
+  report: (id: number) => http.get<T.Report>(`/api/seller/reports/${id}`),
+  trend: (id: number, days = 30) => http.get<T.TrendPoint[] | null>(`/api/seller/upstreams/${id}/quality-trend`, { days }),
+  retest: (id: number) => http.post<{ run_id: number; note: string }>(`/api/seller/upstreams/${id}/retest`),
+  appeal: (reportId: number, reason: string) => http.post<T.Appeal>(`/api/seller/reports/${reportId}/appeal`, { reason }),
+  listings: () => http.get<T.Listing[] | null>('/api/seller/listings'),
+  listing: (id: number) => http.get<{ listing: T.Listing; price_history: T.PriceVersion[] | null }>(`/api/seller/listings/${id}`),
+  acceptQuote: (id: number) => http.post<T.Listing>(`/api/seller/listings/${id}/accept-quote`),
+  rejectQuote: (id: number) => http.post<Ok>(`/api/seller/listings/${id}/reject-quote`),
+  changePrice: (id: number, multiplier: number) => http.put<T.Listing>(`/api/seller/listings/${id}/price`, { multiplier }),
+  setDefaultPool: (id: number, join: boolean) => http.put<T.Listing>(`/api/seller/listings/${id}/default-pool`, { join }),
+  pause: (id: number) => http.post<T.Listing>(`/api/seller/listings/${id}/pause`),
+  resume: (id: number) => http.post<T.Listing>(`/api/seller/listings/${id}/resume`),
+  close: (id: number) => http.post<Ok>(`/api/seller/listings/${id}/close`),
+  earnings: () => http.get<T.Earnings>('/api/seller/earnings'),
+  lines: (q?: Query) => http.get<T.SettlementLine[] | null>('/api/seller/earnings/lines', q),
+  withdraw: (amount: number, channel: string, account_info: string) =>
+    http.post<T.Withdrawal>('/api/seller/withdrawals', { amount, channel, account_info }),
+  withdrawals: () => http.get<T.Withdrawal[] | null>('/api/seller/withdrawals'),
+}
+
+export const admin = {
+  settings: () => http.get<T.Settings>('/api/admin/settings'),
+  updateSettings: (patch: Partial<T.Settings>) => http.put<T.Settings>('/api/admin/settings', patch),
+  vendors: () => http.get<T.VendorConfig[] | null>('/api/admin/vendors'),
+  updateVendor: (platform: string, body: Partial<T.VendorConfig>) => http.put<T.VendorConfig>(`/api/admin/vendors/${platform}`, body),
+  proxies: () => http.get<T.Proxy[] | null>('/api/admin/proxies'),
+  createProxy: (body: Record<string, unknown>) => http.post<T.Proxy>('/api/admin/proxies', body),
+  syncProxy: (id: number) => http.post<T.Proxy>(`/api/admin/proxies/${id}/sync`),
+  setProxyDisabled: (id: number, disabled: boolean) => http.post<T.Proxy>(`/api/admin/proxies/${id}/${disabled ? 'disable' : 'enable'}`),
+  pools: () => http.get<T.Pool[] | null>('/api/admin/pools'),
+  createPool: (body: Record<string, unknown>) => http.post<T.Pool>('/api/admin/pools', body),
+  updatePool: (id: number, body: Record<string, unknown>) => http.put<T.Pool>(`/api/admin/pools/${id}`, body),
+  syncPool: (id: number) => http.post<T.Pool>(`/api/admin/pools/${id}/sync`),
+  policies: () => http.get<T.Policy[] | null>('/api/admin/detection-policies'),
+  upsertPolicy: (platform: string, authType: string, body: Record<string, unknown>) =>
+    http.put<T.Policy>(`/api/admin/detection-policies/${platform}${authType ? `?auth_type=${encodeURIComponent(authType)}` : ''}`, body),
+  setOverride: (upstreamId: number, body: Record<string, unknown>) => http.put<Ok>(`/api/admin/upstreams/${upstreamId}/detection-override`, body),
+  deleteOverride: (upstreamId: number) => http.del<Ok>(`/api/admin/upstreams/${upstreamId}/detection-override`),
+  probe: (upstreamId: number) => http.post<{ run_id: number }>(`/api/admin/upstreams/${upstreamId}/probe`),
+  items: (status?: string) => http.get<T.ProbeItem[] | null>('/api/admin/probe-items', { status }),
+  createItem: (body: Partial<T.ProbeItem>) => http.post<T.ProbeItem>('/api/admin/probe-items', body),
+  updateItem: (id: number, body: Partial<T.ProbeItem>) => http.put<T.ProbeItem>(`/api/admin/probe-items/${id}`, body),
+  retireItem: (id: number) => http.post<Ok>(`/api/admin/probe-items/${id}/retire`),
+  references: () => http.get<T.Upstream[] | null>('/api/admin/reference-accounts'),
+  createReference: (platform: string, auth_type: string) =>
+    http.post<{ upstream: T.Upstream; next: string }>('/api/admin/reference-accounts', { platform, auth_type }),
+  deleteReference: (id: number) => http.del<Ok>(`/api/admin/reference-accounts/${id}`),
+  qualityOverview: () => http.get<T.QualityOverview>('/api/admin/quality/overview'),
+  appeals: (status?: string) => http.get<T.Appeal[] | null>('/api/admin/appeals', { status }),
+  resolveAppeal: (id: number, action: string, note: string) => http.post<T.Appeal>(`/api/admin/appeals/${id}/resolve`, { action, note }),
+  upstreams: (q?: Query) => http.get<T.Upstream[] | null>('/api/admin/upstreams', q),
+  suspendUpstream: (id: number, suspend: boolean, reason = '') =>
+    http.post<T.Upstream>(`/api/admin/upstreams/${id}/${suspend ? 'suspend' : 'unsuspend'}`, suspend ? { reason } : undefined),
+  removeUpstream: (id: number) => http.del<Ok>(`/api/admin/upstreams/${id}`),
+  pendingKYC: () => http.get<T.KYCItem[] | null>('/api/admin/kyc'),
+  reviewKYC: (userId: number, approve: boolean, note: string) => http.post<Ok>(`/api/admin/kyc/${userId}/review`, { approve, note }),
+  setUserStatus: (userId: number, status: string) => http.post<Ok>(`/api/admin/users/${userId}/status`, { status }),
+  recharges: (status?: string) => http.get<T.RechargeOrder[] | null>('/api/admin/recharges', { status }),
+  confirmRecharge: (id: number, provider_ref: string) => http.post<T.RechargeOrder>(`/api/admin/recharges/${id}/confirm`, { provider_ref }),
+  refunds: (status?: string) => http.get<T.Refund[] | null>('/api/admin/refunds', { status }),
+  refundPaid: (id: number, payout_ref: string) => http.post<T.Refund>(`/api/admin/refunds/${id}/paid`, { payout_ref }),
+  withdrawals: (status?: string) => http.get<T.Withdrawal[] | null>('/api/admin/withdrawals', { status }),
+  reviewWithdrawal: (id: number, approve: boolean, reason: string) =>
+    http.post<T.Withdrawal>(`/api/admin/withdrawals/${id}/review`, { approve, reason }),
+  withdrawalPaid: (id: number, body: { payout_ref?: string; failed?: boolean; reason?: string }) =>
+    http.post<T.Withdrawal>(`/api/admin/withdrawals/${id}/paid`, body),
+  anomalies: (status?: string) => http.get<T.Anomaly[] | null>('/api/admin/anomalies', { status }),
+  resolveAnomaly: (id: number, status: string, note: string) => http.post<Ok>(`/api/admin/anomalies/${id}/resolve`, { status, note }),
+  adjust: (body: { buyer_user_id: number; amount: number; reason: string; anomaly_id?: number }) =>
+    http.post<Ok>('/api/admin/adjustments', body),
+  riskEvents: (status?: string) => http.get<T.RiskEvent[] | null>('/api/admin/risk-events', { status }),
+  resolveRisk: (id: number, status: string) => http.post<Ok>(`/api/admin/risk-events/${id}/resolve`, { status }),
+  ledger: () => http.get<T.PlatformLedger>('/api/admin/ledger'),
+  sub2apiStatus: () => http.get<T.Sub2APIStatus>('/api/admin/sub2api/status'),
+  auditLogs: (q?: Query) => http.get<T.AuditLog[] | null>('/api/admin/audit-logs', q),
+}

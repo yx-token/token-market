@@ -126,6 +126,18 @@ func (s *Server) marketPools(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, pools)
 }
 
+// marketConfig 返回前端需要的公开参数。
+func (s *Server) marketConfig(w http.ResponseWriter, r *http.Request) error {
+	st, err := s.settings(r.Context())
+	if err != nil {
+		return err
+	}
+	return ok(w, map[string]any{
+		"edge_url": s.EdgeURL, "commission_rate": st.CommissionRate, "freeze_days": st.FreezeDays,
+		"withdraw_min": st.WithdrawMin, "max_hops": 5,
+	})
+}
+
 func (s *Server) marketPrices(w http.ResponseWriter, r *http.Request) error {
 	if s.Market.Prices == nil {
 		return ok(w, []any{})
