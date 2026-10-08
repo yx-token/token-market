@@ -25,6 +25,7 @@ type Spec struct {
 	Enums           map[string][]string     `yaml:"enums"`
 	AdminAPI        []EndpointSpec          `yaml:"admin_api"`
 	UserAPI         []EndpointSpec          `yaml:"user_api"`
+	GatewayAPI      []EndpointSpec          `yaml:"gateway_api"`
 	Config          map[string]any          `yaml:"config"`
 	ResponseHeaders map[string]string       `yaml:"response_headers"`
 }

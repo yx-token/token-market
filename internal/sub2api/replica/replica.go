@@ -27,6 +27,11 @@ const (
 	qTMAccountGroups   = "tm_account_groups"
 	qTMGroups          = "tm_groups"
 	qUserBalances      = "user_balances"
+	qUserByEmail       = "user_by_email"
+	qAPIKeyByKey       = "api_key_by_key"
+	qGroupByName       = "group_by_name"
+	qAccountByName     = "account_by_name"
+	qUsageSumAfter     = "usage_sum_after"
 )
 
 type Reader struct {
@@ -39,7 +44,8 @@ func New(db Querier) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, name := range []string{qAppliedMigrations, qUsageLogsAfter, qTMAccounts, qTMAccountGroups, qTMGroups, qUserBalances} {
+	for _, name := range []string{qAppliedMigrations, qUsageLogsAfter, qTMAccounts, qTMAccountGroups, qTMGroups, qUserBalances,
+		qUserByEmail, qAPIKeyByKey, qGroupByName, qAccountByName, qUsageSumAfter} {
 		if _, ok := qs[name]; !ok {
 			return nil, fmt.Errorf("replica: contract query %s missing", name)
 		}
@@ -141,22 +147,37 @@ func (r *Reader) TMAccounts(ctx context.Context) ([]Account, error) {
 	if err != nil {
 		return nil, fmt.Errorf("replica %s: %w", qTMAccounts, err)
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Account, error) {
-		var a Account
-		var extra []byte
-		err := row.Scan(&a.ID, &a.Name, &a.Platform, &a.Type, &a.Status, &a.ErrorMessage, &a.Schedulable, &a.Priority,
-			&a.Concurrency, &a.LoadFactor, &a.RateMultiplier, &a.RateLimitResetAt, &a.OverloadUntil,
-			&a.TempUnschedulableUntil, &a.TempUnschedulableReason, &extra, &a.DeletedAt)
-		if err != nil {
-			return a, err
+	return pgx.CollectRows(rows, scanAccount)
+}
+
+// AccountByName 按名称查找账号，不存在时返回 nil。
+func (r *Reader) AccountByName(ctx context.Context, name string) (*Account, error) {
+	rows, err := r.db.Query(ctx, r.queries[qAccountByName], name)
+	if err != nil {
+		return nil, fmt.Errorf("replica %s: %w", qAccountByName, err)
+	}
+	accounts, err := pgx.CollectRows(rows, scanAccount)
+	if err != nil || len(accounts) == 0 {
+		return nil, err
+	}
+	return &accounts[0], nil
+}
+
+func scanAccount(row pgx.CollectableRow) (Account, error) {
+	var a Account
+	var extra []byte
+	err := row.Scan(&a.ID, &a.Name, &a.Platform, &a.Type, &a.Status, &a.ErrorMessage, &a.Schedulable, &a.Priority,
+		&a.Concurrency, &a.LoadFactor, &a.RateMultiplier, &a.RateLimitResetAt, &a.OverloadUntil,
+		&a.TempUnschedulableUntil, &a.TempUnschedulableReason, &extra, &a.DeletedAt)
+	if err != nil {
+		return a, err
+	}
+	if len(extra) > 0 {
+		if err := json.Unmarshal(extra, &a.Extra); err != nil {
+			return a, fmt.Errorf("account %d extra: %w", a.ID, err)
 		}
-		if len(extra) > 0 {
-			if err := json.Unmarshal(extra, &a.Extra); err != nil {
-				return a, fmt.Errorf("account %d extra: %w", a.ID, err)
-			}
-		}
-		return a, nil
-	})
+	}
+	return a, nil
 }
 
 type AccountGroup struct {
@@ -191,11 +212,63 @@ func (r *Reader) TMGroups(ctx context.Context) ([]Group, error) {
 	if err != nil {
 		return nil, fmt.Errorf("replica %s: %w", qTMGroups, err)
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Group, error) {
-		var g Group
-		err := row.Scan(&g.ID, &g.Name, &g.Platform, &g.RateMultiplier, &g.IsExclusive, &g.ProfitControlEnabled, &g.DeletedAt)
-		return g, err
+	return pgx.CollectRows(rows, scanGroup)
+}
+
+// GroupByName 按名称查找分组，不存在时返回 nil。
+func (r *Reader) GroupByName(ctx context.Context, name string) (*Group, error) {
+	rows, err := r.db.Query(ctx, r.queries[qGroupByName], name)
+	if err != nil {
+		return nil, fmt.Errorf("replica %s: %w", qGroupByName, err)
+	}
+	groups, err := pgx.CollectRows(rows, scanGroup)
+	if err != nil || len(groups) == 0 {
+		return nil, err
+	}
+	return &groups[0], nil
+}
+
+func scanGroup(row pgx.CollectableRow) (Group, error) {
+	var g Group
+	err := row.Scan(&g.ID, &g.Name, &g.Platform, &g.RateMultiplier, &g.IsExclusive, &g.ProfitControlEnabled, &g.DeletedAt)
+	return g, err
+}
+
+// UserByEmail 按邮箱查找用户，不存在时返回 nil。
+func (r *Reader) UserByEmail(ctx context.Context, email string) (*UserBalance, error) {
+	rows, err := r.db.Query(ctx, r.queries[qUserByEmail], email)
+	if err != nil {
+		return nil, fmt.Errorf("replica %s: %w", qUserByEmail, err)
+	}
+	users, err := pgx.CollectRows(rows, scanUserBalance)
+	if err != nil || len(users) == 0 {
+		return nil, err
+	}
+	return &users[0], nil
+}
+
+type APIKeyRow struct {
+	ID      int64
+	UserID  int64
+	GroupID *int64
+	Status  string
+}
+
+// APIKeyByKey 按 key 值查找，不存在时返回 nil。
+func (r *Reader) APIKeyByKey(ctx context.Context, key string) (*APIKeyRow, error) {
+	rows, err := r.db.Query(ctx, r.queries[qAPIKeyByKey], key)
+	if err != nil {
+		return nil, fmt.Errorf("replica %s: %w", qAPIKeyByKey, err)
+	}
+	keys, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (APIKeyRow, error) {
+		var k APIKeyRow
+		err := row.Scan(&k.ID, &k.UserID, &k.GroupID, &k.Status)
+		return k, err
 	})
+	if err != nil || len(keys) == 0 {
+		return nil, err
+	}
+	return &keys[0], nil
 }
 
 type UserBalance struct {
@@ -209,11 +282,32 @@ func (r *Reader) UserBalances(ctx context.Context, ids []int64) ([]UserBalance, 
 	if err != nil {
 		return nil, fmt.Errorf("replica %s: %w", qUserBalances, err)
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (UserBalance, error) {
-		var u UserBalance
-		err := row.Scan(&u.ID, &u.Balance, &u.Status)
-		return u, err
-	})
+	return pgx.CollectRows(rows, scanUserBalance)
+}
+
+func scanUserBalance(row pgx.CollectableRow) (UserBalance, error) {
+	var u UserBalance
+	err := row.Scan(&u.ID, &u.Balance, &u.Status)
+	return u, err
+}
+
+// UsageSumAfter 返回游标之后各用户的消费合计（用于余额对账时扣除尚未入账的部分）。
+func (r *Reader) UsageSumAfter(ctx context.Context, afterID int64, userIDs []int64) (map[int64]float64, error) {
+	rows, err := r.db.Query(ctx, r.queries[qUsageSumAfter], afterID, userIDs)
+	if err != nil {
+		return nil, fmt.Errorf("replica %s: %w", qUsageSumAfter, err)
+	}
+	defer rows.Close()
+	out := map[int64]float64{}
+	for rows.Next() {
+		var id int64
+		var sum float64
+		if err := rows.Scan(&id, &sum); err != nil {
+			return nil, err
+		}
+		out[id] = sum
+	}
+	return out, rows.Err()
 }
 
 // ExplainAll 对每条契约查询执行 EXPLAIN（参数用 NULL 占位），用于在目标版本的表结构上

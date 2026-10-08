@@ -1,0 +1,160 @@
+package quality
+
+import (
+	"math/rand/v2"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"context"
+	"io"
+)
+
+func f(v float64) *float64 { return &v }
+
+func TestGraders(t *testing.T) {
+	cases := []struct {
+		g    Grader
+		text string
+		want bool
+	}{
+		{Grader{Type: "numeric", Number: f(1591)}, "The answer is 1,591.", true},
+		{Grader{Type: "numeric", Number: f(1591)}, "1590", false},
+		{Grader{Type: "exact", Answer: "3,7,19"}, "Sure!\n3,7,19", true},
+		{Grader{Type: "exact", Answer: "abc", CaseInsensitive: true}, "```\nABC\n```", true},
+		{Grader{Type: "contains", Answer: "carol", CaseInsensitive: true}, "Carol is youngest", true},
+		{Grader{Type: "regex", Pattern: `(?i)^\W*yes\b`}, "Yes.", true},
+		{Grader{Type: "regex", Pattern: `(?i)^\W*yes\b`}, "No, yes is wrong", false},
+		{Grader{Type: "choice", Answer: "B"}, "The answer is B", true},
+		{Grader{Type: "choice", Answer: "B"}, "A", false},
+		{Grader{Type: "json_keys", Keys: []string{"city", "country"}}, "```json\n{\"city\":\"Paris\",\"country\":\"France\"}\n```", true},
+		{Grader{Type: "json_keys", Keys: []string{"city", "country"}}, "{\"city\":\"Paris\"}", false},
+	}
+	for _, c := range cases {
+		got, err := grade(c.g, c.text, "")
+		if err != nil || got != c.want {
+			t.Errorf("grade(%+v, %q) = %v, %v; want %v", c.g, c.text, got, err, c.want)
+		}
+	}
+	if _, err := grade(Grader{Type: "nope"}, "", ""); err == nil {
+		t.Error("unknown grader accepted")
+	}
+}
+
+func TestExpandHaystack(t *testing.T) {
+	rng := rand.New(rand.NewPCG(1, 2))
+	prompt, needle := expandPrompt("{{HAYSTACK:5000}}\nWhat is the code?", rng)
+	if needle == "" || !strings.Contains(prompt, needle) || len(prompt) < 5000 {
+		t.Fatalf("haystack not expanded: needle=%q len=%d", needle, len(prompt))
+	}
+	ok, _ := grade(Grader{Type: "contains", Answer: "{{NEEDLE}}"}, "The code is "+needle, needle)
+	if !ok {
+		t.Fatal("needle answer not graded")
+	}
+}
+
+func outcomes(n, targetPass int, refPass bool) []Outcome {
+	var out []Outcome
+	for i := 0; i < n; i++ {
+		ok := ProbeResult{HTTPStatus: 200, Text: "x", TTFT: 300 * time.Millisecond, Duration: time.Second, OutputTokens: 50}
+		ref := ok
+		out = append(out, Outcome{ItemID: int64(i), Suite: "iq", Target: ok, TargetPass: i < targetPass, Ref: &ref, RefPass: refPass})
+	}
+	return out
+}
+
+var th = Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1}
+
+func TestAssessVerdicts(t *testing.T) {
+	if a := Assess(outcomes(12, 12, true), th, true); a.Verdict != "normal" || a.RelativeScore == nil || *a.RelativeScore != 1 || a.Grade != "S" {
+		t.Fatalf("all pass should be normal/S: %+v", a)
+	}
+	if a := Assess(outcomes(12, 4, true), th, true); a.Verdict != "degraded" || a.Grade != "D" {
+		t.Fatalf("4/12 vs baseline 12/12 should be degraded: %+v", a)
+	}
+	if a := Assess(outcomes(12, 9, true), th, true); a.Decided() {
+		t.Fatalf("9/12 should be undecided (needs more samples): %+v", a)
+	}
+	failing := outcomes(4, 0, true)
+	for i := range failing {
+		failing[i].Target = ProbeResult{HTTPStatus: 503, ErrorClass: "http_5xx"}
+	}
+	if a := Assess(failing, th, true); a.Verdict != "unavailable" {
+		t.Fatalf("all errors should be unavailable: %+v", a)
+	}
+	// 基线本身失败的题不计入
+	refFail := outcomes(6, 0, false)
+	for i := range refFail {
+		refFail[i].Ref.ErrorClass = "http_5xx"
+	}
+	if a := Assess(refFail, th, true); a.Samples != 0 {
+		t.Fatalf("items with failed baseline must be excluded: %+v", a)
+	}
+}
+
+func TestAssessReasoningRatio(t *testing.T) {
+	var out []Outcome
+	for i := 0; i < 4; i++ {
+		tgt := ProbeResult{HTTPStatus: 200, Text: "1", ReasoningTokens: 300}
+		ref := ProbeResult{HTTPStatus: 200, Text: "1", ReasoningTokens: 1000}
+		out = append(out, Outcome{Suite: "reasoning", Target: tgt, TargetPass: true, Ref: &ref, RefPass: true})
+	}
+	a := Assess(out, th, true)
+	if a.ReasoningRatio == nil || *a.ReasoningRatio < 0.29 || *a.ReasoningRatio > 0.31 {
+		t.Fatalf("reasoning ratio: %+v", a.ReasoningRatio)
+	}
+}
+
+func TestProtocolsParseStreams(t *testing.T) {
+	cases := []struct {
+		platform, ctype, body string
+		wantText              string
+		wantOut, wantReason   int
+		wantModel             string
+	}{
+		{"anthropic", "text/event-stream",
+			"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-x\"}}\n\n" +
+				"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"15\"}}\n\n" +
+				"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"91\"}}\n\n" +
+				"event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":7}}\n\n",
+			"1591", 7, 0, "claude-x"},
+		{"openai", "text/event-stream",
+			"data: {\"type\":\"response.output_text.delta\",\"delta\":\"1591\"}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"model\":\"gpt-x\",\"usage\":{\"output_tokens\":40,\"output_tokens_details\":{\"reasoning_tokens\":30}}}}\n\n",
+			"1591", 40, 30, "gpt-x"},
+		{"kimi", "text/event-stream",
+			"data: {\"model\":\"kimi-x\",\"choices\":[{\"delta\":{\"reasoning_content\":\"think\"}}]}\n\n" +
+				"data: {\"model\":\"kimi-x\",\"choices\":[{\"delta\":{\"content\":\"1591\"}}]}\n\n" +
+				"data: {\"choices\":[],\"usage\":{\"completion_tokens\":12,\"completion_tokens_details\":{\"reasoning_tokens\":5}}}\n\n" +
+				"data: [DONE]\n\n",
+			"1591", 12, 5, "kimi-x"},
+		{"gemini", "application/json",
+			`{"modelVersion":"gemini-x","candidates":[{"content":{"parts":[{"text":"hidden","thought":true},{"text":"1591"}]}}],"usageMetadata":{"candidatesTokenCount":9,"thoughtsTokenCount":20}}`,
+			"1591", 9, 20, "gemini-x"},
+	}
+	for _, c := range cases {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", c.ctype)
+			w.Header().Set("X-Client-Request-ID", "rid-1")
+			_, _ = io.WriteString(w, c.body)
+		}))
+		p := &Prober{GatewayURL: srv.URL, Client: srv.Client()}
+		res := p.Probe(context.Background(), c.platform, "k", ProbeRequest{Model: "m", Prompt: "q", MaxTokens: 100})
+		srv.Close()
+		if !res.OK() || res.Text != c.wantText || res.OutputTokens != c.wantOut || res.ReasoningTokens != c.wantReason ||
+			res.ResponseModel != c.wantModel || res.Sub2APIRequestID != "rid-1" {
+			t.Errorf("%s: %+v", c.platform, res)
+		}
+	}
+}
+
+func TestProbeHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
+	defer srv.Close()
+	res := (&Prober{GatewayURL: srv.URL, Client: srv.Client()}).Probe(context.Background(), "anthropic", "k", ProbeRequest{Model: "m", Prompt: "q", MaxTokens: 10})
+	if res.OK() || res.ErrorClass != "http_5xx" {
+		t.Fatalf("503 should be an error: %+v", res)
+	}
+}

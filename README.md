@@ -31,24 +31,41 @@ Go + PostgreSQL + Redis，独立仓库、独立数据库。对接的 sub2api 基
 
 ## 状态
 
-M0（基础设施与 sub2api 适配层）已完成，见 [11 路线图](docs/11-roadmap.md)。
+第一期（M0–M5）后端已完成：卖家上架、调度、买家 Key 与 Edge、结算与对账、质量检测、兼容闸门。前端尚未实现。详见 [11 路线图](docs/11-roadmap.md)，其中列出了需要运营方完成的事项（sub2api 管理员合规确认、真实厂商授权联调、支付通道、题库、压测）。
+
+## 运行
+
+三个服务共用一份配置（见 `config.example.yaml`，敏感项用环境变量覆盖）：
+
+```bash
+make build
+bin/api    -config config.yaml   # 控制面接口，启动时执行本系统迁移、创建初始管理员、写入内置题库
+bin/worker -config config.yaml   # 后台任务（可多副本，自动选主）
+bin/edge   -config config.yaml   # 买家 API 入口
+```
+
+依赖：PostgreSQL（本系统库）、Redis、sub2api（Admin API Key、只读库账号；sub2api 需关闭登录验证码，管理员需完成合规确认）。上线前把 sub2api 的分组与账号交由本系统管理（`tm-` 前缀），sub2api 配置要求见 [02 架构](docs/02-architecture.md) 第 6 节。
 
 ## 开发
 
-需要 Go 1.26+、Docker（集成测试用的 PostgreSQL）、本地 sub2api 仓库（兼容检查与集成测试用）。
+需要 Go 1.26+、Docker（集成测试用的 PostgreSQL 与 Redis）、本地 sub2api 仓库（兼容检查与集成测试用）。
 
 ```bash
-make build              # 构建 bin/api、bin/worker、bin/s2a-compat
+make build              # 构建 bin/api、bin/worker、bin/edge、bin/s2a-compat
 make test               # 单元测试
-make test-db-up         # 启动测试用 PostgreSQL（端口 55432）
-make test-integration   # 集成测试：本系统迁移、出站表、在 sub2api 真实表结构上校验契约查询
+make test-db-up         # 启动测试用 PostgreSQL（55432）与 Redis（56379）
+make test-integration   # 集成测试：本系统迁移、出站表、契约查询，以及基于 sub2api 替身的端到端测试
 make lint
 ```
 
-兼容检查（升级 sub2api 前）：
+端到端测试（`internal/e2e`）在应用了 sub2api v0.2.14 全部迁移的临时库上运行 sub2api 替身（`internal/testutil/fakesub2api`），把上架、调度、Edge 故障转移、入账、对账、退款、提现、质量检测等流程完整跑一遍。
+
+兼容检查（升级 sub2api 前，详见 [09](docs/09-sub2api-integration.md) 第 6、7 节）：
 
 ```bash
-go run ./cmd/s2a-compat check --sub2api-repo ../github-fork/sub2api --current v0.2.14 --target v0.2.15
+go run ./cmd/s2a-compat check --sub2api-repo ../github-fork/sub2api --current v0.2.14 --target v0.2.15 --target-version 0.2.15
+go run ./cmd/s2a-compat routes --base-url http://staging-sub2api:8080
+scripts/upgrade-sub2api.sh   # 受控升级：检查 → 预发探测 → 确认 → 升级 → 等待自检恢复
 ```
 
 冒烟测试需要一个运行中的 sub2api，参数见 `internal/sub2api/smoke_test.go` 文件头：
@@ -61,13 +78,27 @@ TM_SMOKE_GROUP_ID=1 go test -tags smoke ./internal/sub2api/ -v
 ### 目录
 
 ```
-cmd/            api、worker、s2a-compat
+cmd/            api、worker、edge、s2a-compat
 contract/       对 sub2api 的依赖契约：contract.yaml 与只读查询
 internal/
-  compat/       s2a-compat 的检查逻辑（SQL 扫描、规则、报告、临时库校验）
-  platform/     配置、加密、数据库
+  app/          组装各进程的依赖与服务
+  httpapi/      控制面 HTTP 接口
+  account/      用户与实名
+  listing/      上游、挂单、代理、回收报价
+  scheduling/   默认分组、规划器、执行器
+  buyer/        影子用户、买家 Key、Edge 配置发布
+  edge/         Edge 路由网关
+  billing/      入账、账本、结算、资金、对账
+  quality/      质量检测
+  market/       市场与官方价目
+  risk/         风控
+  settings/     平台参数
+  compat/       s2a-compat 的检查逻辑
+  platform/     配置、加密、数据库、鉴权、HTTP 工具
   sub2api/      sub2api 适配层
-  testutil/     集成测试工具
+  testutil/     临时数据库、sub2api 替身
+  e2e/          端到端测试
 migrations/     本系统数据库迁移
+scripts/        运维脚本
 docs/           设计文档
 ```

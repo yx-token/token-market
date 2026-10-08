@@ -2,15 +2,19 @@
 //
 // 用法：
 //
-//	s2a-compat check --sub2api-repo PATH --target REF (--current REF | --replica-dsn DSN) [--scratch-dsn DSN] [--format md|json] [--out FILE] [--fail-on conflict|warning]
+//	s2a-compat check --sub2api-repo PATH --target REF (--current REF | --replica-dsn DSN) [--target-version X.Y.Z] [--scratch-dsn DSN] [--format md|json] [--out FILE] [--fail-on conflict|warning]
+//	s2a-compat routes --base-url URL [--format md|json] [--out FILE]
 //	s2a-compat fingerprint --sub2api-repo PATH --ref REF
 //	s2a-compat fingerprint --replica-dsn DSN
+//
+// 升级流程（docs/06）：check 静态预检（表结构 + 契约版本）→ 预发环境升级后 routes 探测接口 → 通过后再升级生产。
 //
 // 退出码：0 通过；1 有阻止升级的发现；2 检查本身出错。
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -45,6 +49,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "check":
 		code, err = runCheck(args[1:], stdout)
+	case "routes":
+		code, err = runRoutes(args[1:], stdout)
 	case "fingerprint":
 		err = runFingerprint(args[1:], stdout)
 	case "-h", "--help", "help":
@@ -64,8 +70,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 func usage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `s2a-compat: 检查 sub2api 升级是否与 token-market 冲突
 
-  s2a-compat check --sub2api-repo PATH --target REF (--current REF | --replica-dsn DSN)
+  s2a-compat check --sub2api-repo PATH --target REF (--current REF | --replica-dsn DSN) [--target-version X.Y.Z]
                    [--scratch-dsn DSN] [--format md|json] [--out FILE] [--fail-on conflict|warning] [--contract FILE]
+  s2a-compat routes --base-url URL [--format md|json] [--out FILE] [--contract FILE]
   s2a-compat fingerprint (--sub2api-repo PATH --ref REF | --replica-dsn DSN)
 `)
 }
@@ -82,6 +89,7 @@ func runCheck(args []string, stdout io.Writer) (int, error) {
 	failOn := fs.String("fail-on", string(compat.SeverityConflict), "达到该级别即视为阻止升级：conflict 或 warning")
 	contractFile := fs.String("contract", "", "覆盖内嵌契约的 contract.yaml 路径")
 	scratchDSN := fs.String("scratch-dsn", "", "空的临时库 DSN：执行目标版本迁移后对契约查询做 EXPLAIN")
+	targetVersion := fs.String("target-version", "", "目标版本号（如 0.2.15）：同时检查本系统契约是否已登记该版本，未登记则阻止升级")
 	if err := fs.Parse(args); err != nil {
 		return exitErrored, err
 	}
@@ -131,6 +139,9 @@ func runCheck(args []string, stdout io.Writer) (int, error) {
 	}
 
 	report := compat.CheckStatic(ctx, spec, applied, targetSet)
+	if *targetVersion != "" {
+		report.Findings = append(compat.CheckContractVersion(spec, *targetVersion, applied, targetSet), report.Findings...)
+	}
 	if *scratchDSN != "" {
 		findings, err := compat.CheckQueries(ctx, *scratchDSN, targetSet)
 		if err != nil {
@@ -155,6 +166,54 @@ func runCheck(args []string, stdout io.Writer) (int, error) {
 	}
 
 	if report.Failed(threshold) {
+		return exitBlocked, nil
+	}
+	return exitOK, nil
+}
+
+func runRoutes(args []string, stdout io.Writer) (int, error) {
+	fs := flag.NewFlagSet("routes", flag.ContinueOnError)
+	baseURL := fs.String("base-url", "", "待验证的 sub2api 地址（预发环境）")
+	format := fs.String("format", "md", "报告格式：md 或 json")
+	out := fs.String("out", "", "报告输出文件，默认标准输出")
+	contractFile := fs.String("contract", "", "覆盖内嵌契约的 contract.yaml 路径")
+	if err := fs.Parse(args); err != nil {
+		return exitErrored, err
+	}
+	if *baseURL == "" {
+		return exitErrored, errors.New("--base-url is required")
+	}
+	spec, err := loadSpec(*contractFile)
+	if err != nil {
+		return exitErrored, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	results, findings, err := compat.ProbeRoutes(ctx, *baseURL, spec, nil)
+	if err != nil {
+		return exitErrored, err
+	}
+	var rendered []byte
+	switch *format {
+	case "json":
+		rendered, err = json.MarshalIndent(map[string]any{"results": results, "findings": findings}, "", "  ")
+		if err != nil {
+			return exitErrored, err
+		}
+	case "md":
+		rendered = []byte(compat.RoutesMarkdown(results, findings))
+	default:
+		return exitErrored, errors.New("--format must be md or json")
+	}
+	if *out != "" {
+		err = os.WriteFile(*out, rendered, 0o644)
+	} else {
+		_, err = stdout.Write(rendered)
+	}
+	if err != nil {
+		return exitErrored, err
+	}
+	if len(findings) > 0 {
 		return exitBlocked, nil
 	}
 	return exitOK, nil

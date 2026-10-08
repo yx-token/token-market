@@ -5,9 +5,9 @@
 | 组件 | 职责 | 是否在请求链路上 |
 |---|---|---|
 | **market-api** | 控制面 HTTP 接口：买家、卖家、管理后台 | 否 |
-| **market-worker** | 后台任务：用量拉取、结算、探测调度、评分判定、回收报价、调度执行器、状态对账、兼容自检 | 否 |
+| **market-worker** | 后台任务：用量拉取、结算、探测调度、评分判定、回收报价、调度执行器、状态对账、兼容自检。多副本时用 PostgreSQL advisory lock 选主，只有持锁的副本运行任务 | 否 |
 | **market-edge** | 买家 API 入口：鉴权买家 Key、解析卖家链、转发到 sub2api、故障转移 | **是** |
-| **market-web** | 前端：市场、买家控制台、卖家门户、管理后台 | 否 |
+| **market-web** | 前端：市场、买家控制台、卖家门户、管理后台（第一期未实现，技术栈待定） | 否 |
 | **s2a-compat** | 命令行工具：sub2api 升级前的兼容检查 | 否 |
 | PostgreSQL（market） | 本系统数据库 | 否（Edge 不直接访问） |
 | Redis（market） | 缓存、任务队列、Edge 路由配置分发 | Edge 读取 |
@@ -24,18 +24,27 @@ token-market/
 │   ├── edge/         # market-edge
 │   └── s2a-compat/   # 兼容闸门
 ├── internal/
-│   ├── sub2api/      # 适配层：apiwire、adminclient、userclient、replica、ops、opshandlers、compatguard
+│   ├── app/          # 按配置组装各进程共用的依赖与服务；同步写入 sub2api 的兼容门控
+│   ├── httpapi/      # 控制面 HTTP 接口（路由与处理函数）
+│   ├── sub2api/      # 适配层：apiwire、adminclient、userclient、replica、ops、opshandlers、compatguard、provision
 │   ├── account/      # 平台用户、实名
-│   ├── listing/      # 上游、挂单、上架流程
-│   ├── quality/      # 探测、评分、判定、报告
-│   ├── scheduling/   # 默认分组、策略、执行器、对账
+│   ├── listing/      # 上游、挂单、上架与重新授权、代理库存、回收报价
+│   ├── market/       # 市场列表、官方价目
+│   ├── buyer/        # 影子用户、买家 Key 与内部 key、Edge 配置发布
+│   ├── edgecfg/      # Edge 路由配置在 Redis 中的存取与通知
 │   ├── edge/         # Edge 路由与转发
-│   ├── billing/      # 用量入账、账本、结算、提现
+│   ├── quality/      # 检测策略、题库、探测、判定、报告、申诉
+│   ├── scheduling/   # 默认分组、规划器、执行器、状态对账
+│   ├── billing/      # 用量入账、账本、结算、充值退款提现、对账、Key 限额
 │   ├── risk/         # 风控
-│   └── platform/     # 配置、日志、加密、队列等基础设施
-├── contract/         # sub2api 契约：contract.yaml、queries/*.sql、行为测试
+│   ├── settings/     # 平台可调参数
+│   ├── compat/       # s2a-compat 的检查逻辑
+│   ├── platform/     # 配置、加密、数据库、鉴权、HTTP 工具、客户端 IP
+│   ├── testutil/     # 临时数据库、sub2api 替身（fakesub2api）
+│   └── e2e/          # 端到端测试
+├── contract/         # sub2api 契约：contract.yaml、queries/*.sql
 ├── migrations/       # 本系统数据库迁移
-├── web/              # 前端
+├── scripts/          # 受控升级 sub2api 等运维脚本
 └── docs/
 ```
 
@@ -56,6 +65,7 @@ token-market/
 - sub2api 不暴露公网。买家流量只能经过 Edge 进入。
 - Edge 和 sub2api 同机房部署，转发多出的延迟在毫秒级。
 - 探测请求由 market-worker 直接发给 sub2api 网关，不经过 Edge（见 [05 质量检测](05-quality.md)）。
+- 端口：market-api `http.addr`（默认 :8080）；market-edge `edge.addr`（:8090）与管理端口 `edge.admin_addr`（:8091）；market-worker 管理端口 `worker.admin_addr`（:8092，`/healthz` 显示是否持有主锁，`/debug/vars` 输出任务运行次数、失败次数、最近成功时间，以及出站队列积压、死信、待处理异常、入账延迟、兼容自检状态等积压指标）。管理端口只在内网开放。
 
 ## 3. 与 sub2api 的集成通道
 

@@ -1,0 +1,350 @@
+// Package listing 管理卖家的上游（订阅账号）与挂单：上架授权、校验、寄售与回收两种挂单模式。
+package listing
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/DueGin/token-market/internal/platform/httpx"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+)
+
+// 上游状态
+const (
+	StatusDraft        = "draft"
+	StatusAuthorizing  = "authorizing"
+	StatusVerifying    = "verifying"
+	StatusVerifyFailed = "verify_failed"
+	StatusReady        = "ready"
+	StatusListed       = "listed"
+	StatusSuspended    = "suspended"
+	StatusFailed       = "failed"
+	StatusRemoving     = "removing"
+	StatusRemoved      = "removed"
+)
+
+// 健康状态
+const (
+	HealthUnknown     = "unknown"
+	HealthHealthy     = "healthy"
+	HealthLimited     = "limited"
+	HealthSuspected   = "suspected"
+	HealthDegraded    = "degraded"
+	HealthUnavailable = "unavailable"
+)
+
+// 挂单模式与状态
+const (
+	ModeConsignment = "consignment"
+	ModeBuyback     = "buyback"
+
+	ListingPendingQuote   = "pending_quote"
+	ListingPendingConfirm = "pending_confirm"
+	ListingActive         = "active"
+	ListingPaused         = "paused"
+	ListingClosed         = "closed"
+)
+
+type VendorConfig struct {
+	Platform           string             `json:"platform"`
+	Enabled            bool               `json:"enabled"`
+	AuthTypes          []string           `json:"auth_types"`
+	ConsignmentMin     float64            `json:"consignment_min"`
+	ConsignmentMax     float64            `json:"consignment_max"`
+	BuybackBase        map[string]float64 `json:"buyback_base"`
+	DefaultConcurrency int                `json:"default_concurrency"`
+	ExtraLimits        map[string]any     `json:"extra_limits"`
+	UpdatedAt          time.Time          `json:"updated_at"`
+}
+
+// SupportsAuthType 判断厂商是否支持某种接入方式。
+func (v VendorConfig) SupportsAuthType(t string) bool {
+	for _, a := range v.AuthTypes {
+		if a == t {
+			return true
+		}
+	}
+	return false
+}
+
+// BuybackBaseFor 返回某订阅档位的回收基础倍率，没有专门配置时用 default。
+func (v VendorConfig) BuybackBaseFor(tier string) float64 {
+	if b, ok := v.BuybackBase[tier]; ok && tier != "" {
+		return b
+	}
+	return v.BuybackBase["default"]
+}
+
+type Upstream struct {
+	ID                 int64      `json:"id"`
+	SellerID           int64      `json:"seller_id"`
+	Platform           string     `json:"platform"`
+	AuthType           string     `json:"auth_type"`
+	IsReference        bool       `json:"is_reference"`
+	Status             string     `json:"status"`
+	Health             string     `json:"health"`
+	HealthReason       *string    `json:"health_reason,omitempty"`
+	HealthChangedAt    *time.Time `json:"health_changed_at,omitempty"`
+	Sub2APIAccountID   *int64     `json:"-"`
+	ProxyID            *int64     `json:"-"`
+	ProbeGroupID       *int64     `json:"-"`
+	Tier               *string    `json:"tier,omitempty"`
+	PrivacyOK          *bool      `json:"privacy_ok,omitempty"`
+	SelfReservePercent int        `json:"self_reserve_percent"`
+	Grade              *string    `json:"grade,omitempty"`
+	FailureReason      *string    `json:"failure_reason,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+const upstreamColumns = `id, seller_id, platform, auth_type, is_reference, status, health, health_reason, health_changed_at,
+	sub2api_account_id, proxy_id, probe_group_id, tier, privacy_ok, self_reserve_percent, grade, failure_reason, created_at, updated_at`
+
+func scanUpstream(row pgx.Row) (*Upstream, error) {
+	var u Upstream
+	err := row.Scan(&u.ID, &u.SellerID, &u.Platform, &u.AuthType, &u.IsReference, &u.Status, &u.Health, &u.HealthReason,
+		&u.HealthChangedAt, &u.Sub2APIAccountID, &u.ProxyID, &u.ProbeGroupID, &u.Tier, &u.PrivacyOK,
+		&u.SelfReservePercent, &u.Grade, &u.FailureReason, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+type Listing struct {
+	ID               int64      `json:"id"`
+	UpstreamID       int64      `json:"upstream_id"`
+	SellerID         int64      `json:"seller_id"`
+	Mode             string     `json:"mode"`
+	Status           string     `json:"status"`
+	PausedBy         *string    `json:"paused_by,omitempty"`
+	Multiplier       *float64   `json:"multiplier,omitempty"`
+	JoinDefaultPool  bool       `json:"join_default_pool"`
+	ListingGroupID   *int64     `json:"-"`
+	ListingGroupRate *float64   `json:"-"`
+	PriceChangedAt   *time.Time `json:"price_changed_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	ClosedAt         *time.Time `json:"closed_at,omitempty"`
+}
+
+const listingColumns = `id, upstream_id, seller_id, mode, status, paused_by, multiplier, join_default_pool,
+	listing_group_id, listing_group_rate, price_changed_at, created_at, updated_at, closed_at`
+
+func scanListing(row pgx.Row) (*Listing, error) {
+	var l Listing
+	err := row.Scan(&l.ID, &l.UpstreamID, &l.SellerID, &l.Mode, &l.Status, &l.PausedBy, &l.Multiplier, &l.JoinDefaultPool,
+		&l.ListingGroupID, &l.ListingGroupRate, &l.PriceChangedAt, &l.CreatedAt, &l.UpdatedAt, &l.ClosedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
+}
+
+type Quote struct {
+	ID         int64      `json:"id"`
+	UpstreamID int64      `json:"upstream_id"`
+	ListingID  *int64     `json:"listing_id,omitempty"`
+	Grade      string     `json:"grade"`
+	Multiplier float64    `json:"multiplier"`
+	Status     string     `json:"status"`
+	ValidUntil time.Time  `json:"valid_until"`
+	CreatedAt  time.Time  `json:"created_at"`
+	DecidedAt  *time.Time `json:"decided_at,omitempty"`
+}
+
+// DB 是 pgxpool.Pool 与 pgx.Tx 的公共子集。
+type DB interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+var (
+	ErrUpstreamNotFound = httpx.NotFound("UPSTREAM_NOT_FOUND", "upstream not found")
+	ErrListingNotFound  = httpx.NotFound("LISTING_NOT_FOUND", "listing not found")
+	ErrVendorDisabled   = httpx.BadRequest("VENDOR_DISABLED", "this vendor is not open for listing")
+)
+
+func GetVendor(ctx context.Context, db DB, platform string) (*VendorConfig, error) {
+	var v VendorConfig
+	var base, extra []byte
+	err := db.QueryRow(ctx, `SELECT platform, enabled, auth_types, consignment_min, consignment_max, buyback_base,
+		default_concurrency, extra_limits, updated_at FROM vendor_configs WHERE platform = $1`, platform).
+		Scan(&v.Platform, &v.Enabled, &v.AuthTypes, &v.ConsignmentMin, &v.ConsignmentMax, &base, &v.DefaultConcurrency, &extra, &v.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, httpx.NotFound("VENDOR_NOT_FOUND", "unknown vendor "+platform)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(base, &v.BuybackBase); err != nil {
+		return nil, fmt.Errorf("vendor %s buyback_base: %w", platform, err)
+	}
+	if err := json.Unmarshal(extra, &v.ExtraLimits); err != nil {
+		return nil, fmt.Errorf("vendor %s extra_limits: %w", platform, err)
+	}
+	return &v, nil
+}
+
+func ListVendors(ctx context.Context, db DB) ([]VendorConfig, error) {
+	rows, err := db.Query(ctx, `SELECT platform FROM vendor_configs ORDER BY platform`)
+	if err != nil {
+		return nil, err
+	}
+	platforms, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	out := make([]VendorConfig, 0, len(platforms))
+	for _, p := range platforms {
+		v, err := GetVendor(ctx, db, p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *v)
+	}
+	return out, nil
+}
+
+// UpdateVendorInput 是管理员修改厂商配置的可选字段。
+type UpdateVendorInput struct {
+	Enabled            *bool               `json:"enabled"`
+	ConsignmentMin     *float64            `json:"consignment_min"`
+	ConsignmentMax     *float64            `json:"consignment_max"`
+	BuybackBase        *map[string]float64 `json:"buyback_base"`
+	DefaultConcurrency *int                `json:"default_concurrency"`
+	ExtraLimits        *map[string]any     `json:"extra_limits"`
+}
+
+func UpdateVendor(ctx context.Context, db DB, platform string, in UpdateVendorInput) (*VendorConfig, error) {
+	v, err := GetVendor(ctx, db, platform)
+	if err != nil {
+		return nil, err
+	}
+	if in.Enabled != nil {
+		v.Enabled = *in.Enabled
+	}
+	if in.ConsignmentMin != nil {
+		v.ConsignmentMin = *in.ConsignmentMin
+	}
+	if in.ConsignmentMax != nil {
+		v.ConsignmentMax = *in.ConsignmentMax
+	}
+	if in.BuybackBase != nil {
+		v.BuybackBase = *in.BuybackBase
+	}
+	if in.DefaultConcurrency != nil {
+		v.DefaultConcurrency = *in.DefaultConcurrency
+	}
+	if in.ExtraLimits != nil {
+		v.ExtraLimits = *in.ExtraLimits
+	}
+	if v.ConsignmentMin <= 0 || v.ConsignmentMax < v.ConsignmentMin {
+		return nil, httpx.BadRequest("INVALID_RANGE", "consignment range must satisfy 0 < min <= max")
+	}
+	if v.DefaultConcurrency <= 0 {
+		return nil, httpx.BadRequest("INVALID_CONCURRENCY", "default_concurrency must be > 0")
+	}
+	if _, ok := v.BuybackBase["default"]; !ok {
+		return nil, httpx.BadRequest("INVALID_BUYBACK_BASE", "buyback_base must contain a default entry")
+	}
+	base, _ := json.Marshal(v.BuybackBase)
+	extra, _ := json.Marshal(v.ExtraLimits)
+	_, err = db.Exec(ctx, `UPDATE vendor_configs SET enabled = $2, consignment_min = $3, consignment_max = $4,
+		buyback_base = $5, default_concurrency = $6, extra_limits = $7, updated_at = now() WHERE platform = $1`,
+		platform, v.Enabled, v.ConsignmentMin, v.ConsignmentMax, base, v.DefaultConcurrency, extra)
+	if err != nil {
+		return nil, err
+	}
+	return GetVendor(ctx, db, platform)
+}
+
+func GetUpstream(ctx context.Context, db DB, id int64) (*Upstream, error) {
+	u, err := scanUpstream(db.QueryRow(ctx, "SELECT "+upstreamColumns+" FROM upstreams WHERE id = $1", id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrUpstreamNotFound
+	}
+	return u, err
+}
+
+// GetSellerUpstream 返回属于该卖家的上游。
+func GetSellerUpstream(ctx context.Context, db DB, sellerID, id int64) (*Upstream, error) {
+	u, err := GetUpstream(ctx, db, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.SellerID != sellerID {
+		return nil, ErrUpstreamNotFound
+	}
+	return u, nil
+}
+
+func ListSellerUpstreams(ctx context.Context, db DB, sellerID int64) ([]Upstream, error) {
+	rows, err := db.Query(ctx, "SELECT "+upstreamColumns+" FROM upstreams WHERE seller_id = $1 AND status <> 'removed' ORDER BY id DESC", sellerID)
+	if err != nil {
+		return nil, err
+	}
+	return collectUpstreams(rows)
+}
+
+// ListUpstreams 管理后台列表，status 为空表示全部（不含已删除）。
+func ListUpstreams(ctx context.Context, db DB, status string, limit, offset int) ([]Upstream, error) {
+	rows, err := db.Query(ctx, "SELECT "+upstreamColumns+` FROM upstreams
+		WHERE ($1 = '' AND status <> 'removed') OR status = $1 ORDER BY id DESC LIMIT $2 OFFSET $3`, status, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return collectUpstreams(rows)
+}
+
+func collectUpstreams(rows pgx.Rows) ([]Upstream, error) {
+	defer rows.Close()
+	var out []Upstream
+	for rows.Next() {
+		u, err := scanUpstream(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *u)
+	}
+	return out, rows.Err()
+}
+
+func GetListing(ctx context.Context, db DB, id int64) (*Listing, error) {
+	l, err := scanListing(db.QueryRow(ctx, "SELECT "+listingColumns+" FROM listings WHERE id = $1", id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrListingNotFound
+	}
+	return l, err
+}
+
+// OpenListing 返回上游当前未关闭的挂单，没有时返回 nil。
+func OpenListing(ctx context.Context, db DB, upstreamID int64) (*Listing, error) {
+	l, err := scanListing(db.QueryRow(ctx, "SELECT "+listingColumns+" FROM listings WHERE upstream_id = $1 AND closed_at IS NULL", upstreamID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return l, err
+}
+
+func setUpstreamStatus(ctx context.Context, db DB, id int64, status string, reason *string) error {
+	_, err := db.Exec(ctx, `UPDATE upstreams SET status = $2, failure_reason = $3, updated_at = now() WHERE id = $1`, id, status, reason)
+	return err
+}
+
+// SetHealth 更新上游健康状态，返回状态是否发生变化。
+func SetHealth(ctx context.Context, db DB, id int64, health, reason string) (bool, error) {
+	tag, err := db.Exec(ctx, `UPDATE upstreams SET health = $2, health_reason = NULLIF($3, ''), health_changed_at = now(), updated_at = now()
+		WHERE id = $1 AND (health <> $2 OR COALESCE(health_reason, '') <> $3)`, id, health, reason)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+func strPtr(s string) *string { return &s }

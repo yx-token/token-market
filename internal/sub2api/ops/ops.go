@@ -290,3 +290,33 @@ func (s *Sender) Run(ctx context.Context, interval time.Duration) {
 		}
 	}
 }
+
+// PendingTargets 返回给定 target 中仍有未完成操作（pending / sending / failed）的集合，
+// 调度器据此避免在上一批操作生效前重复下发。
+func PendingTargets(ctx context.Context, db DB, targets []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(targets) == 0 {
+		return out, nil
+	}
+	rows, err := db.Query(ctx, `SELECT DISTINCT target FROM sub2api_ops
+		WHERE target = ANY($1) AND status IN ('pending', 'sending', 'failed')`, targets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out[t] = true
+	}
+	return out, rows.Err()
+}
+
+// Status 返回操作的当前状态，用于等待某个操作完成（例如充值到账）。
+func Status(ctx context.Context, db DB, id int64) (string, error) {
+	var s string
+	err := db.QueryRow(ctx, "SELECT status FROM sub2api_ops WHERE id = $1", id).Scan(&s)
+	return s, err
+}

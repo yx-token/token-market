@@ -38,7 +38,7 @@ tables:
     columns: [id, email, balance, status, deleted_at]
   api_keys:
     used_by: [billing, edge]
-    columns: [id, user_id, group_id, status, deleted_at]
+    columns: [id, user_id, key, group_id, status, deleted_at]
   schema_migrations:
     used_by: [compat]
     columns: [filename, checksum]
@@ -69,16 +69,41 @@ admin_api:
   - {method: POST,   path: /api/v1/admin/proxies,                request: [name, protocol, host, port, username, password], idempotency_key: required}
   - {method: DELETE, path: "/api/v1/admin/proxies/:id"}
   - {method: POST,   path: /api/v1/admin/accounts,               request: [name, notes, platform, type, credentials, extra, proxy_id, concurrency, priority, rate_multiplier, load_factor, group_ids], idempotency_key: required}
-  - {method: PUT,    path: "/api/v1/admin/accounts/:id"}
+  - {method: PUT,    path: "/api/v1/admin/accounts/:id",           request: [credentials, extra, concurrency, priority, rate_multiplier, load_factor, status, group_ids]}
+  - {method: POST,   path: "/api/v1/admin/accounts/:id/clear-error"}
+  - {method: GET,    path: /api/v1/admin/channels/model-pricing}
   - {method: POST,   path: /api/v1/admin/accounts/bulk-update,   request: [account_ids, concurrency, priority, rate_multiplier, load_factor, schedulable, group_ids, credentials, extra]}
   - {method: POST,   path: "/api/v1/admin/accounts/:id/schedulable", request: [schedulable]}
   - {method: DELETE, path: "/api/v1/admin/accounts/:id"}
+  - {method: POST,   path: "/api/v1/admin/accounts/:id/set-privacy"}
+  - {method: GET,    path: "/api/v1/admin/cn-providers/accounts/:id/quota"}
+  - {method: POST,   path: /api/v1/admin/accounts/generate-auth-url,        request: [proxy_id]}
+  - {method: POST,   path: /api/v1/admin/accounts/generate-setup-token-url, request: [proxy_id]}
+  - {method: POST,   path: /api/v1/admin/accounts/exchange-code,            request: [session_id, code, proxy_id]}
+  - {method: POST,   path: /api/v1/admin/accounts/exchange-setup-token-code, request: [session_id, code, proxy_id]}
+  - {method: POST,   path: /api/v1/admin/openai/generate-auth-url,          request: [proxy_id]}
+  - {method: POST,   path: /api/v1/admin/openai/exchange-code,              request: [session_id, code, state, proxy_id]}
+  - {method: POST,   path: /api/v1/admin/gemini/oauth/auth-url,             request: [proxy_id]}
+  - {method: POST,   path: /api/v1/admin/gemini/oauth/exchange-code,        request: [session_id, state, code, proxy_id]}
+  - {method: POST,   path: /api/v1/admin/antigravity/oauth/auth-url,        request: [proxy_id]}
+  - {method: POST,   path: /api/v1/admin/antigravity/oauth/exchange-code,   request: [session_id, state, code, proxy_id]}
+  - {method: POST,   path: /api/v1/admin/grok/oauth/auth-url,               request: [proxy_id]}
+  - {method: POST,   path: /api/v1/admin/grok/oauth/exchange-code,          request: [session_id, state, code, proxy_id]}
 user_api:
   - {method: POST,   path: /api/v1/auth/login,   request: [email, password]}
   - {method: POST,   path: /api/v1/auth/refresh, request: [refresh_token]}
   - {method: POST,   path: /api/v1/keys,         request: [name, group_id, custom_key]}
   - {method: PUT,    path: "/api/v1/keys/:id"}
   - {method: DELETE, path: "/api/v1/keys/:id"}
+
+# Edge 与质量检测经由 sub2api 网关调用的接口（买家流量与探测流量）。
+gateway_api:
+  - {method: POST, path: /v1/messages}
+  - {method: POST, path: /v1/messages/count_tokens}
+  - {method: POST, path: /v1/chat/completions}
+  - {method: POST, path: /v1/responses}
+  - {method: GET,  path: /v1/models}
+  - {method: POST, path: "/v1beta/models/:model"}
 
 # 依赖的 sub2api 配置项。
 config:

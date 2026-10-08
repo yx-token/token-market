@@ -2,7 +2,14 @@
 
 本系统数据库（market PG）的表设计草案。金额统一用 `numeric(20,10)`，单位与 sub2api 的余额和 `usage_logs` 一致；现金进出按 1 元 = 1 个余额单位换算（决策 D16），所以账面金额可以直接当作人民币金额。敏感字段（凭证、密码、证件号）应用层加密后存储，字段名以 `_enc` 结尾。
 
-以下 DDL 只表达结构，不是最终迁移脚本。
+以下 DDL 只表达结构，不是最终迁移脚本；**实际结构以 `migrations/0001–0007` 为准**。实现时的主要调整：
+
+| 设计稿 | 实现 |
+|---|---|
+| `buyer_profiles` | `shadow_identities`：买家与探测用户共用的影子用户表（`kind` = buyer / probe），保存加密的密码与令牌、可用分组、退款锁定标记 |
+| `pool_assignments` | 不单独建表：调度器每轮计算期望状态写入 `upstream_runtime_params.group_ids`，执行器与 sub2api 实际状态比对 |
+| `reference_accounts` | 不单独建表：基线账号是 `upstreams.is_reference = true` 的上游，复用上架流程，不能挂单 |
+| — | 新增 `vendor_configs`（厂商开关、寄售倍率区间、回收基础倍率、默认并发与限流）、`upstream_oauth_sessions`（授权会话）、`upstream_quality_state`（检测排期、恢复退避、手动复测计数）、`user_ip_events`（风控用的 IP 记录）、`refunds`（退款状态机） |
 
 ## 1. 用户与身份
 
@@ -185,7 +192,6 @@ detection_policies (                     -- 管理员按厂商配置，可动态
   daily_budget_usd      numeric(20,10) not null,   -- 每个上游每天的探测预算（按官方价计）
   thresholds            jsonb not null,  -- 判定阈值与置信度
   auto_pause            boolean not null,          -- 判定降智后是否自动不调度
-  untested_pool_allowed boolean not null,          -- 未检测的上游能否进默认分组
   default_grade         text not null,             -- 未检测时的默认等级
   version               bigint not null,
   updated_by            bigint,

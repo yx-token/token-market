@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 )
 
 // ErrIdempotencyKeyRequired：sub2api 对创建账号、创建代理、调整余额强制要求 Idempotency-Key。
@@ -28,14 +29,15 @@ type Group struct {
 }
 
 type Account struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Platform    string `json:"platform"`
-	Type        string `json:"type"`
-	Status      string `json:"status"`
-	Schedulable bool   `json:"schedulable"`
-	Priority    int    `json:"priority"`
-	Concurrency int    `json:"concurrency"`
+	ID          int64          `json:"id"`
+	Name        string         `json:"name"`
+	Platform    string         `json:"platform"`
+	Type        string         `json:"type"`
+	Status      string         `json:"status"`
+	Schedulable bool           `json:"schedulable"`
+	Priority    int            `json:"priority"`
+	Concurrency int            `json:"concurrency"`
+	Extra       map[string]any `json:"extra"`
 }
 
 type Proxy struct {
@@ -276,6 +278,69 @@ func (c *Client) SetSchedulable(ctx context.Context, id int64, schedulable bool)
 	return c.do(ctx, http.MethodPost, fmt.Sprintf("/api/v1/admin/accounts/%d/schedulable", id), body, "", nil)
 }
 
+// ClearError 清除账号的错误状态（重新授权后恢复调度）。
+func (c *Client) ClearError(ctx context.Context, id int64) error {
+	return c.do(ctx, http.MethodPost, fmt.Sprintf("/api/v1/admin/accounts/%d/clear-error", id), nil, "", nil)
+}
+
 func (c *Client) DeleteAccount(ctx context.Context, id int64) error {
 	return c.do(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/admin/accounts/%d", id), nil, "", nil)
+}
+
+// ---- 通用调用与厂商接口 ----
+
+// Post 调用任意 Admin API（厂商授权等结构各异的接口），data 解码到 out。
+func (c *Client) Post(ctx context.Context, path string, body any, idempotencyKey string, out any) error {
+	return c.do(ctx, http.MethodPost, path, body, idempotencyKey, out)
+}
+
+// SetPrivacy 为 OpenAI / Antigravity 的 OAuth 账号关闭训练数据使用，返回更新后的账号（extra.privacy_mode）。
+func (c *Client) SetPrivacy(ctx context.Context, id int64) (*Account, error) {
+	var out Account
+	if err := c.do(ctx, http.MethodPost, fmt.Sprintf("/api/v1/admin/accounts/%d/set-privacy", id), nil, "", &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+type CNQuotaTier struct {
+	Window      string  `json:"window"`
+	UsedPercent float64 `json:"used_percent"`
+	ResetAt     string  `json:"reset_at"`
+}
+
+type CNQuota struct {
+	Provider        string        `json:"provider"`
+	Success         bool          `json:"success"`
+	CredentialValid bool          `json:"credential_valid"`
+	Tiers           []CNQuotaTier `json:"tiers"`
+	PlanLevel       string        `json:"plan_level"`
+	Error           string        `json:"error"`
+}
+
+// CNProviderQuota 查询国产 Coding Plan 账号的官方窗口用量，用于上架时确认确实是订阅 key。
+func (c *Client) CNProviderQuota(ctx context.Context, id int64) (*CNQuota, error) {
+	var out CNQuota
+	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/cn-providers/accounts/%d/quota", id), nil, "", &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ModelPricing 是 sub2api 内置价目表中某个模型的官方单价（美元 / token）。
+type ModelPricing struct {
+	Found           bool    `json:"found"`
+	InputPrice      float64 `json:"input_price"`
+	OutputPrice     float64 `json:"output_price"`
+	CacheWritePrice float64 `json:"cache_write_price"`
+	CacheReadPrice  float64 `json:"cache_read_price"`
+}
+
+// GetModelPricing 查询模型的官方价格，倍率以它为基准。
+func (c *Client) GetModelPricing(ctx context.Context, model string) (*ModelPricing, error) {
+	var out ModelPricing
+	if err := c.do(ctx, http.MethodGet, "/api/v1/admin/channels/model-pricing?model="+url.QueryEscape(model), nil, "", &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

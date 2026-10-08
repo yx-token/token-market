@@ -1,0 +1,274 @@
+package billing
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/DueGin/token-market/internal/sub2api/replica"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const (
+	// ingestSafetyLag：只读取早于当前时间这么久的 usage_logs，因为自增 id 的提交顺序不一定与 id 顺序一致
+	ingestSafetyLag = 2 * time.Minute
+	// ingestOverlap：每次从游标往前回退的 id 数量，配合主键去重补上晚提交的记录
+	ingestOverlap = 2000
+	ingestBatch   = 2000
+)
+
+type Ingester struct {
+	DB      *pgxpool.Pool
+	Replica *replica.Reader
+	Log     *slog.Logger
+	Now     func() time.Time
+	// Gate 为 false 时暂停入账（sub2api 兼容自检未通过时，用量的含义可能已经变化）
+	Gate func(ctx context.Context) (bool, string)
+}
+
+func (in *Ingester) now() time.Time {
+	if in.Now != nil {
+		return in.Now()
+	}
+	return time.Now()
+}
+
+// IngestResult 汇总一轮入账。
+type IngestResult struct {
+	Fetched  int
+	Inserted int
+	Posted   int64
+}
+
+// RunOnce 拉取一批用量、解析归属、记账、汇总结算行。返回是否可能还有更多数据。
+func (in *Ingester) RunOnce(ctx context.Context) (*IngestResult, bool, error) {
+	var cursor int64
+	if err := in.DB.QueryRow(ctx, "SELECT last_id FROM ingest_cursors WHERE source = 'usage_logs'").Scan(&cursor); err != nil {
+		return nil, false, err
+	}
+	from := cursor - ingestOverlap
+	if from < 0 {
+		from = 0
+	}
+	logs, err := in.Replica.UsageLogsAfter(ctx, from, in.now().Add(-ingestSafetyLag), ingestBatch)
+	if err != nil {
+		return nil, false, err
+	}
+	res := &IngestResult{Fetched: len(logs)}
+	if len(logs) == 0 {
+		return res, false, nil
+	}
+
+	tx, err := in.DB.Begin(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	maxID := cursor
+	for _, u := range logs {
+		if u.ID > maxID {
+			maxID = u.ID
+		}
+		tag, err := tx.Exec(ctx, `INSERT INTO usage_records (sub2api_usage_id, sub2api_request_id, created_at, sub2api_account_id, sub2api_group_id,
+				sub2api_user_id, sub2api_api_key_id, model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+				total_cost, actual_cost, account_rate_multiplier, first_token_ms, duration_ms, upstream_response_model, upstream_model_mismatch, channel)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, 'unknown')
+			ON CONFLICT (sub2api_usage_id) DO NOTHING`,
+			u.ID, u.RequestID, u.CreatedAt, u.AccountID, u.GroupID, u.UserID, u.APIKeyID, u.Model, u.InputTokens, u.OutputTokens,
+			u.CacheCreationTokens, u.CacheReadTokens, u.TotalCost, u.ActualCost, u.AccountRateMultiplier, u.FirstTokenMs,
+			u.DurationMs, u.UpstreamResponseModel, u.UpstreamModelMismatch)
+		if err != nil {
+			return nil, false, fmt.Errorf("insert usage %d: %w", u.ID, err)
+		}
+		res.Inserted += int(tag.RowsAffected())
+	}
+	if err := attribute(ctx, tx, from); err != nil {
+		return nil, false, err
+	}
+	posted, err := postUsage(ctx, tx, from)
+	if err != nil {
+		return nil, false, err
+	}
+	res.Posted = posted
+	if _, err := tx.Exec(ctx, "UPDATE ingest_cursors SET last_id = $1, updated_at = now() WHERE source = 'usage_logs'", maxID); err != nil {
+		return nil, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, false, err
+	}
+	return res, len(logs) == ingestBatch, nil
+}
+
+// attribute 为新入库（channel = unknown 且尚未记账）的用量解析业务归属。
+func attribute(ctx context.Context, tx pgx.Tx, fromID int64) error {
+	// 上游、卖家与挂单
+	if _, err := tx.Exec(ctx, `UPDATE usage_records ur SET upstream_id = u.id, seller_id = u.seller_id,
+			payout = ur.total_cost * COALESCE(ur.account_rate_multiplier, 1),
+			listing_id = (SELECT l.id FROM listings l WHERE l.upstream_id = u.id AND l.created_at <= ur.created_at
+				AND (l.closed_at IS NULL OR l.closed_at > ur.created_at) ORDER BY l.id DESC LIMIT 1)
+		FROM upstreams u
+		WHERE u.sub2api_account_id = ur.sub2api_account_id AND ur.upstream_id IS NULL AND ur.ledger_txn_id IS NULL
+			AND ur.sub2api_usage_id > $1`, fromID); err != nil {
+		return err
+	}
+	// 买家与渠道：内部 key → 买家 Key；分组决定是默认分组还是指定卖家
+	if _, err := tx.Exec(ctx, `UPDATE usage_records ur SET buyer_key_id = ik.buyer_key_id, buyer_user_id = ik.buyer_user_id,
+			channel = CASE
+				WHEN EXISTS (SELECT 1 FROM pools p WHERE p.sub2api_group_id = ur.sub2api_group_id) THEN 'pool'
+				WHEN EXISTS (SELECT 1 FROM listings l WHERE l.listing_group_id = ur.sub2api_group_id) THEN 'direct'
+				ELSE 'unknown' END
+		FROM internal_keys ik
+		WHERE ik.sub2api_key_id = ur.sub2api_api_key_id AND ur.channel = 'unknown' AND ur.ledger_txn_id IS NULL
+			AND ur.sub2api_usage_id > $1`, fromID); err != nil {
+		return err
+	}
+	// 探测流量
+	_, err := tx.Exec(ctx, `UPDATE usage_records ur SET channel = 'probe'
+		FROM system_keys sk
+		WHERE sk.sub2api_key_id = ur.sub2api_api_key_id AND ur.channel = 'unknown' AND ur.ledger_txn_id IS NULL
+			AND ur.sub2api_usage_id > $1`, fromID)
+	return err
+}
+
+// postUsage 把尚未记账、已归属的用量记成一笔 usage 交易，并汇总到结算行。
+// 买家：买家余额减少 actual_cost；卖家：待结算增加 payout；差额记平台收入；探测流量记平台探测成本。
+func postUsage(ctx context.Context, tx pgx.Tx, fromID int64) (int64, error) {
+	var minID, maxID *int64
+	var n int64
+	if err := tx.QueryRow(ctx, `SELECT min(sub2api_usage_id), max(sub2api_usage_id), count(*) FROM usage_records
+		WHERE ledger_txn_id IS NULL AND channel <> 'unknown' AND sub2api_usage_id > $1`, fromID).Scan(&minID, &maxID, &n); err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	var txnID int64
+	if err := tx.QueryRow(ctx, `INSERT INTO ledger_txns (type, ref) VALUES ('usage', $1) RETURNING id`,
+		fmt.Sprintf("usage:%d-%d:%d", *minID, *maxID, time.Now().UnixNano())).Scan(&txnID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE usage_records SET ledger_txn_id = $1
+		WHERE ledger_txn_id IS NULL AND channel <> 'unknown' AND sub2api_usage_id > $2`, txnID, fromID); err != nil {
+		return 0, err
+	}
+	// 确保账本账户存在
+	if _, err := tx.Exec(ctx, `INSERT INTO ledger_accounts (owner_type, owner_id, kind)
+		SELECT DISTINCT 'buyer', buyer_user_id, 'buyer_cash' FROM usage_records WHERE ledger_txn_id = $1 AND buyer_user_id IS NOT NULL
+		UNION SELECT DISTINCT 'seller', seller_id, 'seller_pending' FROM usage_records WHERE ledger_txn_id = $1 AND seller_id IS NOT NULL
+		UNION SELECT 'platform', 0, 'platform_revenue'
+		UNION SELECT 'platform', 0, 'platform_probe_cost'
+		ON CONFLICT DO NOTHING`, txnID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO ledger_entries (txn_id, account_id, amount)
+		SELECT $1, a.id, x.amount FROM (
+			SELECT 'buyer' AS ot, buyer_user_id AS oid, 'buyer_cash' AS kind, sum(actual_cost) AS amount
+				FROM usage_records WHERE ledger_txn_id = $1 AND channel IN ('pool', 'direct') AND buyer_user_id IS NOT NULL GROUP BY buyer_user_id
+			UNION ALL
+			SELECT 'seller', seller_id, 'seller_pending', -sum(payout)
+				FROM usage_records WHERE ledger_txn_id = $1 AND seller_id IS NOT NULL GROUP BY seller_id
+			UNION ALL
+			SELECT 'platform', 0, 'platform_revenue',
+				-(COALESCE(sum(actual_cost) FILTER (WHERE buyer_user_id IS NOT NULL), 0) - COALESCE(sum(payout) FILTER (WHERE seller_id IS NOT NULL), 0))
+				FROM usage_records WHERE ledger_txn_id = $1 AND channel IN ('pool', 'direct')
+			UNION ALL
+			SELECT 'platform', 0, 'platform_probe_cost', sum(payout)
+				FROM usage_records WHERE ledger_txn_id = $1 AND channel = 'probe' AND seller_id IS NOT NULL
+		) x JOIN ledger_accounts a ON a.owner_type = x.ot AND a.owner_id = x.oid AND a.kind = x.kind
+		WHERE x.amount IS NOT NULL AND x.amount <> 0`, txnID); err != nil {
+		return 0, err
+	}
+	// 汇总到"上游 × 小时 × 渠道"的结算行
+	if _, err := tx.Exec(ctx, `INSERT INTO settlement_lines (upstream_id, seller_id, hour, channel, request_count, total_cost, payout, buyer_paid)
+		SELECT upstream_id, seller_id, date_trunc('hour', created_at), channel, count(*), sum(total_cost), sum(payout),
+			sum(CASE WHEN channel IN ('pool', 'direct') THEN actual_cost ELSE 0 END)
+		FROM usage_records WHERE ledger_txn_id = $1 AND upstream_id IS NOT NULL
+		GROUP BY upstream_id, seller_id, date_trunc('hour', created_at), channel
+		ON CONFLICT (upstream_id, hour, channel) DO UPDATE SET
+			request_count = settlement_lines.request_count + EXCLUDED.request_count,
+			total_cost = settlement_lines.total_cost + EXCLUDED.total_cost,
+			payout = settlement_lines.payout + EXCLUDED.payout,
+			buyer_paid = settlement_lines.buyer_paid + EXCLUDED.buyer_paid`, txnID); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// Run 循环入账，有积压时连续拉取。
+func (in *Ingester) Run(ctx context.Context, interval time.Duration) {
+	for {
+		if in.Gate != nil {
+			if ok, _ := in.Gate(ctx); !ok {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(interval):
+				}
+				continue
+			}
+		}
+		res, more, err := in.RunOnce(ctx)
+		if err != nil && ctx.Err() == nil {
+			in.Log.Error("usage ingest", "err", err)
+		} else if res != nil && res.Inserted > 0 {
+			in.Log.Info("usage ingested", "fetched", res.Fetched, "inserted", res.Inserted, "posted", res.Posted)
+		}
+		wait := interval
+		if more {
+			wait = 0
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
+}
+
+// Unfreeze 把冻结期已满的卖家收益从待结算转为可提现。
+func Unfreeze(ctx context.Context, db *pgxpool.Pool, freezeDays int, now time.Time) (int, error) {
+	cutoff := now.Add(-time.Duration(freezeDays) * 24 * time.Hour)
+	rows, err := db.Query(ctx, `SELECT seller_id FROM settlement_lines WHERE hour < $1 AND payout > unfrozen_payout GROUP BY seller_id`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	sellers, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return 0, err
+	}
+	done := 0
+	for _, sellerID := range sellers {
+		if err := unfreezeSeller(ctx, db, sellerID, cutoff, now); err != nil {
+			return done, fmt.Errorf("unfreeze seller %d: %w", sellerID, err)
+		}
+		done++
+	}
+	return done, nil
+}
+
+func unfreezeSeller(ctx context.Context, db *pgxpool.Pool, sellerID int64, cutoff, now time.Time) error {
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var amount string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(sum(payout - unfrozen_payout), 0)::text FROM settlement_lines
+		WHERE seller_id = $1 AND hour < $2 AND payout > unfrozen_payout`, sellerID, cutoff).Scan(&amount); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE settlement_lines SET unfrozen_payout = payout WHERE seller_id = $1 AND hour < $2 AND payout > unfrozen_payout`,
+		sellerID, cutoff); err != nil {
+		return err
+	}
+	if _, err := Post(ctx, tx, "unfreeze", fmt.Sprintf("unfreeze:%d:%d", sellerID, now.UnixNano()), "", nil, []Entry{
+		{Kind: KindSellerPending, OwnerID: sellerID, Amount: amount},
+		{Kind: KindSellerAvailable, OwnerID: sellerID, Amount: "-" + amount},
+	}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}

@@ -13,6 +13,7 @@
 | `ops` | `sub2api_ops` 出站表：入队（幂等键去重）、发送器（同一 target 严格按序、退避重试、租约回收、死信） |
 | `opshandlers` | 出站操作类型到 Admin API 调用的映射 |
 | `compatguard` | 运行时兼容自检，安全模式下关闭出站发送 |
+| `provision` | "确保某个 sub2api 资源存在"：先按名称查只读库，没有再创建，创建失败再查一次 |
 | `contract`（仓库根目录） | 契约文件 `contract.yaml`、只读查询与加载代码 |
 
 ## 2. Admin API 调用清单
@@ -20,14 +21,15 @@
 | 用途 | 接口 |
 |---|---|
 | 版本 | `GET /api/v1/admin/system/version` |
-| 代理 | `POST/PUT/DELETE /api/v1/admin/proxies`、`POST /proxies/:id/quality-check` |
+| 代理 | `POST /api/v1/admin/proxies`、`DELETE /proxies/:id`（代理质量检测 `quality-check` 放到后续） |
 | Claude 授权 | `POST /admin/accounts/generate-auth-url`、`/exchange-code`、`/generate-setup-token-url`、`/exchange-setup-token-code` |
-| OpenAI 授权 | `POST /admin/openai/generate-auth-url`、`/exchange-code`、`/create-from-oauth`、`/create-from-codex-pat` |
-| Gemini / Antigravity / Grok 授权 | `POST /admin/{gemini,antigravity,grok}/oauth/auth-url`、`/oauth/exchange-code`；Grok `/oauth/create-from-oauth` |
-| 账号 | `POST /admin/accounts`、`PUT /admin/accounts/:id`、`POST /admin/accounts/bulk-update`、`POST /:id/schedulable`、`DELETE /:id` |
-| 账号信息 | `POST /:id/refresh-tier`、`POST /:id/set-privacy`、`GET /admin/openai/accounts/:id/quota`、`GET /admin/grok/accounts/:id/quota`、`GET /admin/cn-providers/accounts/:id/quota` |
+| OpenAI 授权 | `POST /admin/openai/generate-auth-url`、`/exchange-code`（换到令牌后由本系统用 `POST /admin/accounts` 创建账号，不用 `create-from-oauth`） |
+| Gemini / Antigravity / Grok 授权 | `POST /admin/{gemini,antigravity,grok}/oauth/auth-url`、`/oauth/exchange-code` |
+| 账号 | `POST /admin/accounts`、`PUT /admin/accounts/:id`、`POST /admin/accounts/bulk-update`、`POST /:id/schedulable`、`DELETE /:id`、`POST /:id/clear-error`（重新授权后清除错误状态） |
+| 账号信息 | `POST /:id/set-privacy`（**只支持 OpenAI 与 Antigravity 的 OAuth 账号**）、`GET /admin/cn-providers/accounts/:id/quota`（Coding Plan 上架时确认是订阅 key）。订阅档位从授权换到的令牌信息中读取（`plan_type`、`tier_id`、`subscription_tier`）；`refresh-tier` 只支持 Gemini 的 google_one 账号，第一期不用 |
+| 官方价 | `GET /admin/channels/model-pricing?model=`（市场展示的官方价目，倍率以它为基准） |
 | 分组 | `POST/PUT/DELETE /admin/groups`、`PUT /admin/groups/:id/rate-multipliers`（买家折扣，后续） |
-| 用户 | `POST /admin/users`、`PUT /admin/users/:id`（并发、可用分组）、`POST /admin/users/:id/balance`（支持 `Idempotency-Key`）、`GET /:id/balance-history` |
+| 用户 | `POST /admin/users`、`PUT /admin/users/:id`（并发、可用分组）、`POST /admin/users/:id/balance`（强制 `Idempotency-Key`） |
 
 所有路径前缀为 `/api/v1`。具体请求字段实现时以对应版本的 sub2api handler 定义为准，并写进契约。
 
@@ -39,6 +41,8 @@
 | 创建用户 | 不支持；邮箱唯一 | 重试前按邮箱查询是否已创建 |
 | 创建分组 | 不支持 | 重试前按名称（`tm-` 前缀含本系统 ID）查询是否已创建 |
 | 创建内部 key | 不支持；`custom_key` 唯一 | 由本系统生成 `custom_key`，重复创建会被拒绝，据此判断已创建 |
+
+**写入门控**：除了出站表发送器，控制面里同步调用的写接口（授权、创建分组与账号、设置隐私等）也经过同一个门控——`adminclient` 在每个非 GET 请求前读取 `compat_state`（缓存 5 秒），安全模式下直接返回"暂停写入"，控制面接口给出 503 `SUB2API_SAFE_MODE`；出站表里的操作视为可重试，恢复后继续发送。
 
 **管理员合规确认**：sub2api 要求每个管理员确认《部署与运营合规承诺》后才能调用管理接口，Admin API Key 的调用同样受此约束（未确认返回 HTTP 423，`code` 为字符串 `ADMIN_COMPLIANCE_ACK_REQUIRED`）。确认必须由平台运营方的管理员本人完成，本系统不代为确认。
 
@@ -84,9 +88,9 @@ sub2api 的 Admin API 不能替用户创建 key，只能用影子用户的登录
 
 ```yaml
 sub2api:
-  verified_versions: ["0.2.14"]          # 已验证兼容的版本
-  migration_fingerprints:                # 每个版本对应的迁移指纹（schema_migrations 文件名集合的哈希）
-    "0.2.14": "sha256:…"
+  verified_versions:                     # 已验证兼容的版本及其迁移指纹（schema_migrations 文件名集合的哈希，可有多个）
+    - version: "0.2.14"
+      migration_fingerprints: ["sha256:c0a0ae74…"]
 
 jsonb_keys:
   accounts.extra:
@@ -100,15 +104,14 @@ enums:                                   # 新增值视为提示，删除或改�
   accounts.type: [oauth, setup-token, apikey]
   accounts.status: [active, inactive, error, disabled]   # 实现时按 sub2api 实际取值核对
 
-admin_api:                               # 用到的端点与字段
-  - method: POST
-    path: /api/v1/admin/accounts
-    request_fields: [name, platform, type, credentials, extra, proxy_id, concurrency, priority, rate_multiplier, group_ids]
-    response_fields: [data.id]
+admin_api:                               # 用到的 Admin API 端点与请求字段
+  - {method: POST, path: /api/v1/admin/accounts, request: [name, platform, type, credentials, …], idempotency_key: required}
   # …
-
-model_prices:                            # 挂单涉及的模型必须在 sub2api 有官方价
-  required: [claude-sonnet-*, claude-opus-*, gpt-5*, kimi-for-coding, glm-5*, …]
+user_api:                                # 影子用户用到的接口
+  - {method: POST, path: /api/v1/keys, request: [name, group_id, custom_key]}
+gateway_api:                             # Edge 与质量检测经由网关调用的接口
+  - {method: POST, path: /v1/messages}
+  # …
 
 config:                                  # 依赖的 sub2api 配置
   gateway.scheduling.prefer_soonest_reset: true
@@ -139,6 +142,8 @@ response_headers:                        # Edge 对账依赖的响应头
 | 余额接口幂等 | 同一 `Idempotency-Key` 调两次，余额只增加一次 |
 | 自定义 key | `custom_key` 创建的 key 可正常调用 |
 
+**用 sub2api 替身在真实表结构上验证**（`internal/testutil/fakesub2api` + `internal/e2e`，构建标签 `integration`）：替身在应用了 v0.2.14 全部迁移的数据库上实现本系统用到的 Admin API、用户 API 与网关，行为对照上表（失败请求不写用量、`X-Client-Request-ID`、余额接口幂等、`custom_key` 冲突、扣费可扣成负数、组内按优先级选账号），端到端测试覆盖上架、调度、Edge 故障转移、入账、对账、退款、提现、质量检测与申诉。替身只能证明本系统对这些行为的理解自洽；对真实 sub2api 的行为验证仍需在预发环境跑冒烟测试（需要管理员完成合规确认）。
+
 **已在 sub2api 0.2.14 上实测**（`internal/sub2api/smoke_test.go`，构建标签 `smoke`）：影子用户登录与刷新令牌；用 `custom_key` 创建、停用、启用、删除 key，重复的 `custom_key` 被拒绝；网关错误响应带 `X-Client-Request-ID`，失败请求没有写 usage_log；余额不足时网关返回 HTTP 403，`code` 为字符串 `INSUFFICIENT_BALANCE`。Admin API 部分需要管理员先完成合规确认才能实测。
 
 ## 6. s2a-compat
@@ -153,9 +158,17 @@ s2a-compat check --sub2api-repo ../sub2api --target v0.2.15 \
 # 不接触生产库时，用当前版本的 git ref 代替
 s2a-compat check --sub2api-repo ../sub2api --current v0.2.14 --target v0.2.15
 
+# 同时检查本系统契约是否已登记目标版本与升级后的迁移指纹（未登记则阻止升级：必须先发布本系统）
+s2a-compat check --sub2api-repo ../sub2api --target v0.2.15 --replica-dsn "$SUB2API_REPLICA_DSN" --target-version 0.2.15
+
+# 预发环境升级到目标版本后，不带凭证探测契约中的全部接口是否仍然存在、网关是否仍返回 X-Client-Request-ID
+s2a-compat routes --base-url http://staging-sub2api:8080
+
 # 计算某个版本的迁移指纹，写入 contract.yaml 的 verified_versions
 s2a-compat fingerprint --sub2api-repo ../sub2api --ref v0.2.15
 ```
+
+`routes` 的判定：已注册的接口在没有凭证时会被鉴权或参数校验拦下（401 / 400 / 423 等 JSON 响应），未注册的接口返回 gin 默认的纯文本 404；不带凭证的请求不会产生写入，可以直接对预发环境执行。
 
 其他参数：`--format md|json`、`--fail-on conflict|warning`（默认只有冲突阻止升级）、`--target-dir`（直接读取迁移目录）、`--contract`（覆盖内嵌契约）。`--scratch-dsn` 必须指向空库，非空时拒绝执行，防止误用生产库。
 
@@ -169,7 +182,7 @@ s2a-compat fingerprint --sub2api-repo ../sub2api --ref v0.2.15
 | 1. 结构比对 | 第一期先实现轻量版（`--scratch-dsn`）：按 sub2api 迁移执行器的规则把目标版本全部迁移执行到空库，对每条契约查询执行 `EXPLAIN`。完整版：从只读副本导出表结构导入临时库，用目标版本的 sub2api 镜像连接它启动（启动时执行待执行的迁移），再做同样的校验 | 秒级 / 分钟级 |
 | 2. 行为契约 | 在同一个临时实例上，接假上游，跑第 5.3 节的全部场景，并按 `admin_api` 校验请求和响应字段 | 分钟级 |
 
-**实现状态（M0）**：阶段 0 与阶段 1 轻量版已实现；阶段 1 完整版与阶段 2 放在 M5，冒烟测试是阶段 2 的雏形。
+**实现状态**：阶段 0（含契约版本闸门 `--target-version`）、阶段 1 轻量版、接口探测（`routes`）已实现；受控升级脚本 `scripts/upgrade-sub2api.sh` 把它们串起来。阶段 1 完整版（启动目标版本镜像）与阶段 2 的真实行为测试依赖预发环境与管理员合规确认，尚未自动化。
 
 **静态扫描的识别范围**：`ALTER TABLE` 的删列、改列名、改表名、改列类型、`SET/DROP NOT NULL`、新增列、`CHECK (col IN (…))` 与 `col = ANY (ARRAY[…])` 形式的枚举约束、移动 schema、分区变更；`DROP TABLE`、`TRUNCATE`；大表上非 `CONCURRENTLY` 建索引、大表 `UPDATE`/`DELETE`；PL/pgSQL 代码块（`DO`、函数）同时提到契约表和变更动作时提示人工确认。对 v0.1.136 → v0.2.14 的 107 个迁移试跑：没有误报冲突，11 条人工确认提示（均为触发器函数），48 条新增列提示。
 
@@ -187,11 +200,12 @@ s2a-compat fingerprint --sub2api-repo ../sub2api --ref v0.2.15
 
 ## 7. 升级流程
 
+`scripts/upgrade-sub2api.sh` 实现了下面的流程（静态检查 → 预发接口探测 → 人工确认 → 执行升级命令 → 等待自检恢复正常），任一步失败即退出，不会执行升级。
+
 **检查通过**
 
-1. 本系统切换到维护模式：暂停对 sub2api 的写操作（执行器、对账器、余额同步）。
-2. 升级 sub2api（固定镜像版本号），等待迁移完成、健康检查通过。
-3. 本系统的运行时自检识别到新版本已在 `verified_versions` 中，自动恢复写操作。
+1. 升级 sub2api（固定镜像版本号），等待迁移完成、健康检查通过。升级期间版本或迁移指纹变化，运行时自检进入安全模式，写操作自动暂停（出站操作保留在队列里）。
+2. 本系统的运行时自检识别到新版本已在 `verified_versions` 中，自动恢复写操作，队列中的操作继续发送。
 
 **检查有冲突**
 
@@ -207,7 +221,8 @@ s2a-compat fingerprint --sub2api-repo ../sub2api --ref v0.2.15
 market-worker 每 5 分钟读取一次 `schema_migrations` 指纹和 `/admin/system/version`：
 
 - 在 `verified_versions` 中：正常运行。
-- 不在其中：进入**安全模式**，停止所有对 sub2api 的写操作，暂停结算入账，告警。买家请求不受影响。
+- 不在其中：进入**安全模式**，停止所有对 sub2api 的写操作（出站发送器与控制面的同步写入），暂停用量入账、对账与质量检测，告警。买家请求不受影响。
+- 首次检查完成前（进程启动时、数据库初始状态）同样按安全模式处理。
 
 配合以下措施防止绕过闸门：
 

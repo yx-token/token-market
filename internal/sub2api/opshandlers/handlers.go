@@ -20,6 +20,9 @@ const (
 	TypeAccountBulkUpdate     = "account.bulk_update"
 	TypeAccountSetSchedulable = "account.set_schedulable"
 	TypeAccountDelete         = "account.delete"
+	TypeGroupUpdate           = "group.update"
+	TypeGroupDelete           = "group.delete"
+	TypeUserUpdate            = "user.update"
 )
 
 type BalancePayload struct {
@@ -46,6 +49,20 @@ type AccountDeletePayload struct {
 	AccountID int64 `json:"account_id"`
 }
 
+type GroupUpdatePayload struct {
+	GroupID int64                        `json:"group_id"`
+	Input   adminclient.UpdateGroupInput `json:"input"`
+}
+
+type GroupDeletePayload struct {
+	GroupID int64 `json:"group_id"`
+}
+
+type UserUpdatePayload struct {
+	UserID int64                       `json:"user_id"`
+	Input  adminclient.UpdateUserInput `json:"input"`
+}
+
 // Register 把全部处理器注册到发送器。
 func Register(s *ops.Sender, c *adminclient.Client) {
 	s.Register(TypeUserBalanceAdd, balance(c, adminclient.BalanceAdd))
@@ -63,7 +80,24 @@ func Register(s *ops.Sender, c *adminclient.Client) {
 		return nil, c.SetSchedulable(ctx, p.AccountID, p.Schedulable)
 	}))
 	s.Register(TypeAccountDelete, handle(func(ctx context.Context, _ ops.Op, p AccountDeletePayload) (any, error) {
-		return nil, c.DeleteAccount(ctx, p.AccountID)
+		err := c.DeleteAccount(ctx, p.AccountID)
+		if adminclient.StatusOf(err) == 404 {
+			return nil, nil // 已经不存在，视为成功
+		}
+		return nil, err
+	}))
+	s.Register(TypeGroupUpdate, handle(func(ctx context.Context, _ ops.Op, p GroupUpdatePayload) (any, error) {
+		return c.UpdateGroup(ctx, p.GroupID, p.Input)
+	}))
+	s.Register(TypeGroupDelete, handle(func(ctx context.Context, _ ops.Op, p GroupDeletePayload) (any, error) {
+		err := c.DeleteGroup(ctx, p.GroupID)
+		if adminclient.StatusOf(err) == 404 {
+			return nil, nil
+		}
+		return nil, err
+	}))
+	s.Register(TypeUserUpdate, handle(func(ctx context.Context, _ ops.Op, p UserUpdatePayload) (any, error) {
+		return c.UpdateUser(ctx, p.UserID, p.Input)
 	}))
 }
 
@@ -96,5 +130,5 @@ func Retryable(err error) bool {
 	if errors.As(err, &perm) {
 		return false
 	}
-	return adminclient.IsRetryable(err)
+	return adminclient.Retryable(err)
 }

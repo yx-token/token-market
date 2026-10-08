@@ -69,3 +69,24 @@ func TestApplyEnvRejectsMalformedCryptoKeys(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+// 仓库根目录的配置示例必须能被解析（只替换占位的密钥）。
+func TestExampleConfigParses(t *testing.T) {
+	raw, err := os.ReadFile("../../../config.example.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := strings.Replace(string(raw), "REPLACE_WITH_BASE64_32_BYTES", testKey(), 1)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Worker.AdminAddr != ":8092" || cfg.Edge.InvalidKeyLimit != 30 || cfg.Worker.BalanceReconcileInterval != 30*time.Minute ||
+		cfg.Sub2API.GatewayURL != cfg.Sub2API.BaseURL || cfg.Auth.TokenTTL != 24*time.Hour {
+		t.Fatalf("example config: %+v", cfg)
+	}
+}

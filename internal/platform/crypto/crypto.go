@@ -7,7 +7,10 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -21,6 +24,7 @@ var ErrMalformed = errors.New("crypto: malformed ciphertext")
 type Keyring struct {
 	activeID string
 	aeads    map[string]cipher.AEAD
+	pepper   []byte
 }
 
 // NewKeyring 由配置构建密钥环。activeID 必须存在于 keys 中。
@@ -50,7 +54,32 @@ func NewKeyring(cfg config.CryptoConfig) (*Keyring, error) {
 	if _, ok := kr.aeads[cfg.ActiveKeyID]; !ok {
 		return nil, fmt.Errorf("crypto: active key %q not configured", cfg.ActiveKeyID)
 	}
+	if cfg.HashPepper != "" {
+		kr.pepper = []byte(cfg.HashPepper)
+	} else {
+		// 未配置时从活动密钥派生；轮换活动密钥会改变盲索引，所以生产环境应显式配置 hash_pepper
+		key, _ := config.DecodeKey(cfg.Keys[cfg.ActiveKeyID])
+		sum := sha256.Sum256(append([]byte("token-market/blind-index/"), key...))
+		kr.pepper = sum[:]
+	}
 	return kr, nil
+}
+
+// BlindIndex 返回不可逆、可比较的哈希，用于在不解密的情况下按敏感值查找（如证件号去重）。
+func (k *Keyring) BlindIndex(value string) string {
+	m := hmac.New(sha256.New, k.pepper)
+	m.Write([]byte(value))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+// SealString / OpenString 是字符串的便捷封装。
+func (k *Keyring) SealString(s string, aad string) ([]byte, error) {
+	return k.Seal([]byte(s), []byte(aad))
+}
+
+func (k *Keyring) OpenString(ct []byte, aad string) (string, error) {
+	pt, err := k.Open(ct, []byte(aad))
+	return string(pt), err
 }
 
 // Seal 用当前活动密钥加密。aad 用于绑定上下文（例如 "upstream:42:credentials"），
