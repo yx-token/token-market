@@ -30,6 +30,16 @@ type Hop struct {
 	Label          string `json:"label"` // 写入响应头 X-TM-Listing
 	InternalKeyID  int64  `json:"internal_key_id"`
 	InternalKeyEnc []byte `json:"internal_key_enc"` // 用密钥环加密，AAD = InternalKeyAAD(InternalKeyID)
+	// KeyAAD 不为空时用它作为密文的附加认证数据（第三方检测的临时令牌直接复用探测 key 的密文）
+	KeyAAD string `json:"key_aad,omitempty"`
+}
+
+// AAD 返回内部 key 密文的附加认证数据。
+func (h Hop) AAD() string {
+	if h.KeyAAD != "" {
+		return h.KeyAAD
+	}
+	return InternalKeyAAD(h.InternalKeyID)
 }
 
 // KeyConfig 是一个买家 Key 的路由配置。

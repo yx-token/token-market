@@ -1,24 +1,26 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { buyer } from '@/api'
-import type { Refund, Wallet } from '@/api/types'
+import type { RechargeOrder, Refund, Wallet } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
-import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
-import { dateTime, money, parseAmount } from '@/utils/format'
+import PaymentDialog from '@/components/PaymentDialog.vue'
+import { label } from '@/utils/labels'
+import { dateTime, money } from '@/utils/format'
 
-const toast = useToast()
+const route = useRoute()
+const router = useRouter()
 const wallet = useLoader(() => buyer.wallet(), null as Wallet | null)
 const refunds = useLoader(() => buyer.refunds(), [] as Refund[] | null)
 const { busy, run } = useAction()
 
-const showRecharge = ref(false)
-const amount = ref('')
-const instructions = ref('')
+const showPay = ref(false)
+const payOrder = ref<RechargeOrder | null>(null)
 const showRefund = ref(false)
 const refundNote = ref('')
 
@@ -26,24 +28,26 @@ function reload() {
   wallet.load()
   refunds.load()
 }
-onMounted(reload)
 
-async function recharge() {
-  const a = parseAmount(amount.value)
-  if (a === null) {
-    toast.error('请输入正确的金额（最多两位小数）')
-    return
+onMounted(async () => {
+  reload()
+  // 支付宝网页支付完成后跳回 /buyer/wallet?order=ID：展示该订单的结果
+  const id = Number(route.query.order)
+  if (id) {
+    router.replace({ query: {} })
+    const o = await buyer.getRecharge(id).catch(() => null)
+    if (o) openOrder(o)
   }
-  const res = await run(() => buyer.recharge(a))
-  if (res) {
-    instructions.value = `订单 #${res.order.id} 已创建（${money(res.order.amount)}）。请按平台公布的付款方式付款并备注订单号，平台确认到账后余额自动增加。`
-    amount.value = ''
-    reload()
-  }
+})
+
+function newRecharge() {
+  payOrder.value = null
+  showPay.value = true
 }
 
-async function cancel(id: number) {
-  if (await run(() => buyer.cancelRecharge(id), '订单已取消')) reload()
+function openOrder(o: RechargeOrder) {
+  payOrder.value = o
+  showPay.value = true
 }
 
 async function refund() {
@@ -59,7 +63,7 @@ async function refund() {
   <div>
     <PageHeader title="钱包" description="充值 1 元 = 1 个余额单位。调用按 sub2api 实际产生的费用扣减，失败的请求不计费。">
       <button class="btn-secondary" :disabled="!!wallet.data.value?.active_refund" @click="showRefund = true">申请退款</button>
-      <button class="btn-primary" @click="(showRecharge = true), (instructions = '')">充值</button>
+      <button class="btn-primary" @click="newRecharge">充值</button>
     </PageHeader>
 
     <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -77,6 +81,7 @@ async function refund() {
       <DataTable
         :columns="[
           { key: 'id', label: '订单' },
+          { key: 'channel', label: '支付方式' },
           { key: 'amount', label: '金额', align: 'right' },
           { key: 'status', label: '状态' },
           { key: 'created_at', label: '创建时间' },
@@ -88,12 +93,16 @@ async function refund() {
         row-key="id"
       >
         <template #cell-id="{ row }">#{{ row.id }}</template>
-        <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
+        <template #cell-channel="{ row }">{{ label('paymentChannel', row.channel).text }}</template>
+        <template #cell-amount="{ row }">
+          {{ money(row.amount) }}
+          <span v-if="row.refunded_amount > 0" class="block text-xs text-slate-400">已退 {{ money(row.refunded_amount) }}</span>
+        </template>
         <template #cell-status="{ row }"><StatusBadge kind="rechargeStatus" :value="row.status" /></template>
         <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
         <template #cell-credited_at="{ row }">{{ dateTime(row.credited_at) }}</template>
         <template #cell-actions="{ row }">
-          <button v-if="row.status === 'pending'" class="btn-ghost btn-sm" :disabled="busy" @click="cancel(row.id)">取消</button>
+          <button v-if="row.status === 'pending'" class="btn-ghost btn-sm" @click="openOrder(row)">{{ row.channel === 'manual' ? '查看' : '继续支付' }}</button>
         </template>
       </DataTable>
     </div>
@@ -105,6 +114,7 @@ async function refund() {
           { key: 'id', label: '编号' },
           { key: 'status', label: '状态' },
           { key: 'amount', label: '金额', align: 'right' },
+          { key: 'payouts', label: '退回方式' },
           { key: 'created_at', label: '申请时间' },
           { key: 'finished_at', label: '完成时间' },
         ]"
@@ -114,29 +124,26 @@ async function refund() {
         <template #cell-id="{ row }">#{{ row.id }}</template>
         <template #cell-status="{ row }"><StatusBadge kind="refundStatus" :value="row.status" /></template>
         <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
+        <template #cell-payouts="{ row }">
+          <ul v-if="row.payouts?.length" class="space-y-0.5 text-xs">
+            <li v-for="p in row.payouts" :key="p.id">
+              {{ p.channel === 'manual' ? '人工打款' : `原路退回${label('paymentChannel', p.channel).text}` }} {{ money(p.amount) }}
+              <StatusBadge kind="payoutStatus" :value="p.status" />
+            </li>
+          </ul>
+          <span v-else class="text-slate-400">—</span>
+        </template>
         <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
         <template #cell-finished_at="{ row }">{{ dateTime(row.finished_at) }}</template>
       </DataTable>
     </div>
 
-    <ModalDialog v-model:open="showRecharge" title="充值">
-      <template v-if="!instructions">
-        <div>
-          <label class="label" for="amount">金额（元）</label>
-          <input id="amount" v-model="amount" class="input" inputmode="decimal" placeholder="例如 100" />
-          <p class="hint">第一期由平台人工确认到账。</p>
-        </div>
-      </template>
-      <p v-else class="rounded bg-emerald-50 p-3 text-sm text-emerald-800">{{ instructions }}</p>
-      <template #footer>
-        <button class="btn-secondary" @click="showRecharge = false">关闭</button>
-        <button v-if="!instructions" class="btn-primary" :disabled="busy" @click="recharge">创建订单</button>
-      </template>
-    </ModalDialog>
+    <PaymentDialog v-model:open="showPay" :order="payOrder" @changed="reload" />
 
     <ModalDialog v-model:open="showRefund" title="申请退款">
       <p class="text-sm text-slate-600">
-        退还全部剩余余额（精确到分）。提交后你的所有 API Key 会先暂停，等待进行中的请求结束后扣减余额，平台确认后原路退回。
+        退还全部剩余余额（精确到分）。提交后你的所有 API Key 会先暂停，等待进行中的请求结束后扣减余额：近期通过支付宝、微信支付的充值原路退回，
+        其余部分由平台人工打款。
       </p>
       <div>
         <label class="label" for="note">备注（可选）</label>

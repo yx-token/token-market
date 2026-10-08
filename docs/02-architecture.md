@@ -4,8 +4,8 @@
 
 | 组件 | 职责 | 是否在请求链路上 |
 |---|---|---|
-| **market-api** | 控制面 HTTP 接口：买家、卖家、管理后台 | 否 |
-| **market-worker** | 后台任务：用量拉取、结算、探测调度、评分判定、回收报价、调度执行器、状态对账、兼容自检。多副本时用 PostgreSQL advisory lock 选主，只有持锁的副本运行任务 | 否 |
+| **market-api** | 控制面 HTTP 接口：买家、卖家、管理后台；支付渠道异步通知 | 否 |
+| **market-worker** | 后台任务：用量拉取、结算、探测调度、评分判定、第三方检测提交与轮询、回收报价、调度执行器、状态对账、兼容自检、支付查单与超时关单、原路退款。多副本时用 PostgreSQL advisory lock 选主，只有持锁的副本运行任务 | 否 |
 | **market-edge** | 买家 API 入口：鉴权买家 Key、解析卖家链、转发到 sub2api、故障转移 | **是** |
 | **market-web** | 前端：市场、买家中心、卖家中心、管理后台。Vue 3 + TypeScript + Vite + Pinia + Tailwind（与 sub2api 前端同一技术栈），构建产物由 market-api 直接提供 | 否 |
 | **s2a-compat** | 命令行工具：sub2api 升级前的兼容检查 | 否 |
@@ -13,6 +13,8 @@
 | Redis（market） | 缓存、任务队列、Edge 路由配置分发 | Edge 读取 |
 | **sub2api** | 网关、账号调度、实时计费与余额拦截、OAuth token 刷新 | 是 |
 | PostgreSQL（sub2api 只读副本） | 用量与账号状态的数据来源 | 否 |
+| 支付宝 / 微信支付 | 充值收款、原路退款 | 否 |
+| 第三方检测站（BazaarLink 等） | 模型身份检测，经 Edge 访问被测账号 | 否 |
 
 Go 单仓库，多个可执行文件：
 
@@ -23,7 +25,8 @@ token-market/
 │   ├── worker/       # market-worker
 │   ├── edge/         # market-edge
 │   ├── s2a-compat/   # 兼容闸门
-│   └── fake-sub2api/ # 开发与演示用的 sub2api 替身（不能用于生产）
+│   ├── fake-sub2api/ # 开发与演示用的 sub2api 替身（不能用于生产）
+│   └── fake-thirdparty/ # 开发与演示用的支付宝、微信支付、BazaarLink 替身（不能用于生产）
 ├── internal/
 │   ├── app/          # 按配置组装各进程共用的依赖与服务；同步写入 sub2api 的兼容门控
 │   ├── httpapi/      # 控制面 HTTP 接口（路由与处理函数）
@@ -34,14 +37,15 @@ token-market/
 │   ├── buyer/        # 影子用户、买家 Key 与内部 key、Edge 配置发布
 │   ├── edgecfg/      # Edge 路由配置在 Redis 中的存取与通知
 │   ├── edge/         # Edge 路由与转发
-│   ├── quality/      # 检测策略、题库、探测、判定、报告、申诉
+│   ├── quality/      # 检测策略、题库、探测、判定、报告、申诉；thirdparty/ 第三方检测站
+│   ├── payment/      # 支付渠道协议：alipay/（电脑网站支付、当面付）、wechat/（APIv3 Native）
 │   ├── scheduling/   # 默认分组、规划器、执行器、状态对账
 │   ├── billing/      # 用量入账、账本、结算、充值退款提现、对账、Key 限额
 │   ├── risk/         # 风控
 │   ├── settings/     # 平台可调参数
 │   ├── compat/       # s2a-compat 的检查逻辑
 │   ├── platform/     # 配置、加密、数据库、鉴权、HTTP 工具、客户端 IP
-│   ├── testutil/     # 临时数据库、sub2api 替身（fakesub2api）
+│   ├── testutil/     # 临时数据库、sub2api 替身（fakesub2api）、支付替身（fakepay）、BazaarLink 替身（fakebazaar）
 │   └── e2e/          # 端到端测试
 ├── contract/         # sub2api 契约：contract.yaml、queries/*.sql
 ├── migrations/       # 本系统数据库迁移
@@ -67,7 +71,8 @@ token-market/
 
 - sub2api 不暴露公网。买家流量只能经过 Edge 进入。
 - Edge 和 sub2api 同机房部署，转发多出的延迟在毫秒级。
-- 探测请求由 market-worker 直接发给 sub2api 网关，不经过 Edge（见 [05 质量检测](05-quality.md)）。
+- 探测请求由 market-worker 直接发给 sub2api 网关，不经过 Edge（见 [05 质量检测](05-quality.md)）；第三方检测站在公网，只能经 Edge（用一次性临时令牌）访问被测账号。
+- 支付宝 / 微信支付的异步通知发到 market-api 的 `/api/payments/{alipay|wechat}/notify`，`payment.public_url` 必须是公网可访问的地址。
 - 端口：market-api `http.addr`（默认 :8080）；market-edge `edge.addr`（:8090）与管理端口 `edge.admin_addr`（:8091）；market-worker 管理端口 `worker.admin_addr`（:8092，`/healthz` 显示是否持有主锁，`/debug/vars` 输出任务运行次数、失败次数、最近成功时间，以及出站队列积压、死信、待处理异常、入账延迟、兼容自检状态等积压指标）。管理端口只在内网开放。
 
 ## 3. 与 sub2api 的集成通道
@@ -106,6 +111,15 @@ market-worker ─(探测用户 key，绑定 tm-probe-<上游>)→ sub2api → �
 ```
 
 探测分组只包含被测账号，因此探测请求在 sub2api 之后走的路径（代理、TLS 指纹、请求头处理）与买家请求完全相同。
+
+第三方检测：
+
+```
+market-worker ─(Edge 公网地址 + 临时令牌 tm-tp-xxx)→ 检测站
+检测站 ─(tm-tp-xxx)→ Edge ─(探测用户 key，绑定 tm-probe-<上游>)→ sub2api → 被测账号
+```
+
+临时令牌只路由到该上游的探测分组，到截止时间 Edge 拒绝，检测结束后立即撤销。
 
 ## 5. 本系统概念在 sub2api 中的映射
 

@@ -1,0 +1,184 @@
+//go:build integration
+
+package e2e
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/DueGin/token-market/internal/testutil/fakebazaar"
+)
+
+// TestThirdPartyDetection：上架检测在内部探测后追加 BazaarLink 身份检测。检测站经 Edge 用临时令牌访问被测账号，
+// 身份一致则通过，自称其他模型则判为降智、上架检测不通过；检测结束后令牌失效。
+func TestThirdPartyDetection(t *testing.T) {
+	e := setup(t)
+	ctx := e.ctx
+	admin := e.login("admin@market.test", "admin-password-1")
+	admin.must("PUT", "/api/admin/vendors/anthropic", map[string]any{"enabled": true}, nil)
+	for i := 1; i <= 3; i++ {
+		admin.must("POST", "/api/admin/proxies", map[string]any{"name": fmt.Sprintf("p%d", i), "protocol": "socks5", "host": "10.0.0.5", "port": 6080 + i}, nil)
+	}
+	ed := e.startEdge()
+	e.app.Quality.EdgePublicURL = ed.url
+
+	bl := fakebazaar.New()
+	t.Cleanup(bl.Close)
+	// http 地址的 Edge 只有开启 allow_insecure_target 才能交给检测站
+	admin.must("PUT", "/api/admin/detection-providers/bazaarlink", map[string]any{"enabled": true, "base_url": bl.URL(), "max_runs_per_hour": 10}, nil)
+	admin.must("PUT", "/api/admin/detection-policies/anthropic", map[string]any{"third_party": []map[string]any{{
+		"provider": "bazaarlink", "triggers": []string{"onboarding", "admin"}}}}, nil)
+	admin.expect(400, "PUT", "/api/admin/detection-policies/anthropic", map[string]any{"third_party": []map[string]any{{
+		"provider": "nope", "triggers": []string{"onboarding"}}}})
+
+	var mu sync.Mutex
+	impostor := map[int64]bool{}
+	e.fake.SetResponder(func(acc int64, prompt string) string {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case strings.Contains(prompt, "Which model") || strings.Contains(prompt, "Which company"):
+			if impostor[acc] {
+				return "I am gpt-4o, trained by OpenAI."
+			}
+			return "I am claude-sonnet-4-5 by Anthropic."
+		case strings.Contains(prompt, "17 * 23"):
+			return "391"
+		case strings.Contains(prompt, "READY"):
+			return "READY"
+		}
+		return "The code is " + pongRe.FindString(prompt)
+	})
+
+	seller := e.newUser("seller-tp@market.test")
+	onboard := func(code string, bad bool) int64 {
+		var up idOnly
+		seller.must("POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"}, &up)
+		seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/start", up.ID), nil, nil)
+		seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/complete", up.ID), map[string]string{"code": code}, nil)
+		var acc int64
+		mustScan(t, e.app.DB.QueryRow(ctx, "SELECT sub2api_account_id FROM upstreams WHERE id = $1", up.ID), &acc)
+		mu.Lock()
+		impostor[acc] = bad
+		mu.Unlock()
+		return up.ID
+	}
+	// wait 推进质量调度直到上游的检测记录全部结束（跳过轮询间隔）
+	wait := func(upstreamID int64) {
+		t.Helper()
+		for i := 0; i < 60; i++ {
+			e.tick()
+			var open int
+			mustScan(t, e.app.DB.QueryRow(ctx, `SELECT count(*) FROM probe_runs WHERE upstream_id = $1 AND status IN ('queued', 'running', 'third_party')`,
+				upstreamID), &open)
+			if open == 0 {
+				return
+			}
+			if _, err := e.app.DB.Exec(ctx, "UPDATE third_party_checks SET next_attempt_at = now() WHERE status IN ('pending', 'running')"); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatal("detection did not finish")
+	}
+
+	// 未允许 http 目标：检测站提交失败，检测结论只按内部探测（不阻塞上架）
+	good0 := onboard("tp-ivan", false)
+	wait(good0)
+	var status, errMsg string
+	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status, COALESCE(error, '') FROM third_party_checks WHERE upstream_id = $1", good0), &status, &errMsg)
+	if status != "failed" || !strings.Contains(errMsg, "https") {
+		t.Fatalf("insecure target should be refused: %s %s", status, errMsg)
+	}
+	var health string
+	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status, health FROM upstreams WHERE id = $1", good0), &status, &health)
+	if status != "ready" || health != "healthy" {
+		t.Fatalf("failed third-party submission must not affect the verdict: %s %s", status, health)
+	}
+
+	admin.must("PUT", "/api/admin/detection-providers/bazaarlink", map[string]any{"settings": map[string]any{"allow_insecure_target": true}}, nil)
+	good := onboard("tp-judy", false)
+	bad := onboard("tp-kate", true)
+	wait(good)
+	wait(bad)
+
+	type report struct {
+		Verdict string `json:"verdict"`
+		Summary struct {
+			InternalVerdict string   `json:"internal_verdict"`
+			Suggestions     []string `json:"suggestions"`
+			ThirdParty      []struct {
+				Provider  string         `json:"provider"`
+				Outcome   string         `json:"outcome"`
+				Verdict   string         `json:"verdict"`
+				ReportURL string         `json:"report_url"`
+				Summary   map[string]any `json:"summary"`
+			} `json:"third_party"`
+		} `json:"summary"`
+	}
+	reportOf := func(id int64) report {
+		var rs []report
+		seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d/reports", id), nil, &rs)
+		if len(rs) != 1 || len(rs[0].Summary.ThirdParty) != 1 {
+			t.Fatalf("reports of %d: %+v", id, rs)
+		}
+		return rs[0]
+	}
+	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status, health FROM upstreams WHERE id = $1", good), &status, &health)
+	r := reportOf(good)
+	tp := r.Summary.ThirdParty[0]
+	if status != "ready" || health != "healthy" || r.Verdict != "normal" || tp.Outcome != "pass" || tp.Verdict != "normal" ||
+		!strings.HasPrefix(tp.ReportURL, bl.URL()) || tp.Summary["verdict_status"] != "clean_match" {
+		t.Fatalf("matching identity should pass: %s %s %+v", status, health, r)
+	}
+
+	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status FROM upstreams WHERE id = $1", bad), &status)
+	r = reportOf(bad)
+	tp = r.Summary.ThirdParty[0]
+	if status != "verify_failed" || r.Verdict != "degraded" || r.Summary.InternalVerdict != "normal" || tp.Outcome != "mismatch" ||
+		len(r.Summary.Suggestions) == 0 || r.Summary.Suggestions[0] != "third_party_mismatch" || tp.Summary["true_model"] != "gpt-4o" {
+		t.Fatalf("identity mismatch should fail onboarding: %s %+v", status, r)
+	}
+
+	// 检测结束后临时令牌失效
+	keys := bl.APIKeys()
+	if len(keys) != 2 || !strings.HasPrefix(keys[0], "tm-tp-") {
+		t.Fatalf("detector keys: %v", keys)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if code, _ := ed.call(keys[0]); code != 401 {
+		t.Fatalf("revoked detector token should be rejected, got %d", code)
+	}
+	var checks []struct {
+		UpstreamID int64           `json:"upstream_id"`
+		Status     string          `json:"status"`
+		Summary    json.RawMessage `json:"summary"`
+	}
+	admin.must("GET", "/api/admin/third-party-checks", nil, &checks)
+	if len(checks) != 3 {
+		t.Fatalf("admin third-party checks: %+v", checks)
+	}
+	var providers []struct {
+		Name         string `json:"name"`
+		Enabled      bool   `json:"enabled"`
+		RunsLastHour int    `json:"runs_last_hour"`
+	}
+	admin.must("GET", "/api/admin/detection-providers", nil, &providers)
+	if len(providers) != 1 || !providers[0].Enabled || providers[0].RunsLastHour != 2 {
+		t.Fatalf("providers: %+v", providers)
+	}
+
+	// 检测站关闭后不再追加第三方检测
+	admin.must("PUT", "/api/admin/detection-providers/bazaarlink", map[string]any{"enabled": false}, nil)
+	admin.must("POST", fmt.Sprintf("/api/admin/upstreams/%d/probe", good), nil, nil)
+	wait(good)
+	var n int
+	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT count(*) FROM third_party_checks WHERE upstream_id = $1", good), &n)
+	if n != 1 {
+		t.Fatalf("disabled provider should not get new checks: %d", n)
+	}
+}

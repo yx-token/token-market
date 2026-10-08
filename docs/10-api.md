@@ -26,7 +26,7 @@
 | GET | `/api/market/listings/:id` | 挂单摘要：厂商、档位、买家价 `price`（= m_s × (1 + c)）、健康状态、等级、24h 成功率与请求数、首字延迟 |
 | GET | `/api/market/pools` | 默认分组列表及售价 D |
 | GET | `/api/market/vendors` | 已开放接入的厂商、接入方式、寄售倍率区间、是否支持自留比例 |
-| GET | `/api/market/config` | 前端需要的公开参数：Edge 调用地址、抽佣率、冻结天数、最低提现额、最大跳数 |
+| GET | `/api/market/config` | 前端需要的公开参数：Edge 调用地址、抽佣率、冻结天数、最低提现额、最大跳数、可用的支付方式 `payment_channels`、单笔充值上下限 |
 | GET | `/api/market/prices` | 官方价目（美元 / 百万 token），倍率的计算基准；取自 sub2api 内置价目表，模型列表由系统设置 `price_models` 决定 |
 
 ## 3. 买家
@@ -34,11 +34,11 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/buyer/wallet` | `balance`（sub2api 实时余额）、`ledger_cash`（账面余额，用量入账有几分钟延迟）、近期充值、进行中的退款 |
-| POST | `/api/buyer/recharge` | 创建充值订单：`amount`（两位小数）。第一期为人工确认到账通道 |
-| GET | `/api/buyer/recharge/:id` | 充值订单状态：`pending` / `crediting` / `credited` / `failed` / `cancelled` |
-| POST | `/api/buyer/recharge/:id/cancel` | 取消未支付订单 |
-| POST | `/api/buyer/refunds` | 申请退还全部剩余余额（退到分）：先暂停该买家全部 Key，等待 `refund_lock_seconds` 后扣减 sub2api 余额，管理员打款后完成 |
-| GET | `/api/buyer/refunds` | 退款记录 |
+| POST | `/api/buyer/recharge` | 创建充值订单：`amount`（两位小数）、`channel`（`alipay_page` / `alipay_f2f` / `wechat_native` / `manual`，默认 `manual`）。返回订单与 `payment`：`kind` 为 `redirect`（跳转 `url`，支付宝收银台）、`qrcode`（把 `qr_code` 渲染成二维码）或 `manual` |
+| GET | `/api/buyer/recharge/:id` | 充值订单：状态 `pending` / `crediting` / `credited` / `failed` / `cancelled` / `expired`；待支付订单带 `payment` 便于继续支付。待支付的在线订单距上次查单超过 5 秒时先向渠道查单 |
+| POST | `/api/buyer/recharge/:id/cancel` | 取消未支付订单（在线订单先向渠道关单，发现已支付返回 409 `ORDER_PAID`） |
+| POST | `/api/buyer/refunds` | 申请退还全部剩余余额（退到分）：先暂停该买家全部 Key，等待 `refund_lock_seconds` 后扣减 sub2api 余额，再按打款明细原路退回或人工打款 |
+| GET | `/api/buyer/refunds` | 退款记录，含打款明细 `payouts`（渠道、金额、状态） |
 | POST | `/api/buyer/keys` | 创建 Key，明文只返回一次 |
 | GET | `/api/buyer/keys` | Key 列表 |
 | GET | `/api/buyer/keys/:id` | Key 详情，含各跳状态：`ready` / `provisioning`（内部资源开通中）/ `skipped`（挂单当前不接流量）；限额封禁原因 `limit_block_reason` |
@@ -125,7 +125,16 @@
 | POST | `/api/seller/withdrawals` | 申请提现：`amount`、`channel`、`account_info`（加密存储）。需实名；低于自动审核阈值且无风险时自动通过 |
 | GET | `/api/seller/withdrawals` | 提现记录 |
 
-## 5. 管理后台
+## 5. 支付渠道通知
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/payments/alipay/notify` | 支付宝异步通知（表单），验签后推进订单，处理成功返回 `success` |
+| POST | `/api/payments/wechat/notify` | 微信支付通知（APIv3，验签、防重放、AES-GCM 解密），成功返回 204 |
+
+不需要登录，安全性完全依赖验签。处理结果写入 `payment_notifications`，在后台"支付渠道"中查看。
+
+## 6. 管理后台
 
 所有写操作记审计日志。
 
@@ -135,7 +144,8 @@
 | 厂商 | `GET /api/admin/vendors`、`PUT /api/admin/vendors/:platform`：是否开放接入、寄售倍率区间、回收基础倍率表（按档位）、默认并发、限流参数 |
 | 代理库存 | `GET/POST /api/admin/proxies`、`POST /api/admin/proxies/:id/sync`（同步到 sub2api）、`/disable`、`/enable` |
 | 默认分组 | `GET/POST /api/admin/pools`、`PUT /api/admin/pools/:id`（售价 D、最低毛利、安全缓冲、启用）、`POST /api/admin/pools/:id/sync` |
-| 检测策略 | `GET /api/admin/detection-policies`、`PUT /api/admin/detection-policies/:platform[?auth_type=]`（`enabled`、`scheduled_enabled`、周期、套件、模型、预算、阈值、`auto_pause`、`default_grade`，见 [05](05-quality.md) 第 3 节） |
+| 检测策略 | `GET /api/admin/detection-policies`、`PUT /api/admin/detection-policies/:platform[?auth_type=]`（`enabled`、`scheduled_enabled`、周期、套件、模型、预算、阈值、`auto_pause`、`default_grade`、`third_party`，见 [05](05-quality.md) 第 3、9 节） |
+| 第三方检测 | `GET /api/admin/detection-providers`（可接入的检测站、配置、最近 1 小时提交次数）、`PUT /api/admin/detection-providers/:name`（`enabled`、`base_url`、`api_key`、`settings`、`max_runs_per_hour`、`timeout_minutes`）、`GET /api/admin/third-party-checks[?upstream_id=]` |
 | 单上游检测覆盖 | `PUT /api/admin/upstreams/:id/detection-override`、`DELETE …` |
 | 手动检测 | `POST /api/admin/upstreams/:id/probe`（对关闭检测的厂商也可执行） |
 | 题库 | `GET/POST /api/admin/probe-items`、`PUT /api/admin/probe-items/:id`、`POST /api/admin/probe-items/:id/retire` |
@@ -144,8 +154,9 @@
 | 申诉 | `GET /api/admin/appeals`、`POST /api/admin/appeals/:id/resolve`（`action`：`retest` / `overturn` / `uphold`） |
 | 上游 | `GET /api/admin/upstreams`、`POST /api/admin/upstreams/:id/suspend`、`/unsuspend`、`DELETE /api/admin/upstreams/:id` |
 | 用户与实名 | `GET /api/admin/kyc`、`POST /api/admin/kyc/:id/review`、`POST /api/admin/users/:id/status`（冻结 / 解冻） |
-| 充值 | `GET /api/admin/recharges`、`POST /api/admin/recharges/:id/confirm`（人工确认到账） |
-| 退款 | `GET /api/admin/refunds`、`POST /api/admin/refunds/:id/paid` |
+| 充值 | `GET /api/admin/recharges`、`POST /api/admin/recharges/:id/confirm`（只用于人工充值单）、`POST /api/admin/recharges/:id/sync`（向渠道查单） |
+| 支付渠道 | `GET /api/admin/payments/status`（各支付方式的商户配置、开关、是否可用，最近 50 条通知处理记录） |
+| 退款 | `GET /api/admin/refunds`、`POST /api/admin/refunds/:id/paid`（登记人工打款部分的流水号）、`POST /api/admin/refund-payouts/:id/retry`（重试失败的原路退款）、`POST /api/admin/refund-payouts/:id/manual`（失败的原路退款改为人工打款） |
 | 提现 | `GET /api/admin/withdrawals`、`POST /api/admin/withdrawals/:id/review`（`approve` 为真通过，否则驳回并退回可提现）、`POST /api/admin/withdrawals/:id/paid`（`failed` 为真表示打款失败） |
 | 计费异常与调账 | `GET /api/admin/anomalies`、`POST /api/admin/anomalies/:id/resolve`、`POST /api/admin/adjustments`（必须填写原因，可关联异常） |
 | 风控 | `GET /api/admin/risk-events`、`POST /api/admin/risk-events/:id/resolve` |

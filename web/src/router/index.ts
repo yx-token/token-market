@@ -33,6 +33,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/admin/proxies', component: () => import('@/views/admin/ProxiesView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/pools', component: () => import('@/views/admin/PoolsView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/detection', component: () => import('@/views/admin/DetectionView.vue'), meta: { auth: true, admin: true } },
+  { path: '/admin/third-party', component: () => import('@/views/admin/ThirdPartyView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/probe-items', component: () => import('@/views/admin/ProbeItemsView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/quality', component: () => import('@/views/admin/QualityView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/upstreams', component: () => import('@/views/admin/UpstreamsView.vue'), meta: { auth: true, admin: true } },

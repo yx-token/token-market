@@ -240,7 +240,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !s.now().Before(deadline) {
 			break
 		}
-		internalKey, err := s.keyring.OpenString(hop.InternalKeyEnc, edgecfg.InternalKeyAAD(hop.InternalKeyID))
+		internalKey, err := s.keyring.OpenString(hop.InternalKeyEnc, hop.AAD())
 		if err != nil {
 			s.log.Error("decrypt internal key", "internal_key_id", hop.InternalKeyID, "err", err)
 			continue
@@ -470,7 +470,7 @@ func (s *Server) serveWebSocket(w http.ResponseWriter, r *http.Request, cfg *edg
 			s.record(a)
 			continue
 		}
-		internalKey, err := s.keyring.OpenString(hop.InternalKeyEnc, edgecfg.InternalKeyAAD(hop.InternalKeyID))
+		internalKey, err := s.keyring.OpenString(hop.InternalKeyEnc, hop.AAD())
 		if err != nil {
 			continue
 		}

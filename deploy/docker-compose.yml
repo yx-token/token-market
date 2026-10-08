@@ -24,6 +24,22 @@ x-market-env: &market-env
   TM_EDGE_PUBLIC_URL: ${EDGE_PUBLIC_URL}
   TM_HTTP_TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
   TM_EDGE_TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+  # 支付（密钥文件放在 deploy/secrets/，容器内路径 /app/secrets/...）
+  TM_PAYMENT_PUBLIC_URL: ${PAYMENT_PUBLIC_URL:-}
+  TM_ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
+  TM_ALIPAY_GATEWAY: ${ALIPAY_GATEWAY:-}
+  TM_ALIPAY_PRIVATE_KEY_FILE: ${ALIPAY_PRIVATE_KEY_FILE:-}
+  TM_ALIPAY_PUBLIC_KEY_FILE: ${ALIPAY_PUBLIC_KEY_FILE:-}
+  TM_ALIPAY_APP_CERT_FILE: ${ALIPAY_APP_CERT_FILE:-}
+  TM_ALIPAY_CERT_FILE: ${ALIPAY_CERT_FILE:-}
+  TM_ALIPAY_ROOT_CERT_FILE: ${ALIPAY_ROOT_CERT_FILE:-}
+  TM_WECHAT_APP_ID: ${WECHAT_APP_ID:-}
+  TM_WECHAT_MCH_ID: ${WECHAT_MCH_ID:-}
+  TM_WECHAT_MCH_SERIAL_NO: ${WECHAT_MCH_SERIAL_NO:-}
+  TM_WECHAT_PRIVATE_KEY_FILE: ${WECHAT_PRIVATE_KEY_FILE:-}
+  TM_WECHAT_API_V3_KEY: ${WECHAT_API_V3_KEY:-}
+  TM_WECHAT_PUBLIC_KEY_ID: ${WECHAT_PUBLIC_KEY_ID:-}
+  TM_WECHAT_PUBLIC_KEY_FILE: ${WECHAT_PUBLIC_KEY_FILE:-}
 
 services:
   postgres:
@@ -53,6 +69,7 @@ services:
       <<: *market-env
       TM_HTTP_ADDR: ":8080"
     ports: ["${API_PORT:-8080}:8080"]
+    volumes: ["./secrets:/app/secrets:ro"]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_started }
@@ -64,6 +81,7 @@ services:
     environment:
       <<: *market-env
       TM_WORKER_ADMIN_ADDR: ":8092"
+    volumes: ["./secrets:/app/secrets:ro"]
     depends_on: [api]
     restart: unless-stopped
 

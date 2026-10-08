@@ -22,6 +22,9 @@ export interface MarketConfig {
   freeze_days: number
   withdraw_min: number
   max_hops: number
+  payment_channels: string[]
+  recharge_min: number
+  recharge_max: number
 }
 
 export interface MarketItem {
@@ -60,16 +63,45 @@ export interface VendorView {
   self_reserve_supported: boolean
 }
 
+export interface PaymentInfo {
+  channel: string
+  kind: 'redirect' | 'qrcode' | 'manual'
+  url?: string
+  qr_code?: string
+  instructions?: string
+}
+
 export interface RechargeOrder {
   id: number
   user_id: number
   amount: number
   provider: string
+  channel: string
+  out_trade_no?: string
   provider_ref?: string
   status: string
+  close_reason?: string
+  refunded_amount: number
   created_at: string
+  expires_at?: string
   paid_at?: string
   credited_at?: string
+  payment?: PaymentInfo
+}
+
+export interface RefundPayout {
+  id: number
+  refund_id: number
+  recharge_order_id?: number
+  channel: string
+  amount: number
+  out_refund_no?: string
+  status: string
+  provider_ref?: string
+  error?: string
+  attempts: number
+  created_at: string
+  finished_at?: string
 }
 
 export interface Refund {
@@ -81,6 +113,33 @@ export interface Refund {
   note?: string
   created_at: string
   finished_at?: string
+  payouts: RefundPayout[] | null
+}
+
+export interface PaymentChannelStatus {
+  channel: string
+  provider: string
+  configured: boolean
+  enabled: boolean
+  available: boolean
+}
+
+export interface PaymentNotification {
+  id: number
+  provider: string
+  out_trade_no?: string
+  trade_no?: string
+  state?: string
+  amount_fen?: number
+  result: string
+  error?: string
+  created_at: string
+}
+
+export interface PaymentStatus {
+  channels: PaymentChannelStatus[]
+  public_url: string
+  notifications: PaymentNotification[]
 }
 
 export interface Wallet {
@@ -265,12 +324,42 @@ export interface ReportSummary {
   grade?: string
   tier?: string
   suggestions?: string[]
+  internal_verdict?: string
+  third_party?: ThirdPartyResult[]
   suites: {
     availability?: { success: number; total: number }
     latency?: { ttft_p50_ms?: number; ttft_p95_ms?: number; output_tps?: number }
     iq?: { relative_score: number; samples: number; confidence?: number }
     reasoning?: { ratio_to_baseline: number }
   }
+}
+
+export interface ThirdPartySummary {
+  run_status?: string
+  identity_status?: string
+  verdict_status?: string
+  true_family?: string
+  true_model?: string
+  spoof_method?: string
+  confidence?: string | number
+  reasoning?: string
+  risk_flags?: string[]
+  warnings?: { id: string; label: string; severity: string }[]
+  items?: Record<string, number>
+  failed_probes?: { label: string; group: string; reason: string }[]
+  tokens?: { input?: number | null; output?: number | null }
+  wall_clock_ms?: number
+}
+
+export interface ThirdPartyResult {
+  provider: string
+  status: string
+  outcome?: string
+  verdict: string
+  model: string
+  report_url?: string
+  error?: string
+  summary?: ThirdPartySummary
 }
 
 export interface TrendPoint {
@@ -344,6 +433,12 @@ export interface Settings {
   balance_mismatch_tolerance: number
   allow_no_proxy: boolean
   price_models: string[]
+  payment_channels: Record<string, boolean>
+  recharge_min: number
+  recharge_max: number
+  recharge_order_timeout_minutes: number
+  refund_original_route: boolean
+  refund_original_route_days: number
 }
 
 export interface VendorConfig {
@@ -407,8 +502,56 @@ export interface Policy {
   thresholds: Thresholds
   auto_pause: boolean
   default_grade: string
+  third_party: ThirdPartyCheck[] | null
   version: number
   updated_at: string
+}
+
+export interface ThirdPartyCheck {
+  provider: string
+  triggers: string[]
+  model?: string
+  format?: string
+  on_mismatch: string
+  on_submodel_mismatch: string
+}
+
+export interface DetectionProvider {
+  name: string
+  label: string
+  description: string
+  docs_url: string
+  default_base_url: string
+  options: Record<string, string>
+  runs_per_hour_limit: number
+  requests_per_run: number
+  enabled: boolean
+  base_url: string
+  has_api_key: boolean
+  settings: Record<string, unknown>
+  max_runs_per_hour: number
+  timeout_minutes: number
+  runs_last_hour: number
+  updated_at?: string
+}
+
+export interface ThirdPartyCheckView {
+  id: number
+  run_id: number
+  upstream_id: number
+  provider: string
+  model: string
+  format: string
+  status: string
+  external_id?: string
+  outcome?: string
+  verdict?: string
+  summary?: ThirdPartySummary
+  report_url?: string
+  error?: string
+  created_at: string
+  submitted_at?: string
+  finished_at?: string
 }
 
 export interface Grader {

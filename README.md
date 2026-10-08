@@ -31,18 +31,18 @@ Go + PostgreSQL + Redis，独立仓库、独立数据库。对接的 sub2api 基
 
 ## 状态
 
-第一期（M0–M5）与前端已完成：卖家上架、调度、买家 Key 与 Edge、结算与对账、质量检测、兼容闸门，以及市场、买家中心、卖家中心、管理后台的页面。详见 [11 路线图](docs/11-roadmap.md)，其中列出了需要运营方完成的事项（sub2api 管理员合规确认、真实厂商授权联调、支付通道、题库、压测）。
+第一期（M0–M5）与前端已完成：卖家上架、调度、买家 Key 与 Edge、结算与对账、质量检测、兼容闸门，在线支付（支付宝电脑网站支付与当面付、微信支付 Native，余额退款原路退回），第三方检测（BazaarLink 模型身份检测），以及市场、买家中心、卖家中心、管理后台的页面。详见 [11 路线图](docs/11-roadmap.md)，其中列出了需要运营方完成的事项（sub2api 管理员合规确认、真实厂商授权与支付商户联调、提现代付、题库、压测）。
 
 ## 快速体验（本地）
 
-不需要真实的 sub2api 与厂商账号：`scripts/dev.sh` 启动 PostgreSQL / Redis 容器、sub2api 替身（`cmd/fake-sub2api`，在 sub2api v0.2.14 的真实表结构上模拟 Admin API、用户 API 与网关）和三个服务，并写入演示数据（开放厂商、代理、默认分组、本地可通过的题库）。
+不需要真实的 sub2api、厂商账号与支付商户：`scripts/dev.sh` 启动 PostgreSQL / Redis 容器、sub2api 替身（`cmd/fake-sub2api`，在 sub2api v0.2.14 的真实表结构上模拟 Admin API、用户 API 与网关）、第三方服务替身（`cmd/fake-thirdparty`：支付宝、微信支付、BazaarLink，按真实协议签名验签，不产生真实扣款）和三个服务，并写入演示数据（开放厂商、代理、默认分组、本地可通过的题库、Claude 上架检测追加 BazaarLink 身份检测）。
 
 ```bash
 make dev-up        # 构建前端与后端并启动；打开 http://127.0.0.1:8080
 make dev-down
 ```
 
-管理员 `admin@dev.local` / `admin-password-1`。可以注册一个卖家接入 Claude（授权码随便填一个词，同一个词代表同一个官方账号），等上架检测通过后挂单；再注册一个买家充值（管理员在后台确认到账）、创建 Key，用页面上给出的 curl 调用 `http://127.0.0.1:8090`。前端开发用 `cd web && pnpm dev`（http://127.0.0.1:5173，/api 代理到 :8080）。
+管理员 `admin@dev.local` / `admin-password-1`。可以注册一个卖家接入 Claude（授权码随便填一个词，同一个词代表同一个官方账号），等上架检测（含第三方身份检测，约 1–2 分钟）通过后挂单；再注册一个买家充值、创建 Key，用页面上给出的 curl 调用 `http://127.0.0.1:8090`。充值选支付宝网页支付会跳到替身收银台；选扫码支付时，二维码内容就是替身的"扫码付款"页面地址，在浏览器打开它并确认付款即可。前端开发用 `cd web && pnpm dev`（http://127.0.0.1:5173，/api 代理到 :8080）。
 
 ## 部署
 
@@ -62,7 +62,7 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 需要 Go 1.26+、Node 22 与 pnpm、Docker（PostgreSQL 与 Redis）、本地 sub2api 仓库（兼容检查、集成测试与开发环境用）。
 
 ```bash
-make build              # 构建 bin/api、bin/worker、bin/edge、bin/s2a-compat、bin/fake-sub2api
+make build              # 构建 bin/api、bin/worker、bin/edge、bin/s2a-compat、bin/fake-sub2api、bin/fake-thirdparty
 make test               # 单元测试
 make web-test           # 前端单元测试（vitest）
 make web-build          # 前端类型检查与构建（web/dist）
@@ -91,7 +91,7 @@ TM_SMOKE_GROUP_ID=1 go test -tags smoke ./internal/sub2api/ -v
 ### 目录
 
 ```
-cmd/            api、worker、edge、s2a-compat、fake-sub2api（开发用替身）
+cmd/            api、worker、edge、s2a-compat、fake-sub2api 与 fake-thirdparty（开发用替身）
 web/            前端（Vue 3 + TypeScript + Vite + Tailwind）
 deploy/         docker compose 部署示例
 contract/       对 sub2api 的依赖契约：contract.yaml 与只读查询
@@ -103,15 +103,16 @@ internal/
   scheduling/   默认分组、规划器、执行器
   buyer/        影子用户、买家 Key、Edge 配置发布
   edge/         Edge 路由网关
-  billing/      入账、账本、结算、资金、对账
-  quality/      质量检测
+  billing/      入账、账本、结算、充值与退款（含原路退回）、提现、对账
+  payment/      支付渠道：支付宝、微信支付
+  quality/      质量检测（thirdparty/：第三方检测站）
   market/       市场与官方价目
   risk/         风控
   settings/     平台参数
   compat/       s2a-compat 的检查逻辑
   platform/     配置、加密、数据库、鉴权、HTTP 工具
   sub2api/      sub2api 适配层
-  testutil/     临时数据库、sub2api 替身
+  testutil/     临时数据库、sub2api / 支付 / BazaarLink 替身
   e2e/          端到端测试
 migrations/     本系统数据库迁移
 scripts/        受控升级 sub2api、本地开发环境

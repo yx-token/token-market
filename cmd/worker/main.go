@@ -1,7 +1,7 @@
 // market-worker：后台任务进程。
 //
 // 包含：sub2api 兼容自检与写操作出站发送、调度规划与执行、用量入账与结算解冻、
-// 充值/退款推进、对账、Key 限额、质量检测、买家 Key 供给与 Edge 配置发布、风控检测。
+// 充值/退款推进（支付查单、关单、原路退款）、对账、Key 限额、质量检测（含第三方检测）、买家 Key 供给与 Edge 配置发布、风控检测。
 //
 // 多副本部署时通过 PostgreSQL advisory lock 选主，只有持锁的副本运行任务。
 package main
@@ -104,6 +104,8 @@ func run(configPath string, log *slog.Logger) error {
 	jobs := []job{
 		{"funds.track_crediting", 10 * time.Second, a.Funds.TrackCrediting},
 		{"funds.advance_refunds", 10 * time.Second, a.Funds.AdvanceRefunds},
+		{"funds.sync_payments", 15 * time.Second, a.Funds.SyncPayments},
+		{"funds.refund_payouts", 15 * time.Second, a.Funds.AdvanceRefundPayouts},
 		{"keys.provision_pending", 15 * time.Second, writes(a.Keys.ProvisionPending)},
 		{"keys.publish_skip_list", 15 * time.Second, a.Keys.PublishSkipList},
 		{"keys.publish_all", 10 * time.Minute, a.Keys.PublishAll},

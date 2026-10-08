@@ -132,9 +132,14 @@ func (s *Server) marketConfig(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	channels, err := s.Funds.RechargeChannels(r.Context())
+	if err != nil {
+		return err
+	}
 	return ok(w, map[string]any{
 		"edge_url": s.EdgeURL, "commission_rate": st.CommissionRate, "freeze_days": st.FreezeDays,
 		"withdraw_min": st.WithdrawMin, "max_hops": 5,
+		"payment_channels": channels, "recharge_min": st.RechargeMin, "recharge_max": st.RechargeMax,
 	})
 }
 
@@ -183,21 +188,19 @@ func (s *Server) wallet(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) createRecharge(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		Amount float64 `json:"amount"`
+		Amount  float64 `json:"amount"`
+		Channel string  `json:"channel"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
 	uid := httpx.MustUser(r).UserID
-	o, err := s.Funds.CreateRecharge(r.Context(), uid, in.Amount, httpx.ClientIP(r))
+	o, err := s.Funds.CreateRecharge(r.Context(), uid, in.Amount, in.Channel, httpx.ClientIP(r))
 	if err != nil {
 		return err
 	}
 	s.Accounts.RecordIP(r.Context(), uid, httpx.ClientIP(r), "recharge")
-	return created(w, map[string]any{"order": o, "payment": map[string]string{
-		"provider":     "manual",
-		"instructions": "please complete payment according to the platform instructions; the order is credited after confirmation",
-	}})
+	return created(w, map[string]any{"order": o, "payment": o.Payment})
 }
 
 func (s *Server) getRecharge(w http.ResponseWriter, r *http.Request) error {
@@ -205,7 +208,7 @@ func (s *Server) getRecharge(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	o, err := s.Funds.GetRecharge(r.Context(), httpx.MustUser(r).UserID, id)
+	o, err := s.Funds.RefreshRecharge(r.Context(), httpx.MustUser(r).UserID, id)
 	if err != nil {
 		return err
 	}

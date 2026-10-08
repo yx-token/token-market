@@ -14,6 +14,7 @@ import (
 	"github.com/DueGin/token-market/internal/edgecfg"
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/market"
+	"github.com/DueGin/token-market/internal/payment"
 	"github.com/DueGin/token-market/internal/platform/auth"
 	"github.com/DueGin/token-market/internal/platform/config"
 	"github.com/DueGin/token-market/internal/platform/crypto"
@@ -40,6 +41,7 @@ type App struct {
 	Redis       *redis.Client
 	Keyring     *crypto.Keyring
 	Issuer      *auth.Issuer
+	Payments    *payment.Registry
 	Admin       *adminclient.Client
 	User        *userclient.Client
 	Prov        *provision.Provisioner
@@ -125,6 +127,10 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		return nil, err
 	}
 
+	if a.Payments, err = BuildPayments(cfg.Payment); err != nil {
+		return nil, err
+	}
+
 	gate := &compatGate{db: a.DB, ttl: 5 * time.Second}
 	a.Admin = adminclient.New(cfg.Sub2API.BaseURL, cfg.Sub2API.AdminAPIKey, cfg.Sub2API.Timeout, adminclient.WithWriteGate(gate.Check))
 	a.User = userclient.New(cfg.Sub2API.BaseURL, cfg.Sub2API.Timeout, nil)
@@ -149,7 +155,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 	}
 	a.Funds = &billing.Funds{
 		DB: a.DB, Replica: a.Replica, Shadow: a.Shadow, Keys: a.Keys, Keyring: a.Keyring,
-		KYC: a.Accounts, Risk: a.Risk, Settings: a.Settings, Log: log,
+		KYC: a.Accounts, Risk: a.Risk, Settings: a.Settings, Payments: a.Payments, PublicURL: cfg.Payment.PublicURL, Log: log,
 	}
 	a.Market = &market.Service{DB: a.DB, Commission: func(ctx context.Context) (float64, error) {
 		st, err := a.Settings(ctx)
@@ -162,6 +168,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		DB: a.DB, Replica: a.Replica, Shadow: a.Shadow, Keyring: a.Keyring,
 		Prober:   &quality.Prober{GatewayURL: cfg.Sub2API.GatewayURL, Client: &http.Client{}},
 		Listings: a.Listings, Kicker: a.Kicker, Settings: a.Settings, Log: log, Concurrency: cfg.Worker.ProbeConcurrency,
+		Edge: edgeStore, EdgePublicURL: cfg.Edge.PublicURL,
 	}
 	// 上架检测由质量引擎负责；两者互相引用，构造后再连接
 	a.Listings.Quality = a.Quality

@@ -56,7 +56,8 @@ type env struct {
 	guard   *compatguard.Guard
 }
 
-func setup(t *testing.T) *env {
+// setup 准备一套完整环境；opts 可以在构建前调整配置（例如接入支付渠道替身）。
+func setup(t *testing.T, opts ...func(cfg *config.Config)) *env {
 	t.Helper()
 	repo := os.Getenv("TM_SUB2API_REPO")
 	redisAddr := os.Getenv("TM_TEST_REDIS_ADDR")
@@ -90,6 +91,10 @@ func setup(t *testing.T) *env {
 	fake := fakesub2api.New(replicaPool, "admin-key-for-test")
 	t.Cleanup(fake.Close)
 
+	// 控制面先占好端口：支付回调地址需要在构建前确定
+	api := httptest.NewUnstartedServer(nil)
+	t.Cleanup(api.Close)
+
 	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
 	cfg := &config.Config{
 		Env:      "test",
@@ -100,7 +105,11 @@ func setup(t *testing.T) *env {
 			BootstrapAdminEmail: "admin@market.test", BootstrapAdminPassword: "admin-password-1"},
 		Sub2API: config.Sub2APIConfig{BaseURL: fake.URL(), GatewayURL: fake.URL(), AdminAPIKey: fake.AdminKey,
 			ReplicaDSN: replicaDSN, Timeout: 10 * time.Second, ShadowEmailDomain: "shadow.market.test"},
-		Worker: config.WorkerConfig{ProbeConcurrency: 2},
+		Worker:  config.WorkerConfig{ProbeConcurrency: 2},
+		Payment: config.PaymentConfig{PublicURL: "http://" + api.Listener.Addr().String()},
+	}
+	for _, opt := range opts {
+		opt(cfg)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	if testing.Verbose() {
@@ -130,8 +139,8 @@ func setup(t *testing.T) *env {
 		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools,
 		Keys: a.Keys, Funds: a.Funds, Market: a.Market, Quality: a.Quality, Risk: a.Risk, Kicker: a.Kicker, Log: log,
 	}
-	api := httptest.NewServer(srv.Handler())
-	t.Cleanup(api.Close)
+	api.Config.Handler = srv.Handler()
+	api.Start()
 
 	// 题库：每题要求回答固定口令，替身默认按口令作答。首次配置的上游必须通过上架检测才能挂单。
 	for i := 1; i <= 12; i++ {

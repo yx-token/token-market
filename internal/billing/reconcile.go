@@ -51,12 +51,12 @@ func (r *Reconciler) RunAttempts(ctx context.Context) (*ReconcileResult, error) 
 	now := r.now()
 	since := now.Add(-48 * time.Hour)
 
-	// R1：Edge 记为失败，但 sub2api 产生了费用 → 按 sub2api 计费，记录待解释
+	// R1：Edge 记为失败，但 sub2api 产生了费用 → 按 sub2api 计费，记录待解释（只看买家渠道；第三方检测经 Edge 的探测流量由平台承担）
 	tag, err := r.DB.Exec(ctx, `INSERT INTO billing_anomalies (rule, dedupe_key, sub2api_usage_id, edge_attempt_id, buyer_user_id, amount, detail)
 		SELECT 'R1_failed_with_charge', 'R1:' || ur.sub2api_usage_id, ur.sub2api_usage_id, a.id, ur.buyer_user_id, ur.actual_cost,
 			jsonb_build_object('end_reason', a.end_reason, 'http_status', a.http_status, 'committed', a.committed)
 		FROM edge_attempts a JOIN usage_records ur ON ur.sub2api_request_id = 'client:' || a.sub2api_request_id
-		WHERE a.started_at > $1 AND a.sub2api_request_id IS NOT NULL
+		WHERE a.started_at > $1 AND a.sub2api_request_id IS NOT NULL AND ur.channel IN ('pool', 'direct')
 			AND (a.end_reason IN ('retry', 'upstream_error', 'timeout') OR (a.http_status >= 400))
 		ON CONFLICT (dedupe_key) DO NOTHING`, since)
 	if err != nil {

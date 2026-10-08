@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/DueGin/token-market/internal/buyer"
+	"github.com/DueGin/token-market/internal/edgecfg"
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/platform/crypto"
 	"github.com/DueGin/token-market/internal/platform/httpx"
@@ -39,6 +41,10 @@ type Engine struct {
 	Log         *slog.Logger
 	Concurrency int
 	Now         func() time.Time
+	// 第三方检测：Edge 配置存储（发布临时令牌）、Edge 对外地址（交给检测站）、访问检测站的 HTTP 客户端
+	Edge           edgecfg.Store
+	EdgePublicURL  string
+	ThirdPartyHTTP *http.Client
 }
 
 func (e *Engine) now() time.Time {
@@ -103,7 +109,7 @@ func (e *Engine) QueueRun(ctx context.Context, upstreamID int64, trigger string)
 		return 0, httpx.BadRequest("NO_MODELS", "detection policy has no models configured")
 	}
 	var pending int
-	if err := e.DB.QueryRow(ctx, `SELECT count(*) FROM probe_runs WHERE upstream_id = $1 AND status IN ('queued', 'running')`, u.id).Scan(&pending); err != nil {
+	if err := e.DB.QueryRow(ctx, `SELECT count(*) FROM probe_runs WHERE upstream_id = $1 AND status IN ('queued', 'running', 'third_party')`, u.id).Scan(&pending); err != nil {
 		return 0, err
 	}
 	if pending > 0 && trigger != "appeal" && trigger != "admin" && trigger != "onboarding" {
@@ -144,6 +150,9 @@ func (e *Engine) Tick(ctx context.Context) error {
 	}
 	if err := e.runQueued(ctx); err != nil {
 		return fmt.Errorf("run queued: %w", err)
+	}
+	if err := e.advanceThirdParty(ctx); err != nil {
+		e.Log.Warn("third-party detection", "err", err)
 	}
 	if err := e.Passive(ctx); err != nil {
 		e.Log.Warn("passive analysis", "err", err)
@@ -417,7 +426,10 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, see
 		}
 	}
 	assessment = Assess(outcomes, p.Thresholds, scoring)
-	return e.conclude(ctx, run, u, p, assessment)
+	if waiting, err := e.startThirdParty(ctx, run, u, p, assessment); err != nil || waiting {
+		return err
+	}
+	return e.conclude(ctx, run, u, p, assessment, nil)
 }
 
 func containsAny(list []string, want ...string) bool {
@@ -509,12 +521,24 @@ func (e *Engine) attribute(ctx context.Context, u *upstreamRow, a Assessment) (s
 var recoveryBackoff = []time.Duration{30 * time.Minute, time.Hour, 2 * time.Hour, 4 * time.Hour, 8 * time.Hour, 12 * time.Hour}
 
 // conclude 记录判定、更新等级与健康状态、推进上架检测与申诉、生成卖家报告。
-func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Policy, a Assessment) error {
+// tp 是第三方检测的结果：折算后的结论比内部判定更严重时以其为准（身份不一致归因于账号本身）。
+func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Policy, a Assessment, tp []tpResult) error {
+	internalVerdict, tpCause := a.Verdict, ""
+	for _, c := range tp {
+		// 只有检测站给出明确的问题结论才会加重判定；检测失败、证据不足不影响内部判定
+		if (c.Verdict == "suspected" || c.Verdict == "degraded") && verdictRank(c.Verdict) > verdictRank(a.Verdict) {
+			a.Verdict, tpCause = c.Verdict, c.Provider
+		}
+	}
 	attribution := ""
 	if a.Verdict == "degraded" {
-		var err error
-		if attribution, err = e.attribute(ctx, u, a); err != nil {
-			return err
+		if tpCause != "" {
+			attribution = "account"
+		} else {
+			var err error
+			if attribution, err = e.attribute(ctx, u, a); err != nil {
+				return err
+			}
 		}
 	}
 	healthBefore := u.health
@@ -537,6 +561,12 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 	if a.RelativeScore != nil {
 		rel = *a.RelativeScore
 	}
+	degradedReason := fmt.Sprintf("degraded: relative score %.2f", rel)
+	suspectedReason := fmt.Sprintf("suspected: relative score %.2f", rel)
+	if tpCause != "" {
+		degradedReason = "third-party check " + tpCause + ": model identity mismatch"
+		suspectedReason = "third-party check " + tpCause + ": model identity suspected"
+	}
 	switch a.Verdict {
 	case "unavailable":
 		newHealth, reason = listing.HealthUnavailable, fmt.Sprintf("probe: %d/%d requests succeeded", a.AvailableOK, a.AvailableTotal)
@@ -548,10 +578,10 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 		case attribution == "proxy":
 			newHealth, reason = listing.HealthSuspected, "proxy suspected; please rotate proxy"
 		case p.AutoPause:
-			newHealth, reason = listing.HealthDegraded, fmt.Sprintf("degraded: relative score %.2f", rel)
+			newHealth, reason = listing.HealthDegraded, degradedReason
 			scheduleRecovery()
 		default:
-			newHealth, reason = listing.HealthSuspected, fmt.Sprintf("degraded (auto pause off): relative score %.2f", rel)
+			newHealth, reason = listing.HealthSuspected, strings.Replace(degradedReason, "degraded", "degraded (auto pause off)", 1)
 		}
 	case "normal":
 		st.consecutive++
@@ -570,7 +600,7 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 		}
 	case "suspected":
 		if u.health == listing.HealthHealthy || u.health == listing.HealthUnknown {
-			newHealth, reason = listing.HealthSuspected, fmt.Sprintf("suspected: relative score %.2f", rel)
+			newHealth, reason = listing.HealthSuspected, suspectedReason
 		}
 	}
 	// 上架检测通过但结论不够明确（样本不足以判定）：按疑似处理，降低并发接流量并尽快追加检测
@@ -615,6 +645,20 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 		return err
 	}
 	summary := e.buildSummary(run, u, a, attribution)
+	if len(tp) > 0 {
+		summary["third_party"] = tp
+		if internalVerdict != a.Verdict {
+			summary["internal_verdict"] = internalVerdict
+		}
+		if tpCause != "" {
+			// 身份不一致时"检查共享使用、重新授权"之类的建议不适用
+			sug := []string{"third_party_mismatch"}
+			if old, _ := summary["suggestions"].([]string); containsAny(old, "disable_training") {
+				sug = append(sug, "disable_training")
+			}
+			summary["suggestions"] = sug
+		}
+	}
 	impact := map[string]any{"health_before": healthBefore, "health_after": newHealth,
 		"buyer_facing_paused": newHealth == listing.HealthDegraded || newHealth == listing.HealthUnavailable}
 	if nextRecovery != nil {

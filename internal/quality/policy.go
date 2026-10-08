@@ -11,6 +11,7 @@ import (
 
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/platform/httpx"
+	"github.com/DueGin/token-market/internal/quality/thirdparty"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -51,23 +52,109 @@ type Policy struct {
 	Thresholds       Thresholds `json:"thresholds"`
 	AutoPause        bool       `json:"auto_pause"`
 	DefaultGrade     string     `json:"default_grade"`
-	Version          int64      `json:"version"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	// ThirdParty 是在内部探测之后追加的第三方检测
+	ThirdParty []ThirdPartyCheck `json:"third_party"`
+	Version    int64             `json:"version"`
+	UpdatedAt  time.Time         `json:"updated_at"`
+}
+
+// ThirdPartyCheck 是策略中的一项第三方检测：在哪些检测类型中执行，以及检测站的结论如何折算成平台的判定。
+type ThirdPartyCheck struct {
+	Provider string   `json:"provider"`
+	Triggers []string `json:"triggers"`         // onboarding / scheduled / recovery / seller_manual / admin / adaptive / appeal
+	Model    string   `json:"model,omitempty"`  // 为空时使用本次内部探测的模型
+	Format   string   `json:"format,omitempty"` // openai / anthropic，为空时按平台推断
+	// 身份不一致（其他家族或伪装）与仅具体型号不一致时的处置：degraded / suspected / ignore
+	OnMismatch         string `json:"on_mismatch"`
+	OnSubmodelMismatch string `json:"on_submodel_mismatch"`
+}
+
+// Applies 判断该检测项是否在某种检测类型中执行。
+func (c ThirdPartyCheck) Applies(trigger string) bool {
+	for _, t := range c.Triggers {
+		if t == trigger {
+			return true
+		}
+	}
+	return false
+}
+
+// DefaultFormat 按平台推断第三方检测使用的协议：Claude 用 Messages，其余用 Chat Completions（sub2api 网关都支持）。
+func DefaultFormat(platform string) string {
+	if platform == "anthropic" {
+		return "anthropic"
+	}
+	return "openai"
+}
+
+var validTriggers = map[string]bool{"onboarding": true, "scheduled": true, "recovery": true, "seller_manual": true, "admin": true,
+	"adaptive": true, "appeal": true}
+
+func (c *ThirdPartyCheck) normalize() error {
+	if _, ok := thirdparty.Lookup(c.Provider); !ok {
+		return httpx.BadRequest("UNKNOWN_PROVIDER", "unknown detection provider "+c.Provider)
+	}
+	if len(c.Triggers) == 0 {
+		return httpx.BadRequest("INVALID_THIRD_PARTY", "third-party check needs at least one trigger")
+	}
+	for _, t := range c.Triggers {
+		if !validTriggers[t] {
+			return httpx.BadRequest("INVALID_THIRD_PARTY", "unknown trigger "+t)
+		}
+	}
+	if c.Format != "" && c.Format != "openai" && c.Format != "anthropic" {
+		return httpx.BadRequest("INVALID_THIRD_PARTY", "format must be openai or anthropic")
+	}
+	if c.OnMismatch == "" {
+		c.OnMismatch = "degraded"
+	}
+	if c.OnSubmodelMismatch == "" {
+		c.OnSubmodelMismatch = "suspected"
+	}
+	for _, a := range []string{c.OnMismatch, c.OnSubmodelMismatch} {
+		if a != "degraded" && a != "suspected" && a != "ignore" {
+			return httpx.BadRequest("INVALID_THIRD_PARTY", "action must be degraded, suspected or ignore")
+		}
+	}
+	return nil
+}
+
+// VerdictFor 把检测站的归类折算成平台的判定。
+func (c ThirdPartyCheck) VerdictFor(outcome string) string {
+	action := ""
+	switch outcome {
+	case thirdparty.OutcomePass:
+		return "normal"
+	case thirdparty.OutcomeMismatch, thirdparty.OutcomeSpoof:
+		action = c.OnMismatch
+	case thirdparty.OutcomeSubmodelMismatch:
+		action = c.OnSubmodelMismatch
+	}
+	if action == "degraded" || action == "suspected" {
+		return action
+	}
+	return "inconclusive"
 }
 
 const policyColumns = `id, platform, auth_type, enabled, scheduled_enabled, interval_minutes, jitter_minutes, suites, models,
-	daily_budget_usd::float8, items_per_run, thresholds, auto_pause, default_grade, version, updated_at`
+	daily_budget_usd::float8, items_per_run, thresholds, auto_pause, default_grade, third_party, version, updated_at`
 
 func scanPolicy(row pgx.Row) (*Policy, error) {
 	var p Policy
-	var th []byte
+	var th, tp []byte
 	if err := row.Scan(&p.ID, &p.Platform, &p.AuthType, &p.Enabled, &p.ScheduledEnabled, &p.IntervalMinutes, &p.JitterMinutes,
-		&p.Suites, &p.Models, &p.DailyBudgetUSD, &p.ItemsPerRun, &th, &p.AutoPause, &p.DefaultGrade,
+		&p.Suites, &p.Models, &p.DailyBudgetUSD, &p.ItemsPerRun, &th, &p.AutoPause, &p.DefaultGrade, &tp,
 		&p.Version, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(th, &p.Thresholds); err != nil {
 		return nil, err
+	}
+	if err := json.Unmarshal(tp, &p.ThirdParty); err != nil {
+		return nil, err
+	}
+	if p.ThirdParty == nil {
+		p.ThirdParty = []ThirdPartyCheck{}
 	}
 	return &p, nil
 }
@@ -95,7 +182,8 @@ func EffectivePolicy(ctx context.Context, db DB, upstreamID int64, platform, aut
 		WHERE platform = $1 AND auth_type IN ($2, '') ORDER BY (auth_type = $2) DESC LIMIT 1`, platform, authType))
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 没有配置策略的厂商视为不检测
-		return &Policy{Platform: platform, DefaultGrade: "B", Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1}}, nil
+		return &Policy{Platform: platform, DefaultGrade: "B", Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1},
+			ThirdParty: []ThirdPartyCheck{}}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -123,17 +211,18 @@ func EffectivePolicy(ctx context.Context, db DB, upstreamID int64, platform, aut
 var validSuites = map[string]bool{"availability": true, "latency": true, "iq": true, "reasoning": true, "long_context": true}
 
 type PolicyInput struct {
-	Enabled          *bool       `json:"enabled"`
-	ScheduledEnabled *bool       `json:"scheduled_enabled"`
-	IntervalMinutes  *int        `json:"interval_minutes"`
-	JitterMinutes    *int        `json:"jitter_minutes"`
-	Suites           *[]string   `json:"suites"`
-	Models           *[]string   `json:"models"`
-	DailyBudgetUSD   *float64    `json:"daily_budget_usd"`
-	ItemsPerRun      *int        `json:"items_per_run"`
-	Thresholds       *Thresholds `json:"thresholds"`
-	AutoPause        *bool       `json:"auto_pause"`
-	DefaultGrade     *string     `json:"default_grade"`
+	Enabled          *bool              `json:"enabled"`
+	ScheduledEnabled *bool              `json:"scheduled_enabled"`
+	IntervalMinutes  *int               `json:"interval_minutes"`
+	JitterMinutes    *int               `json:"jitter_minutes"`
+	Suites           *[]string          `json:"suites"`
+	Models           *[]string          `json:"models"`
+	DailyBudgetUSD   *float64           `json:"daily_budget_usd"`
+	ItemsPerRun      *int               `json:"items_per_run"`
+	Thresholds       *Thresholds        `json:"thresholds"`
+	AutoPause        *bool              `json:"auto_pause"`
+	DefaultGrade     *string            `json:"default_grade"`
+	ThirdParty       *[]ThirdPartyCheck `json:"third_party"`
 }
 
 // UpsertPolicy 创建或修改策略，修改后版本号加一，worker 在下一轮读取新策略（约 1 分钟内生效）。
@@ -191,6 +280,22 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	if in.DefaultGrade != nil {
 		p.DefaultGrade = *in.DefaultGrade
 	}
+	if in.ThirdParty != nil {
+		p.ThirdParty = *in.ThirdParty
+	}
+	if p.ThirdParty == nil {
+		p.ThirdParty = []ThirdPartyCheck{}
+	}
+	seen := map[string]bool{}
+	for i := range p.ThirdParty {
+		if err := p.ThirdParty[i].normalize(); err != nil {
+			return nil, err
+		}
+		if seen[p.ThirdParty[i].Provider] {
+			return nil, httpx.BadRequest("INVALID_THIRD_PARTY", "each provider can appear only once")
+		}
+		seen[p.ThirdParty[i].Provider] = true
+	}
 	switch {
 	case p.ScheduledEnabled && !p.Enabled:
 		return nil, httpx.BadRequest("INVALID_POLICY", "scheduled detection requires detection to be enabled")
@@ -217,18 +322,19 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 		return nil, err
 	}
 	th, _ := json.Marshal(p.Thresholds)
+	tp, _ := json.Marshal(p.ThirdParty)
 	return scanPolicy(db.QueryRow(ctx, `INSERT INTO detection_policies (platform, auth_type, enabled, scheduled_enabled, interval_minutes,
-			jitter_minutes, suites, models, daily_budget_usd, items_per_run, thresholds, auto_pause, default_grade, updated_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			jitter_minutes, suites, models, daily_budget_usd, items_per_run, thresholds, auto_pause, default_grade, third_party, updated_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $15, $14)
 		ON CONFLICT (platform, auth_type) DO UPDATE SET enabled = EXCLUDED.enabled, scheduled_enabled = EXCLUDED.scheduled_enabled,
 			interval_minutes = EXCLUDED.interval_minutes, jitter_minutes = EXCLUDED.jitter_minutes, suites = EXCLUDED.suites,
 			models = EXCLUDED.models, daily_budget_usd = EXCLUDED.daily_budget_usd, items_per_run = EXCLUDED.items_per_run,
 			thresholds = EXCLUDED.thresholds, auto_pause = EXCLUDED.auto_pause,
-			default_grade = EXCLUDED.default_grade, updated_by = EXCLUDED.updated_by,
+			default_grade = EXCLUDED.default_grade, third_party = EXCLUDED.third_party, updated_by = EXCLUDED.updated_by,
 			version = detection_policies.version + 1, updated_at = now()
 		RETURNING `+policyColumns,
 		platform, authType, p.Enabled, p.ScheduledEnabled, p.IntervalMinutes, p.JitterMinutes, p.Suites, p.Models, p.DailyBudgetUSD,
-		p.ItemsPerRun, th, p.AutoPause, p.DefaultGrade, adminID))
+		p.ItemsPerRun, th, p.AutoPause, p.DefaultGrade, adminID, tp))
 }
 
 type OverrideInput struct {

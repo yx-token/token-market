@@ -28,10 +28,24 @@ const numberFields: { key: keyof Settings; label: string; hint: string; step?: s
   { key: 'balance_mismatch_tolerance', label: '余额对账容差（元）', hint: '', step: '0.01' },
 ]
 
+const paymentFields: { key: keyof Settings; label: string; hint: string; step?: string }[] = [
+  { key: 'recharge_min', label: '单笔充值下限（元）', hint: '', step: '0.01' },
+  { key: 'recharge_max', label: '单笔充值上限（元）', hint: '', step: '0.01' },
+  { key: 'recharge_order_timeout_minutes', label: '在线支付时限（分钟）', hint: '超时未支付的订单向渠道关单' },
+  { key: 'refund_original_route_days', label: '原路退回期限（天）', hint: '只原路退回这么多天内的充值单，需不超过渠道的可退款期限' },
+]
+const channelNames: Record<string, string> = {
+  alipay_page: '支付宝电脑网站支付',
+  alipay_f2f: '支付宝当面付（扫码）',
+  wechat_native: '微信支付 Native（扫码）',
+  manual: '人工确认到账',
+}
+
 onMounted(load)
 async function load() {
   try {
     s.value = await admin.settings()
+    s.value.payment_channels = { alipay_page: false, alipay_f2f: false, wechat_native: false, manual: false, ...s.value.payment_channels }
     grades.value = Object.entries(s.value.grade_coefficients)
       .map(([k, v]) => `${k}=${v}`)
       .join(', ')
@@ -49,7 +63,7 @@ async function save() {
     if (k && v !== undefined && !Number.isNaN(Number(v))) coeff[k] = Number(v)
   }
   const patch: Partial<Settings> = { ...s.value, grade_coefficients: coeff, price_models: models.value.split(/[,\s]+/).filter(Boolean) }
-  for (const f of numberFields) (patch as Record<string, unknown>)[f.key] = Number(s.value[f.key])
+  for (const f of [...numberFields, ...paymentFields]) (patch as Record<string, unknown>)[f.key] = Number(s.value[f.key])
   const res = await run(() => admin.updateSettings(patch), '已保存')
   if (res) s.value = res
 }
@@ -79,6 +93,26 @@ async function save() {
       <label class="flex items-center gap-2 text-sm">
         <input v-model="s.allow_no_proxy" type="checkbox" /> 没有可用代理时允许接入（仅开发环境）
       </label>
+    </div>
+
+    <div class="card mt-5">
+      <h2 class="card-title">支付</h2>
+      <p class="hint mb-3">在线渠道还需要在配置文件中配置商户信息才对买家可用，当前状态见"资金 → 支付渠道"。</p>
+      <div class="mb-4 flex flex-wrap gap-4">
+        <label v-for="(name, ch) in channelNames" :key="ch" class="flex items-center gap-2 text-sm">
+          <input v-model="s.payment_channels[ch]" type="checkbox" /> {{ name }}
+        </label>
+      </div>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div v-for="f in paymentFields" :key="f.key">
+          <label class="label" :for="f.key">{{ f.label }}</label>
+          <input :id="f.key" v-model="(s as any)[f.key]" class="input" type="number" :step="f.step ?? '1'" min="0" />
+          <p v-if="f.hint" class="hint">{{ f.hint }}</p>
+        </div>
+        <label class="flex items-center gap-2 text-sm">
+          <input v-model="s.refund_original_route" type="checkbox" /> 余额退款优先原路退回（支付宝 / 微信支付），其余人工打款
+        </label>
+      </div>
     </div>
   </div>
 </template>

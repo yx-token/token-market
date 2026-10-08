@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { admin } from '@/api'
-import type { Policy } from '@/api/types'
+import type { DetectionProvider, Policy, ThirdPartyCheck } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
-import { label } from '@/utils/labels'
+import { label, options } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
 
 const toast = useToast()
 const policies = useLoader(() => admin.policies(), [] as Policy[] | null)
+const providers = useLoader(() => admin.providers(), [] as DetectionProvider[] | null)
+const triggerOptions = options('trigger')
+type TPForm = { enabled: boolean; triggers: string[]; model: string; format: string; onMismatch: string; onSubmodel: string }
+const thirdParty = reactive<Record<string, TPForm>>({})
 const { busy, run } = useAction()
 const editing = ref<Policy | null>(null)
 const form = reactive({
@@ -32,7 +36,10 @@ const form = reactive({
 })
 const newAuth = reactive({ platform: '', authType: '' })
 const override = reactive({ upstream: '', mode: 'on', scheduled: '', expires: '', reason: '' })
-onMounted(policies.load)
+onMounted(() => {
+  policies.load()
+  providers.load()
+})
 
 function edit(p: Policy) {
   editing.value = p
@@ -52,6 +59,21 @@ function edit(p: Policy) {
     autoPause: p.auto_pause,
     grade: p.default_grade,
   })
+  for (const pr of providers.data.value ?? []) {
+    const c = (p.third_party ?? []).find((x) => x.provider === pr.name)
+    thirdParty[pr.name] = {
+      enabled: !!c,
+      triggers: c?.triggers ?? ['onboarding', 'admin', 'appeal'],
+      model: c?.model ?? '',
+      format: c?.format ?? '',
+      onMismatch: c?.on_mismatch ?? 'degraded',
+      onSubmodel: c?.on_submodel_mismatch ?? 'suspected',
+    }
+  }
+}
+
+function providerName(name: string) {
+  return providers.data.value?.find((p) => p.name === name)?.label ?? name
 }
 
 const split = (s: string) => s.split(/[,\s]+/).filter(Boolean)
@@ -71,6 +93,18 @@ async function save() {
     thresholds: { h0: Number(form.h0), h1: Number(form.h1), alpha: Number(form.alpha), beta: Number(form.beta) },
     auto_pause: form.autoPause,
     default_grade: form.grade,
+    third_party: Object.entries(thirdParty)
+      .filter(([, t]) => t.enabled)
+      .map(
+        ([provider, t]): ThirdPartyCheck => ({
+          provider,
+          triggers: t.triggers,
+          model: t.model.trim() || undefined,
+          format: t.format || undefined,
+          on_mismatch: t.onMismatch,
+          on_submodel_mismatch: t.onSubmodel,
+        }),
+      ),
   }
   if (await run(() => admin.upsertPolicy(p.platform, p.auth_type, body), '策略已保存，下一轮生效')) {
     editing.value = null
@@ -128,6 +162,7 @@ async function probe() {
           { key: 'models', label: '模型' },
           { key: 'items_per_run', label: '每次题量', align: 'right' },
           { key: 'daily_budget_usd', label: '每日预算', align: 'right' },
+          { key: 'third_party', label: '第三方检测' },
           { key: 'updated_at', label: '更新时间' },
           { key: 'actions', label: '' },
         ]"
@@ -150,6 +185,12 @@ async function probe() {
         <template #cell-interval="{ row }">{{ row.interval_minutes }} 分钟 ± {{ row.jitter_minutes }}</template>
         <template #cell-models="{ row }">{{ row.models.join(', ') || '—' }}</template>
         <template #cell-daily_budget_usd="{ row }">{{ row.daily_budget_usd }}</template>
+        <template #cell-third_party="{ row }">
+          <span v-if="!row.third_party?.length" class="text-slate-400">—</span>
+          <span v-for="t in row.third_party ?? []" :key="t.provider" class="mr-2 text-xs" :title="t.triggers.map((x: string) => label('trigger', x).text).join('、')">
+            {{ providerName(t.provider) }}（{{ t.triggers.length }} 类检测）
+          </span>
+        </template>
         <template #cell-updated_at="{ row }">{{ dateTime(row.updated_at) }}</template>
         <template #cell-actions="{ row }"><button class="btn-ghost btn-sm" @click="edit(row)">编辑</button></template>
       </DataTable>
@@ -260,6 +301,53 @@ async function probe() {
           <select id="pg" v-model="form.grade" class="input">
             <option v-for="g in ['S', 'A', 'B', 'C', 'D']" :key="g" :value="g">{{ g }}</option>
           </select>
+        </div>
+      </div>
+      <div class="border-t border-slate-100 pt-3">
+        <div class="mb-1 text-sm font-medium text-slate-700">第三方检测</div>
+        <p class="hint mb-2">平台探测完成后，在选中的检测类型中追加第三方身份检测；最终结论取平台探测与第三方检测中更严重的一项，检测站失败或证据不足时不影响结论。"判为降智"会停止调度（开启自动停止时），"判为疑似"会降低流量。协议按平台自动选择时 Claude 用 Anthropic Messages，其余用 OpenAI Chat Completions。</p>
+        <p v-if="!providers.data.value?.length" class="text-sm text-slate-400">暂无可接入的检测站</p>
+        <div v-for="pr in providers.data.value ?? []" :key="pr.name" class="mb-3 rounded border border-slate-200 p-3 text-sm">
+          <template v-if="thirdParty[pr.name]">
+            <label class="flex items-center gap-2 font-medium">
+              <input v-model="thirdParty[pr.name].enabled" type="checkbox" /> {{ pr.label }}
+              <span v-if="!pr.enabled" class="text-xs font-normal text-amber-600">（检测站未启用，在"第三方检测"中开启后生效）</span>
+            </label>
+            <div v-if="thirdParty[pr.name].enabled" class="mt-2 space-y-2">
+              <div class="flex flex-wrap gap-3">
+                <span class="text-slate-500">执行于</span>
+                <label v-for="t in triggerOptions" :key="t.value" class="flex items-center gap-1">
+                  <input v-model="thirdParty[pr.name].triggers" type="checkbox" :value="t.value" /> {{ t.text }}
+                </label>
+              </div>
+              <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div>
+                  <label class="label" :for="`tp-model-${pr.name}`">检测模型</label>
+                  <input :id="`tp-model-${pr.name}`" v-model="thirdParty[pr.name].model" class="input" placeholder="默认同平台探测" />
+                </div>
+                <div>
+                  <label class="label" :for="`tp-format-${pr.name}`">协议</label>
+                  <select :id="`tp-format-${pr.name}`" v-model="thirdParty[pr.name].format" class="input">
+                    <option value="">按平台自动</option>
+                    <option value="anthropic">Anthropic Messages</option>
+                    <option value="openai">OpenAI Chat Completions</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label" :for="`tp-mis-${pr.name}`">身份不一致 / 伪装时</label>
+                  <select :id="`tp-mis-${pr.name}`" v-model="thirdParty[pr.name].onMismatch" class="input">
+                    <option v-for="a in options('tpAction')" :key="a.value" :value="a.value">{{ a.text }}</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label" :for="`tp-sub-${pr.name}`">仅具体型号不一致时</label>
+                  <select :id="`tp-sub-${pr.name}`" v-model="thirdParty[pr.name].onSubmodel" class="input">
+                    <option v-for="a in options('tpAction')" :key="a.value" :value="a.value">{{ a.text }}</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </template>
         </div>
       </div>
       <template #footer>

@@ -81,6 +81,56 @@ const table: Record<string, Record<string, Label>> = {
     credited: { text: '已到账', tone: 'green' },
     failed: { text: '失败', tone: 'red' },
     cancelled: { text: '已取消', tone: 'gray' },
+    expired: { text: '已过期', tone: 'gray' },
+  },
+  paymentChannel: {
+    alipay_page: { text: '支付宝网页支付', tone: 'blue' },
+    alipay_f2f: { text: '支付宝扫码', tone: 'blue' },
+    wechat_native: { text: '微信扫码', tone: 'green' },
+    manual: { text: '人工确认', tone: 'gray' },
+  },
+  closeReason: {
+    'cancelled by user': { text: '已由你取消', tone: 'gray' },
+    'payment timeout': { text: '超时未支付', tone: 'gray' },
+    'closed by payment channel': { text: '支付渠道已关闭交易', tone: 'gray' },
+    'crediting sub2api balance failed': { text: '入账失败，平台会人工处理', tone: 'red' },
+  },
+  payoutStatus: {
+    pending: { text: '待发起', tone: 'blue' },
+    processing: { text: '退款中', tone: 'blue' },
+    success: { text: '已退回', tone: 'green' },
+    failed: { text: '失败', tone: 'red' },
+    manual: { text: '待人工打款', tone: 'yellow' },
+  },
+  notifyResult: {
+    credited: { text: '已入账', tone: 'green' },
+    duplicate: { text: '重复通知', tone: 'gray' },
+    expired: { text: '已过期', tone: 'gray' },
+    ignored: { text: '忽略', tone: 'gray' },
+    amount_mismatch: { text: '金额不一致', tone: 'red' },
+    unknown_order: { text: '未知订单', tone: 'yellow' },
+    invalid: { text: '验签失败', tone: 'red' },
+    error: { text: '处理出错', tone: 'red' },
+  },
+  tpStatus: {
+    pending: { text: '排队中', tone: 'blue' },
+    running: { text: '检测中', tone: 'blue' },
+    completed: { text: '已完成', tone: 'green' },
+    failed: { text: '失败', tone: 'red' },
+    timeout: { text: '超时', tone: 'yellow' },
+    skipped: { text: '已跳过', tone: 'gray' },
+  },
+  tpOutcome: {
+    pass: { text: '身份一致', tone: 'green' },
+    submodel_mismatch: { text: '型号不一致', tone: 'yellow' },
+    mismatch: { text: '身份不一致', tone: 'red' },
+    spoof: { text: '疑似伪装', tone: 'red' },
+    inconclusive: { text: '证据不足', tone: 'gray' },
+  },
+  tpAction: {
+    degraded: { text: '判为降智', tone: 'red' },
+    suspected: { text: '判为疑似', tone: 'yellow' },
+    ignore: { text: '仅记录', tone: 'gray' },
   },
   refundStatus: {
     locking: { text: '暂停 Key 中', tone: 'blue' },
@@ -187,6 +237,7 @@ export const anomalyRules: Record<string, string> = {
   R3_orphan_charge: '有费用但找不到 Edge 记录（可能绕过 Edge）',
   R4_duplicate: '同一请求多条费用',
   balance_mismatch: '买家余额与账本不一致',
+  payment_amount_mismatch: '支付渠道通知的金额与订单不一致（未入账）',
 }
 
 export const riskKinds: Record<string, string> = {

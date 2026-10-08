@@ -145,7 +145,7 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
       <button v-if="!['removing', 'removed'].includes(u.status)" class="btn-ghost text-red-600" :disabled="busy" @click="remove">删除</button>
     </PageHeader>
 
-    <div v-if="u.status === 'verifying'" class="mb-4 rounded-md bg-sky-50 p-3 text-sm text-sky-800">正在进行上架检测，完成后页面会自动刷新。检测通过前不能挂单。</div>
+    <div v-if="u.status === 'verifying'" class="mb-4 rounded-md bg-sky-50 p-3 text-sm text-sky-800">正在进行上架检测（平台探测之后可能还有第三方身份检测，通常几分钟），完成后页面会自动刷新。检测通过前不能挂单。</div>
     <div v-if="u.failure_reason && ['verify_failed', 'suspended', 'failed'].includes(u.status)" class="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-800">
       {{ u.failure_reason }}
     </div>

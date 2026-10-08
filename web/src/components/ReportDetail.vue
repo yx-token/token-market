@@ -2,6 +2,7 @@
 // 卖家测试报告（脱敏）：只包含结论、各项指标与建议，不包含题目、答案和基线信息。
 import type { Report } from '@/api/types'
 import StatusBadge from '@/components/StatusBadge.vue'
+import ThirdPartyResult from '@/components/ThirdPartyResult.vue'
 import { dateTime, ms, percent } from '@/utils/format'
 
 defineProps<{ report: Report }>()
@@ -13,6 +14,7 @@ const suggestionText: Record<string, string> = {
   proxy_rotation: '疑似代理线路问题，平台会更换代理，无需操作。',
   vendor_wide: '官方服务整体下降，所有账号都受影响，不影响你的评级。',
   disable_training: '请关闭这个账号的训练数据使用设置。',
+  third_party_mismatch: '第三方检测站判定这个端点背后的模型与声明不一致。请确认账号是官方订阅、没有经过其他中转，可以申诉复测。',
 }
 </script>
 
@@ -49,6 +51,10 @@ const suggestionText: Record<string, string> = {
       <dd>{{ report.summary.suites.reasoning ? percent(report.summary.suites.reasoning.ratio_to_baseline, 0) : '—' }}</dd>
       <dt class="text-slate-500">对照基线</dt>
       <dd>{{ report.summary.baseline ? '有（同批次对照平台基线账号）' : '无（按绝对标准判定）' }}</dd>
+      <template v-if="report.summary.internal_verdict">
+        <dt class="text-slate-500">平台探测结论</dt>
+        <dd><StatusBadge kind="verdict" :value="report.summary.internal_verdict" />（最终结论取平台探测与第三方检测中更严重的一项）</dd>
+      </template>
       <template v-if="report.summary.attribution">
         <dt class="text-slate-500">原因</dt>
         <dd><StatusBadge kind="attribution" :value="report.summary.attribution" /></dd>
@@ -66,6 +72,21 @@ const suggestionText: Record<string, string> = {
         <dd>{{ dateTime(String(report.impact.next_check_at)) }}</dd>
       </template>
     </dl>
+    <div v-if="report.summary.third_party?.length" class="space-y-2">
+      <div class="font-medium text-slate-700">第三方检测</div>
+      <ThirdPartyResult
+        v-for="t in report.summary.third_party"
+        :key="t.provider"
+        :provider="t.provider"
+        :status="t.status"
+        :outcome="t.outcome"
+        :verdict="t.verdict"
+        :model="t.model"
+        :report-url="t.report_url"
+        :error="t.error"
+        :summary="t.summary"
+      />
+    </div>
     <div v-if="report.summary.suggestions?.length" class="rounded bg-slate-50 p-3">
       <div class="mb-1 font-medium text-slate-700">建议</div>
       <ul class="list-disc space-y-1 pl-5 text-slate-600">

@@ -37,6 +37,7 @@ const sections: Record<string, { title: string; items: NavItem[] }> = {
       { to: '/admin/upstreams', text: '上游' },
       { to: '/admin/quality', text: '质量与申诉' },
       { to: '/admin/detection', text: '检测策略' },
+      { to: '/admin/third-party', text: '第三方检测' },
       { to: '/admin/probe-items', text: '题库与基线账号' },
       { to: '/admin/pools', text: '默认分组' },
       { to: '/admin/vendors', text: '厂商' },

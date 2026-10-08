@@ -158,3 +158,38 @@ func TestProbeHTTPError(t *testing.T) {
 		t.Fatalf("503 should be an error: %+v", res)
 	}
 }
+
+func TestThirdPartyCheckVerdicts(t *testing.T) {
+	c := ThirdPartyCheck{Provider: "bazaarlink", Triggers: []string{"onboarding"}}
+	if err := c.normalize(); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{"pass": "normal", "mismatch": "degraded", "spoof": "degraded", "submodel_mismatch": "suspected",
+		"inconclusive": "inconclusive"}
+	for outcome, want := range cases {
+		if got := c.VerdictFor(outcome); got != want {
+			t.Errorf("%s: got %s want %s", outcome, got, want)
+		}
+	}
+	c.OnMismatch = "ignore"
+	if c.VerdictFor("mismatch") != "inconclusive" {
+		t.Error("ignore should not affect the verdict")
+	}
+	if !c.Applies("onboarding") || c.Applies("scheduled") {
+		t.Error("Applies")
+	}
+	for _, bad := range []ThirdPartyCheck{
+		{Provider: "unknown", Triggers: []string{"onboarding"}},
+		{Provider: "bazaarlink"},
+		{Provider: "bazaarlink", Triggers: []string{"nope"}},
+		{Provider: "bazaarlink", Triggers: []string{"admin"}, Format: "gemini"},
+		{Provider: "bazaarlink", Triggers: []string{"admin"}, OnMismatch: "ban"},
+	} {
+		if err := bad.normalize(); err == nil {
+			t.Errorf("%+v should be rejected", bad)
+		}
+	}
+	if DefaultFormat("anthropic") != "anthropic" || DefaultFormat("kimi") != "openai" {
+		t.Error("DefaultFormat")
+	}
+}

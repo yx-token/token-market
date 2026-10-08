@@ -23,8 +23,8 @@ export const market = {
 
 export const buyer = {
   wallet: () => http.get<T.Wallet>('/api/buyer/wallet'),
-  recharge: (amount: number) =>
-    http.post<{ order: T.RechargeOrder; payment: { provider: string; instructions: string } }>('/api/buyer/recharge', { amount }),
+  recharge: (amount: number, channel: string) =>
+    http.post<{ order: T.RechargeOrder; payment?: T.PaymentInfo }>('/api/buyer/recharge', { amount, channel }),
   getRecharge: (id: number) => http.get<T.RechargeOrder>(`/api/buyer/recharge/${id}`),
   cancelRecharge: (id: number) => http.post<Ok>(`/api/buyer/recharge/${id}/cancel`),
   requestRefund: (note: string) => http.post<T.Refund>('/api/buyer/refunds', { note }),
@@ -94,6 +94,9 @@ export const admin = {
   policies: () => http.get<T.Policy[] | null>('/api/admin/detection-policies'),
   upsertPolicy: (platform: string, authType: string, body: Record<string, unknown>) =>
     http.put<T.Policy>(`/api/admin/detection-policies/${platform}${authType ? `?auth_type=${encodeURIComponent(authType)}` : ''}`, body),
+  providers: () => http.get<T.DetectionProvider[] | null>('/api/admin/detection-providers'),
+  updateProvider: (name: string, body: Record<string, unknown>) => http.put<T.DetectionProvider>(`/api/admin/detection-providers/${name}`, body),
+  thirdPartyChecks: (q?: Query) => http.get<T.ThirdPartyCheckView[] | null>('/api/admin/third-party-checks', q),
   setOverride: (upstreamId: number, body: Record<string, unknown>) => http.put<Ok>(`/api/admin/upstreams/${upstreamId}/detection-override`, body),
   deleteOverride: (upstreamId: number) => http.del<Ok>(`/api/admin/upstreams/${upstreamId}/detection-override`),
   probe: (upstreamId: number) => http.post<{ run_id: number }>(`/api/admin/upstreams/${upstreamId}/probe`),
@@ -117,6 +120,10 @@ export const admin = {
   setUserStatus: (userId: number, status: string) => http.post<Ok>(`/api/admin/users/${userId}/status`, { status }),
   recharges: (status?: string) => http.get<T.RechargeOrder[] | null>('/api/admin/recharges', { status }),
   confirmRecharge: (id: number, provider_ref: string) => http.post<T.RechargeOrder>(`/api/admin/recharges/${id}/confirm`, { provider_ref }),
+  syncRecharge: (id: number) => http.post<T.RechargeOrder>(`/api/admin/recharges/${id}/sync`),
+  paymentStatus: () => http.get<T.PaymentStatus>('/api/admin/payments/status'),
+  retryPayout: (id: number) => http.post<T.RefundPayout>(`/api/admin/refund-payouts/${id}/retry`),
+  payoutToManual: (id: number) => http.post<T.RefundPayout>(`/api/admin/refund-payouts/${id}/manual`),
   refunds: (status?: string) => http.get<T.Refund[] | null>('/api/admin/refunds', { status }),
   refundPaid: (id: number, payout_ref: string) => http.post<T.Refund>(`/api/admin/refunds/${id}/paid`, { payout_ref }),
   withdrawals: (status?: string) => http.get<T.Withdrawal[] | null>('/api/admin/withdrawals', { status }),

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DueGin/token-market/internal/buyer"
+	"github.com/DueGin/token-market/internal/payment"
 	"github.com/DueGin/token-market/internal/platform/crypto"
 	"github.com/DueGin/token-market/internal/platform/httpx"
 	"github.com/DueGin/token-market/internal/settings"
@@ -38,8 +39,11 @@ type Funds struct {
 	KYC      KYCChecker
 	Risk     RiskChecker
 	Settings func(ctx context.Context) (settings.Settings, error)
-	Log      *slog.Logger
-	Now      func() time.Time
+	// Payments 是已配置的支付渠道；PublicURL 是控制面对外地址，用于网页支付完成后跳回钱包
+	Payments  *payment.Registry
+	PublicURL string
+	Log       *slog.Logger
+	Now       func() time.Time
 }
 
 func (f *Funds) now() time.Time {
@@ -47,150 +51,6 @@ func (f *Funds) now() time.Time {
 		return f.Now()
 	}
 	return time.Now()
-}
-
-// ---- 充值 ----
-
-type RechargeOrder struct {
-	ID          int64      `json:"id"`
-	UserID      int64      `json:"user_id"`
-	Amount      float64    `json:"amount"`
-	Provider    string     `json:"provider"`
-	ProviderRef *string    `json:"provider_ref,omitempty"`
-	Status      string     `json:"status"`
-	CreatedAt   time.Time  `json:"created_at"`
-	PaidAt      *time.Time `json:"paid_at,omitempty"`
-	CreditedAt  *time.Time `json:"credited_at,omitempty"`
-}
-
-const rechargeColumns = `id, user_id, amount::float8, provider, provider_ref, status, created_at, paid_at, credited_at`
-
-func scanRecharge(row pgx.Row) (*RechargeOrder, error) {
-	var o RechargeOrder
-	if err := row.Scan(&o.ID, &o.UserID, &o.Amount, &o.Provider, &o.ProviderRef, &o.Status, &o.CreatedAt, &o.PaidAt, &o.CreditedAt); err != nil {
-		return nil, err
-	}
-	return &o, nil
-}
-
-// CreateRecharge 创建充值订单。第一期只有人工确认到账的通道（provider = manual），
-// 接入支付通道后由回调调用 ConfirmRecharge。
-func (f *Funds) CreateRecharge(ctx context.Context, userID int64, amount float64, ip string) (*RechargeOrder, error) {
-	amt, err := ValidAmount(amount)
-	if err != nil {
-		return nil, err
-	}
-	return scanRecharge(f.DB.QueryRow(ctx, `INSERT INTO recharge_orders (user_id, amount, provider, client_ip) VALUES ($1, $2::numeric, 'manual', NULLIF($3, ''))
-		RETURNING `+rechargeColumns, userID, amt, ip))
-}
-
-// ConfirmRecharge 确认到账：记账，并通过出站表给影子用户加 sub2api 余额（幂等键 = 订单号）。
-// 1:1 结算：充值 1 元 = sub2api 余额 1。
-func (f *Funds) ConfirmRecharge(ctx context.Context, orderID int64, providerRef string, confirmedBy *int64) (*RechargeOrder, error) {
-	o, err := scanRecharge(f.DB.QueryRow(ctx, "SELECT "+rechargeColumns+" FROM recharge_orders WHERE id = $1", orderID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, httpx.NotFound("ORDER_NOT_FOUND", "recharge order not found")
-	}
-	if err != nil {
-		return nil, err
-	}
-	if o.Status != "pending" {
-		return nil, httpx.Conflict("ORDER_NOT_PENDING", "order is not pending")
-	}
-	ident, err := f.Shadow.Ensure(ctx, buyer.KindBuyer, o.UserID)
-	if err != nil {
-		return nil, fmt.Errorf("prepare buyer account: %w", err)
-	}
-	tx, err := f.DB.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	var amount string
-	tag, err := tx.Exec(ctx, `UPDATE recharge_orders SET status = 'crediting', provider_ref = NULLIF($2, ''), paid_at = now() WHERE id = $1 AND status = 'pending'`,
-		orderID, providerRef)
-	if err != nil {
-		return nil, err
-	}
-	if tag.RowsAffected() == 0 {
-		return nil, httpx.Conflict("ORDER_NOT_PENDING", "order is not pending")
-	}
-	if err := tx.QueryRow(ctx, "SELECT amount::text FROM recharge_orders WHERE id = $1", orderID).Scan(&amount); err != nil {
-		return nil, err
-	}
-	if _, err := Post(ctx, tx, "recharge", fmt.Sprintf("recharge:%d", orderID), providerRef, confirmedBy, []Entry{
-		{Kind: KindPlatformCash, Amount: amount},
-		{Kind: KindBuyerCash, OwnerID: o.UserID, Amount: "-" + amount},
-	}); err != nil {
-		return nil, err
-	}
-	amt, _ := strconv.ParseFloat(amount, 64)
-	opID, err := ops.Enqueue(ctx, tx, ops.NewOp{
-		Type:           opshandlers.TypeUserBalanceAdd,
-		Target:         fmt.Sprintf("user:%d", *ident.Sub2APIUserID),
-		Payload:        opshandlers.BalancePayload{UserID: *ident.Sub2APIUserID, Amount: amt, Notes: fmt.Sprintf("tm recharge %d", orderID)},
-		IdempotencyKey: fmt.Sprintf("tm-recharge-%d", orderID),
-		Priority:       ops.PriorityUrgent,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if _, err := tx.Exec(ctx, "UPDATE recharge_orders SET op_id = $2 WHERE id = $1", orderID, opID); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	return f.GetRecharge(ctx, o.UserID, orderID)
-}
-
-// CancelRecharge 取消未支付的订单。
-func (f *Funds) CancelRecharge(ctx context.Context, userID, orderID int64) error {
-	tag, err := f.DB.Exec(ctx, "UPDATE recharge_orders SET status = 'cancelled' WHERE id = $1 AND user_id = $2 AND status = 'pending'", orderID, userID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return httpx.Conflict("ORDER_NOT_PENDING", "order is not pending")
-	}
-	return nil
-}
-
-func (f *Funds) GetRecharge(ctx context.Context, userID, orderID int64) (*RechargeOrder, error) {
-	o, err := scanRecharge(f.DB.QueryRow(ctx, "SELECT "+rechargeColumns+" FROM recharge_orders WHERE id = $1 AND ($2 = 0 OR user_id = $2)", orderID, userID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, httpx.NotFound("ORDER_NOT_FOUND", "recharge order not found")
-	}
-	return o, err
-}
-
-func (f *Funds) ListRecharges(ctx context.Context, userID int64, status string, limit, offset int) ([]RechargeOrder, error) {
-	rows, err := f.DB.Query(ctx, "SELECT "+rechargeColumns+` FROM recharge_orders WHERE ($1 = 0 OR user_id = $1) AND ($2 = '' OR status = $2)
-		ORDER BY id DESC LIMIT $3 OFFSET $4`, userID, status, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []RechargeOrder
-	for rows.Next() {
-		o, err := scanRecharge(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *o)
-	}
-	return out, rows.Err()
-}
-
-// TrackCrediting 推进 crediting 状态的订单：加余额操作完成则到账，进入死信则标记失败待人工处理。
-func (f *Funds) TrackCrediting(ctx context.Context) error {
-	if _, err := f.DB.Exec(ctx, `UPDATE recharge_orders r SET status = 'credited', credited_at = now()
-		FROM sub2api_ops o WHERE o.id = r.op_id AND r.status = 'crediting' AND o.status = 'done'`); err != nil {
-		return err
-	}
-	_, err := f.DB.Exec(ctx, `UPDATE recharge_orders r SET status = 'failed'
-		FROM sub2api_ops o WHERE o.id = r.op_id AND r.status = 'crediting' AND o.status = 'dead'`)
-	return err
 }
 
 // ---- 余额 ----
@@ -234,14 +94,15 @@ func (f *Funds) Wallet(ctx context.Context, userID int64) (*Wallet, error) {
 // ---- 退款 ----
 
 type Refund struct {
-	ID         int64      `json:"id"`
-	UserID     int64      `json:"user_id"`
-	Status     string     `json:"status"`
-	Amount     *float64   `json:"amount,omitempty"`
-	PayoutRef  *string    `json:"payout_ref,omitempty"`
-	Note       *string    `json:"note,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	ID         int64          `json:"id"`
+	UserID     int64          `json:"user_id"`
+	Status     string         `json:"status"`
+	Amount     *float64       `json:"amount,omitempty"`
+	PayoutRef  *string        `json:"payout_ref,omitempty"`
+	Note       *string        `json:"note,omitempty"`
+	CreatedAt  time.Time      `json:"created_at"`
+	FinishedAt *time.Time     `json:"finished_at,omitempty"`
+	Payouts    []RefundPayout `json:"payouts"`
 }
 
 const refundColumns = `id, user_id, status, amount::float8, payout_ref, note, created_at, finished_at`
@@ -259,7 +120,13 @@ func (f *Funds) activeRefund(ctx context.Context, userID int64) (*Refund, error)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
-	return r, err
+	if err != nil {
+		return nil, err
+	}
+	if r.Payouts, err = f.refundPayouts(ctx, r.ID); err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 // RequestRefund 申请退还全部剩余余额：先暂停买家全部 Key，等进行中的请求结束后再扣减 sub2api 余额。
@@ -380,6 +247,10 @@ func (f *Funds) advanceRefund(ctx context.Context, r Refund) error {
 			}); err != nil && !errors.Is(err, ErrDuplicateTxn) {
 				return err
 			}
+			// 拆分打款：优先原路退回到近期的在线充值单，其余人工打款
+			if err := f.planPayouts(ctx, tx, r.ID, r.UserID, amount); err != nil {
+				return err
+			}
 			if _, err := tx.Exec(ctx, "UPDATE refunds SET status = 'paying' WHERE id = $1", r.ID); err != nil {
 				return err
 			}
@@ -397,16 +268,60 @@ func (f *Funds) advanceRefund(ctx context.Context, r Refund) error {
 	return nil
 }
 
-// MarkRefundPaid 管理员确认已原路退款或打款。
+// MarkRefundPaid 管理员确认需要人工打款的部分已经打款；原路退回的部分由 worker 自动完成。
 func (f *Funds) MarkRefundPaid(ctx context.Context, refundID int64, payoutRef string) (*Refund, error) {
-	tag, err := f.DB.Exec(ctx, "UPDATE refunds SET status = 'done', payout_ref = $2, finished_at = now() WHERE id = $1 AND status = 'paying'", refundID, payoutRef)
+	if payoutRef == "" {
+		return nil, httpx.BadRequest("PAYOUT_REF_REQUIRED", "payout reference is required")
+	}
+	var status string
+	err := f.DB.QueryRow(ctx, "SELECT status FROM refunds WHERE id = $1", refundID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, httpx.NotFound("REFUND_NOT_FOUND", "refund not found")
+	}
 	if err != nil {
 		return nil, err
 	}
-	if tag.RowsAffected() == 0 {
+	if status != "paying" {
 		return nil, httpx.Conflict("REFUND_NOT_PAYING", "refund is not waiting for payout")
 	}
-	return scanRefund(f.DB.QueryRow(ctx, "SELECT "+refundColumns+" FROM refunds WHERE id = $1", refundID))
+	var payouts, manual int
+	if err := f.DB.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE status = 'manual') FROM refund_payouts WHERE refund_id = $1`,
+		refundID).Scan(&payouts, &manual); err != nil {
+		return nil, err
+	}
+	switch {
+	case payouts == 0:
+		// 升级前进入打款阶段的退款没有打款明细，整笔人工打款
+		if _, err := f.DB.Exec(ctx, "UPDATE refunds SET status = 'done', payout_ref = $2, finished_at = now() WHERE id = $1 AND status = 'paying'",
+			refundID, payoutRef); err != nil {
+			return nil, err
+		}
+	case manual == 0:
+		return nil, httpx.Conflict("NO_MANUAL_PAYOUT", "this refund has no part waiting for manual payout")
+	default:
+		if _, err := f.DB.Exec(ctx, `UPDATE refund_payouts SET status = 'success', provider_ref = $2, finished_at = now()
+			WHERE refund_id = $1 AND status = 'manual'`, refundID, payoutRef); err != nil {
+			return nil, err
+		}
+		if err := f.finishRefunds(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return f.GetRefund(ctx, 0, refundID)
+}
+
+func (f *Funds) GetRefund(ctx context.Context, userID, refundID int64) (*Refund, error) {
+	r, err := scanRefund(f.DB.QueryRow(ctx, "SELECT "+refundColumns+" FROM refunds WHERE id = $1 AND ($2 = 0 OR user_id = $2)", refundID, userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, httpx.NotFound("REFUND_NOT_FOUND", "refund not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if r.Payouts, err = f.refundPayouts(ctx, r.ID); err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 func (f *Funds) ListRefunds(ctx context.Context, userID int64, status string, limit, offset int) ([]Refund, error) {
@@ -424,7 +339,16 @@ func (f *Funds) ListRefunds(ctx context.Context, userID int64, status string, li
 		}
 		out = append(out, *r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	for i := range out {
+		if out[i].Payouts, err = f.refundPayouts(ctx, out[i].ID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // ---- 提现 ----

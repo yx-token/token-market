@@ -194,6 +194,41 @@ func (s *Server) upsertPolicy(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, p)
 }
 
+func (s *Server) listDetectionProviders(w http.ResponseWriter, r *http.Request) error {
+	ps, err := quality.ListProviders(r.Context(), s.DB)
+	if err != nil {
+		return err
+	}
+	return ok(w, ps)
+}
+
+func (s *Server) updateDetectionProvider(w http.ResponseWriter, r *http.Request) error {
+	var in quality.ProviderInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	p, err := quality.UpsertProvider(r.Context(), s.DB, s.Quality.Keyring, r.PathValue("name"), in, adminID(r))
+	if err != nil {
+		return err
+	}
+	logged := in
+	if logged.APIKey != nil {
+		masked := "***"
+		logged.APIKey = &masked
+	}
+	s.audit(r, "detection_provider.update", "detection_provider:"+p.Name, logged)
+	return ok(w, p)
+}
+
+func (s *Server) listThirdPartyChecks(w http.ResponseWriter, r *http.Request) error {
+	limit, offset := page(r)
+	cs, err := quality.ListThirdPartyChecks(r.Context(), s.DB, queryInt64(r, "upstream_id"), limit, offset)
+	if err != nil {
+		return err
+	}
+	return ok(w, cs)
+}
+
 func (s *Server) setOverride(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathID(r, "id")
 	if err != nil {

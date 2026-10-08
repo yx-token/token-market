@@ -152,6 +152,9 @@ func (s *Server) Handler() http.Handler {
 		{"POST /api/admin/pools/{id}/sync", s.syncPool},
 		{"GET /api/admin/detection-policies", s.listPolicies},
 		{"PUT /api/admin/detection-policies/{platform}", s.upsertPolicy},
+		{"GET /api/admin/detection-providers", s.listDetectionProviders},
+		{"PUT /api/admin/detection-providers/{name}", s.updateDetectionProvider},
+		{"GET /api/admin/third-party-checks", s.listThirdPartyChecks},
 		{"PUT /api/admin/upstreams/{id}/detection-override", s.setOverride},
 		{"DELETE /api/admin/upstreams/{id}/detection-override", s.deleteOverride},
 		{"POST /api/admin/upstreams/{id}/probe", s.adminProbe},
@@ -174,6 +177,10 @@ func (s *Server) Handler() http.Handler {
 		{"POST /api/admin/users/{id}/status", s.setUserStatus},
 		{"GET /api/admin/recharges", s.adminRecharges},
 		{"POST /api/admin/recharges/{id}/confirm", s.confirmRecharge},
+		{"POST /api/admin/recharges/{id}/sync", s.syncRecharge},
+		{"GET /api/admin/payments/status", s.paymentStatus},
+		{"POST /api/admin/refund-payouts/{id}/retry", s.retryPayout},
+		{"POST /api/admin/refund-payouts/{id}/manual", s.payoutToManual},
 		{"GET /api/admin/refunds", s.adminRefunds},
 		{"POST /api/admin/refunds/{id}/paid", s.refundPaid},
 		{"GET /api/admin/withdrawals", s.adminWithdrawals},
@@ -191,6 +198,8 @@ func (s *Server) Handler() http.Handler {
 	for _, r := range public {
 		mux.Handle(r.pattern, r.h)
 	}
+	// 支付渠道异步通知：不鉴权，按渠道协议验签与应答
+	mux.HandleFunc("POST /api/payments/{provider}/notify", s.paymentNotify)
 	for _, r := range user {
 		mux.Handle(r.pattern, httpx.Authenticate(s.Issuer, s.Accounts.CheckActive, r.h))
 	}

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# 本地开发 / 演示环境：PostgreSQL 与 Redis（docker）、sub2api 替身、market-api、market-worker、market-edge，并写入演示数据。
-# sub2api 替身不访问任何真实上游（网关按约定作答并按真实规则记账），只用于开发与演示，不能用于生产。
+# 本地开发 / 演示环境：PostgreSQL 与 Redis（docker）、sub2api 替身、第三方服务替身（支付宝、微信支付、BazaarLink）、
+# market-api、market-worker、market-edge，并写入演示数据。
+# 替身不访问任何真实上游、不产生真实扣款（按真实协议签名与记账），只用于开发与演示，不能用于生产。
 #
 # 用法：
 #   scripts/dev.sh up       启动全部服务（首次会建库并写入演示数据）
@@ -22,6 +23,8 @@ FAKE_DB=tm_dev_sub2api
 ADMIN_EMAIL=admin@dev.local
 ADMIN_PASSWORD=admin-password-1
 API=http://127.0.0.1:8080
+THIRDPARTY=http://127.0.0.1:18082
+KEYS="$DATA/pay-keys"
 mkdir -p "$DATA"
 
 ensure_containers() {
@@ -75,6 +78,14 @@ market_env() {
   export TM_HTTP_ADDR=127.0.0.1:8080 TM_EDGE_ADDR=127.0.0.1:8090 TM_EDGE_PUBLIC_URL=http://127.0.0.1:8090
   export TM_EDGE_SPOOL_DIR="$DATA/edge-spool"
   if [[ -f web/dist/index.html ]]; then export TM_HTTP_WEB_DIR="$ROOT/web/dist"; fi
+  # 支付渠道指向替身（商户号、密钥与 cmd/fake-thirdparty 一致）
+  export TM_PAYMENT_PUBLIC_URL=$API
+  export TM_ALIPAY_APP_ID=2021000000000001 TM_ALIPAY_GATEWAY=$THIRDPARTY/gateway.do
+  export TM_ALIPAY_PRIVATE_KEY_FILE="$KEYS/alipay_app_private.pem" TM_ALIPAY_PUBLIC_KEY_FILE="$KEYS/alipay_platform_public.pem"
+  export TM_WECHAT_APP_ID=wx0000000000dev01 TM_WECHAT_MCH_ID=1900000001 TM_WECHAT_MCH_SERIAL_NO=DEVMERCHANTSERIAL0001
+  export TM_WECHAT_PRIVATE_KEY_FILE="$KEYS/wechat_merchant_private.pem" TM_WECHAT_API_V3_KEY=devapiv3keydevapiv3keydevapiv3ke
+  export TM_WECHAT_PUBLIC_KEY_ID=PUB_KEY_ID_0000000000000000000001 TM_WECHAT_PUBLIC_KEY_FILE="$KEYS/wechat_platform_public.pem"
+  export TM_WECHAT_BASE_URL=$THIRDPARTY
 }
 
 api() { # method path [json]
@@ -111,6 +122,23 @@ seed() {
   touch "$DATA/seeded"
 }
 
+login_admin() {
+  TOKEN="$(curl -fsS -X POST "$API/api/auth/login" -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | sed -E 's/.*"token":"([^"]+)".*/\1/')"
+}
+
+# 第三方检测：BazaarLink 指向替身（Edge 是本机 http 地址，需要允许非 https 目标），Claude 的上架检测、管理员检测、
+# 卖家复测与申诉复测追加身份检测
+seed_thirdparty() {
+  [[ -f "$DATA/seeded-thirdparty" ]] && return
+  login_admin
+  api PUT /api/admin/detection-providers/bazaarlink \
+    "{\"enabled\":true,\"base_url\":\"$THIRDPARTY\",\"settings\":{\"allow_insecure_target\":true},\"max_runs_per_hour\":30,\"timeout_minutes\":30}" >/dev/null
+  api PUT /api/admin/detection-policies/anthropic \
+    '{"third_party":[{"provider":"bazaarlink","triggers":["onboarding","admin","seller_manual","appeal"]}]}' >/dev/null
+  touch "$DATA/seeded-thirdparty"
+}
+
 up() {
   [[ -d "$SUB2API_REPO/.git" ]] || { echo "找不到 sub2api 仓库：$SUB2API_REPO（用 SUB2API_REPO 指定）" >&2; exit 1; }
   ensure_containers
@@ -120,13 +148,16 @@ up() {
   go build -o bin/ ./cmd/...
   echo "启动服务…"
   start fake-sub2api bin/fake-sub2api --dsn "$PG_DSN_BASE/$FAKE_DB?sslmode=disable" --sub2api-repo "$SUB2API_REPO" --listen 127.0.0.1:18081
+  start fake-thirdparty bin/fake-thirdparty --keys-dir "$KEYS" --listen 127.0.0.1:18082
   wait_http "http://127.0.0.1:18081/api/v1/admin/system/version"
+  wait_http "$THIRDPARTY/api/probe/run/none"
   market_env
   start api bin/api
   wait_http "$API/healthz"
   start worker bin/worker
   start edge bin/edge
   seed
+  seed_thirdparty
   cat <<INFO
 
 开发环境已就绪：
@@ -134,12 +165,13 @@ up() {
   买家调用地址   http://127.0.0.1:8090
   管理员         $ADMIN_EMAIL / $ADMIN_PASSWORD
   sub2api 替身   http://127.0.0.1:18081（Admin Key: dev-admin-key）
+  第三方替身     ${THIRDPARTY}（支付宝收银台 / 扫码页、微信扫码页、BazaarLink 检测；二维码内容就是扫码页地址）
 提示：worker 首次兼容自检通过后才会写入 sub2api；新上游的上架检测约 30 秒一轮，用量入账有约 2 分钟安全延迟。
 INFO
 }
 
 down() {
-  for name in edge worker api fake-sub2api; do
+  for name in edge worker api fake-thirdparty fake-sub2api; do
     if [[ -f "$DATA/$name.pid" ]]; then
       kill "$(cat "$DATA/$name.pid")" 2>/dev/null || true
       rm -f "$DATA/$name.pid"
@@ -159,7 +191,7 @@ case "${1:-}" in
     echo "已重置"
     ;;
   status)
-    for name in fake-sub2api api worker edge; do
+    for name in fake-sub2api fake-thirdparty api worker edge; do
       if [[ -f "$DATA/$name.pid" ]] && kill -0 "$(cat "$DATA/$name.pid")" 2>/dev/null; then echo "$name: 运行中"; else echo "$name: 未运行"; fi
     done
     ;;

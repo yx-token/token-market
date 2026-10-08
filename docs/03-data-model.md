@@ -275,6 +275,35 @@ quality_verdicts (
   created_at      timestamptz not null default now()
 );
 
+detection_providers (                    -- 第三方检测站配置
+  name               text primary key,     -- bazaarlink
+  enabled            boolean not null,
+  base_url           text not null,
+  api_key_enc        bytea,                -- 加密存储
+  options            jsonb not null,       -- 检测站可选参数；allow_insecure_target 仅开发环境
+  max_runs_per_hour  int not null,
+  timeout_minutes    int not null          -- 从排队到出结果的最长等待
+);
+-- detection_policies.third_party jsonb：[{provider, triggers, model, format, on_mismatch, on_submodel_mismatch}]
+
+third_party_checks (                     -- 每次检测提交给检测站的记录
+  id bigserial primary key,
+  run_id          bigint not null references probe_runs,   -- 检测记录在等待期间处于 third_party 状态
+  upstream_id     bigint not null,
+  provider        text not null,
+  model           text not null,
+  format          text not null,           -- openai / anthropic
+  config          jsonb not null,          -- 策略检测项快照
+  status          text not null,           -- pending / running / completed / failed / timeout / skipped
+  external_id     text,                    -- 检测站的检测编号
+  token_hash      text,                    -- Edge 临时令牌哈希，结束后撤销
+  outcome         text,                    -- pass / submodel_mismatch / mismatch / spoof / inconclusive
+  verdict         text,                    -- 折算后的结论
+  summary         jsonb,                   -- 脱敏摘要（不含被测端点的原始回答）
+  report_url      text,
+  deadline        timestamptz not null
+);
+
 test_reports (                           -- 卖家可见的报告（已脱敏）
   id           bigserial primary key,
   upstream_id  bigint not null references upstreams,
@@ -407,7 +436,42 @@ settlement_lines (                       -- 按小时聚合的卖家应收
   primary key (upstream_id, hour, channel)
 );
 
-recharge_orders (...);                   -- 支付渠道订单
+recharge_orders (                        -- 充值单
+  id             bigserial primary key,
+  user_id        bigint not null,
+  amount         numeric(20,10) not null,
+  provider       text not null,          -- manual / alipay / wechat
+  channel        text not null,          -- manual / alipay_page / alipay_f2f / wechat_native
+  out_trade_no   text unique,            -- 发给渠道的商户订单号
+  provider_ref   text,                   -- 渠道交易号或人工流水号
+  status         text not null,          -- pending / crediting / credited / cancelled / expired / failed
+  pay_kind       text,                   -- redirect / qrcode
+  pay_payload    text,                   -- 收银台地址或二维码内容
+  expires_at     timestamptz,            -- 支付时限
+  close_reason   text,
+  last_synced_at timestamptz,            -- 最近一次主动查单
+  refunded_amount numeric(20,10) not null default 0,   -- 已原路退回
+  op_id          bigint,                 -- 给影子用户加余额的出站操作
+  created_at, paid_at, credited_at
+);
+
+payment_notifications (                  -- 渠道异步通知的处理记录
+  id bigserial primary key, provider text, out_trade_no text, trade_no text, state text, amount_fen bigint,
+  result text not null,                  -- credited / duplicate / expired / ignored / amount_mismatch / unknown_order / invalid / error
+  error text, created_at timestamptz
+);
+
+refund_payouts (                         -- 余额退款的打款明细
+  id                bigserial primary key,
+  refund_id         bigint not null references refunds,
+  recharge_order_id bigint references recharge_orders,  -- 原路退回的充值单；人工打款为空
+  channel           text not null,       -- 原充值单的支付方式 / manual
+  amount            numeric(20,10) not null,
+  out_refund_no     text unique,         -- 渠道退款单号（幂等）
+  status            text not null,       -- pending / processing / success / failed / manual
+  provider_ref      text, error text, attempts int, next_attempt_at timestamptz, finished_at timestamptz
+);
+
 withdrawals (
   id           bigserial primary key,
   seller_id    bigint not null references users,

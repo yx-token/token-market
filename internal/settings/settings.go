@@ -31,6 +31,13 @@ type Settings struct {
 	BalanceMismatchTolerance   float64            `json:"balance_mismatch_tolerance"`    // 余额对账容差
 	AllowNoProxy               bool               `json:"allow_no_proxy"`                // 没有可用代理时是否允许上架（仅开发环境）
 	PriceModels                []string           `json:"price_models"`                  // 市场展示官方价格的模型（价格取自 sub2api 内置价目表）
+	// 支付方式开关：alipay_page / alipay_f2f / wechat_native / manual。在线渠道还需要在配置文件中配置商户信息才可用
+	PaymentChannels             map[string]bool `json:"payment_channels"`
+	RechargeMin                 float64         `json:"recharge_min"`                   // 单笔充值下限（元）
+	RechargeMax                 float64         `json:"recharge_max"`                   // 单笔充值上限（元）
+	RechargeOrderTimeoutMinutes int             `json:"recharge_order_timeout_minutes"` // 在线支付订单的支付时限
+	RefundOriginalRoute         bool            `json:"refund_original_route"`          // 余额退款优先原路退回到在线充值单
+	RefundOriginalRouteDays     int             `json:"refund_original_route_days"`     // 只原路退回这么多天内的充值单（渠道的可退款期限）
 }
 
 func Defaults() Settings {
@@ -51,6 +58,12 @@ func Defaults() Settings {
 		BalanceMismatchTolerance:   0.05,
 		PriceModels: []string{"claude-opus-4-1", "claude-sonnet-4-5", "claude-haiku-4-5", "gpt-5.1", "gpt-5.1-codex",
 			"gemini-2.5-pro", "gemini-2.5-flash", "grok-4", "kimi-for-coding", "glm-4.6", "MiniMax-M2"},
+		PaymentChannels:             map[string]bool{"alipay_page": true, "alipay_f2f": true, "wechat_native": true, "manual": true},
+		RechargeMin:                 1,
+		RechargeMax:                 50000,
+		RechargeOrderTimeoutMinutes: 30,
+		RefundOriginalRoute:         true,
+		RefundOriginalRouteDays:     90,
 	}
 }
 
@@ -70,6 +83,19 @@ func (s Settings) Validate() error {
 		return errors.New("shadow_concurrency must be > 0")
 	case s.SchedulerChangeBudget <= 0:
 		return errors.New("scheduler_change_budget must be > 0")
+	case s.RechargeMin <= 0 || s.RechargeMax < s.RechargeMin:
+		return errors.New("recharge_min must be > 0 and recharge_max >= recharge_min")
+	case s.RechargeOrderTimeoutMinutes < 5 || s.RechargeOrderTimeoutMinutes > 1440:
+		return errors.New("recharge_order_timeout_minutes must be between 5 and 1440")
+	case s.RefundOriginalRouteDays < 0:
+		return errors.New("refund_original_route_days must be >= 0")
+	}
+	for ch := range s.PaymentChannels {
+		switch ch {
+		case "alipay_page", "alipay_f2f", "wechat_native", "manual":
+		default:
+			return fmt.Errorf("unknown payment channel %s", ch)
+		}
 	}
 	for g, c := range s.GradeCoefficients {
 		if c < 0 {
