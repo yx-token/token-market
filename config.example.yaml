@@ -12,6 +12,7 @@ http:
 database:
   dsn: "postgres://tm:tm@127.0.0.1:5432/token_market?sslmode=disable"
   max_conns: 20
+  time_zone: "Asia/Shanghai"            # 会话时区：按天统计（账单、用量、今日收益、每日检测预算）的日界
 
 redis:
   addr: "127.0.0.1:6379"

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // ErrIdempotencyKeyRequired：sub2api 对创建账号、创建代理、调整余额强制要求 Idempotency-Key。
@@ -322,6 +323,61 @@ type CNQuota struct {
 func (c *Client) CNProviderQuota(ctx context.Context, id int64) (*CNQuota, error) {
 	var out CNQuota
 	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/cn-providers/accounts/%d/quota", id), nil, "", &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// UsageWindowStats 是窗口期内经 sub2api 的使用量。
+type UsageWindowStats struct {
+	Requests int64   `json:"requests"`
+	Tokens   int64   `json:"tokens"`
+	Cost     float64 `json:"cost"`
+}
+
+// UsageWindow 是官方订阅的一个用量窗口（5 小时、7 天等）。
+type UsageWindow struct {
+	Utilization      float64           `json:"utilization"` // 0–100+
+	ResetsAt         *time.Time        `json:"resets_at"`
+	RemainingSeconds int               `json:"remaining_seconds"`
+	WindowStats      *UsageWindowStats `json:"window_stats"`
+	UsedRequests     int64             `json:"used_requests"`
+	LimitRequests    int64             `json:"limit_requests"`
+}
+
+// AccountUsage 是 sub2api 账号用量接口（GET /admin/accounts/:id/usage）中本系统展示的字段。
+type AccountUsage struct {
+	Source            string       `json:"source"`
+	UpdatedAt         *time.Time   `json:"updated_at"`
+	FiveHour          *UsageWindow `json:"five_hour"`
+	SevenDay          *UsageWindow `json:"seven_day"`
+	SevenDaySonnet    *UsageWindow `json:"seven_day_sonnet"`
+	SevenDayFable     *UsageWindow `json:"seven_day_fable"`
+	ThirtyDay         *UsageWindow `json:"thirty_day"`
+	GeminiSharedDaily *UsageWindow `json:"gemini_shared_daily"`
+	GeminiProDaily    *UsageWindow `json:"gemini_pro_daily"`
+	GeminiFlashDaily  *UsageWindow `json:"gemini_flash_daily"`
+	AntigravityQuota  map[string]struct {
+		Utilization int    `json:"utilization"`
+		ResetTime   string `json:"reset_time"`
+	} `json:"antigravity_quota"`
+	SubscriptionTier string `json:"subscription_tier"`
+	NeedsReauth      bool   `json:"needs_reauth"`
+	IsBanned         bool   `json:"is_banned"`
+	NeedsVerify      bool   `json:"needs_verify"`
+	ErrorCode        string `json:"error_code"`
+	Error            string `json:"error"`
+}
+
+// AccountUsage 查询账号的官方订阅窗口用量。passive 读取 sub2api 从响应头采样的快照（不访问上游，仅 Claude 支持）；
+// 否则由 sub2api 向官方查询（sub2api 自带缓存）。
+func (c *Client) AccountUsage(ctx context.Context, id int64, passive bool) (*AccountUsage, error) {
+	source := "active"
+	if passive {
+		source = "passive"
+	}
+	var out AccountUsage
+	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/accounts/%d/usage?source=%s", id, source), nil, "", &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

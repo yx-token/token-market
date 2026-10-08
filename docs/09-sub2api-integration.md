@@ -26,7 +26,7 @@
 | OpenAI 授权 | `POST /admin/openai/generate-auth-url`、`/exchange-code`（换到令牌后由本系统用 `POST /admin/accounts` 创建账号，不用 `create-from-oauth`） |
 | Gemini / Antigravity / Grok 授权 | `POST /admin/{gemini,antigravity,grok}/oauth/auth-url`、`/oauth/exchange-code` |
 | 账号 | `POST /admin/accounts`、`PUT /admin/accounts/:id`、`POST /admin/accounts/bulk-update`、`POST /:id/schedulable`、`DELETE /:id`、`POST /:id/clear-error`（重新授权后清除错误状态） |
-| 账号信息 | `POST /:id/set-privacy`（**只支持 OpenAI 与 Antigravity 的 OAuth 账号**）、`GET /admin/cn-providers/accounts/:id/quota`（Coding Plan 上架时确认是订阅 key）。订阅档位从授权换到的令牌信息中读取（`plan_type`、`tier_id`、`subscription_tier`）；`refresh-tier` 只支持 Gemini 的 google_one 账号，第一期不用 |
+| 账号信息 | `POST /:id/set-privacy`（**只支持 OpenAI 与 Antigravity 的 OAuth 账号**）、`GET /admin/cn-providers/accounts/:id/quota`（Coding Plan 上架时确认是订阅 key；卖家查看窗口用量）、`GET /admin/accounts/:id/usage`（卖家查看官方订阅窗口用量：Claude 默认读 `source=passive` 的响应头采样快照，不访问上游，刷新或其他平台用 `source=active`，sub2api 自带缓存）。订阅档位从授权换到的令牌信息中读取（`plan_type`、`tier_id`、`subscription_tier`）；`refresh-tier` 只支持 Gemini 的 google_one 账号，第一期不用 |
 | 官方价 | `GET /admin/channels/model-pricing?model=`（市场展示的官方价目，倍率以它为基准） |
 | 分组 | `POST/PUT/DELETE /admin/groups`、`PUT /admin/groups/:id/rate-multipliers`（买家折扣，后续） |
 | 用户 | `POST /admin/users`、`PUT /admin/users/:id`（并发、可用分组）、`POST /admin/users/:id/balance`（强制 `Idempotency-Key`） |

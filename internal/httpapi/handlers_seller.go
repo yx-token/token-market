@@ -421,3 +421,47 @@ func (s *Server) listWithdrawals(w http.ResponseWriter, r *http.Request) error {
 	}
 	return ok(w, ws)
 }
+
+func (s *Server) upstreamQuota(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	q, err := s.Listings.AccountQuota(r.Context(), httpx.MustUser(r).UserID, id, r.URL.Query().Get("refresh") == "1")
+	if err != nil {
+		return err
+	}
+	return ok(w, q)
+}
+
+func (s *Server) sellerUsage(w http.ResponseWriter, r *http.Request) error {
+	upstreamID := queryInt64(r, "upstream_id")
+	uid := httpx.MustUser(r).UserID
+	if upstreamID > 0 {
+		if _, err := listing.GetSellerUpstream(r.Context(), s.DB, uid, upstreamID); err != nil {
+			return err
+		}
+	}
+	u, err := billing.SellerUsageSummary(r.Context(), s.DB, uid, upstreamID, httpx.QueryInt(r, "days", 30, 1, 90))
+	if err != nil {
+		return err
+	}
+	return ok(w, u)
+}
+
+func (s *Server) sellerUsageRecords(w http.ResponseWriter, r *http.Request) error {
+	limit, offset := page(r)
+	q := r.URL.Query()
+	f := billing.UsageRecordFilter{UpstreamID: queryInt64(r, "upstream_id"), Channel: q.Get("channel"), Model: q.Get("model"),
+		From: queryTime(r, "from"), To: queryTime(r, "to")}
+	switch f.Channel {
+	case "", "buyer", "probe", "pool", "direct":
+	default:
+		return httpx.BadRequest("INVALID_CHANNEL", "channel must be buyer, probe, pool or direct")
+	}
+	rs, err := billing.SellerUsageRecords(r.Context(), s.DB, httpx.MustUser(r).UserID, f, limit, offset)
+	if err != nil {
+		return err
+	}
+	return ok(w, rs)
+}

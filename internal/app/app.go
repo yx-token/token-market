@@ -106,7 +106,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 	if a.Issuer, err = auth.NewIssuer(cfg.Auth.JWTSecret, cfg.Auth.TokenTTL); err != nil {
 		return nil, err
 	}
-	if a.DB, err = db.Open(ctx, cfg.Database.DSN, cfg.Database.MaxConns); err != nil {
+	if a.DB, err = db.Open(ctx, cfg.Database.DSN, cfg.Database.MaxConns, cfg.Database.TimeZone); err != nil {
 		return nil, err
 	}
 	applied, err := db.Migrate(ctx, a.DB, migrations.FS)
@@ -116,7 +116,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 	if len(applied) > 0 {
 		log.Info("applied market migrations", "files", applied)
 	}
-	if a.ReplicaPool, err = db.Open(ctx, cfg.Sub2API.ReplicaDSN, 8); err != nil {
+	if a.ReplicaPool, err = db.Open(ctx, cfg.Sub2API.ReplicaDSN, 8, ""); err != nil {
 		return nil, err
 	}
 	if a.Replica, err = replica.New(a.ReplicaPool); err != nil {

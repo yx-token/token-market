@@ -71,7 +71,7 @@ func run(configPath string, log *slog.Logger) error {
 	// 尝试日志只在后台写库，数据库不可用时写本地暂存文件，不影响转发
 	var attempts *edge.AttemptLogger
 	if cfg.Database.DSN != "" {
-		pool, err := db.Open(ctx, cfg.Database.DSN, 4)
+		pool, err := db.Open(ctx, cfg.Database.DSN, 4, cfg.Database.TimeZone)
 		if err != nil {
 			log.Warn("edge database unavailable, attempts will be spooled", "err", err)
 		}

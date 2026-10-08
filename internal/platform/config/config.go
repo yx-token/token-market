@@ -64,6 +64,8 @@ type HTTPConfig struct {
 type DatabaseConfig struct {
 	DSN      string `yaml:"dsn"`
 	MaxConns int32  `yaml:"max_conns"`
+	// TimeZone 是数据库会话时区，决定按天统计（账单、用量、今日收益、每日检测预算）的日界，默认 Asia/Shanghai
+	TimeZone string `yaml:"time_zone"`
 }
 
 type RedisConfig struct {
@@ -134,6 +136,7 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 		"TM_HTTP_ADDR":                &cfg.HTTP.Addr,
 		"TM_HTTP_WEB_DIR":             &cfg.HTTP.WebDir,
 		"TM_DATABASE_DSN":             &cfg.Database.DSN,
+		"TM_DATABASE_TIME_ZONE":       &cfg.Database.TimeZone,
 		"TM_REDIS_ADDR":               &cfg.Redis.Addr,
 		"TM_REDIS_PASSWORD":           &cfg.Redis.Password,
 		"TM_SUB2API_BASE_URL":         &cfg.Sub2API.BaseURL,
@@ -207,6 +210,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Database.MaxConns <= 0 {
 		cfg.Database.MaxConns = 20
+	}
+	if cfg.Database.TimeZone == "" {
+		cfg.Database.TimeZone = "Asia/Shanghai"
 	}
 	if cfg.Sub2API.Timeout <= 0 {
 		cfg.Sub2API.Timeout = 30 * time.Second

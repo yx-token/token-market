@@ -139,6 +139,7 @@ func (s *Server) routes() http.Handler {
 	admin("POST /api/v1/admin/accounts/{id}/clear-error", s.clearError)
 	admin("GET /api/v1/admin/channels/model-pricing", s.modelPricing)
 	admin("GET /api/v1/admin/cn-providers/accounts/{id}/quota", s.cnQuota)
+	admin("GET /api/v1/admin/accounts/{id}/usage", s.accountUsage)
 	admin("POST /api/v1/admin/accounts/generate-auth-url", s.authURL)
 	admin("POST /api/v1/admin/openai/generate-auth-url", s.authURL)
 	admin("POST /api/v1/admin/accounts/exchange-code", s.exchange)
@@ -702,6 +703,63 @@ func (s *Server) cnQuota(_ http.ResponseWriter, r *http.Request) (any, error) {
 	}
 	return map[string]any{"provider": a.Platform, "success": true, "credential_valid": true, "plan_level": "pro",
 		"tiers": []map[string]any{{"window": "5h", "used_percent": 10.0, "reset_at": time.Now().Add(time.Hour).Format(time.RFC3339)}}}, nil
+}
+
+// accountUsage 模拟官方订阅窗口用量：按该账号在窗口内的实际用量折算利用率（5 小时窗口按 10 美元、7 天窗口按 100 美元计）。
+// 与 sub2api 一致，被动快照（source=passive）只支持 Claude 账号。
+func (s *Server) accountUsage(_ http.ResponseWriter, r *http.Request) (any, error) {
+	id, err := pathID(r)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.getAccount(r, id)
+	if err != nil {
+		return nil, err
+	}
+	source := r.URL.Query().Get("source")
+	if source == "passive" && a.Platform != "anthropic" {
+		return nil, badRequest("passive usage only supported for Anthropic OAuth/SetupToken accounts")
+	}
+	window := func(d time.Duration, budget float64) (map[string]any, error) {
+		var n, tokens int64
+		var cost float64
+		var first *time.Time
+		if err := s.DB.QueryRow(r.Context(), `SELECT count(*), COALESCE(sum(input_tokens + output_tokens), 0), COALESCE(sum(total_cost), 0)::float8, min(created_at)
+			FROM usage_logs WHERE account_id = $1 AND created_at > now() - make_interval(secs => $2)`, id, d.Seconds()).Scan(&n, &tokens, &cost, &first); err != nil {
+			return nil, err
+		}
+		resets := time.Now().Add(d)
+		if first != nil {
+			resets = first.Add(d)
+		}
+		return map[string]any{"utilization": math.Min(100, math.Round(cost/budget*1000)/10), "resets_at": resets.UTC().Format(time.RFC3339),
+			"remaining_seconds": int(time.Until(resets).Seconds()), "window_stats": map[string]any{"requests": n, "tokens": tokens, "cost": cost}}, nil
+	}
+	if source == "" {
+		source = "active"
+	}
+	out := map[string]any{"source": source, "updated_at": time.Now().UTC().Format(time.RFC3339)}
+	switch a.Platform {
+	case "gemini":
+		w, err := window(24*time.Hour, 20)
+		if err != nil {
+			return nil, err
+		}
+		out["gemini_pro_daily"] = w
+	case "antigravity":
+		out["antigravity_quota"] = map[string]any{"gemini-2.5-pro": map[string]any{"utilization": 12, "reset_time": time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)}}
+	default:
+		five, err := window(5*time.Hour, 10)
+		if err != nil {
+			return nil, err
+		}
+		seven, err := window(7*24*time.Hour, 100)
+		if err != nil {
+			return nil, err
+		}
+		out["five_hour"], out["seven_day"] = five, seven
+	}
+	return out, nil
 }
 
 // ---- 授权 ----

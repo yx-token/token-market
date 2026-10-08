@@ -13,6 +13,7 @@ import DataTable from '@/components/DataTable.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import ReportDetail from '@/components/ReportDetail.vue'
+import QuotaPanel from '@/components/QuotaPanel.vue'
 import { label } from '@/utils/labels'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
 
@@ -30,6 +31,8 @@ const vendors = ref<VendorView[]>([])
 const vendor = computed(() => vendors.value.find((v) => v.platform === detail.data.value?.platform))
 const u = computed(() => detail.data.value)
 const isOAuth = computed(() => !!u.value && !['coding', 'go'].includes(u.value.auth_type))
+// 已在 sub2api 创建账号（授权完成）后才有额度与用量
+const hasAccount = computed(() => !!u.value && !['draft', 'authorizing', 'failed', 'removing', 'removed'].includes(u.value.status))
 
 function reload() {
   detail.load()
@@ -132,6 +135,7 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
 <template>
   <div v-if="u">
     <PageHeader :title="`上游 #${u.id}`" :description="`${label('platform', u.platform).text} · ${label('authType', u.auth_type).text}`">
+      <RouterLink v-if="hasAccount" :to="`/seller/usage?upstream=${u.id}`" class="btn-secondary">用量明细</RouterLink>
       <button v-if="u.status === 'verify_failed'" class="btn-secondary" :disabled="busy" @click="listingAction(() => seller.retryVerification(u!.id), '已重新开始检测')">
         重新检测
       </button>
@@ -166,6 +170,8 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
       <StatCard label="24h 买家请求" :value="u.stats_24h.requests" :hint="`成功率 ${percent(u.stats_24h.success_rate)} · 首字 ${ms(u.stats_24h.ttft_p50_ms)}`" />
       <StatCard label="24h 收益" :value="money(u.stats_24h.payout)" :hint="`检测请求 ${u.stats_24h.probe_requests} 次`" />
     </div>
+
+    <QuotaPanel v-if="hasAccount" :upstream-id="u.id" class="mt-5" />
 
     <div class="card mt-5">
       <h2 class="card-title">挂单</h2>

@@ -15,14 +15,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Open 建立连接池并做一次连通性检查。
-func Open(ctx context.Context, dsn string, maxConns int32) (*pgxpool.Pool, error) {
+// Open 建立连接池并做一次连通性检查。timeZone 不为空且 DSN 中没有指定时设为会话时区（影响按天统计的日界）。
+func Open(ctx context.Context, dsn string, maxConns int32, timeZone string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse dsn: %w", err)
 	}
 	if maxConns > 0 {
 		cfg.MaxConns = maxConns
+	}
+	if _, set := cfg.ConnConfig.RuntimeParams["timezone"]; timeZone != "" && !set {
+		cfg.ConnConfig.RuntimeParams["timezone"] = timeZone
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {

@@ -85,7 +85,7 @@ func TestExampleConfigParses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Worker.AdminAddr != ":8092" || cfg.Edge.InvalidKeyLimit != 30 || cfg.Worker.BalanceReconcileInterval != 30*time.Minute ||
+	if cfg.Database.TimeZone != "Asia/Shanghai" || cfg.Worker.AdminAddr != ":8092" || cfg.Edge.InvalidKeyLimit != 30 || cfg.Worker.BalanceReconcileInterval != 30*time.Minute ||
 		cfg.Sub2API.GatewayURL != cfg.Sub2API.BaseURL || cfg.Auth.TokenTTL != 24*time.Hour {
 		t.Fatalf("example config: %+v", cfg)
 	}

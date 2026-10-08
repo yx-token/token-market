@@ -76,6 +76,9 @@ export const seller = {
   withdraw: (amount: number, channel: string, account_info: string) =>
     http.post<T.Withdrawal>('/api/seller/withdrawals', { amount, channel, account_info }),
   withdrawals: () => http.get<T.Withdrawal[] | null>('/api/seller/withdrawals'),
+  usage: (q?: Query) => http.get<T.SellerUsage>('/api/seller/usage', q),
+  usageRecords: (q?: Query) => http.get<T.SellerUsageRecord[] | null>('/api/seller/usage/records', q),
+  quota: (id: number, refresh = false) => http.get<T.AccountQuota>(`/api/seller/upstreams/${id}/quota`, refresh ? { refresh: 1 } : undefined),
 }
 
 export const admin = {

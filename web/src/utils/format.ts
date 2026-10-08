@@ -7,6 +7,12 @@ export function money(v: number | null | undefined, digits = 2): string {
   return `¥${v.toFixed(d)}`
 }
 
+/** 按官方价计的费用（美元） */
+export function usd(v: number | null | undefined): string {
+  if (v === null || v === undefined || Number.isNaN(v)) return '—'
+  return `$${v.toFixed(Math.abs(v) > 0 && Math.abs(v) < 0.01 ? 4 : 2)}`
+}
+
 export function multiplier(v: number | null | undefined): string {
   if (v === null || v === undefined) return '—'
   return `${Number(v.toFixed(4))}×`

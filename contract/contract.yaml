@@ -77,6 +77,7 @@ admin_api:
   - {method: DELETE, path: "/api/v1/admin/accounts/:id"}
   - {method: POST,   path: "/api/v1/admin/accounts/:id/set-privacy"}
   - {method: GET,    path: "/api/v1/admin/cn-providers/accounts/:id/quota"}
+  - {method: GET,    path: "/api/v1/admin/accounts/:id/usage"}
   - {method: POST,   path: /api/v1/admin/accounts/generate-auth-url,        request: [proxy_id]}
   - {method: POST,   path: /api/v1/admin/accounts/generate-setup-token-url, request: [proxy_id]}
   - {method: POST,   path: /api/v1/admin/accounts/exchange-code,            request: [session_id, code, proxy_id]}

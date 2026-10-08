@@ -91,6 +91,7 @@
 | GET | `/api/seller/upstreams` | 上游列表 |
 | GET | `/api/seller/upstreams/:id` | 详情：状态、健康状态、档位、等级、当前挂单与报价、近 24 小时服务情况（请求数、收益、首字延迟、成功率） |
 | PUT | `/api/seller/upstreams/:id/settings` | 修改自留比例：`self_reserve_percent`（0–90，仅支持窗口阈值的厂商） |
+| GET | `/api/seller/upstreams/:id/quota` | 账号的官方订阅额度：各窗口（5 小时、7 天、Sonnet / Opus 7 天、30 天、Gemini 每日、Antigravity 各模型、Coding Plan 各窗口）的使用率、重置时间与窗口内经平台的请求数 / token / 官方价费用，以及授权失效、封禁等提示和自留比例。Claude 默认读 sub2api 的响应头采样快照（不访问官方）；`refresh=1` 向官方查询（同一上游至少间隔 2 分钟，其余 1 分钟内复用结果） |
 | DELETE | `/api/seller/upstreams/:id` | 删除上游 |
 
 ### 4.2 挂单
@@ -124,6 +125,15 @@
 | GET | `/api/seller/earnings/lines` | 按上游、小时、渠道的结算明细，可按 `upstream_id` 筛选 |
 | POST | `/api/seller/withdrawals` | 申请提现：`amount`、`channel`、`account_info`（加密存储）。需实名；低于自动审核阈值且无风险时自动通过 |
 | GET | `/api/seller/withdrawals` | 提现记录 |
+
+### 4.5 用量
+
+数据来自已入账的用量（约 2 分钟延迟），只包含用量与收益，不含买家身份、Key 与请求内容。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/seller/usage` | 用量汇总：`upstream_id`（可选，默认全部上游）、`days`（1–90，默认 30）。返回合计与今日（请求数，其中买家 / 平台检测；输入、输出、缓存 token；官方价费用；收益），每日序列（补齐无用量的日子），按模型、按上游的汇总 |
+| GET | `/api/seller/usage/records` | 逐次记录：时间、上游、来源（`pool` 默认分组 / `direct` 指定卖家 / `probe` 平台检测）、模型、token、首字与总耗时、官方价费用、收益。筛选：`upstream_id`、`channel`（`buyer` / `probe` / `pool` / `direct`）、`model`、`from`、`to`；分页 `limit`、`offset` |
 
 ## 5. 支付渠道通知
 

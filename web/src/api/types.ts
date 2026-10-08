@@ -677,3 +677,66 @@ export interface AuditLog {
   detail: unknown
   created_at: string
 }
+
+export interface UsageTotals {
+  requests: number
+  buyer_requests: number
+  probe_requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  total_cost: number
+  payout: number
+}
+
+export interface SellerUsage {
+  from: string
+  days: number
+  totals: UsageTotals
+  today: UsageTotals
+  daily: ({ day: string } & UsageTotals)[]
+  models: ({ model: string } & UsageTotals)[]
+  upstreams: ({ upstream_id: number; platform: string } & UsageTotals)[]
+}
+
+export interface SellerUsageRecord {
+  id: number
+  created_at: string
+  upstream_id: number
+  listing_id?: number
+  channel: string
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
+  first_token_ms?: number
+  duration_ms?: number
+  total_cost: number
+  payout: number
+}
+
+export interface QuotaWindow {
+  key: string
+  label: string
+  utilization: number
+  resets_at?: string
+  requests?: number
+  tokens?: number
+  cost?: number
+  used_requests?: number
+  limit_requests?: number
+}
+
+export interface AccountQuota {
+  supported: boolean
+  source?: string
+  sampled_at?: string
+  fetched_at: string
+  plan_level?: string
+  windows: QuotaWindow[]
+  alerts?: string[]
+  error?: string
+  self_reserve_percent?: number
+}

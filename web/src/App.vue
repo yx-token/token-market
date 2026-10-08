@@ -26,6 +26,7 @@ const sections: Record<string, { title: string; items: NavItem[] }> = {
     title: '卖家中心',
     items: [
       { to: '/seller/upstreams', text: '我的上游' },
+      { to: '/seller/usage', text: '用量' },
       { to: '/seller/listings', text: '挂单' },
       { to: '/seller/earnings', text: '收益与提现' },
     ],

@@ -24,6 +24,7 @@ const routes: RouteRecordRaw[] = [
     props: true,
     meta: { auth: true },
   },
+  { path: '/seller/usage', name: 'seller-usage', component: () => import('@/views/seller/UsageView.vue'), meta: { auth: true } },
   { path: '/seller/listings', name: 'seller-listings', component: () => import('@/views/seller/ListingsView.vue'), meta: { auth: true } },
   { path: '/seller/earnings', name: 'seller-earnings', component: () => import('@/views/seller/EarningsView.vue'), meta: { auth: true } },
 
