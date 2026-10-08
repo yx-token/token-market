@@ -1,0 +1,31 @@
+# token-market 配置示例。敏感项（DSN、密钥）建议用环境变量覆盖：
+#   TM_DATABASE_DSN, TM_SUB2API_ADMIN_API_KEY, TM_SUB2API_REPLICA_DSN, TM_CRYPTO_KEYS, TM_CRYPTO_ACTIVE_KEY_ID
+env: dev
+
+http:
+  addr: ":8080"
+
+database:
+  dsn: "postgres://tm:tm@127.0.0.1:5432/token_market?sslmode=disable"
+  max_conns: 20
+
+redis:
+  addr: "127.0.0.1:6379"
+  db: 0
+
+crypto:
+  active_key_id: "k1"
+  keys:
+    # 32 字节随机密钥的 base64：openssl rand -base64 32
+    k1: "REPLACE_WITH_BASE64_32_BYTES"
+
+sub2api:
+  base_url: "http://127.0.0.1:8081"     # sub2api 内网地址
+  admin_api_key: ""                     # sub2api 后台生成的 Admin API Key
+  replica_dsn: "postgres://readonly:pass@127.0.0.1:5432/sub2api?sslmode=disable"
+  timeout: 30s
+
+worker:
+  ops_batch_size: 20
+  ops_poll_interval: 1s
+  compat_guard_interval: 5m
