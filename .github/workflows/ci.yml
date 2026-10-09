@@ -76,16 +76,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: web/package.json
-
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
 
+      # pnpm 版本由 package.json 的 packageManager 固定，用 Node 自带的 corepack 启用
+      - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - name: 类型检查与构建
