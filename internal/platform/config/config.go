@@ -26,6 +26,14 @@ type Config struct {
 	Sub2API  Sub2APIConfig  `yaml:"sub2api"`
 	Worker   WorkerConfig   `yaml:"worker"`
 	Edge     EdgeConfig     `yaml:"edge"`
+	Update   UpdateConfig   `yaml:"update"`
+}
+
+// UpdateConfig 的访问令牌仅用于服务端读取 Release，不能返回给浏览器。
+type UpdateConfig struct {
+	Repository  string `yaml:"repository"`
+	GitHubToken string `yaml:"github_token"`
+	RuntimeDir  string `yaml:"runtime_dir"`
 }
 
 type AuthConfig struct {
@@ -132,6 +140,9 @@ func Load(path string) (*Config, error) {
 
 func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 	str := map[string]*string{
+		"TM_UPDATE_REPOSITORY":        &cfg.Update.Repository,
+		"TM_UPDATE_GITHUB_TOKEN":      &cfg.Update.GitHubToken,
+		"TM_UPDATE_RUNTIME_DIR":       &cfg.Update.RuntimeDir,
 		"TM_ENV":                      &cfg.Env,
 		"TM_HTTP_ADDR":                &cfg.HTTP.Addr,
 		"TM_HTTP_WEB_DIR":             &cfg.HTTP.WebDir,
@@ -202,6 +213,12 @@ func splitList(v string) []string {
 }
 
 func applyDefaults(cfg *Config) {
+	if cfg.Update.Repository == "" {
+		cfg.Update.Repository = "yx-token/token-market"
+	}
+	if cfg.Update.RuntimeDir == "" {
+		cfg.Update.RuntimeDir = "data/runtime"
+	}
 	if cfg.Env == "" {
 		cfg.Env = "dev"
 	}

@@ -26,6 +26,7 @@ x-market-env: &market-env
   TM_EDGE_PUBLIC_URL: ${EDGE_PUBLIC_URL}
   TM_HTTP_TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
   TM_EDGE_TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+  TM_UPDATE_RUNTIME_DIR: /app/runtime
 
 services:
   postgres:
@@ -49,10 +50,15 @@ services:
 
   api:
     image: ${TM_IMAGE:-ghcr.io/yx-token/token-market:latest}
-    entrypoint: ["/app/bin/api"]
+    entrypoint: ["/app/bin/market-runner"]
+    command: ["api"]
+    stop_grace_period: 45s
     environment:
       <<: *market-env
       TM_HTTP_ADDR: ":8080"
+      TM_UPDATE_REPOSITORY: ${UPDATE_REPOSITORY:-yx-token/token-market}
+      TM_UPDATE_GITHUB_TOKEN: ${UPDATE_GITHUB_TOKEN:-}
+    volumes: [runtime:/app/runtime]
     ports: ["${API_PORT:-8080}:8080"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -61,21 +67,26 @@ services:
 
   worker:
     image: ${TM_IMAGE:-ghcr.io/yx-token/token-market:latest}
-    entrypoint: ["/app/bin/worker"]
+    entrypoint: ["/app/bin/market-runner"]
+    command: ["worker"]
+    stop_grace_period: 45s
     environment:
       <<: *market-env
       TM_WORKER_ADMIN_ADDR: ":8092"
+    volumes: [runtime:/app/runtime]
     depends_on: [api]
     restart: unless-stopped
 
   edge:
     image: ${TM_IMAGE:-ghcr.io/yx-token/token-market:latest}
-    entrypoint: ["/app/bin/edge"]
+    entrypoint: ["/app/bin/market-runner"]
+    command: ["edge"]
+    stop_grace_period: 45s
     environment:
       <<: *market-env
       TM_EDGE_ADDR: ":8090"
     ports: ["${EDGE_PORT:-8090}:8090"]
-    volumes: [edgespool:/app/data]
+    volumes: [edgespool:/app/data, runtime:/app/runtime]
     depends_on: [api]
     restart: unless-stopped
 
@@ -83,3 +94,4 @@ volumes:
   pgdata:
   redisdata:
   edgespool:
+  runtime:

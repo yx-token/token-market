@@ -768,3 +768,33 @@ export interface AccountQuota {
   error?: string
   self_reserve_percent?: number
 }
+export interface UpdateJob {
+  id: string
+  version: string
+  phase: 'queued' | 'downloading' | 'checking' | 'restarting' | 'succeeded' | 'failed' | 'rolling_back' | 'rolled_back' | 'rollback_failed'
+  message: string
+  started_at: string
+  updated_at: string
+}
+
+export interface SystemVersion {
+  version: string
+  commit: string
+  platform: string
+  repository: string
+  enabled: boolean
+  reason?: string
+  job?: UpdateJob
+}
+
+export interface SystemUpdateCheck {
+  update_available: boolean
+  release: {
+    version: string
+    name: string
+    notes: string
+    url: string
+    published_at: string
+    compatible: boolean
+  }
+}

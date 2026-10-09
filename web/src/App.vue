@@ -55,6 +55,7 @@ const sections: Record<string, { title: string; en: string; items: NavItem[] }> 
       { to: '/admin/users', text: '用户与实名' },
       { to: '/admin/risk', text: '风控' },
       { to: '/admin/settings', text: '系统设置' },
+      { to: '/admin/system-update', text: '系统更新' },
       { to: '/admin/audit', text: '审计日志' },
     ],
   },

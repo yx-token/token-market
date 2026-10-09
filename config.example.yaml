@@ -65,3 +65,8 @@ edge:
   spool_dir: "data/edge-spool"          # 尝试日志写库失败时的本地暂存目录
   trusted_proxies: []                   # 前置负载均衡的 IP / CIDR（IP 白名单依赖它）
   invalid_key_limit: 30                 # 单个 IP 每分钟允许的无效 Key 次数，-1 表示不限制
+update:
+  repository: yx-token/token-market
+  runtime_dir: data/runtime
+  # 私有仓库令牌建议通过 TM_UPDATE_GITHUB_TOKEN 注入。
+  github_token: ""

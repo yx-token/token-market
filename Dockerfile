@@ -26,15 +26,23 @@ ARG VERSION=dev
 ARG COMMIT=
 RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
       -ldflags="-s -w -X github.com/DueGin/token-market/internal/platform/buildinfo.Version=${VERSION} -X github.com/DueGin/token-market/internal/platform/buildinfo.Commit=${COMMIT}" \
-      -o /out/ ./cmd/api ./cmd/worker ./cmd/edge ./cmd/s2a-compat
+      -o /out/ ./cmd/api ./cmd/worker ./cmd/edge ./cmd/s2a-compat ./cmd/market-runner
+RUN printf '{"schema":1,"version":"%s","commit":"%s","os":"%s","arch":"%s"}\n' \
+      "$VERSION" "$COMMIT" "$TARGETOS" "$TARGETARCH" > /manifest.json
+
+# Release 更新包直接导出此阶段，复用镜像里的二进制和前端，不运行目标架构程序。
+FROM scratch AS release
+COPY --from=go /out/ /bin/
+COPY --from=web /src/web/dist /web/
+COPY --from=go /manifest.json /manifest.json
 
 FROM ${REGISTRY}library/alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 market
 WORKDIR /app
-COPY --from=go /out/ /app/bin/
-COPY --from=web /src/web/dist /app/web
-ENV TM_HTTP_WEB_DIR=/app/web TM_EDGE_SPOOL_DIR=/app/data/edge-spool TZ=Asia/Shanghai
-RUN mkdir -p /app/data && chown market /app/data
+COPY --from=release / /app/
+ENV TM_HTTP_WEB_DIR=/app/web TM_EDGE_SPOOL_DIR=/app/data/edge-spool TM_UPDATE_RUNTIME_DIR=/app/runtime TZ=Asia/Shanghai
+RUN mkdir -p /app/data /app/runtime && chown market /app/data /app/runtime
 USER market
 EXPOSE 8080 8090 8091 8092
-ENTRYPOINT ["/app/bin/api"]
+ENTRYPOINT ["/app/bin/market-runner"]
+CMD ["api"]

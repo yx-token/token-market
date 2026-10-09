@@ -86,6 +86,9 @@ export const seller = {
 }
 
 export const admin = {
+  systemVersion: () => http.get<T.SystemVersion>('/api/admin/system/version', undefined, 10000),
+  checkSystemUpdate: (force = false) => http.get<T.SystemUpdateCheck>('/api/admin/system/check-update', { force }, 20000),
+  startSystemUpdate: (version: string) => http.post<T.UpdateJob>('/api/admin/system/update', { version }, 20000),
   settings: () => http.get<T.Settings>('/api/admin/settings'),
   updateSettings: (patch: Partial<T.Settings>) => http.put<T.Settings>('/api/admin/settings', patch),
   vendors: () => http.get<T.VendorConfig[] | null>('/api/admin/vendors'),

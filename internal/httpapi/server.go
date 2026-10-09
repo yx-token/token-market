@@ -28,6 +28,7 @@ import (
 	"github.com/DueGin/token-market/internal/risk"
 	"github.com/DueGin/token-market/internal/scheduling"
 	"github.com/DueGin/token-market/internal/settings"
+	"github.com/DueGin/token-market/internal/update"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -52,6 +53,7 @@ type Server struct {
 	WebDir string
 	// EdgeURL 是买家调用模型的地址，在前端展示
 	EdgeURL string
+	Updater update.Controller
 
 	// 防爆破：登录失败按 IP 与邮箱计数，注册按 IP 计数（进程内，各实例独立）
 	loginFailsByIP    *ratelimit.Failures
@@ -148,6 +150,9 @@ func (s *Server) Handler() http.Handler {
 		{"GET /api/seller/withdrawals", s.listWithdrawals},
 	}
 	admin := []route{
+		{"GET /api/admin/system/version", s.systemVersion},
+		{"GET /api/admin/system/check-update", s.checkSystemUpdate},
+		{"POST /api/admin/system/update", s.startSystemUpdate},
 		{"GET /api/admin/settings", s.getSettings},
 		{"PUT /api/admin/settings", s.updateSettings},
 		{"GET /api/admin/vendors", s.adminVendors},

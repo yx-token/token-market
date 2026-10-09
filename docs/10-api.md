@@ -155,6 +155,7 @@
 | 模块 | 接口 |
 |---|---|
 | 系统设置 | `GET/PUT /api/admin/settings`：抽佣率、冻结天数、最低提现额、自动审核阈值、等级系数、报价有效期、改价冷却、退款等待、新卖家期、价目模型等（部分更新） |
+| 系统更新 | `GET /api/admin/system/version`：当前版本、提交、运行平台、可用状态和最近更新任务；`GET /api/admin/system/check-update[?force=true]`：最新正式 Release 与更新包是否兼容；`POST /api/admin/system/update`：提交 `{"version":"vX.Y.Z"}`，成功返回 202 和任务，管理员操作写入审计日志 |
 | 厂商 | `GET /api/admin/vendors`、`PUT /api/admin/vendors/:platform`：是否开放接入、开放的接入方式（`auth_types`，只能从 `supported_auth_types` 中选）、寄售倍率区间、回收基础倍率表（按档位）、默认并发、限流参数 |
 | 代理库存 | `GET/POST /api/admin/proxies`、`POST /api/admin/proxies/:id/sync`（同步到 sub2api）、`/disable`、`/enable`；列表包含平台代理和卖家代理，`seller_id` 区分来源，后台新增代理归平台 |
 | 默认分组 | `GET/POST /api/admin/pools`、`PUT /api/admin/pools/:id`（售价 D、最低毛利、安全缓冲、启用）、`POST /api/admin/pools/:id/sync` |

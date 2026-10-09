@@ -31,6 +31,7 @@ const routes: RouteRecordRaw[] = [
 
   { path: '/admin', name: 'admin', component: () => import('@/views/admin/DashboardView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/settings', component: () => import('@/views/admin/SettingsView.vue'), meta: { auth: true, admin: true } },
+  { path: '/admin/system-update', component: () => import('@/views/admin/SystemUpdateView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/vendors', component: () => import('@/views/admin/VendorsView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/proxies', component: () => import('@/views/admin/ProxiesView.vue'), meta: { auth: true, admin: true } },
   { path: '/admin/pools', component: () => import('@/views/admin/PoolsView.vue'), meta: { auth: true, admin: true } },

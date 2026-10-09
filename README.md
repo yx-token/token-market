@@ -56,7 +56,7 @@ make dev-down
 
 ### 发布
 
-推送 `v` 开头的标签即发布（`.github/workflows/release.yml`）：先跑完整 CI（Go 检查与单元、集成测试，前端检查与构建），通过后构建多架构镜像（linux/amd64、linux/arm64）推送到 GHCR，最后创建 GitHub Release（自动生成更新说明，附部署文件）。
+推送 `v` 开头的标签即发布（`.github/workflows/release.yml`）：先跑完整 CI（Go 检查与单元、集成测试，前端检查与构建），通过后构建多架构镜像（linux/amd64、linux/arm64）推送到 GHCR，最后创建 GitHub Release（自动生成更新说明，附部署文件、两个架构的完整更新包和 SHA-256 校验文件）。
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0     # 正式版：镜像标签 v0.1.0、0.1.0、0.1、latest
@@ -80,6 +80,8 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
 
 升级：把 `TM_IMAGE` 改成新版本后再执行 `pull` 与 `up -d`；数据库迁移在 api 启动时自动执行。每个 Release 的附件里也有对应版本的 `docker-compose.yml` 与 `.env.example`。
 
+使用新版 Compose 完成一次镜像部署后，可以在管理后台「系统更新」（`/admin/system-update`）检查正式 Release 并确认更新。系统校验 SHA-256 后同步切换 api、worker、edge 和前端，健康检查失败自动回退，已更新版本保存在共享 `runtime` 卷中。私有仓库需要在 `.env` 配置 `UPDATE_GITHUB_TOKEN`（Contents 读取权限）；更新会短暂重启服务，数据库迁移不会随程序回退撤销。接入、原生部署与恢复说明见 [站内更新](deploy/UPDATES.md)。
+
 sub2api 与 token-market 部署在同一台服务器上的完整布局（含 sub2api 的 compose、对外入口与运维脚本）见 [deploy/single-host](deploy/single-host/README.md)。
 
 只需对外暴露 api（控制面与前端，`:8080`）和 edge（买家调用模型，`:8090`），并把负载均衡地址配置为 `TRUSTED_PROXIES`。不使用容器时，三个服务共用一份配置（见 `config.example.yaml`），分别运行 `bin/api`、`bin/worker`、`bin/edge`。支付宝、微信支付商户在管理后台"支付配置"中填写，不需要写进配置文件。
@@ -91,7 +93,7 @@ sub2api 与 token-market 部署在同一台服务器上的完整布局（含 sub
 需要 Go 1.26+、Node 22 与 pnpm、Docker（PostgreSQL 与 Redis）、本地 sub2api 仓库（兼容检查、集成测试与开发环境用）。
 
 ```bash
-make build              # 构建 bin/api、bin/worker、bin/edge、bin/s2a-compat、bin/fake-sub2api、bin/fake-thirdparty
+make build              # 构建 api、worker、edge、market-runner、s2a-compat 与开发用替身
 make test               # 单元测试
 make web-test           # 前端单元测试（vitest）
 make web-build          # 前端类型检查与构建（web/dist）
@@ -120,7 +122,7 @@ TM_SMOKE_GROUP_ID=1 go test -tags smoke ./internal/sub2api/ -v
 ### 目录
 
 ```
-cmd/            api、worker、edge、s2a-compat、fake-sub2api 与 fake-thirdparty（开发用替身）
+cmd/            api、worker、edge、market-runner、s2a-compat 与开发用替身
 web/            前端（Vue 3 + TypeScript + Vite + Tailwind）
 deploy/         docker compose 部署示例
 contract/       对 sub2api 的依赖契约：contract.yaml 与只读查询
@@ -138,6 +140,7 @@ internal/
   market/       市场与官方价目
   risk/         风控
   settings/     平台参数
+  update/       Release 查询、完整包校验、共享版本切换与启动器自动回退
   compat/       s2a-compat 的检查逻辑
   platform/     配置、加密、数据库、鉴权、HTTP 工具
   sub2api/      sub2api 适配层

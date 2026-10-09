@@ -53,6 +53,8 @@ cd /root/token-market
 
 数据库迁移在 api 启动时自动执行。
 
+采用新版 `market-src/deploy/docker-compose.yml` 并完成一次镜像升级后，可在管理后台「系统更新」更新本系统。`market.env` 中为私有仓库设置 `UPDATE_GITHUB_TOKEN`（Contents 读取权限）；api、worker、edge 必须使用 `market-runner` 并共享 `runtime` 卷。站内更新会短暂重启服务，健康检查失败自动回退，数据库迁移不会随程序回退撤销。详细说明见 [站内更新](../UPDATES.md)。
+
 ## 升级 sub2api
 
 镜像版本固定在 `sub2api/docker-compose.yml`。升级前必须在开发机上用 s2a-compat 检查新版本

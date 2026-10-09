@@ -16,6 +16,7 @@ import (
 	"github.com/DueGin/token-market/internal/platform/buildinfo"
 	"github.com/DueGin/token-market/internal/platform/config"
 	"github.com/DueGin/token-market/internal/quality"
+	"github.com/DueGin/token-market/internal/update"
 )
 
 func main() {
@@ -57,10 +58,20 @@ func run(configPath string, log *slog.Logger) error {
 		log.Info("seeded default probe items", "count", n)
 	}
 
+	updater := &update.Manager{
+		Runtime: update.Runtime{Root: cfg.Update.RuntimeDir},
+		Source:  update.NewGitHub(cfg.Update.Repository, cfg.Update.GitHubToken),
+		Version: buildinfo.Version, Commit: buildinfo.Commit, Repository: cfg.Update.Repository,
+		Managed: os.Getenv("TM_UPDATE_MANAGED") == "1", Context: ctx, Log: log,
+	}
+	if err := updater.RecoverInterrupted(); err != nil {
+		return err
+	}
 	api := &httpapi.Server{
 		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools,
 		Keys: a.Keys, Funds: a.Funds, Payments: a.Payments, Market: a.Market, Quality: a.Quality, Risk: a.Risk, Kicker: a.Kicker, Log: log,
 		TrustedProxies: cfg.HTTP.TrustedProxies, WebDir: cfg.HTTP.WebDir, EdgeURL: cfg.Edge.PublicURL,
+		Updater: updater,
 	}
 	srv := &http.Server{
 		Addr:              cfg.HTTP.Addr,
