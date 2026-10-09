@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>闲猫 · 买家中心</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="_center-shell.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="header-row">
+      <a class="logo" href="market-home.html">
+        <img src="assets/xianmao-pet.svg" alt="" width="36" height="36" />
+        闲猫
+      </a>
+      <span class="role-tag">买家中心</span>
+      <div class="spacer"></div>
+      <a class="nav-link" href="seller-center.html">卖家中心</a>
+      <a class="nav-link" href="market-home.html">回市场</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <span class="route">/buyer → /buyer/wallet</span>
+    <h1>买家中心</h1>
+    <p class="lead">点击顶栏头像或昵称进入。对应正式路由：钱包、API Key、用量与账单。</p>
+
+    <div class="grid">
+      <div class="card"><strong>钱包</strong><span>/buyer/wallet</span></div>
+      <div class="card"><strong>API Keys</strong><span>/buyer/keys</span></div>
+      <div class="card"><strong>用量</strong><span>/buyer/usage</span></div>
+      <div class="card"><strong>账单</strong><span>/buyer/bills</span></div>
+    </div>
+
+    <p class="note">原型占位页。正式实现见 <code>web/src/views/buyer/*</code>，需登录（meta.auth）。</p>
+  </main>
+</body>
+</html>

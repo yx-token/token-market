@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>闲猫 · 市场原型</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f0f0f0;
+      --ink: #222;
+      --yellow: #ffe60f;
+      --price: #ff5000;
+      --font: "Plus Jakarta Sans", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      --lg-blur: 20px;
+      --lg-saturate: 1.6;
+      --lg-bg: rgba(255, 255, 255, 0.55);
+      --lg-bg-strong: rgba(255, 255, 255, 0.72);
+      --lg-border: rgba(255, 255, 255, 0.55);
+      --lg-border-dark: rgba(0, 0, 0, 0.06);
+      --lg-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+      --lg-shadow-hover: 0 16px 40px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      /* 闲鱼式浅灰底，不加彩色/紫色氛围图 */
+      background: #f5f5f5;
+    }
+    a { color: inherit; text-decoration: none; }
+    button, input { font: inherit; border: none; background: none; }
+    button { cursor: pointer; }
+
+    .glass {
+      background: var(--lg-bg);
+      backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+      -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+      border: 1px solid var(--lg-border);
+      box-shadow: var(--lg-shadow);
+    }
+    .glass-strong {
+      background: var(--lg-bg-strong);
+      backdrop-filter: blur(28px) saturate(1.8);
+      -webkit-backdrop-filter: blur(28px) saturate(1.8);
+      border: 1px solid var(--lg-border);
+      box-shadow: var(--lg-shadow);
+    }
+
+    /* 顶栏：整条黄底 */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(255, 230, 15, 0.92);
+      backdrop-filter: blur(16px) saturate(1.4);
+      -webkit-backdrop-filter: blur(16px) saturate(1.4);
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    }
+    .header-row {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      padding: 18px 28px 12px;
+      width: 100%;
+    }
+    /* 品牌字：对齐闲鱼顶栏 Logo 的字号 / 颜色（#303030、大号加粗） */
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      color: #303030;
+      font-size: 32px;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      line-height: 1;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    .logo-mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 13px;
+      background: #303030;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    /* 搜索：默认白，聚焦黄 */
+    .search {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #fff;
+      border: 2px solid transparent;
+      border-radius: 999px;
+      padding: 4px 4px 4px 18px;
+      min-width: 0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      transition: border-color 0.15s;
+    }
+    .search:focus-within {
+      border-color: #1f1f1f;
+      box-shadow: none;
+    }
+    .search .search-ico { color: #999; display: grid; }
+    .search:focus-within .search-ico { color: #222; }
+    .search input {
+      flex: 1;
+      min-width: 0;
+      padding: 12px 6px;
+      font-size: 16px;
+      outline: none;
+      background: transparent;
+    }
+    .search input::placeholder { color: #aaa; }
+    /* 闲鱼式：搜索钮黄底黑字 */
+    .search button {
+      background: var(--yellow);
+      color: #1f1f1f;
+      font-weight: 600;
+      font-size: 15px;
+      padding: 12px 28px;
+      border-radius: 999px;
+    }
+    .search button:hover { filter: brightness(0.97); }
+    /* 顶栏右侧：闲鱼式 — 黄底上线框图标 + 黑字，无填充按钮 */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      flex-shrink: 0;
+    }
+    .header-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #1f1f1f;
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+      padding: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+    }
+    .header-link:hover { opacity: 0.72; }
+    .header-link svg {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .header-link.admin {
+      color: #666;
+      font-size: 13px;
+    }
+    .header-link.admin:hover { color: #1f1f1f; opacity: 1; }
+    /* 已登录：头像 + 名称 → 买家中心 */
+    .user-chip {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      color: #1f1f1f;
+      font-size: 14px;
+      font-weight: 500;
+      max-width: 140px;
+    }
+    .user-chip.is-on { display: inline-flex; }
+    .user-chip:hover { opacity: 0.72; }
+    .user-chip .avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 1.5px solid #1f1f1f;
+      background: transparent;
+      color: #1f1f1f;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .user-chip .uname {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .guest-actions { display: flex; gap: 22px; align-items: center; }
+    .guest-actions.is-off { display: none; }
+    @media (max-width: 900px) {
+      .header-actions { gap: 14px; }
+      .header-link .sell-extra { display: none; }
+      .header-link.admin { display: none; }
+    }
+
+    .kw-bar { width: 100%; border-top: 1px solid rgba(0, 0, 0, 0.06); }
+    .kw-inner {
+      display: flex;
+      gap: 36px;
+      padding: 12px 28px 16px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #333;
+      white-space: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .kw-inner::-webkit-scrollbar { display: none; }
+
+    .page { width: 100%; padding: 22px 24px 88px; }
+
+    /* 运营区：对齐闲鱼 —— 左类目 | 中横幅 | 右四宫格，等高对齐 */
+    .stage {
+      --stage-h: 360px;
+      --tile-h: 173px;
+      --gap: 14px;
+      width: 100%;
+      height: var(--stage-h);
+      border-radius: 16px;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 220px 240px 1fr;
+      background: #f6f6f6;
+      box-sizing: border-box;
+    }
+    @media (max-width: 1100px) {
+      .stage {
+        height: auto;
+        grid-template-columns: 200px 1fr;
+      }
+      .promo-grid { grid-column: 1 / -1; height: auto; }
+      .promo-banner { min-height: 280px; }
+    }
+    @media (max-width: 720px) {
+      .stage { grid-template-columns: 1fr; }
+      .side-cats { display: none; }
+    }
+
+    .side-cats {
+      height: 100%;
+      background: #f0f0f0;
+      padding: 8px 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-evenly;
+    }
+    .side-cats a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+      height: 36px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #1f1f1f;
+      transition: color 0.1s;
+    }
+    .side-cats a:hover { color: #f58300; }
+    .side-cats .ico {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      color: #333;
+    }
+    .side-cats .ico svg { width: 18px; height: 18px; }
+
+    .promo-banner {
+      position: relative;
+      height: 100%;
+      border-radius: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      color: #fff;
+      isolation: isolate;
+      background: #ff7a1a;
+    }
+    .promo-banner .bg {
+      position: absolute;
+      inset: 0;
+      background:
+        repeating-linear-gradient(
+          -32deg,
+          rgba(255,255,255,0.07) 0 10px,
+          transparent 10px 22px
+        ),
+        linear-gradient(180deg, #ff9a3d 0%, #ff6a00 55%, #ff5500 100%);
+      z-index: 0;
+    }
+    .promo-banner .content {
+      position: relative;
+      z-index: 2;
+      height: 100%;
+      padding: 28px 20px 24px;
+      display: flex;
+      flex-direction: column;
+    }
+    .promo-banner h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1.25;
+      letter-spacing: 0.02em;
+    }
+    .promo-banner .desc {
+      margin: 10px 0 0;
+      font-size: 13px;
+      line-height: 1.4;
+      opacity: 0.95;
+    }
+    .promo-banner .mascot-spot {
+      flex: 1;
+      min-height: 0;
+      margin: 8px 0 4px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .promo-banner .mascot-spot img {
+      width: min(168px, 88%);
+      height: auto;
+      display: block;
+      filter: drop-shadow(0 8px 12px rgba(0,0,0,.18));
+      transition: transform 0.45s ease;
+      transform-origin: 50% 90%;
+    }
+    .promo-banner:hover .mascot-spot img {
+      transform: scale(1.08) translateY(-4px);
+    }
+    .promo-cta {
+      display: inline-flex;
+      align-self: flex-start;
+      margin-top: auto;
+      background: var(--yellow);
+      color: #222;
+      font-weight: 800;
+      font-size: 14px;
+      padding: 10px 20px;
+      border-radius: 999px;
+    }
+
+    .promo-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: var(--tile-h) var(--tile-h);
+      gap: var(--gap);
+      height: 100%;
+      padding: 0 0 0 var(--gap);
+      box-sizing: border-box;
+      align-content: stretch;
+    }
+    @media (max-width: 1100px) {
+      .promo-grid {
+        padding: var(--gap);
+        grid-template-rows: 173px 173px;
+      }
+    }
+
+    /* 四宫格：对齐闲鱼 right-card */
+    .tile {
+      position: relative;
+      border-radius: 16px;
+      height: var(--tile-h);
+      overflow: hidden;
+      display: block;
+      transition: box-shadow 0.5s;
+    }
+    /* 同色加深：浅黄→深黄、浅蓝→深蓝…（不是黑底深色模式） */
+    .tile--deal { background-color: #ffc107; }
+    .tile--code { background-color: #64b5f6; }
+    .tile--pool { background-color: #66bb6a; }
+    .tile--buyer { background-color: #f06292; }
+    .tile:hover { box-shadow: 0 8px 10px 0 rgba(0, 0, 0, 0.12); }
+
+    .tile-eng {
+      position: absolute;
+      left: 10px;
+      top: 8px;
+      font-size: 42px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      color: rgba(255,255,255,0.35);
+      line-height: 1;
+      z-index: 0;
+      pointer-events: none;
+      user-select: none;
+      text-transform: uppercase;
+    }
+
+    .tile-flower {
+      position: absolute;
+      left: -24px;
+      top: 64px;
+      width: 140px;
+      height: auto;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 0;
+      transition: all 0.5s ease-in-out;
+      transform-origin: center;
+      mix-blend-mode: multiply;
+    }
+    .tile--deal .tile-flower { filter: hue-rotate(0deg) saturate(1.15); }
+    .tile--code .tile-flower { filter: hue-rotate(170deg) saturate(1); }
+    .tile--pool .tile-flower { filter: hue-rotate(80deg) saturate(1.05); }
+    .tile--buyer .tile-flower { filter: hue-rotate(310deg) saturate(1.1); }
+    .tile:hover .tile-flower {
+      opacity: 1;
+      transform: rotate(90deg);
+    }
+
+    .tile-copy {
+      position: absolute;
+      left: 16px;
+      top: 18px;
+      z-index: 3;
+    }
+    .tile-copy h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 900;
+      color: #1f1f1f;
+      line-height: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tile-copy .arrow {
+      opacity: 0;
+      font-size: 14px;
+      transition: opacity 0.5s ease-in-out;
+      color: #1f1f1f;
+    }
+    .tile:hover .tile-copy .arrow { opacity: 1; }
+    .tile-copy p {
+      margin: 8px 0 0;
+      font-size: 13px;
+      font-weight: 300;
+      color: rgba(31,31,31,0.75);
+      line-height: 16px;
+    }
+
+    .tile-mascot {
+      position: absolute;
+      left: 8px;
+      bottom: 0;
+      width: 108px;
+      height: 108px;
+      z-index: 2;
+      transition: transform 0.5s ease-in-out;
+      pointer-events: none;
+    }
+    .tile-mascot img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      filter: drop-shadow(0 4px 8px rgba(0,0,0,.1));
+    }
+    .tile:hover .tile-mascot {
+      transform: translateY(6px) translateX(2px) scale(1.25);
+    }
+
+    .tile-tray {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      bottom: 4px;
+      width: 58%;
+      background: hsla(0, 0%, 100%, 0.82);
+      border-radius: 14px;
+      padding: 14px 12px 10px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      align-content: start;
+      z-index: 3;
+      box-sizing: border-box;
+      transition: box-shadow 0.5s;
+    }
+    .tile:hover .tile-tray { box-shadow: 0 8px 10px 0 rgba(0, 0, 0, 0.08); }
+    .thumb { text-align: center; min-width: 0; }
+    .thumb-pic {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 8px;
+      background: #eee;
+      transition: box-shadow 0.5s;
+    }
+    .thumb-pic:hover { box-shadow: 0 8px 10px 0 rgba(0, 0, 0, 0.08); }
+    .thumb-pic img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      border-radius: 12px;
+    }
+    .thumb-price {
+      font-size: 14px;
+      font-weight: 600;
+      color: #ff4400;
+      line-height: 1;
+    }
+    .thumb.is-skel .thumb-pic {
+      background: #e8e8e8;
+      box-shadow: none;
+    }
+    .thumb.is-skel .thumb-price { display: none; }
+    @media (prefers-reduced-motion: reduce) {
+      .tile-flower, .tile-mascot, .tile-copy .arrow { transition: none; }
+      .tile:hover .tile-flower { transform: none; opacity: 0.5; }
+      .tile:hover .tile-mascot { transform: none; }
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 32px 0 18px;
+    }
+    .section-head h2 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 800;
+    }
+    .tabs { display: flex; gap: 8px; }
+    .tab {
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 700;
+      background: rgba(255,255,255,.55);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.5);
+      color: #666;
+    }
+    .tab.on {
+      background: var(--yellow);
+      border-color: transparent;
+      color: #222;
+    }
+
+    .feed {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 18px;
+    }
+
+    /* 货架卡片：液态玻璃 */
+    .card {
+      border-radius: 18px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(18px) saturate(1.5);
+      -webkit-backdrop-filter: blur(18px) saturate(1.5);
+      border: 1px solid rgba(255, 255, 255, 0.65);
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+      transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s;
+    }
+    .card:hover {
+      transform: translateY(-4px) scale(1.01);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    }
+    .card-cover {
+      aspect-ratio: 4/3;
+      position: relative;
+      overflow: hidden;
+    }
+    .card-cover img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .card:hover .card-cover img { transform: scale(1.06); }
+    .card-cover .shade {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,.55));
+      pointer-events: none;
+    }
+    .card-cover .plat {
+      position: absolute;
+      left: 14px;
+      bottom: 12px;
+      color: #fff;
+      font-weight: 800;
+      font-size: 18px;
+      text-shadow: 0 1px 4px rgba(0,0,0,.4);
+      z-index: 1;
+    }
+    .badge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 1;
+      background: rgba(255, 230, 15, 0.92);
+      backdrop-filter: blur(8px);
+      color: #222;
+      font-size: 12px;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 7px;
+      border: 1px solid rgba(255,255,255,.5);
+    }
+    .card-body {
+      padding: 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,.55));
+    }
+    .card-title {
+      margin: 0 0 12px;
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.4;
+      height: 2.8em;
+      overflow: hidden;
+    }
+    .card-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .price { color: var(--price); font-weight: 800; font-size: 24px; }
+    .price small { font-size: 14px; }
+    .buy {
+      background: rgba(255, 230, 15, 0.95);
+      backdrop-filter: blur(8px);
+      font-size: 14px;
+      font-weight: 800;
+      padding: 9px 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.5);
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+    }
+
+    .note {
+      margin-top: 40px;
+      text-align: center;
+      font-size: 12px;
+      color: #666;
+      background: rgba(255,255,255,.45);
+      backdrop-filter: blur(10px);
+      display: inline-block;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.5);
+    }
+    .note-wrap { text-align: center; }
+    .note a { color: var(--price); text-decoration: underline; text-underline-offset: 2px; }
+
+    /* 进站登录弹窗：对齐闲鱼 —— 吉祥物绝对定位趴在白卡片顶沿 */
+    .login-mask {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 160px 16px 40px;
+      background: rgba(0, 0, 0, 0.45);
+      opacity: 0;
+      visibility: hidden;
+      overflow: visible;
+      transition: opacity 0.28s ease, visibility 0.28s;
+    }
+    .login-mask.is-open {
+      opacity: 1;
+      visibility: visible;
+    }
+    .login-wrap {
+      position: relative;
+      width: min(420px, 100%);
+    }
+    /* 同闲鱼 .loginCon：白底圆角卡片，overflow 可见让猫探出 */
+    .login-card {
+      position: relative;
+      z-index: 1;
+      overflow: visible;
+      background: #fff;
+      border-radius: 28px;
+      /* 顶部多留空，标题不被猫挡住 */
+      padding: 36px 32px 28px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.28);
+      min-height: 360px;
+      box-sizing: border-box;
+    }
+    /* 慵懒猫：从右边冲到左边趴住（也可改 cat-drop-in 从顶掉下） */
+    .login-cat {
+      position: absolute;
+      left: 20px;
+      bottom: calc(100% - 36px);
+      width: 280px;
+      height: 168px;
+      z-index: 5;
+      pointer-events: none;
+      filter: drop-shadow(0 8px 14px rgba(0,0,0,.16));
+      opacity: 0;
+      transform: translateX(110vw) rotate(10deg);
+    }
+    .login-mask.is-open .login-cat.is-run {
+      animation: cat-run-from-right 0.75s cubic-bezier(0.2, 0.85, 0.3, 1.1) forwards;
+    }
+    /* 从右往左跑上弹窗 */
+    @keyframes cat-run-from-right {
+      0% {
+        opacity: 1;
+        transform: translateX(110vw) translateY(-20px) rotate(14deg);
+      }
+      55% {
+        opacity: 1;
+        transform: translateX(-8%) translateY(8px) rotate(-4deg);
+      }
+      75% {
+        transform: translateX(4%) translateY(-6px) rotate(2deg);
+      }
+      100% {
+        opacity: 1;
+        transform: translateX(0) translateY(0) rotate(0);
+      }
+    }
+    /* 备选：从屏幕顶快速掉下 —— 给 .login-cat.is-run 换 animation: cat-drop-in ... */
+    @keyframes cat-drop-in {
+      0% {
+        opacity: 1;
+        transform: translateY(-110vh) rotate(-10deg);
+      }
+      70% {
+        opacity: 1;
+        transform: translateY(12px) rotate(3deg);
+      }
+      85% {
+        transform: translateY(-8px) rotate(-2deg);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0) rotate(0);
+      }
+    }
+    /* 落地后轻轻起伏呼吸 */
+    .login-mask.is-open .login-cat.is-run .cat-body {
+      animation: cat-breathe 3.8s ease-in-out 0.9s infinite;
+      transform-origin: 55% 70%;
+      transform-box: fill-box;
+    }
+    @keyframes cat-breathe {
+      0%, 100% { transform: scale(1, 1); }
+      50% { transform: scale(1.015, 0.985); }
+    }
+    .login-cat svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+    /* 眨眼：整组眼睛短暂压扁，不做黄眼皮遮盖 */
+    .login-cat .eyes {
+      transform-box: fill-box;
+      transform-origin: center;
+      animation: eyes-blink 4.8s ease-in-out 1.6s infinite;
+    }
+    @keyframes eyes-blink {
+      0%, 82%, 100% { transform: scaleY(1); }
+      85% { transform: scaleY(0.12); }
+      88% { transform: scaleY(1); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .login-mask.is-open .login-cat.is-run {
+        animation: none;
+        opacity: 1;
+        transform: none;
+      }
+      .login-cat .eyes, .login-cat .cat-body { animation: none; }
+    }
+    .login-card h2 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 900;
+      color: #1f1f1f;
+      text-align: center;
+    }
+    .login-card .sub {
+      margin: 8px 0 0;
+      text-align: center;
+      font-size: 13px;
+      color: #888;
+    }
+    .login-field {
+      margin-top: 18px;
+    }
+    .login-field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: #666;
+      margin-bottom: 6px;
+    }
+    .login-field input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1.5px solid #e8e8e8;
+      background: #fafafa;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .login-field input:focus {
+      border-color: #1f1f1f;
+      background: #fff;
+    }
+    .login-submit {
+      width: 100%;
+      margin-top: 20px;
+      padding: 13px;
+      border-radius: 999px;
+      background: #ffe60f;
+      color: #1f1f1f;
+      font-size: 16px;
+      font-weight: 800;
+      box-shadow: 0 4px 14px rgba(255, 230, 15, 0.45);
+    }
+    .login-submit:hover { filter: brightness(1.03); }
+    .login-foot {
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: #888;
+    }
+    .login-foot a { color: #1f1f1f; font-weight: 700; }
+    .login-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: transparent;
+      color: #999;
+      font-size: 20px;
+      line-height: 1;
+      display: grid;
+      place-items: center;
+      z-index: 6;
+    }
+    .login-close:hover { background: #f6f6f6; color: #222; border-radius: 50%; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .card, .tile, .card-cover img { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-mask is-open" id="login-mask" role="dialog" aria-modal="true" aria-labelledby="login-title" aria-hidden="false">
+    <div class="login-wrap">
+      <div class="login-card">
+        <!-- 慵懒趴姿：慢爬上弹窗，半眯眼 -->
+        <div class="login-cat" id="login-cat" aria-hidden="true">
+          <svg viewBox="0 0 360 200" xmlns="http://www.w3.org/2000/svg">
+            <!-- 横趴身体（摊开） -->
+            <g class="cat-body">
+              <path fill="#FFE60F" d="
+                M28 118
+                C22 78 62 52 110 58
+                C150 40 200 48 230 78
+                C280 70 330 96 328 132
+                C326 162 280 178 220 180
+                C160 182 90 176 52 158
+                C34 148 30 132 28 118Z"/>
+              <!-- 后背毛簇，懒懒耷着 -->
+              <path fill="#E8B800" d="M250 70 C275 48 318 58 322 90 C300 74 270 72 250 70Z"/>
+              <path fill="#FFE60F" d="M252 74 C274 56 310 64 312 92 C294 78 268 76 252 74Z"/>
+              <path fill="#E8B800" d="M300 100 C328 108 330 142 300 152 C312 128 308 112 300 100Z"/>
+              <path fill="#FFE60F" d="M298 104 C320 110 322 140 298 148 C308 126 304 112 298 104Z"/>
+              <!-- 弧形猫耳：够大但不拉长 -->
+              <path fill="#FFE60F" d="M96 68 C90 50 98 30 116 30 C132 30 136 50 130 66 C120 68 104 70 96 68Z"/>
+              <path fill="#FFE60F" d="M140 64 C136 46 148 28 166 30 C182 32 180 50 172 66 C162 66 148 66 140 64Z"/>
+              <path fill="#FF9DB8" d="M104 60 C100 48 106 38 116 38 C124 38 128 48 124 58 C118 60 108 62 104 60Z"/>
+              <path fill="#FF9DB8" d="M148 58 C146 48 154 38 164 40 C172 42 170 50 166 58 C160 58 152 58 148 58Z"/>
+              <!-- 尾巴软软搭着 -->
+              <path fill="#FFE60F" d="M310 140 C340 128 352 150 338 168 C328 178 318 170 310 156Z"/>
+              <path fill="#E8B800" d="M318 148 C336 140 342 156 332 164 C326 168 320 160 318 148Z"/>
+            </g>
+            <!-- 两只大白眼（清晰分立，微叠，对齐闲鱼） -->
+            <g class="eyes">
+              <ellipse cx="122" cy="104" rx="40" ry="44" fill="#fff"/>
+              <ellipse cx="178" cy="106" rx="38" ry="42" fill="#fff"/>
+              <!-- 竖瞳：JS 改 x 做左看右看 -->
+              <rect class="pupil pupil-l" x="115" y="92" width="12" height="26" rx="6" fill="#1f1f1f" data-x0="115"/>
+              <rect class="pupil pupil-r" x="171" y="94" width="12" height="26" rx="6" fill="#1f1f1f" data-x0="171"/>
+            </g>
+            <!-- 懒懒的 ω 嘴 -->
+            <path d="M138 142 C144 150 150 150 156 142 C162 150 168 150 174 142" stroke="#1f1f1f" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+            <!-- 前爪摊在沿上 -->
+            <ellipse cx="120" cy="178" rx="34" ry="14" fill="#FFE60F"/>
+            <ellipse cx="178" cy="180" rx="34" ry="14" fill="#FFE60F"/>
+            <ellipse cx="112" cy="180" rx="5" ry="3.5" fill="#F0C200"/>
+            <ellipse cx="128" cy="180" rx="5" ry="3.5" fill="#F0C200"/>
+            <ellipse cx="170" cy="182" rx="5" ry="3.5" fill="#F0C200"/>
+            <ellipse cx="186" cy="182" rx="5" ry="3.5" fill="#F0C200"/>
+          </svg>
+        </div>
+        <button class="login-close" type="button" aria-label="关闭" data-close-login>×</button>
+        <h2 id="login-title">欢迎来闲猫</h2>
+        <p class="sub">登录后买卖挂单、充值调用</p>
+        <form id="login-form" autocomplete="on">
+          <div class="login-field">
+            <label for="login-phone">手机号</label>
+            <input id="login-phone" name="phone" type="tel" inputmode="numeric" placeholder="请输入手机号" maxlength="11" />
+          </div>
+          <div class="login-field">
+            <label for="login-code">验证码</label>
+            <input id="login-code" name="code" type="text" inputmode="numeric" placeholder="请输入验证码" maxlength="6" />
+          </div>
+          <button class="login-submit" type="submit">登录 / 注册</button>
+        </form>
+        <div class="login-foot">
+          <a href="#" data-close-login>先逛逛</a>
+          <span>验证即表示同意服务协议</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <header class="header">
+    <div class="header-row">
+      <a class="logo" href="#">
+        <span class="logo-mark" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M5 11c0-2.8 2.5-5 5.5-5h3c3 0 5.5 2.2 5.5 5v3.5c0 2.5-2.2 4.5-5 4.5H10c-2.8 0-5-2-5-4.5V11z" fill="#ffe60f"/>
+            <path d="M7.2 8.2L5 4.5l3.2 1.6M16.8 8.2L19 4.5l-3.2 1.6" stroke="#ffe60f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="10" cy="11.5" r="1.1" fill="#222"/>
+            <circle cx="14" cy="11.5" r="1.1" fill="#222"/>
+            <path d="M11.2 13.2c.5.6 1.1.6 1.6 0" stroke="#222" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+        </span>
+        闲猫
+      </a>
+      <form class="search" onsubmit="event.preventDefault()">
+        <span class="search-ico" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <input type="search" placeholder="搜 Claude、ChatGPT、Kimi、挂单号…" aria-label="搜索" />
+        <button type="submit">搜索</button>
+      </form>
+      <div class="header-actions">
+        <!-- 同闲鱼：线框图标 + 文案 → /seller/upstreams -->
+        <a class="header-link" href="seller-center.html" title="进入卖家中心">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M8 8.5H7.2A2.2 2.2 0 0 0 5 10.7v6.1A2.2 2.2 0 0 0 7.2 19h9.6a2.2 2.2 0 0 0 2.2-2.2v-6.1a2.2 2.2 0 0 0-2.2-2.2H16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M9 8.5l1.1-2.2h3.8L15 8.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <circle cx="12" cy="13.2" r="2.4" stroke="currentColor" stroke-width="1.6"/>
+          </svg>
+          <span>我要卖闲置<span class="sell-extra"> TOKEN</span></span>
+        </a>
+        <!-- 独立路由 → /admin -->
+        <a class="header-link admin" href="admin.html" title="管理后台">管理后台</a>
+        <div class="guest-actions" id="guest-actions">
+          <button class="header-link" type="button" data-open-login>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="8" r="3.25" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M5.5 19.25c.9-3.2 3.1-4.75 6.5-4.75s5.6 1.55 6.5 4.75" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            <span>登录</span>
+          </button>
+        </div>
+        <a class="user-chip" id="user-chip" href="buyer-center.html" title="进入买家中心">
+          <span class="avatar" aria-hidden="true">猫</span>
+          <span class="uname" id="user-name">闲猫用户</span>
+        </a>
+      </div>
+    </div>
+    <nav class="kw-bar" aria-label="热门搜索">
+      <div class="kw-inner">
+        <a href="#">Claude Max</a>
+        <a href="#">ChatGPT Plus</a>
+        <a href="#">Kimi Coding</a>
+        <a href="#">Gemini Ultra</a>
+        <a href="#">智谱 GLM</a>
+        <a href="#">保障池</a>
+        <a href="#">限时捡漏</a>
+        <a href="#">求购广场</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="page">
+    <section class="stage" aria-label="市场运营区">
+      <aside class="side-cats">
+        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span>Claude / Max / Pro</a>
+        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><path d="M8 12h8M12 8v8"/></svg></span>ChatGPT / Codex</a>
+        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l7 4v5c0 4-3 7-7 9-4-2-7-5-7-9V7l7-4z"/></svg></span>Gemini / Google</a>
+        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16l4-8 4 8 4-8 4 8"/></svg></span>Kimi / 月之暗面</a>
+        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h4M7 14h10"/></svg></span>智谱 / MiniMax</a>
+        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg></span>Grok / 其他</a>
+        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l8 4v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg></span>平台保障池</a>
+        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>求购 / 时段包</a>
+        <a href="seller-center.html"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16v10H4z"/><path d="M8 7V5h8v2"/></svg></span>卖家 / 挂出变现</a>
+      </aside>
+
+      <a class="promo-banner" href="#feed">
+        <div class="bg" aria-hidden="true"></div>
+        <div class="content">
+          <h1>闲猫抄底<br />好物算力</h1>
+          <p class="desc">超绝性价比 · 省到底</p>
+          <div class="mascot-spot" aria-hidden="true">
+            <img src="assets/xianmao-pet.svg" alt="闲猫" />
+          </div>
+          <span class="promo-cta">去看看 ›</span>
+        </div>
+      </a>
+
+      <div class="promo-grid">
+        <a class="tile tile--deal" href="#feed">
+          <div class="tile-eng" aria-hidden="true">DEAL</div>
+          <img class="tile-flower" src="assets/tile-flower.png" alt="" aria-hidden="true" />
+          <div class="tile-copy">
+            <h3>倍率捡漏 <span class="arrow">›</span></h3>
+            <p>急出 · 重置前清仓</p>
+          </div>
+          <div class="tile-mascot"><img src="assets/tile-icon-deal.png" alt="" /></div>
+          <div class="tile-tray">
+            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb1.jpg" alt="" /></div><div class="thumb-price">0.55×</div></div>
+            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb2.jpg" alt="" /></div><div class="thumb-price">0.48×</div></div>
+            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb3.jpg" alt="" /></div><div class="thumb-price">0.60×</div></div>
+          </div>
+        </a>
+        <a class="tile tile--code" href="#feed">
+          <div class="tile-eng" aria-hidden="true">CODE</div>
+          <img class="tile-flower" src="assets/tile-flower.png" alt="" aria-hidden="true" />
+          <div class="tile-copy">
+            <h3>写代码专场 <span class="arrow">›</span></h3>
+            <p>Coding Plan 热挂</p>
+          </div>
+          <div class="tile-mascot"><img src="assets/tile-icon-code.png" alt="" /></div>
+          <div class="tile-tray">
+            <div class="thumb is-skel"><div class="thumb-pic"></div></div>
+            <div class="thumb is-skel"><div class="thumb-pic"></div></div>
+            <div class="thumb is-skel"><div class="thumb-pic"></div></div>
+          </div>
+        </a>
+        <a class="tile tile--pool" href="#feed">
+          <div class="tile-eng" aria-hidden="true">POOL</div>
+          <img class="tile-flower" src="assets/tile-flower.png" alt="" aria-hidden="true" />
+          <div class="tile-copy">
+            <h3>保障池 <span class="arrow">›</span></h3>
+            <p>不挑卖家 · 自动派</p>
+          </div>
+          <div class="tile-mascot"><img src="assets/tile-icon-pool.png" alt="" /></div>
+          <div class="tile-tray">
+            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb7.jpg" alt="" /></div><div class="thumb-price">0.80×</div></div>
+            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb8.jpg" alt="" /></div><div class="thumb-price">0.70×</div></div>
+            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb9.jpg" alt="" /></div><div class="thumb-price">0.90×</div></div>
+          </div>
+        </a>
+        <a class="tile tile--buyer" href="buyer-center.html">
+          <div class="tile-eng" aria-hidden="true">BUY</div>
+          <img class="tile-flower" src="assets/tile-flower.png" alt="" aria-hidden="true" />
+          <div class="tile-copy">
+            <h3>买家入口 <span class="arrow">›</span></h3>
+            <p>充值 · 建 Key · 调用</p>
+          </div>
+          <div class="tile-mascot"><img src="assets/tile-icon-buyer.png" alt="" /></div>
+          <div class="tile-tray">
+            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb4.jpg" alt="" /></div><div class="thumb-price">充值</div></div>
+            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb5.jpg" alt="" /></div><div class="thumb-price">Key</div></div>
+            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb6.jpg" alt="" /></div><div class="thumb-price">挂出</div></div>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <div class="section-head" id="feed">
+      <h2>猜你喜欢</h2>
+      <div class="tabs">
+        <button class="tab on" type="button">综合</button>
+        <button class="tab" type="button">价格</button>
+        <button class="tab" type="button">靠谱</button>
+        <button class="tab" type="button">更快</button>
+      </div>
+    </div>
+
+    <div class="feed" id="case-feed">
+      <!-- 由脚本铺案例，方便加量 -->
+    </div>
+
+    <p class="note-wrap">
+      <span class="note">
+        闲猫 · HTML 原型 · 液态玻璃卡片 · 参考
+        <a href="https://www.goofish.com/" target="_blank" rel="noopener">闲鱼</a>
+      </span>
+    </p>
+  </main>
+
+  <script>
+    document.querySelectorAll(".tabs .tab").forEach((el) => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll(".tabs .tab").forEach((t) => t.classList.remove("on"));
+        el.classList.add("on");
+      });
+    });
+
+    // 下方多铺挂单案例（真实本地图）
+    const cases = [
+      { img: "card1.jpg", plat: "Claude", title: "Max · 寄售 · 可故障转移", price: "0.55", badge: "捡漏" },
+      { img: "card2.jpg", plat: "ChatGPT", title: "Plus · Codex 可用", price: "0.62" },
+      { img: "card3.jpg", plat: "Kimi", title: "Coding Plan · 额度充足", price: "0.48", badge: "新上架" },
+      { img: "card4.jpg", plat: "Gemini", title: "Google One · Ultra", price: "0.70" },
+      { img: "card5.jpg", plat: "智谱", title: "GLM Coding · 国内站", price: "0.50" },
+      { img: "card6.jpg", plat: "Grok", title: "SuperGrok · 刚过检", price: "0.68" },
+      { img: "card7.jpg", plat: "MiniMax", title: "Coding Plan · 国际站", price: "0.54" },
+      { img: "card8.jpg", plat: "Claude", title: "Pro · 窗口将重置", price: "0.58", badge: "清仓" },
+      { img: "card9.jpg", plat: "ChatGPT", title: "Team · 可做备用跳", price: "0.66" },
+      { img: "card10.jpg", plat: "Kimi", title: "Coding · 高成功率卖家", price: "0.51" },
+      { img: "card11.jpg", plat: "智谱", title: "团队版 · 组织项目已配", price: "0.53" },
+      { img: "card12.jpg", plat: "Gemini", title: "Code Assist · 填项目 ID", price: "0.72" },
+      { img: "card13.jpg", plat: "Claude", title: "Max 20x · S 级过检", price: "0.57", badge: "优品" },
+      { img: "card14.jpg", plat: "OpenCode", title: "Go 订阅 · 日周额度可控", price: "0.49" },
+      { img: "card15.jpg", plat: "保障池", title: "Claude 保障池 · 自动派号", price: "0.80", badge: "保障" },
+      { img: "hero2.jpg", plat: "混合池", title: "全模型混合 · 按请求路由", price: "0.90" },
+      { img: "thumb1.jpg", plat: "Claude", title: "Setup Token · 寄售", price: "0.59" },
+      { img: "thumb2.jpg", plat: "ChatGPT", title: "Codex PAT · 近 24h 活跃", price: "0.64" },
+      { img: "thumb5.jpg", plat: "Kimi", title: "急出捡漏 · 今晚有效", price: "0.45", badge: "捡漏" },
+      { img: "thumb6.jpg", plat: "MiniMax", title: "国内站 Coding · B 级", price: "0.56" },
+      { img: "thumb7.jpg", plat: "Antigravity", title: "OAuth · 并发可控", price: "0.61" },
+      { img: "thumb8.jpg", plat: "Grok", title: "配额窗口充裕", price: "0.67" },
+      { img: "thumb10.jpg", plat: "智谱", title: "国际站 z.ai · 寄售", price: "0.52" },
+      { img: "thumb11.jpg", plat: "ChatGPT", title: "Plus · 首字延迟优秀", price: "0.63" },
+      { img: "card8.jpg", plat: "Claude", title: "Max · 卖家店铺精选", price: "0.56" },
+      { img: "card9.jpg", plat: "Kimi", title: "响应求购 · ≤0.50×", price: "0.47", badge: "求购" },
+      { img: "card12.jpg", plat: "Gemini", title: "Google One · Pro 档", price: "0.69" },
+      { img: "card14.jpg", plat: "时段包", title: "今晚 3 小时 Claude 畅用", price: "0.60", badge: "时段" },
+      { img: "card15.jpg", plat: "保障池", title: "ChatGPT 保障池 · 自动派", price: "0.70", badge: "保障" },
+      { img: "card7.jpg", plat: "MiniMax", title: "国内站 · 周额度充足", price: "0.51" },
+      { img: "card3.jpg", plat: "Claude", title: "Setup Token · A 级", price: "0.54" },
+      { img: "card11.jpg", plat: "智谱", title: "团队版 · 组织已填", price: "0.55" },
+    ];
+
+    const feed = document.getElementById("case-feed");
+    feed.innerHTML = cases.map((c) => `
+      <article class="card">
+        <div class="card-cover">
+          <img src="assets/${c.img}" alt="${c.plat} 挂单封面" loading="lazy" />
+          <div class="shade"></div>
+          ${c.badge ? `<span class="badge">${c.badge}</span>` : ""}
+          <span class="plat">${c.plat}</span>
+        </div>
+        <div class="card-body">
+          <h3 class="card-title">${c.title}</h3>
+          <div class="card-foot">
+            <div class="price"><small>×</small>${c.price}</div>
+            <button class="buy" type="button">要了</button>
+          </div>
+        </div>
+      </article>
+    `).join("");
+
+    // 进站登录弹窗（猫从右跑上 + JS 驱动眼珠左右看）
+    const loginMask = document.getElementById("login-mask");
+    const loginCat = document.getElementById("login-cat");
+    const pupils = [...loginCat.querySelectorAll(".pupil")];
+    let eyeTimer = null;
+    let eyeHold = null;
+
+    const setPupils = (dx) => {
+      pupils.forEach((p) => {
+        const base = Number(p.getAttribute("data-x0"));
+        p.setAttribute("x", String(base + dx));
+      });
+    };
+
+    const stopEyes = () => {
+      if (eyeTimer) {
+        clearInterval(eyeTimer);
+        eyeTimer = null;
+      }
+      setPupils(0);
+    };
+
+    // 落地后：中 → 右停一下 → 中 → 左停一下（竖瞳平移，两眼同步）
+    const startEyes = () => {
+      stopEyes();
+      const path = [0, 0, 8, 8, 8, 0, 0, -8, -8, -8];
+      let i = 0;
+      setPupils(0);
+      eyeTimer = setInterval(() => {
+        if (eyeHold !== null) {
+          setPupils(eyeHold);
+          return;
+        }
+        setPupils(path[i % path.length]);
+        i += 1;
+      }, 380);
+    };
+
+    const openLogin = () => {
+      loginCat.classList.remove("is-run");
+      stopEyes();
+      void loginCat.offsetWidth;
+      loginMask.classList.add("is-open");
+      loginMask.setAttribute("aria-hidden", "false");
+      document.body.style.overflow = "hidden";
+      requestAnimationFrame(() => loginCat.classList.add("is-run"));
+      // 跑完再开始转眼珠（不自动 focus，避免打断）
+      setTimeout(startEyes, 800);
+    };
+    const closeLogin = () => {
+      loginMask.classList.remove("is-open");
+      loginCat.classList.remove("is-run");
+      loginMask.setAttribute("aria-hidden", "true");
+      document.body.style.overflow = "";
+      eyeHold = null;
+      stopEyes();
+    };
+    document.querySelectorAll("[data-open-login]").forEach((el) => {
+      el.addEventListener("click", (e) => { e.preventDefault(); openLogin(); });
+    });
+    document.querySelectorAll("[data-close-login]").forEach((el) => {
+      el.addEventListener("click", closeLogin);
+    });
+    loginMask.addEventListener("click", (e) => {
+      if (e.target === loginMask) closeLogin();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && loginMask.classList.contains("is-open")) closeLogin();
+    });
+    const guestActions = document.getElementById("guest-actions");
+    const userChip = document.getElementById("user-chip");
+    const userName = document.getElementById("user-name");
+    const setLoggedIn = (name) => {
+      guestActions.classList.add("is-off");
+      userChip.classList.add("is-on");
+      if (name) userName.textContent = name;
+      try { sessionStorage.setItem("xianmao_proto_user", name || "闲猫用户"); } catch (_) {}
+    };
+    const setLoggedOut = () => {
+      guestActions.classList.remove("is-off");
+      userChip.classList.remove("is-on");
+      try { sessionStorage.removeItem("xianmao_proto_user"); } catch (_) {}
+    };
+    try {
+      const saved = sessionStorage.getItem("xianmao_proto_user");
+      if (saved) setLoggedIn(saved);
+    } catch (_) {}
+
+    document.getElementById("login-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const phone = (document.getElementById("login-phone").value || "").trim();
+      const label = phone ? `用户 ${phone.slice(-4)}` : "闲猫用户";
+      setLoggedIn(label);
+      closeLogin();
+    });
+
+    document.getElementById("login-phone").addEventListener("focus", () => { eyeHold = -8; setPupils(-8); });
+    document.getElementById("login-code").addEventListener("focus", () => { eyeHold = 8; setPupils(8); });
+    ["login-phone", "login-code"].forEach((id) => {
+      document.getElementById(id).addEventListener("blur", () => { eyeHold = null; });
+    });
+
+    openLogin();
+  </script>
+</body>
+</html>
