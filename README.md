@@ -80,6 +80,8 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
 
 升级：把 `TM_IMAGE` 改成新版本后再执行 `pull` 与 `up -d`；数据库迁移在 api 启动时自动执行。每个 Release 的附件里也有对应版本的 `docker-compose.yml` 与 `.env.example`。
 
+sub2api 与 token-market 部署在同一台服务器上的完整布局（含 sub2api 的 compose、对外入口与运维脚本）见 [deploy/single-host](deploy/single-host/README.md)。
+
 只需对外暴露 api（控制面与前端，`:8080`）和 edge（买家调用模型，`:8090`），并把负载均衡地址配置为 `TRUSTED_PROXIES`。不使用容器时，三个服务共用一份配置（见 `config.example.yaml`），分别运行 `bin/api`、`bin/worker`、`bin/edge`。支付宝、微信支付商户在管理后台"支付配置"中填写，不需要写进配置文件。
 
 依赖：PostgreSQL（本系统库）、Redis、sub2api（Admin API Key、只读库账号；sub2api 需关闭登录验证码，管理员需完成合规确认）。sub2api 配置要求见 [02 架构](docs/02-architecture.md) 第 6 节。
