@@ -16,6 +16,7 @@ import (
 
 	"github.com/DueGin/token-market/internal/edge"
 	"github.com/DueGin/token-market/internal/edgecfg"
+	"github.com/DueGin/token-market/internal/platform/buildinfo"
 	"github.com/DueGin/token-market/internal/platform/config"
 	"github.com/DueGin/token-market/internal/platform/crypto"
 	"github.com/DueGin/token-market/internal/platform/db"
@@ -111,7 +112,7 @@ func run(configPath string, log *slog.Logger) error {
 	errCh := make(chan error, 2)
 	go func() { errCh <- public.ListenAndServe() }()
 	go func() { errCh <- admin.ListenAndServe() }()
-	log.Info("edge listening", "addr", cfg.Edge.Addr, "admin", cfg.Edge.AdminAddr, "gateway", gateway.String())
+	log.Info("edge listening", "version", buildinfo.Version, "addr", cfg.Edge.Addr, "admin", cfg.Edge.AdminAddr, "gateway", gateway.String())
 
 	select {
 	case err := <-errCh:

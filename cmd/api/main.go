@@ -13,6 +13,7 @@ import (
 
 	"github.com/DueGin/token-market/internal/app"
 	"github.com/DueGin/token-market/internal/httpapi"
+	"github.com/DueGin/token-market/internal/platform/buildinfo"
 	"github.com/DueGin/token-market/internal/platform/config"
 	"github.com/DueGin/token-market/internal/quality"
 )
@@ -70,7 +71,7 @@ func run(configPath string, log *slog.Logger) error {
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
-	log.Info("api listening", "addr", cfg.HTTP.Addr)
+	log.Info("api listening", "addr", cfg.HTTP.Addr, "version", buildinfo.Version, "commit", buildinfo.Commit)
 
 	select {
 	case err := <-errCh:

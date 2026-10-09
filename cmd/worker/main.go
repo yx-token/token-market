@@ -20,6 +20,7 @@ import (
 	"github.com/DueGin/token-market/contract"
 	"github.com/DueGin/token-market/internal/app"
 	"github.com/DueGin/token-market/internal/billing"
+	"github.com/DueGin/token-market/internal/platform/buildinfo"
 	"github.com/DueGin/token-market/internal/platform/config"
 	"github.com/DueGin/token-market/internal/sub2api/compatguard"
 	"github.com/DueGin/token-market/internal/sub2api/ops"
@@ -161,7 +162,7 @@ func run(configPath string, log *slog.Logger) error {
 	for _, j := range jobs {
 		spawn(func() { j.loop(ctx, log) })
 	}
-	log.Info("worker started", "jobs", len(jobs)+4)
+	log.Info("worker started", "jobs", len(jobs)+4, "version", buildinfo.Version)
 	wg.Wait()
 	log.Info("worker stopped")
 	return nil

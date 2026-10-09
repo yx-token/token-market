@@ -20,6 +20,7 @@ import (
 	"github.com/DueGin/token-market/internal/market"
 	"github.com/DueGin/token-market/internal/payment/merchants"
 	"github.com/DueGin/token-market/internal/platform/auth"
+	"github.com/DueGin/token-market/internal/platform/buildinfo"
 	"github.com/DueGin/token-market/internal/platform/clientip"
 	"github.com/DueGin/token-market/internal/platform/httpx"
 	"github.com/DueGin/token-market/internal/platform/ratelimit"
@@ -227,7 +228,7 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) error {
 	if err := s.DB.Ping(r.Context()); err != nil {
 		return httpx.Unavailable("DB_UNAVAILABLE", "database unavailable")
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": buildinfo.Version})
 	return nil
 }
 

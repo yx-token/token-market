@@ -2,9 +2,11 @@
 # 用不同的启动命令运行不同组件（见 deploy/docker-compose.yml）。
 #
 # 无法直连 Docker Hub 时可指定镜像源，例如：docker build --build-arg REGISTRY=docker.m.daocloud.io/ .
+# 多架构：前端与 Go 都在构建机的架构上编译（Go 交叉编译），只有最后一层按目标架构组装，
+# 所以 docker buildx build --platform linux/amd64,linux/arm64 不需要在模拟器里跑编译。
 ARG REGISTRY=
 
-FROM ${REGISTRY}library/node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM ${REGISTRY}library/node:22-alpine AS web
 WORKDIR /src/web
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./
@@ -12,13 +14,19 @@ RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm run build
 
-FROM ${REGISTRY}library/golang:1.26-alpine AS go
+FROM --platform=$BUILDPLATFORM ${REGISTRY}library/golang:1.26-alpine AS go
 WORKDIR /src
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go build -ldflags="-s -w" -o /out/ ./cmd/api ./cmd/worker ./cmd/edge ./cmd/s2a-compat
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
+      -ldflags="-s -w -X github.com/DueGin/token-market/internal/platform/buildinfo.Version=${VERSION} -X github.com/DueGin/token-market/internal/platform/buildinfo.Commit=${COMMIT}" \
+      -o /out/ ./cmd/api ./cmd/worker ./cmd/edge ./cmd/s2a-compat
 
 FROM ${REGISTRY}library/alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 market

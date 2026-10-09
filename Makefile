@@ -47,4 +47,6 @@ dev-down:
 
 # 镜像（无法直连 Docker Hub 时：make image REGISTRY=<镜像源>/）
 image:
-	docker build $(if $(REGISTRY),--build-arg REGISTRY=$(REGISTRY)) -t token-market:latest .
+	docker build $(if $(REGISTRY),--build-arg REGISTRY=$(REGISTRY)) \
+		--build-arg VERSION="$$(git describe --tags --always --dirty)" --build-arg COMMIT="$$(git rev-parse HEAD)" \
+		-t token-market:local .

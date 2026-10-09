@@ -1,4 +1,12 @@
-# token-market
+<p align="center">
+  <img src="docs/assets/logo.svg" width="96" height="96" alt="闲置算力交易所">
+</p>
+
+<h1 align="center">token-market · 闲置算力交易所</h1>
+
+<p align="center">
+  <a href="https://github.com/yx-token/token-market/actions/workflows/ci.yml"><img src="https://github.com/yx-token/token-market/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
 
 Token 闲置交易平台。卖家把用不完的订阅额度（官方 OAuth 订阅账号、国产 Coding Plan）挂到平台，平台以两种方式变现：
 
@@ -44,14 +52,33 @@ make dev-down
 
 管理员 `admin@dev.local` / `admin-password-1`。可以注册一个卖家接入 Claude（授权码随便填一个词，同一个词代表同一个官方账号），等上架检测（含第三方身份检测，约 1–2 分钟）通过后挂单；再注册一个买家充值、创建 Key，用页面上给出的 curl 调用 `http://127.0.0.1:8090`。充值选支付宝网页支付会跳到替身收银台；选扫码支付时，二维码内容就是替身的"扫码付款"页面地址，在浏览器打开它并确认付款即可。前端开发用 `cd web && pnpm dev`（http://127.0.0.1:5173，/api 代理到 :8080）。
 
-## 部署
+## 发布与部署
 
-一个镜像包含全部组件（`Dockerfile`），`deploy/docker-compose.yml` 是部署示例（本系统的 PostgreSQL、Redis、api、worker、edge；sub2api 单独部署）：
+### 发布
+
+推送 `v` 开头的标签即发布（`.github/workflows/release.yml`）：先跑完整 CI（Go 检查与单元、集成测试，前端检查与构建），通过后构建多架构镜像（linux/amd64、linux/arm64）推送到 GHCR，最后创建 GitHub Release（自动生成更新说明，附部署文件）。
 
 ```bash
-cp deploy/.env.example deploy/.env    # 填写密钥与 sub2api 连接信息
-docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+git tag v0.1.0 && git push origin v0.1.0     # 正式版：镜像标签 v0.1.0、0.1.0、0.1、latest
+git tag v0.2.0-rc.1 && git push origin v0.2.0-rc.1   # 带 - 的是预发布：只打完整版本号，不更新 latest
 ```
+
+镜像地址 `ghcr.io/yx-token/token-market`。镜像内程序的版本可以在 `GET /healthz` 的 `version` 字段和启动日志中看到。推送到 main 与提交 PR 时会运行同样的 CI（`.github/workflows/ci.yml`，另外检查镜像能否构建）。
+
+国内服务器拉取 GHCR 较慢时，可以让发布流程同时推送到一个镜像仓库副本（例如阿里云容器镜像服务）：在仓库 Settings → Secrets and variables → Actions 中添加变量 `MIRROR_IMAGE`（如 `registry.cn-hangzhou.aliyuncs.com/<命名空间>/token-market`）和密钥 `MIRROR_USERNAME`、`MIRROR_PASSWORD`。
+
+### 部署
+
+一个镜像包含全部组件，`deploy/docker-compose.yml` 是部署示例（本系统的 PostgreSQL、Redis、api、worker、edge；sub2api 单独部署）。仓库是私有的，镜像也是私有的，服务器需要先用一个有 `read:packages` 权限的 GitHub token 登录 GHCR：
+
+```bash
+echo "<token>" | docker login ghcr.io -u <GitHub 用户名> --password-stdin
+cp deploy/.env.example deploy/.env    # 填写 TM_IMAGE（建议固定版本，如 ghcr.io/yx-token/token-market:v0.1.0）、密钥与 sub2api 连接信息
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env pull
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
+```
+
+升级：把 `TM_IMAGE` 改成新版本后再执行 `pull` 与 `up -d`；数据库迁移在 api 启动时自动执行。每个 Release 的附件里也有对应版本的 `docker-compose.yml` 与 `.env.example`。
 
 只需对外暴露 api（控制面与前端，`:8080`）和 edge（买家调用模型，`:8090`），并把负载均衡地址配置为 `TRUSTED_PROXIES`。不使用容器时，三个服务共用一份配置（见 `config.example.yaml`），分别运行 `bin/api`、`bin/worker`、`bin/edge`。支付宝、微信支付商户在管理后台"支付配置"中填写，不需要写进配置文件。
 

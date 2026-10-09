@@ -70,10 +70,10 @@ func GenerateKeys() (Keys, *rsa.PrivateKey, *rsa.PrivateKey, error) {
 }
 
 type Config struct {
-	Keys           Keys
-	AlipayAppID    string
-	WechatAppID    string
-	WechatMchID    string
+	Keys            Keys
+	AlipayAppID     string
+	WechatAppID     string
+	WechatMchID     string
 	WechatMchSerial string // 商户证书序列号，校验 Authorization 头
 	// WechatCertMode 为 true 时用平台证书签名并提供 /v3/certificates，否则用微信支付公钥签名
 	WechatCertMode bool
