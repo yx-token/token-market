@@ -83,10 +83,10 @@
 |---|---|---|
 | GET | `/api/seller/vendors` | 可接入的厂商与接入方式（由管理员启用的厂商决定） |
 | POST | `/api/seller/upstreams` | 创建上游草稿：`platform`、`auth_type`，同时分配专用代理 |
-| POST | `/api/seller/upstreams/:id/oauth/start` | 获取授权链接（30 分钟有效） |
+| POST | `/api/seller/upstreams/:id/oauth/start` | 获取授权链接（30 分钟有效）；Gemini Code Assist 可选 `project_id`（GCP 项目 ID） |
 | POST | `/api/seller/upstreams/:id/oauth/complete` | 提交授权码或完整回调地址：`code`。需要 state 的厂商（OpenAI、Gemini 等）请粘贴完整回调地址 |
-| POST | `/api/seller/upstreams/:id/coding-key` | 提交 Coding Plan key：`api_key`；查不到官方窗口用量的 key 被拒绝 |
-| POST | `/api/seller/upstreams/:id/reauthorize` | 授权失效后重新授权：返回新的授权链接，之后同样用 `oauth/complete` 提交；必须是同一个官方账号 |
+| POST | `/api/seller/upstreams/:id/coding-key` | 提交 Coding Plan key：`api_key`；智谱国内站团队版另填 `organization`、可选 `project`；查不到官方窗口用量的 key 被拒绝 |
+| POST | `/api/seller/upstreams/:id/reauthorize` | 授权失效后重新授权：返回新的授权链接，之后同样用 `oauth/complete` 提交；必须是同一个官方账号；可选 `project_id` 同上 |
 | POST | `/api/seller/upstreams/:id/retry-verification` | 上架检测失败后重新检测 |
 | GET | `/api/seller/upstreams` | 上游列表 |
 | GET | `/api/seller/upstreams/:id` | 详情：状态、健康状态、档位、等级、当前挂单与报价、近 24 小时服务情况（请求数、收益、首字延迟、成功率） |
@@ -151,7 +151,7 @@
 | 模块 | 接口 |
 |---|---|
 | 系统设置 | `GET/PUT /api/admin/settings`：抽佣率、冻结天数、最低提现额、自动审核阈值、等级系数、报价有效期、改价冷却、退款等待、新卖家期、价目模型等（部分更新） |
-| 厂商 | `GET /api/admin/vendors`、`PUT /api/admin/vendors/:platform`：是否开放接入、寄售倍率区间、回收基础倍率表（按档位）、默认并发、限流参数 |
+| 厂商 | `GET /api/admin/vendors`、`PUT /api/admin/vendors/:platform`：是否开放接入、开放的接入方式（`auth_types`，只能从 `supported_auth_types` 中选）、寄售倍率区间、回收基础倍率表（按档位）、默认并发、限流参数 |
 | 代理库存 | `GET/POST /api/admin/proxies`、`POST /api/admin/proxies/:id/sync`（同步到 sub2api）、`/disable`、`/enable` |
 | 默认分组 | `GET/POST /api/admin/pools`、`PUT /api/admin/pools/:id`（售价 D、最低毛利、安全缓冲、启用）、`POST /api/admin/pools/:id/sync` |
 | 检测策略 | `GET /api/admin/detection-policies`、`PUT /api/admin/detection-policies/:platform[?auth_type=]`（`enabled`、`scheduled_enabled`、周期、套件、模型、预算、阈值、`auto_pause`、`default_grade`、`third_party`，见 [05](05-quality.md) 第 3、9 节） |

@@ -7,13 +7,13 @@ import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
-import { label } from '@/utils/labels'
+import { authTypeText, label } from '@/utils/labels'
 
 const toast = useToast()
 const vendors = useLoader(() => admin.vendors(), [] as VendorConfig[] | null)
 const { busy, run } = useAction()
 const editing = ref<VendorConfig | null>(null)
-const form = reactive({ enabled: false, min: '', max: '', base: '', concurrency: '', extra: '' })
+const form = reactive({ enabled: false, authTypes: [] as string[], min: '', max: '', base: '', concurrency: '', extra: '' })
 
 onMounted(vendors.load)
 
@@ -21,6 +21,7 @@ function edit(v: VendorConfig) {
   editing.value = v
   Object.assign(form, {
     enabled: v.enabled,
+    authTypes: [...v.auth_types],
     min: String(v.consignment_min),
     max: String(v.consignment_max),
     base: JSON.stringify(v.buyback_base),
@@ -44,8 +45,13 @@ async function save() {
     toast.error('回收基础倍率与限流参数需要是 JSON 对象')
     return
   }
+  if (!form.authTypes.length) {
+    toast.error('至少开放一种接入方式')
+    return
+  }
   const body = {
     enabled: form.enabled,
+    auth_types: form.authTypes,
     consignment_min: Number(form.min),
     consignment_max: Number(form.max),
     buyback_base: base,
@@ -81,7 +87,7 @@ async function save() {
         <template #cell-enabled="{ row }">
           <span :class="row.enabled ? 'text-emerald-700' : 'text-slate-400'">{{ row.enabled ? '开放' : '关闭' }}</span>
         </template>
-        <template #cell-auth_types="{ row }">{{ row.auth_types.map((t: string) => label('authType', t).text).join('、') }}</template>
+        <template #cell-auth_types="{ row }">{{ row.auth_types.map((t: string) => authTypeText(row.platform, t)).join('、') }}</template>
         <template #cell-range="{ row }">{{ row.consignment_min }}–{{ row.consignment_max }}×</template>
         <template #cell-buyback_base="{ row }">{{ Object.entries(row.buyback_base).map(([k, v]) => `${k}: ${v}`).join('，') }}</template>
         <template #cell-actions="{ row }">
@@ -92,6 +98,15 @@ async function save() {
     </div>
     <ModalDialog :open="!!editing" :title="`编辑 ${label('platform', editing?.platform).text}`" @update:open="(v: boolean) => !v && (editing = null)">
       <label class="flex items-center gap-2 text-sm"><input v-model="form.enabled" type="checkbox" /> 开放卖家接入</label>
+      <div>
+        <div class="label">开放的接入方式</div>
+        <div class="flex flex-wrap gap-x-5 gap-y-2">
+          <label v-for="t in editing?.supported_auth_types ?? []" :key="t" class="flex items-center gap-2 text-sm">
+            <input v-model="form.authTypes" type="checkbox" :value="t" /> {{ authTypeText(editing?.platform, t) }}
+          </label>
+        </div>
+        <p class="hint">卖家只能用开放的方式接入；已接入的上游不受影响。</p>
+      </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="label" for="vmin">寄售最低倍率</label>

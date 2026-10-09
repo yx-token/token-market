@@ -6,19 +6,24 @@
 |---|---|---|---|---|---|
 | Claude（Pro / Max） | `anthropic` | OAuth：`/admin/accounts/generate-auth-url` → `/exchange-code`；Setup Token：`/generate-setup-token-url` → `/exchange-setup-token-code` | 5h / 周 | 支持 | `window_cost_limit`、`base_rpm`、`max_sessions` |
 | ChatGPT / Codex | `openai` | `/admin/openai/generate-auth-url` → `/exchange-code` → `/create-from-oauth`；Codex PAT：`/create-from-codex-pat` | 5h / 周 | 支持 | — |
-| Gemini | `gemini` | `/admin/gemini/oauth/auth-url` → `/exchange-code` | 按 Google 配额 | **不支持** | 并发 |
+| Gemini（Google One：个人订阅 Google AI Pro / Ultra） | `gemini` | `/admin/gemini/oauth/auth-url`（`oauth_type=google_one`）→ `/exchange-code` | 按 Google 配额 | **不支持** | 并发 |
+| Gemini（GCP Code Assist：Standard / Enterprise） | `gemini` | 同上，`oauth_type=code_assist`，可带 `project_id`（留空由 sub2api 自动探测，付费版通常要填） | 按 Google 配额 | **不支持** | 并发 |
 | Antigravity | `antigravity` | `/admin/antigravity/oauth/auth-url` → `/exchange-code` | 按配额 | **不支持** | 并发 |
 | Grok | `grok` | `/admin/grok/oauth/auth-url` → `/exchange-code` → `/create-from-oauth` | 配额窗口 | 支持 | — |
 | Kimi Coding Plan | `kimi` | `POST /admin/accounts`，`apikey` 类型，`credentials.account_mode=coding` | 5h / 周 | 支持 | 日 / 周额度 |
-| 智谱 GLM Coding Plan | `zhipu` | 同上 | 5h / 周 | 支持 | 日 / 周额度 |
-| MiniMax Coding Plan | `minimax` | 同上 | 5h / 周 | 支持 | 日 / 周额度 |
+| 智谱 GLM Coding Plan（国内站 bigmodel.cn，含团队版） | `zhipu` | 同上；团队版另写 `credentials.zhipu_organization` / `zhipu_project` | 5h / 周 | 支持 | 日 / 周额度 |
+| 智谱 GLM Coding Plan（国际站 z.ai） | `zhipu` | 同上，`base_url=https://api.z.ai/api/coding/paas/v4` | 5h / 周 | 支持 | 日 / 周额度 |
+| MiniMax Coding Plan（国内站 minimaxi.com） | `minimax` | 同上 | 5h / 周 | 支持 | 日 / 周额度 |
+| MiniMax Coding Plan（国际站 minimax.io） | `minimax` | 同上，`base_url=https://api.minimax.io/v1` | 5h / 周 | 支持 | 日 / 周额度 |
 | OpenCode Go | `opencode_go` | 同上，`account_mode=go` | 5h / 周 / 月 | 支持 | 日 / 周额度 |
 
 说明：
 
 - **自留比例**通过账号级 `credentials.account_scheduling_threshold` 实现：窗口用量达到阈值就暂停调度，阈值 = 100 − 自留比例。窗口用量来自官方，**卖家自己使用的部分也计算在内**，所以平台只会卖掉卖家用不完的部分。sub2api 只对 openai、anthropic、grok、kimi、zhipu、minimax、opencode_go 支持这个阈值，Gemini 和 Antigravity 只能整号出售。
 - OAuth 各接口的具体参数（代理、会话 ID 等）实现时以 sub2api 前端的调用顺序为准。
-- DeepSeek 只有按量付费，等同于 API Key，第一期不收。
+- 本系统的接入方式（`upstreams.auth_type`）：Claude `oauth` / `setup-token`；Gemini `google_one` / `oauth`（Code Assist）；智谱、MiniMax `coding`（国内站）/ `coding-intl`（国际站）；OpenCode `go`；其余 `oauth` 或 `coding`。管理员在"厂商"中选择每家开放哪些接入方式。
+- 以上覆盖了 sub2api 0.2.14 支持的全部订阅类接入。不收的：DeepSeek（只有按量付费）、TypeSafe（API Key）、OpenCode Zen（按量付费）、Gemini AI Studio（API 用量，且需要自备 OAuth 客户端）、Antigravity upstream（中转）、各家官方 API Key / Bedrock / Vertex（按量付费）；Ollama Cloud 订阅需要卖家交出 ollama.com 的浏览器会话才能查询用量，第一期也不收。
+- sub2api 开启出站地址白名单（`security.url_allowlist.enabled`）时，需要把 `api.z.ai`、`api.minimax.io` 加入 `upstream_hosts`，否则国际站账号无法使用。
 
 ## 2. 上架流程
 
@@ -40,13 +45,14 @@
 
 ```
 卖家粘贴 Coding Plan key
-  → 创建 sub2api 账号：apikey 类型，account_mode=coding（或 go），不填 base_url
+  → 创建 sub2api 账号：apikey 类型，account_mode=coding（或 go）；国内站不填 base_url，
+      国际站填本系统内置的官方地址（z.ai / minimax.io）；智谱团队版带上组织 / 项目 ID
   → 调 /admin/cn-providers/accounts/:id/quota 查询官方窗口用量
       查不到窗口数据 → 判定不是订阅 key，删除账号，拒绝上架
   → 后续同 OAuth 类
 ```
 
-**base_url 不允许卖家填写**，一律使用 sub2api 按 `account_mode` 选择的官方默认地址。否则卖家可以拿中转站的 key 冒充 Coding Plan。
+**base_url 不允许卖家填写**：国内站使用 sub2api 按 `account_mode` 选择的官方默认地址，国际站使用本系统内置的固定官方地址，卖家只能选择站点。否则卖家可以拿中转站的 key 冒充 Coding Plan。
 
 ### 2.3 上架校验清单
 

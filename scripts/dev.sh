@@ -94,10 +94,10 @@ seed() {
     api GET /api/admin/sub2api/status | grep -q '"guard_state":"normal"' && break
     sleep 1
   done
-  for p in anthropic openai gemini kimi zhipu; do
+  for p in anthropic openai gemini antigravity grok kimi zhipu minimax opencode_go; do
     api PUT "/api/admin/vendors/$p" '{"enabled":true}' >/dev/null
   done
-  for i in $(seq 1 8); do
+  for i in $(seq 1 16); do
     api POST /api/admin/proxies "{\"name\":\"dev-proxy-$i\",\"protocol\":\"socks5\",\"host\":\"10.255.0.$i\",\"port\":1080,\"region\":\"dev\"}" >/dev/null
   done
   api POST /api/admin/pools '{"name":"tm-pool-claude","platform":"anthropic","sell_multiplier":0.8}' >/dev/null

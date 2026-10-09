@@ -43,7 +43,7 @@ type Server struct {
 	idem     map[string]cached
 	tokens   map[string]int64 // access token → user id
 	refresh  map[string]int64
-	sessions map[string]bool
+	sessions map[string]oauthSession
 	failing  map[int64]int // account id → 网关对该账号返回的状态码
 	requests []string      // 网关收到的请求的 X-Client-Request-ID
 	answer   func(accountID int64, prompt string) string
@@ -66,7 +66,7 @@ func NewUnstarted(db *pgxpool.Pool, adminKey string) *Server {
 	s := &Server{
 		DB: db, AdminKey: adminKey, Version: "0.2.14",
 		idem: map[string]cached{}, tokens: map[string]int64{}, refresh: map[string]int64{},
-		sessions: map[string]bool{}, failing: map[int64]int{},
+		sessions: map[string]oauthSession{}, failing: map[int64]int{},
 	}
 	s.handler = s.routes()
 	return s
@@ -144,6 +144,12 @@ func (s *Server) routes() http.Handler {
 	admin("POST /api/v1/admin/openai/generate-auth-url", s.authURL)
 	admin("POST /api/v1/admin/accounts/exchange-code", s.exchange)
 	admin("POST /api/v1/admin/openai/exchange-code", s.exchange)
+	admin("POST /api/v1/admin/accounts/generate-setup-token-url", s.authURL)
+	admin("POST /api/v1/admin/accounts/exchange-setup-token-code", s.exchange)
+	for _, p := range []string{"gemini", "antigravity", "grok"} {
+		admin("POST /api/v1/admin/"+p+"/oauth/auth-url", s.authURL)
+		admin("POST /api/v1/admin/"+p+"/oauth/exchange-code", s.exchange)
+	}
 
 	mux.HandleFunc("POST /api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) { s.serve(w, r, s.login) })
 	mux.HandleFunc("POST /api/v1/auth/refresh", func(w http.ResponseWriter, r *http.Request) { s.serve(w, r, s.doRefresh) })
@@ -154,6 +160,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /v1/messages", s.gateway)
 	mux.HandleFunc("POST /v1/chat/completions", s.gateway)
 	mux.HandleFunc("POST /v1/responses", s.gateway)
+	mux.HandleFunc("POST /v1beta/models/{action}", s.gateway) // Gemini 原生协议（Gemini、Antigravity）
 	return mux
 }
 
@@ -316,13 +323,22 @@ func (s *Server) updateUser(_ http.ResponseWriter, r *http.Request) (any, error)
 		}
 	}
 	if in.AllowedGroups != nil {
-		if _, err := s.DB.Exec(r.Context(), "DELETE FROM user_allowed_groups WHERE user_id = $1", id); err != nil {
+		// 整体替换放在一个事务里，并发创建 key 时不会看到中间的空集合（与 sub2api 一致）
+		tx, err := s.DB.Begin(r.Context())
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = tx.Rollback(r.Context()) }()
+		if _, err := tx.Exec(r.Context(), "DELETE FROM user_allowed_groups WHERE user_id = $1", id); err != nil {
 			return nil, err
 		}
 		for _, g := range *in.AllowedGroups {
-			if _, err := s.DB.Exec(r.Context(), "INSERT INTO user_allowed_groups (user_id, group_id) VALUES ($1, $2)", id, g); err != nil {
+			if _, err := tx.Exec(r.Context(), "INSERT INTO user_allowed_groups (user_id, group_id) VALUES ($1, $2)", id, g); err != nil {
 				return nil, err
 			}
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			return nil, err
 		}
 	}
 	return s.getUser(r, id)
@@ -764,16 +780,40 @@ func (s *Server) accountUsage(_ http.ResponseWriter, r *http.Request) (any, erro
 
 // ---- 授权 ----
 
-func (s *Server) authURL(_ http.ResponseWriter, _ *http.Request) (any, error) {
+// oauthSession 是一次授权会话；Gemini 的 oauth_type 与项目 ID 在生成授权链接时确定（与 sub2api 一致）。
+type oauthSession struct {
+	oauthType string
+	projectID string
+}
+
+func (s *Server) authURL(_ http.ResponseWriter, r *http.Request) (any, error) {
+	var in struct {
+		OAuthType string `json:"oauth_type"`
+		ProjectID string `json:"project_id"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			return nil, badRequest("invalid request")
+		}
+	}
+	if strings.Contains(r.URL.Path, "/gemini/") {
+		if in.OAuthType == "" {
+			in.OAuthType = "code_assist"
+		}
+		if in.OAuthType != "code_assist" && in.OAuthType != "google_one" && in.OAuthType != "ai_studio" {
+			return nil, badRequest("Invalid oauth_type: must be 'code_assist', 'google_one', or 'ai_studio'")
+		}
+	}
 	sid := "sess-" + randx.String(12)
 	state := "st-" + randx.String(8)
 	s.mu.Lock()
-	s.sessions[sid] = true
+	s.sessions[sid] = oauthSession{oauthType: in.OAuthType, projectID: in.ProjectID}
 	s.mu.Unlock()
 	return map[string]any{"auth_url": "https://auth.example.test/authorize?state=" + state, "session_id": sid, "state": state}, nil
 }
 
 // exchange 用授权码换令牌。授权码即账号身份：同一授权码代表同一个官方账号，便于测试重复挂载。
+// 返回字段按平台对照 sub2api 0.2.14 各厂商的令牌结构。
 func (s *Server) exchange(_ http.ResponseWriter, r *http.Request) (any, error) {
 	var in struct {
 		SessionID string `json:"session_id"`
@@ -783,7 +823,7 @@ func (s *Server) exchange(_ http.ResponseWriter, r *http.Request) (any, error) {
 		return nil, err
 	}
 	s.mu.Lock()
-	ok := s.sessions[in.SessionID]
+	sess, ok := s.sessions[in.SessionID]
 	delete(s.sessions, in.SessionID)
 	s.mu.Unlock()
 	if !ok {
@@ -792,12 +832,27 @@ func (s *Server) exchange(_ http.ResponseWriter, r *http.Request) (any, error) {
 	if in.Code == "bad" {
 		return nil, badRequest("invalid code")
 	}
-	return map[string]any{
+	tok := map[string]any{
 		"access_token": "at-" + randx.String(16), "refresh_token": "rt-" + randx.String(16), "token_type": "Bearer",
 		"expires_in": 3600, "expires_at": time.Now().Add(time.Hour).Unix(),
-		"org_uuid": "org-" + in.Code, "account_uuid": "acct-" + in.Code, "email_address": in.Code + "@example.test",
-		"chatgpt_account_id": "acct-" + in.Code, "email": in.Code + "@example.test", "plan_type": "plus",
-	}, nil
+	}
+	switch {
+	case strings.Contains(r.URL.Path, "/gemini/"):
+		project := sess.projectID
+		if project == "" {
+			project = "proj-" + in.Code
+		}
+		tier := map[string]string{"google_one": "google_ai_pro", "code_assist": "gcp_standard", "ai_studio": "aistudio_free"}[sess.oauthType]
+		tok["project_id"], tok["oauth_type"], tok["tier_id"], tok["scope"] = project, sess.oauthType, tier, "cloud-platform"
+	case strings.Contains(r.URL.Path, "/antigravity/"):
+		tok["email"], tok["project_id"], tok["plan_type"] = in.Code+"@example.test", "proj-"+in.Code, "pro"
+	case strings.Contains(r.URL.Path, "/grok/"):
+		tok["sub"], tok["email"], tok["subscription_tier"], tok["entitlement_status"] = "sub-"+in.Code, in.Code+"@example.test", "supergrok", "active"
+	default:
+		tok["org_uuid"], tok["account_uuid"], tok["email_address"] = "org-"+in.Code, "acct-"+in.Code, in.Code+"@example.test"
+		tok["chatgpt_account_id"], tok["email"], tok["plan_type"] = "acct-"+in.Code, in.Code+"@example.test", "plus"
+	}
+	return tok, nil
 }
 
 // ---- 用户 API ----
@@ -974,6 +1029,9 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 	if v, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		key = v
 	}
+	if v := r.Header.Get("x-goog-api-key"); v != "" {
+		key = v
+	}
 	ctx := r.Context()
 	var keyID, userID int64
 	var groupID *int64
@@ -996,11 +1054,22 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 		Messages []struct {
 			Content any `json:"content"`
 		} `json:"messages"`
+		Contents []struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"contents"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	prompt, _ := body.Input.(string)
 	if len(body.Messages) > 0 {
 		prompt, _ = body.Messages[len(body.Messages)-1].Content.(string)
+	}
+	if action := r.PathValue("action"); action != "" {
+		body.Model, _, _ = strings.Cut(action, ":")
+		if n := len(body.Contents); n > 0 && len(body.Contents[n-1].Parts) > 0 {
+			prompt = body.Contents[n-1].Parts[0].Text
+		}
 	}
 	if body.Model == "" {
 		body.Model = "claude-sonnet-4-5"
@@ -1078,6 +1147,13 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 
 // responseBody 按接口协议构造非流式响应（探测在拿不到 SSE 时按 JSON 解析）。
 func responseBody(path, rid, model, text string) map[string]any {
+	if strings.HasPrefix(path, "/v1beta/") {
+		return map[string]any{
+			"modelVersion":  model,
+			"candidates":    []map[string]any{{"content": map[string]any{"role": "model", "parts": []map[string]string{{"text": text}}}, "finishReason": "STOP"}},
+			"usageMetadata": map[string]int{"promptTokenCount": InputTokens, "candidatesTokenCount": OutputTokens},
+		}
+	}
 	switch path {
 	case "/v1/chat/completions":
 		return map[string]any{

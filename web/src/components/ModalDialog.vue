@@ -1,7 +1,36 @@
+<script lang="ts">
+// 已打开的对话框（后打开的在上层），Esc 只关闭最上层的一个
+const stack: symbol[] = []
+</script>
+
 <script setup lang="ts">
 // 对话框：一张压在墨色遮罩上的纸，顶部朱红细条，硬投影。
+import { onUnmounted, watch } from 'vue'
+
 defineProps<{ title: string; wide?: boolean }>()
 const open = defineModel<boolean>('open', { default: false })
+
+const id = Symbol('dialog')
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && stack[stack.length - 1] === id) open.value = false
+}
+function release() {
+  const i = stack.indexOf(id)
+  if (i >= 0) stack.splice(i, 1)
+  window.removeEventListener('keydown', onKey)
+}
+watch(
+  open,
+  (v) => {
+    release()
+    if (v) {
+      stack.push(id)
+      window.addEventListener('keydown', onKey)
+    }
+  },
+  { immediate: true },
+)
+onUnmounted(release)
 </script>
 
 <template>

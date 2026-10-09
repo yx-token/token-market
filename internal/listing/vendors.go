@@ -18,7 +18,9 @@ import (
 type oauthSpec struct {
 	startPath    string
 	exchangePath string
-	stateFrom    string // response：授权链接接口直接返回 state；url：从授权链接的 query 中解析；none：不需要
+	stateFrom    string         // response：授权链接接口直接返回 state；url：从授权链接的 query 中解析；none：不需要
+	params       map[string]any // 授权链接与换取令牌都要带上的固定参数（例如 Gemini 的 oauth_type）
+	projectID    bool           // 是否接受卖家填写 GCP 项目 ID（Gemini Code Assist）
 	accountType  string
 	credentials  func(tok map[string]any) map[string]any
 	extra        func(tok map[string]any) map[string]any
@@ -53,14 +55,10 @@ var oauthSpecs = map[string]map[string]oauthSpec{
 		},
 	},
 	"gemini": {
-		"oauth": {
-			startPath: "/api/v1/admin/gemini/oauth/auth-url", exchangePath: "/api/v1/admin/gemini/oauth/exchange-code",
-			stateFrom: "response", accountType: "oauth",
-			credentials: withStringExpiry(pick("access_token", "refresh_token", "token_type", "expires_at", "scope", "project_id", "oauth_type", "tier_id")),
-			extra:       nested("extra"),
-			identity:    first("project_id", "refresh_token"),
-			tier:        field("tier_id"),
-		},
+		// GCP Code Assist：开通了 Gemini Code Assist（Standard / Enterprise）的 GCP 项目；项目 ID 留空时由 sub2api 自动探测
+		"oauth": geminiSpec("code_assist", true),
+		// Google One：订阅了 Google AI Pro / Ultra 的个人 Google 账号，不需要 GCP 项目
+		"google_one": geminiSpec("google_one", false),
 	},
 	"antigravity": {
 		"oauth": {
@@ -85,13 +83,42 @@ var oauthSpecs = map[string]map[string]oauthSpec{
 	},
 }
 
-// codingPlatforms 是用 key 接入的订阅（Coding Plan）平台及其 account_mode。
-var codingPlatforms = map[string]string{
-	"kimi":        "coding",
-	"zhipu":       "coding",
-	"minimax":     "coding",
-	"opencode_go": "go",
+// geminiSpec 是 Gemini 两种订阅账号的授权方式；两者都用 sub2api 内置的 Gemini CLI 客户端，只是 oauth_type 不同。
+func geminiSpec(oauthType string, projectID bool) oauthSpec {
+	return oauthSpec{
+		startPath: "/api/v1/admin/gemini/oauth/auth-url", exchangePath: "/api/v1/admin/gemini/oauth/exchange-code",
+		stateFrom: "response", params: map[string]any{"oauth_type": oauthType}, projectID: projectID, accountType: "oauth",
+		credentials: withStringExpiry(pick("access_token", "refresh_token", "token_type", "expires_at", "scope", "project_id", "oauth_type", "tier_id")),
+		extra:       nested("extra"),
+		identity:    first("project_id", "refresh_token"),
+		tier:        field("tier_id"),
+	}
 }
+
+// codingSpec 是一种用 key 接入的订阅（Coding Plan）：sub2api 的 account_mode 与官方推理地址。
+// baseURL 为空时 sub2api 按 account_mode 使用官方默认地址（国内站）。地址只取这里的固定值，
+// 不接受卖家自填，防止中转 key 冒充订阅。
+type codingSpec struct {
+	mode    string
+	baseURL string
+	team    bool // 是否支持团队版（智谱 GLM Coding Plan 团队版需要组织 / 项目 ID 才能查询额度）
+}
+
+var codingSpecs = map[string]map[string]codingSpec{
+	"kimi": {"coding": {mode: "coding"}},
+	"zhipu": {
+		"coding":      {mode: "coding", team: true},
+		"coding-intl": {mode: "coding", baseURL: "https://api.z.ai/api/coding/paas/v4"},
+	},
+	"minimax": {
+		"coding":      {mode: "coding"},
+		"coding-intl": {mode: "coding", baseURL: "https://api.minimax.io/v1"},
+	},
+	"opencode_go": {"go": {mode: "go"}},
+}
+
+// authTypeOrder 是各接入方式在列表中的先后顺序。
+var authTypeOrder = []string{"google_one", "oauth", "setup-token", "coding", "coding-intl", "go"}
 
 // privacyPlatforms 是 sub2api 支持 set-privacy 的平台（仅 OAuth 账号）。
 var privacyPlatforms = map[string]bool{"openai": true, "antigravity": true}
@@ -104,8 +131,19 @@ func IsOAuthAuthType(platform, authType string) bool {
 
 // IsCodingAuthType 判断是否为 Coding Plan key 接入。
 func IsCodingAuthType(platform, authType string) bool {
-	mode, ok := codingPlatforms[platform]
-	return ok && (authType == mode || authType == "coding")
+	_, ok := codingSpecs[platform][authType]
+	return ok
+}
+
+// SupportedAuthTypes 返回本系统为平台实现了的全部接入方式；厂商配置只能在其中选择开放哪些。
+func SupportedAuthTypes(platform string) []string {
+	var out []string
+	for _, t := range authTypeOrder {
+		if IsOAuthAuthType(platform, t) || IsCodingAuthType(platform, t) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 type oauthStart struct {
@@ -114,10 +152,16 @@ type oauthStart struct {
 	State     string
 }
 
-func startOAuth(ctx context.Context, admin *adminclient.Client, spec oauthSpec, proxyID *int64) (*oauthStart, error) {
+func startOAuth(ctx context.Context, admin *adminclient.Client, spec oauthSpec, proxyID *int64, projectID string) (*oauthStart, error) {
 	body := map[string]any{}
+	for k, v := range spec.params {
+		body[k] = v
+	}
 	if proxyID != nil {
 		body["proxy_id"] = *proxyID
+	}
+	if spec.projectID && projectID != "" {
+		body["project_id"] = projectID
 	}
 	var resp map[string]any
 	if err := admin.Post(ctx, spec.startPath, body, "", &resp); err != nil {
@@ -174,6 +218,9 @@ func exchangeOAuth(ctx context.Context, admin *adminclient.Client, spec oauthSpe
 		state = storedState
 	}
 	body := map[string]any{"session_id": sessionID, "code": code}
+	for k, v := range spec.params {
+		body[k] = v
+	}
 	if spec.stateFrom != "none" {
 		if state == "" {
 			return nil, httpx.BadRequest("STATE_REQUIRED", "please paste the full callback url")

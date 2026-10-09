@@ -83,7 +83,7 @@ upstreams (
   id                   bigserial primary key,
   seller_id            bigint not null references users,
   platform             text not null,      -- anthropic / openai / gemini / antigravity / grok / kimi / zhipu / minimax / opencode_go
-  auth_type            text not null,      -- oauth / setup-token / coding / go
+  auth_type            text not null,      -- oauth / setup-token / google_one / coding / coding-intl / go
   status               text not null,      -- 见 04 状态机
   health               text not null default 'unknown',  -- healthy / suspected / degraded / unavailable / limited / unknown
   sub2api_account_id   bigint unique,

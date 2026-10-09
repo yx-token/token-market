@@ -7,7 +7,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
-import { label } from '@/utils/labels'
+import { authTypeText, label } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
 
 const upstreams = useLoader(() => seller.upstreams(), [] as Upstream[] | null)
@@ -64,7 +64,7 @@ function openResume(u: Upstream) {
           <span v-if="row.is_reference" class="ml-1 text-xs text-violet-600">基线</span>
         </template>
         <template #cell-platform="{ row }">{{ label('platform', row.platform).text }}</template>
-        <template #cell-auth_type="{ row }">{{ label('authType', row.auth_type).text }}</template>
+        <template #cell-auth_type="{ row }">{{ authTypeText(row.platform, row.auth_type) }}</template>
         <template #cell-status="{ row }">
           <StatusBadge kind="upstreamStatus" :value="row.status" />
           <div v-if="row.failure_reason && ['verify_failed', 'failed', 'suspended'].includes(row.status)" class="mt-0.5 max-w-xs truncate text-xs text-red-600" :title="row.failure_reason">

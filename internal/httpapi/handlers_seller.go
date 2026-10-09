@@ -86,7 +86,13 @@ func (s *Server) startOAuth(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	st, err := s.Listings.StartAuthorization(r.Context(), httpx.MustUser(r).UserID, id)
+	var opts listing.AuthorizationOptions
+	if r.ContentLength > 0 {
+		if err := httpx.Decode(r, &opts); err != nil {
+			return err
+		}
+	}
+	st, err := s.Listings.StartAuthorization(r.Context(), httpx.MustUser(r).UserID, id, opts)
 	if err != nil {
 		return err
 	}
@@ -116,7 +122,13 @@ func (s *Server) reauthorize(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	st, err := s.Listings.StartReauthorization(r.Context(), httpx.MustUser(r).UserID, id)
+	var opts listing.AuthorizationOptions
+	if r.ContentLength > 0 {
+		if err := httpx.Decode(r, &opts); err != nil {
+			return err
+		}
+	}
+	st, err := s.Listings.StartReauthorization(r.Context(), httpx.MustUser(r).UserID, id, opts)
 	if err != nil {
 		return err
 	}
@@ -129,13 +141,11 @@ func (s *Server) submitCodingKey(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	var in struct {
-		APIKey string `json:"api_key"`
-	}
+	var in listing.CodingKeyInput
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	u, err := s.Listings.SubmitCodingKey(r.Context(), httpx.MustUser(r).UserID, id, in.APIKey)
+	u, err := s.Listings.SubmitCodingKey(r.Context(), httpx.MustUser(r).UserID, id, in)
 	if err != nil {
 		return err
 	}

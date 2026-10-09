@@ -46,10 +46,10 @@ export const seller = {
   upstreams: () => http.get<T.Upstream[] | null>('/api/seller/upstreams'),
   upstream: (id: number) => http.get<T.UpstreamDetail>(`/api/seller/upstreams/${id}`),
   createUpstream: (platform: string, auth_type: string) => http.post<T.Upstream>('/api/seller/upstreams', { platform, auth_type }),
-  startOAuth: (id: number) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/oauth/start`),
+  startOAuth: (id: number, opts?: T.AuthorizationOptions) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/oauth/start`, opts),
   completeOAuth: (id: number, code: string) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/oauth/complete`, { code }),
-  reauthorize: (id: number) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/reauthorize`),
-  submitCodingKey: (id: number, api_key: string) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/coding-key`, { api_key }),
+  reauthorize: (id: number, opts?: T.AuthorizationOptions) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/reauthorize`, opts),
+  submitCodingKey: (id: number, body: T.CodingKeyInput) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/coding-key`, body),
   retryVerification: (id: number) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/retry-verification`),
   setSelfReserve: (id: number, self_reserve_percent: number) =>
     http.put<T.Upstream>(`/api/seller/upstreams/${id}/settings`, { self_reserve_percent }),

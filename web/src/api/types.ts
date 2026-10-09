@@ -328,6 +328,18 @@ export interface AuthorizationStart {
   expires_at: string
 }
 
+export interface AuthorizationOptions {
+  /** Gemini Code Assist 的 GCP 项目 ID，留空时自动探测 */
+  project_id?: string
+}
+
+export interface CodingKeyInput {
+  api_key: string
+  /** 智谱国内站团队版的组织 ID 与项目 ID */
+  organization?: string
+  project?: string
+}
+
 export interface PriceVersion {
   multiplier: number
   buyer_price?: number
@@ -477,6 +489,7 @@ export interface VendorConfig {
   platform: string
   enabled: boolean
   auth_types: string[]
+  supported_auth_types: string[]
   consignment_min: number
   consignment_max: number
   buyback_base: Record<string, number>

@@ -14,7 +14,8 @@ import ModalDialog from '@/components/ModalDialog.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import ReportDetail from '@/components/ReportDetail.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
-import { label } from '@/utils/labels'
+import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
+import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
 
 const props = defineProps<{ id: string }>()
@@ -30,7 +31,7 @@ const trend = useLoader(() => seller.trend(upstreamId.value), [] as TrendPoint[]
 const vendors = ref<VendorView[]>([])
 const vendor = computed(() => vendors.value.find((v) => v.platform === detail.data.value?.platform))
 const u = computed(() => detail.data.value)
-const isOAuth = computed(() => !!u.value && !['coding', 'go'].includes(u.value.auth_type))
+const isOAuth = computed(() => !!u.value && !isKeyAuthType(u.value.auth_type))
 // 已在 sub2api 创建账号（授权完成）后才有额度与用量
 const hasAccount = computed(() => !!u.value && !['draft', 'authorizing', 'failed', 'removing', 'removed'].includes(u.value.status))
 
@@ -88,12 +89,19 @@ async function changePrice() {
 const showReauth = ref(false)
 const reauthURL = ref('')
 const reauthCode = ref('')
-async function startReauth() {
-  const res = await run(() => seller.reauthorize(upstreamId.value))
+const reauthProject = ref('')
+const reauthWithProject = computed(() => !!u.value && takesProjectID(u.value.platform, u.value.auth_type))
+function startReauth() {
+  reauthURL.value = ''
+  reauthCode.value = ''
+  reauthProject.value = ''
+  showReauth.value = true
+}
+async function getReauthLink() {
+  const opts = reauthWithProject.value && reauthProject.value.trim() ? { project_id: reauthProject.value.trim() } : undefined
+  const res = await run(() => seller.reauthorize(upstreamId.value, opts))
   if (res) {
     reauthURL.value = res.auth_url
-    reauthCode.value = ''
-    showReauth.value = true
     window.open(res.auth_url, '_blank', 'noopener')
   }
 }
@@ -134,7 +142,7 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
 
 <template>
   <div v-if="u">
-    <PageHeader :title="`上游 #${u.id}`" :description="`${label('platform', u.platform).text} · ${label('authType', u.auth_type).text}`">
+    <PageHeader :title="`上游 #${u.id}`" :description="`${label('platform', u.platform).text} · ${authTypeText(u.platform, u.auth_type)}`">
       <RouterLink v-if="hasAccount" :to="`/seller/usage?upstream=${u.id}`" class="btn-secondary">用量明细</RouterLink>
       <button v-if="u.status === 'verify_failed'" class="btn-secondary" :disabled="busy" @click="listingAction(() => seller.retryVerification(u!.id), '已重新开始检测')">
         重新检测
@@ -285,9 +293,19 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
     </ModalDialog>
 
     <ModalDialog v-model:open="showReauth" title="重新授权">
-      <p class="text-sm text-slate-600">已打开授权页面，请用<b>同一个官方账号</b>登录授权，然后粘贴授权码或回调地址。</p>
-      <a :href="reauthURL" target="_blank" rel="noopener" class="link break-all text-xs">{{ reauthURL }}</a>
-      <textarea v-model="reauthCode" class="input" rows="3" />
+      <p class="text-sm text-ink-600">请用<b>同一个官方账号</b>登录授权，然后粘贴授权码或回调地址。</p>
+      <div v-if="reauthWithProject">
+        <label class="label" for="reauth-project">GCP 项目 ID（可选）</label>
+        <input id="reauth-project" v-model="reauthProject" class="input font-mono" placeholder="与原来使用的项目相同" autocomplete="off" />
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button class="btn-secondary" :disabled="busy" @click="getReauthLink">{{ reauthURL ? '重新获取授权链接' : '获取授权链接' }}</button>
+        <a v-if="reauthURL" :href="reauthURL" target="_blank" rel="noopener" class="link break-all text-xs">{{ reauthURL }}</a>
+      </div>
+      <div>
+        <label class="label" for="reauth-code">授权码或回调地址</label>
+        <textarea id="reauth-code" v-model="reauthCode" class="input" rows="3" />
+      </div>
       <template #footer>
         <button class="btn-secondary" @click="showReauth = false">取消</button>
         <button class="btn-primary" :disabled="busy || !reauthCode.trim()" @click="completeReauth">提交</button>

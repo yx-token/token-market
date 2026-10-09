@@ -24,7 +24,7 @@
 | 代理 | `POST /api/v1/admin/proxies`、`DELETE /proxies/:id`（代理质量检测 `quality-check` 放到后续） |
 | Claude 授权 | `POST /admin/accounts/generate-auth-url`、`/exchange-code`、`/generate-setup-token-url`、`/exchange-setup-token-code` |
 | OpenAI 授权 | `POST /admin/openai/generate-auth-url`、`/exchange-code`（换到令牌后由本系统用 `POST /admin/accounts` 创建账号，不用 `create-from-oauth`） |
-| Gemini / Antigravity / Grok 授权 | `POST /admin/{gemini,antigravity,grok}/oauth/auth-url`、`/oauth/exchange-code` |
+| Gemini / Antigravity / Grok 授权 | `POST /admin/{gemini,antigravity,grok}/oauth/auth-url`、`/oauth/exchange-code`；Gemini 带 `oauth_type`（`google_one` 或 `code_assist`），Code Assist 可带 `project_id` |
 | 账号 | `POST /admin/accounts`、`PUT /admin/accounts/:id`、`POST /admin/accounts/bulk-update`、`POST /:id/schedulable`、`DELETE /:id`、`POST /:id/clear-error`（重新授权后清除错误状态） |
 | 账号信息 | `POST /:id/set-privacy`（**只支持 OpenAI 与 Antigravity 的 OAuth 账号**）、`GET /admin/cn-providers/accounts/:id/quota`（Coding Plan 上架时确认是订阅 key；卖家查看窗口用量）、`GET /admin/accounts/:id/usage`（卖家查看官方订阅窗口用量：Claude 默认读 `source=passive` 的响应头采样快照，不访问上游，刷新或其他平台用 `source=active`，sub2api 自带缓存）。订阅档位从授权换到的令牌信息中读取（`plan_type`、`tier_id`、`subscription_tier`）；`refresh-tier` 只支持 Gemini 的 google_one 账号，第一期不用 |
 | 官方价 | `GET /admin/channels/model-pricing?model=`（市场展示的官方价目，倍率以它为基准） |
@@ -97,7 +97,7 @@ jsonb_keys:
     read:  [quota_used, quota_daily_used, session_window_utilization, …]
     write: [window_cost_limit, base_rpm, max_sessions, quota_daily_limit]
   accounts.credentials:
-    write: [account_scheduling_threshold, account_mode, api_protocol]
+    write: [account_scheduling_threshold, account_mode, api_protocol, base_url, zhipu_organization, zhipu_project]
 
 enums:                                   # 新增值视为提示，删除或改名视为冲突
   accounts.platform: [anthropic, openai, gemini, antigravity, grok, kimi, zhipu, minimax, opencode_go]

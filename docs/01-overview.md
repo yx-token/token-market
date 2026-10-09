@@ -15,7 +15,7 @@
 
 **包含**
 
-- 上游类型：官方 OAuth 订阅账号（Claude、ChatGPT/Codex、Gemini、Antigravity、Grok）和国产订阅（Kimi / 智谱 GLM / MiniMax 的 Coding Plan、OpenCode Go）。
+- 上游类型：官方 OAuth 订阅账号（Claude、ChatGPT/Codex、Gemini Google One 与 GCP Code Assist、Antigravity、Grok）和国产订阅（Kimi / 智谱 GLM / MiniMax 的 Coding Plan，智谱与 MiniMax 含国际站，智谱含团队版；OpenCode Go）。
 - 两种挂单模式：寄售（卖家自定倍率 + 固定抽佣）、平台回收（平台报价，按用量结算）。
 - 买家：注册、充值、创建 Key、走默认分组或指定最多 5 跳的卖家链。
 - 质量检测：上架检测、定时检测、降智判定、厂商级检测开关、卖家可查看测试报告。
@@ -83,3 +83,4 @@
 | D19 | 支付接入支付宝（电脑网站支付、当面付）与微信支付（Native 扫码），保留人工确认作为兜底；到账只认验签通过的异步通知或主动查单结果；余额退款优先原路退回，不足部分人工打款 | 2026-10-08 |
 | D20 | 支持第三方检测站，第一个接入 BazaarLink（模型身份检测）；检测站经 Edge 用一次性临时令牌访问被测账号，结论按策略折算后与平台探测合并取更严重者，检测站失败不影响判定 | 2026-10-08 |
 | D21 | 支付配置（通知地址、支付宝应用、微信支付商户及其密钥）改为在管理后台站内动态配置，密钥加密存库，不再使用配置文件与环境变量 | 2026-10-09 |
+| D22 | 寄售上游覆盖 sub2api 0.2.14 支持的全部订阅类接入：新增 Gemini Google One（个人订阅）、Code Assist 可填 GCP 项目 ID、智谱 / MiniMax Coding Plan 国际站（固定官方地址）、智谱团队版；管理员按厂商选择开放哪些接入方式 | 2026-10-09 |

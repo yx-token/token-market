@@ -23,7 +23,9 @@ const table: Record<string, Record<string, Label>> = {
   authType: {
     oauth: { text: 'OAuth 授权', tone: 'blue' },
     'setup-token': { text: 'Setup Token', tone: 'blue' },
+    google_one: { text: 'Google One', tone: 'blue' },
     coding: { text: 'Coding Plan', tone: 'yellow' },
+    'coding-intl': { text: 'Coding Plan 国际站', tone: 'yellow' },
     go: { text: 'Go 订阅', tone: 'yellow' },
   },
   upstreamStatus: {
@@ -219,6 +221,26 @@ const table: Record<string, Record<string, Label>> = {
 export function label(kind: keyof typeof table | string, value: string | null | undefined): Label {
   if (!value) return { text: '—', tone: 'gray' }
   return table[kind]?.[value] ?? { text: value, tone: 'gray' }
+}
+
+// 同一接入方式在不同厂商下的具体名称
+const authTypeNames: Record<string, string> = {
+  'gemini:oauth': 'GCP Code Assist',
+  'gemini:google_one': 'Google One 个人订阅',
+  'zhipu:coding': 'Coding Plan 国内站',
+  'zhipu:coding-intl': 'Coding Plan 国际站（Z.ai）',
+  'minimax:coding': 'Coding Plan 国内站',
+  'minimax:coding-intl': 'Coding Plan 国际站',
+}
+
+/** 上游接入方式的名称，按厂商区分（例如 Gemini 的 oauth 是 GCP Code Assist） */
+export function authTypeText(platform: string | null | undefined, authType: string | null | undefined): string {
+  return authTypeNames[`${platform}:${authType}`] ?? label('authType', authType).text
+}
+
+/** 用 key 接入的订阅（Coding Plan、OpenCode Go），其余接入方式走 OAuth 授权 */
+export function isKeyAuthType(authType: string | null | undefined): boolean {
+  return authType === 'coding' || authType === 'coding-intl' || authType === 'go'
 }
 
 export function options(kind: string): { value: string; text: string }[] {

@@ -8,7 +8,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import StatCard from '@/components/StatCard.vue'
 import FlapNumber from '@/components/FlapNumber.vue'
 import GradeMark from '@/components/GradeMark.vue'
-import { label } from '@/utils/labels'
+import { authTypeText, label } from '@/utils/labels'
 import { dateTime, ms, percent } from '@/utils/format'
 
 const props = defineProps<{ id: string }>()
@@ -21,7 +21,7 @@ onMounted(item.load)
     <PageHeader
       :kicker="`挂单 · No.${String(item.data.value.listing_id).padStart(4, '0')}`"
       :title="label('platform', item.data.value.platform).text"
-      :description="`${label('authType', item.data.value.auth_type).text}${item.data.value.tier ? ` · ${item.data.value.tier}` : ''} · 上架于 ${dateTime(item.data.value.listed_since)}`"
+      :description="`${authTypeText(item.data.value.platform, item.data.value.auth_type)}${item.data.value.tier ? ` · ${item.data.value.tier}` : ''} · 上架于 ${dateTime(item.data.value.listed_since)}`"
     >
       <RouterLink :to="{ path: '/buyer/keys', query: { listing: item.data.value.listing_id } }" class="btn-primary">用这个卖家创建 Key<span aria-hidden="true">→</span></RouterLink>
     </PageHeader>

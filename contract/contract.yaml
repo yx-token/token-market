@@ -49,7 +49,7 @@ jsonb_keys:
     read: [quota_used, quota_daily_used, quota_weekly_used, session_window_utilization]
     write: [window_cost_limit, base_rpm, max_sessions, quota_daily_limit, quota_weekly_limit]
   accounts.credentials:
-    write: [account_scheduling_threshold, account_mode, api_protocol]
+    write: [account_scheduling_threshold, account_mode, api_protocol, base_url, zhipu_organization, zhipu_project]
 
 # 依赖的枚举值。数据库 CHECK 约束删除其中的值视为冲突，新增值视为提示。
 enums:
@@ -84,8 +84,8 @@ admin_api:
   - {method: POST,   path: /api/v1/admin/accounts/exchange-setup-token-code, request: [session_id, code, proxy_id]}
   - {method: POST,   path: /api/v1/admin/openai/generate-auth-url,          request: [proxy_id]}
   - {method: POST,   path: /api/v1/admin/openai/exchange-code,              request: [session_id, code, state, proxy_id]}
-  - {method: POST,   path: /api/v1/admin/gemini/oauth/auth-url,             request: [proxy_id]}
-  - {method: POST,   path: /api/v1/admin/gemini/oauth/exchange-code,        request: [session_id, state, code, proxy_id]}
+  - {method: POST,   path: /api/v1/admin/gemini/oauth/auth-url,             request: [proxy_id, oauth_type, project_id]}
+  - {method: POST,   path: /api/v1/admin/gemini/oauth/exchange-code,        request: [session_id, state, code, proxy_id, oauth_type]}
   - {method: POST,   path: /api/v1/admin/antigravity/oauth/auth-url,        request: [proxy_id]}
   - {method: POST,   path: /api/v1/admin/antigravity/oauth/exchange-code,   request: [session_id, state, code, proxy_id]}
   - {method: POST,   path: /api/v1/admin/grok/oauth/auth-url,               request: [proxy_id]}

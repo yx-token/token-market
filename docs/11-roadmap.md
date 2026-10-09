@@ -20,7 +20,7 @@
 
 **M1–M5 交付内容**
 
-- **上架**（`internal/listing`）：五家 OAuth（Claude oauth / setup-token、ChatGPT、Gemini、Antigravity、Grok）与四家 Coding Plan（Kimi、智谱、MiniMax、OpenCode Go）；专用代理分配；官方账号去重（盲索引）；OpenAI / Antigravity 隐私设置；Coding Plan 订阅校验；重新授权（同一官方账号，只换凭证）；寄售与回收两种挂单、改价冷却、报价与续报价；删除上游的分步下线。
+- **上架**（`internal/listing`）：五家 OAuth（Claude oauth / setup-token、ChatGPT、Gemini Google One / Code Assist、Antigravity、Grok）与四家 Coding Plan（Kimi、智谱国内站 / 国际站 / 团队版、MiniMax 国内站 / 国际站、OpenCode Go）；专用代理分配；官方账号去重（盲索引）；OpenAI / Antigravity 隐私设置；Coding Plan 订阅校验；重新授权（同一官方账号，只换凭证）；寄售与回收两种挂单、改价冷却、报价与续报价；删除上游的分步下线。
 - **调度**（`internal/scheduling`）：纯函数规划器（回收段 1–19 按等级、寄售段 50–79 按 0.05 价格档）、最小差异执行器（移出面向买家分组的操作优先、每轮改动预算）、待发送操作去重、账号健康同步、缺失账号与孤儿账号检测；Redis 通知即时重算。
 - **买家与 Edge**（`internal/buyer`、`internal/edge`）：影子用户（密码与令牌加密、刷新失败再登录）、按跳开通内部 key（`custom_key` 幂等）、路由校验、配置发布与跳过列表；Edge 的鉴权、IP 白名单（受信任代理规则）、无效 Key 限速、首字节前故障转移、首字节截止时间、熔断、WebSocket 握手故障转移、流式透传、尝试日志（批量写库 + 本地暂存）。
 - **结算**（`internal/billing`）：两分钟安全延迟 + 重叠重扫的用量入账、归属解析（卖家 / 挂单 / 买家 / 渠道 / 探测）、复式账本（延迟约束保证借贷平衡）、上游 × 小时 × 渠道结算行、冻结期解冻、充值（出站幂等加余额）、退款状态机（锁 Key → 扣余额 → 记账 → 打款）、提现（实名、可提现锁、自动审核阈值、风险转人工）、人工调账、R1–R4 逐次对账与余额恒等式核对、Key 花费限额。

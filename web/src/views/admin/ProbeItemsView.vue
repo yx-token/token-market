@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { admin, seller } from '@/api'
-import type { ProbeItem, Upstream, VendorView } from '@/api/types'
+import type { ProbeItem, Upstream, VendorConfig, VendorView } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
@@ -9,7 +9,7 @@ import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
-import { label, options } from '@/utils/labels'
+import { authTypeText, label, options } from '@/utils/labels'
 
 const toast = useToast()
 const status = ref('active')
@@ -23,6 +23,12 @@ const newRef = reactive({ platform: 'anthropic', authType: 'oauth' })
 const wizard = ref(false)
 const resume = ref<Upstream | null>(null)
 const vendors = ref<VendorView[]>([])
+// 基线账号不受厂商开放状态限制，接入方式从本系统已实现的全部方式中选
+const allVendors = ref<VendorConfig[]>([])
+const refAuthTypes = computed(() => allVendors.value.find((v) => v.platform === newRef.platform)?.supported_auth_types ?? [])
+watch(refAuthTypes, (ts) => {
+  if (ts.length && !ts.includes(newRef.authType)) newRef.authType = ts[0]
+})
 const haystackHint = '{{HAYSTACK:5000}}'
 const needleHint = '{{NEEDLE}}'
 
@@ -30,6 +36,7 @@ onMounted(async () => {
   items.load()
   refs.load()
   vendors.value = (await seller.vendors().catch(() => null)) ?? []
+  allVendors.value = (await admin.vendors().catch(() => null)) ?? []
 })
 
 function openNew() {
@@ -144,7 +151,9 @@ async function removeRef(u: Upstream) {
         <select v-model="newRef.platform" class="input w-40" aria-label="厂商">
           <option v-for="p in options('platform').filter((o) => o.value !== 'composite')" :key="p.value" :value="p.value">{{ p.text }}</option>
         </select>
-        <input v-model="newRef.authType" class="input w-32" aria-label="接入方式" placeholder="oauth / coding" />
+        <select v-model="newRef.authType" class="input w-48" aria-label="接入方式">
+          <option v-for="t in refAuthTypes" :key="t" :value="t">{{ authTypeText(newRef.platform, t) }}</option>
+        </select>
         <button class="btn-secondary" :disabled="busy" @click="createRef">新增并授权</button>
       </div>
       <DataTable
@@ -162,7 +171,7 @@ async function removeRef(u: Upstream) {
       >
         <template #cell-id="{ row }">#{{ row.id }}</template>
         <template #cell-platform="{ row }">{{ label('platform', row.platform).text }}</template>
-        <template #cell-auth_type="{ row }">{{ label('authType', row.auth_type).text }}</template>
+        <template #cell-auth_type="{ row }">{{ authTypeText(row.platform, row.auth_type) }}</template>
         <template #cell-status="{ row }"><StatusBadge kind="upstreamStatus" :value="row.status" /></template>
         <template #cell-health="{ row }"><StatusBadge kind="health" :value="row.health" /></template>
         <template #cell-actions="{ row }">

@@ -7,7 +7,7 @@ import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
-import { label, options } from '@/utils/labels'
+import { authTypeText, label, options } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
 
 const toast = useToast()
@@ -171,7 +171,7 @@ async function probe() {
         row-key="id"
       >
         <template #cell-platform="{ row }">{{ label('platform', row.platform).text }}</template>
-        <template #cell-auth_type="{ row }">{{ row.auth_type ? label('authType', row.auth_type).text : '全部' }}</template>
+        <template #cell-auth_type="{ row }">{{ row.auth_type ? authTypeText(row.platform, row.auth_type) : '全部' }}</template>
         <template #cell-enabled="{ row }">
           <button :class="['switch', row.enabled ? 'chip-green' : 'chip-gray']" :disabled="busy" @click="quick(row, 'enabled')">
             {{ row.enabled ? '开' : '关' }}

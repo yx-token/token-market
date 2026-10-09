@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/DueGin/token-market/internal/platform/httpx"
@@ -52,7 +53,8 @@ const (
 type VendorConfig struct {
 	Platform           string             `json:"platform"`
 	Enabled            bool               `json:"enabled"`
-	AuthTypes          []string           `json:"auth_types"`
+	AuthTypes          []string           `json:"auth_types"`           // 开放给卖家的接入方式
+	SupportedAuthTypes []string           `json:"supported_auth_types"` // 本系统实现了的全部接入方式（不存库）
 	ConsignmentMin     float64            `json:"consignment_min"`
 	ConsignmentMax     float64            `json:"consignment_max"`
 	BuybackBase        map[string]float64 `json:"buyback_base"`
@@ -188,6 +190,7 @@ func GetVendor(ctx context.Context, db DB, platform string) (*VendorConfig, erro
 	if err := json.Unmarshal(extra, &v.ExtraLimits); err != nil {
 		return nil, fmt.Errorf("vendor %s extra_limits: %w", platform, err)
 	}
+	v.SupportedAuthTypes = SupportedAuthTypes(platform)
 	return &v, nil
 }
 
@@ -214,6 +217,7 @@ func ListVendors(ctx context.Context, db DB) ([]VendorConfig, error) {
 // UpdateVendorInput 是管理员修改厂商配置的可选字段。
 type UpdateVendorInput struct {
 	Enabled            *bool               `json:"enabled"`
+	AuthTypes          *[]string           `json:"auth_types"`
 	ConsignmentMin     *float64            `json:"consignment_min"`
 	ConsignmentMax     *float64            `json:"consignment_max"`
 	BuybackBase        *map[string]float64 `json:"buyback_base"`
@@ -228,6 +232,25 @@ func UpdateVendor(ctx context.Context, db DB, platform string, in UpdateVendorIn
 	}
 	if in.Enabled != nil {
 		v.Enabled = *in.Enabled
+	}
+	if in.AuthTypes != nil {
+		// 只能在已实现的接入方式中选择，并按固定顺序保存
+		want := map[string]bool{}
+		for _, t := range *in.AuthTypes {
+			if !slices.Contains(v.SupportedAuthTypes, t) {
+				return nil, httpx.BadRequest("UNSUPPORTED_AUTH_TYPE", fmt.Sprintf("%s does not support %s", platform, t))
+			}
+			want[t] = true
+		}
+		v.AuthTypes = nil
+		for _, t := range v.SupportedAuthTypes {
+			if want[t] {
+				v.AuthTypes = append(v.AuthTypes, t)
+			}
+		}
+	}
+	if len(v.AuthTypes) == 0 {
+		return nil, httpx.BadRequest("NO_AUTH_TYPE", "at least one auth type must be open")
 	}
 	if in.ConsignmentMin != nil {
 		v.ConsignmentMin = *in.ConsignmentMin
@@ -256,8 +279,8 @@ func UpdateVendor(ctx context.Context, db DB, platform string, in UpdateVendorIn
 	base, _ := json.Marshal(v.BuybackBase)
 	extra, _ := json.Marshal(v.ExtraLimits)
 	_, err = db.Exec(ctx, `UPDATE vendor_configs SET enabled = $2, consignment_min = $3, consignment_max = $4,
-		buyback_base = $5, default_concurrency = $6, extra_limits = $7, updated_at = now() WHERE platform = $1`,
-		platform, v.Enabled, v.ConsignmentMin, v.ConsignmentMax, base, v.DefaultConcurrency, extra)
+		buyback_base = $5, default_concurrency = $6, extra_limits = $7, auth_types = $8, updated_at = now() WHERE platform = $1`,
+		platform, v.Enabled, v.ConsignmentMin, v.ConsignmentMax, base, v.DefaultConcurrency, extra, v.AuthTypes)
 	if err != nil {
 		return nil, err
 	}

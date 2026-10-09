@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"time"
 
@@ -175,8 +176,31 @@ type AuthorizationStart struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// AuthorizationOptions 是开始授权时卖家可选填写的参数。
+type AuthorizationOptions struct {
+	// ProjectID 是 Gemini Code Assist 所在的 GCP 项目；留空时由 sub2api 自动探测（付费版通常需要填写）。
+	ProjectID string `json:"project_id"`
+}
+
+// gcpProjectID 匹配 GCP 项目 ID（可带旧式的域名前缀，例如 example.com:my-project）。
+var gcpProjectID = regexp.MustCompile(`^([a-z0-9.-]+:)?[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
+
+func (o AuthorizationOptions) validate(spec oauthSpec) (AuthorizationOptions, error) {
+	o.ProjectID = strings.TrimSpace(o.ProjectID)
+	if o.ProjectID == "" {
+		return o, nil
+	}
+	if !spec.projectID {
+		return o, httpx.BadRequest("PROJECT_ID_NOT_SUPPORTED", "this authorization type does not take a project id")
+	}
+	if !gcpProjectID.MatchString(o.ProjectID) {
+		return o, httpx.BadRequest("INVALID_PROJECT_ID", "invalid GCP project id")
+	}
+	return o, nil
+}
+
 // StartAuthorization 生成厂商授权链接。卖家在官方页面登录后把回调地址或授权码提交回来。
-func (s *Service) StartAuthorization(ctx context.Context, sellerID, upstreamID int64) (*AuthorizationStart, error) {
+func (s *Service) StartAuthorization(ctx context.Context, sellerID, upstreamID int64, opts AuthorizationOptions) (*AuthorizationStart, error) {
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
@@ -185,13 +209,16 @@ func (s *Service) StartAuthorization(ctx context.Context, sellerID, upstreamID i
 	if !ok {
 		return nil, httpx.BadRequest("NOT_OAUTH", "this upstream is not authorized via oauth")
 	}
+	if opts, err = opts.validate(spec); err != nil {
+		return nil, err
+	}
 	if u.Status != StatusDraft && u.Status != StatusAuthorizing && u.Status != StatusFailed {
 		return nil, ErrBadState
 	}
 	if err := s.ensureProbeGroup(ctx, u); err != nil {
 		return nil, fmt.Errorf("prepare probe group: %w", err)
 	}
-	st, err := s.beginOAuth(ctx, u, spec)
+	st, err := s.beginOAuth(ctx, u, spec, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +230,7 @@ func (s *Service) StartAuthorization(ctx context.Context, sellerID, upstreamID i
 
 // StartReauthorization 授权失效（令牌被撤销、密码修改等）时重新授权：沿用原 sub2api 账号，
 // 换到新令牌后只更新凭证，上游状态、挂单与质量记录都保持不变。必须是同一个官方账号。
-func (s *Service) StartReauthorization(ctx context.Context, sellerID, upstreamID int64) (*AuthorizationStart, error) {
+func (s *Service) StartReauthorization(ctx context.Context, sellerID, upstreamID int64, opts AuthorizationOptions) (*AuthorizationStart, error) {
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
@@ -212,19 +239,22 @@ func (s *Service) StartReauthorization(ctx context.Context, sellerID, upstreamID
 	if !ok {
 		return nil, httpx.BadRequest("NOT_OAUTH", "this upstream is not authorized via oauth")
 	}
+	if opts, err = opts.validate(spec); err != nil {
+		return nil, err
+	}
 	if u.Sub2APIAccountID == nil || u.Status == StatusRemoving || u.Status == StatusRemoved {
 		return nil, ErrBadState
 	}
-	return s.beginOAuth(ctx, u, spec)
+	return s.beginOAuth(ctx, u, spec, opts)
 }
 
 // beginOAuth 向 sub2api 申请授权链接并保存授权会话（30 分钟有效）。
-func (s *Service) beginOAuth(ctx context.Context, u *Upstream, spec oauthSpec) (*AuthorizationStart, error) {
+func (s *Service) beginOAuth(ctx context.Context, u *Upstream, spec oauthSpec, opts AuthorizationOptions) (*AuthorizationStart, error) {
 	proxyID, err := s.proxySub2APIID(ctx, u)
 	if err != nil {
 		return nil, err
 	}
-	start, err := startOAuth(ctx, s.Admin, spec, proxyID)
+	start, err := startOAuth(ctx, s.Admin, spec, proxyID, opts.ProjectID)
 	if err != nil {
 		return nil, fmt.Errorf("start oauth: %w", err)
 	}
@@ -345,22 +375,44 @@ func (s *Service) applyReauthorization(ctx context.Context, u *Upstream, spec oa
 	return GetUpstream(ctx, s.DB, u.ID)
 }
 
+// CodingKeyInput 是卖家提交的 Coding Plan key；Organization / Project 只用于智谱团队版。
+type CodingKeyInput struct {
+	APIKey       string `json:"api_key"`
+	Organization string `json:"organization"`
+	Project      string `json:"project"`
+}
+
+// teamID 匹配智谱团队版的组织 / 项目 ID。
+var teamID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
 // SubmitCodingKey 接入国产 Coding Plan：用 key 创建账号，并向官方查询窗口用量确认确实是订阅 key。
-func (s *Service) SubmitCodingKey(ctx context.Context, sellerID, upstreamID int64, apiKey string) (*Upstream, error) {
+func (s *Service) SubmitCodingKey(ctx context.Context, sellerID, upstreamID int64, in CodingKeyInput) (*Upstream, error) {
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
 	}
-	mode, ok := codingPlatforms[u.Platform]
-	if !ok || !IsCodingAuthType(u.Platform, u.AuthType) {
+	spec, ok := codingSpecs[u.Platform][u.AuthType]
+	if !ok {
 		return nil, httpx.BadRequest("NOT_CODING_PLAN", "this upstream is not a coding plan")
 	}
 	if u.Status != StatusDraft && u.Status != StatusFailed {
 		return nil, ErrBadState
 	}
-	apiKey = strings.TrimSpace(apiKey)
+	apiKey := strings.TrimSpace(in.APIKey)
 	if len(apiKey) < 16 {
 		return nil, httpx.BadRequest("INVALID_KEY", "api key looks invalid")
+	}
+	org, project := strings.TrimSpace(in.Organization), strings.TrimSpace(in.Project)
+	if (org != "" || project != "") && !spec.team {
+		return nil, httpx.BadRequest("TEAM_NOT_SUPPORTED", "this coding plan has no team edition")
+	}
+	if project != "" && org == "" {
+		return nil, httpx.BadRequest("ORGANIZATION_REQUIRED", "organization id is required for a team plan")
+	}
+	for _, v := range []string{org, project} {
+		if v != "" && !teamID.MatchString(v) {
+			return nil, httpx.BadRequest("INVALID_TEAM_ID", "invalid organization or project id")
+		}
 	}
 	if err := s.ensureProbeGroup(ctx, u); err != nil {
 		return nil, fmt.Errorf("prepare probe group: %w", err)
@@ -372,8 +424,17 @@ func (s *Service) SubmitCodingKey(ctx context.Context, sellerID, upstreamID int6
 	if err != nil {
 		return nil, err
 	}
-	// 不填 base_url：sub2api 按 account_mode 使用官方默认地址，防止中转 key 冒充订阅
-	creds := map[string]any{"api_key": apiKey, "account_mode": mode}
+	// 推理地址只用官方固定地址（国内站留空由 sub2api 按 account_mode 选默认），防止中转 key 冒充订阅
+	creds := map[string]any{"api_key": apiKey, "account_mode": spec.mode}
+	if spec.baseURL != "" {
+		creds["base_url"] = spec.baseURL
+	}
+	if org != "" {
+		creds["zhipu_organization"] = org
+		if project != "" {
+			creds["zhipu_project"] = project
+		}
+	}
 	if err := s.createAccount(ctx, u, "apikey", creds, map[string]any{}, proxyID); err != nil {
 		_ = setUpstreamStatus(ctx, s.DB, u.ID, StatusFailed, strPtr("account creation failed"))
 		return nil, err

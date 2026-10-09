@@ -6,7 +6,7 @@ import { useAction, useLoader } from '@/composables/useAsync'
 import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { label, options } from '@/utils/labels'
+import { authTypeText, label, options } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
 
 const status = ref('')
@@ -58,7 +58,7 @@ function page(d: number) {
         row-key="id"
       >
         <template #cell-id="{ row }">#{{ row.id }}<span v-if="row.is_reference" class="ml-1 text-xs text-violet-600">基线</span></template>
-        <template #cell-platform="{ row }">{{ label('platform', row.platform).text }} · {{ label('authType', row.auth_type).text }}</template>
+        <template #cell-platform="{ row }">{{ label('platform', row.platform).text }} · {{ authTypeText(row.platform, row.auth_type) }}</template>
         <template #cell-status="{ row }">
           <StatusBadge kind="upstreamStatus" :value="row.status" />
           <div v-if="row.failure_reason" class="max-w-xs truncate text-xs text-slate-500" :title="row.failure_reason">{{ row.failure_reason }}</div>
