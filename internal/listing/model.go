@@ -92,7 +92,7 @@ type Upstream struct {
 	HealthReason       *string    `json:"health_reason,omitempty"`
 	HealthChangedAt    *time.Time `json:"health_changed_at,omitempty"`
 	Sub2APIAccountID   *int64     `json:"-"`
-	ProxyID            *int64     `json:"-"`
+	ProxyID            *int64     `json:"proxy_id,omitempty"`
 	ProbeGroupID       *int64     `json:"-"`
 	Tier               *string    `json:"tier,omitempty"`
 	PrivacyOK          *bool      `json:"privacy_ok,omitempty"`

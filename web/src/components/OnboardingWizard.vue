@@ -2,18 +2,20 @@
 // 接入上游：选择厂商与接入方式 → OAuth 授权或提交 Coding Plan key → 进入上架检测。
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { seller } from '@/api'
-import type { Upstream, VendorView } from '@/api/types'
+import { market, seller } from '@/api'
+import type { Proxy, Upstream, VendorView } from '@/api/types'
 import { useAction } from '@/composables/useAsync'
 import ModalDialog from '@/components/ModalDialog.vue'
 import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
 import { authGuides, takesProjectID, takesTeam } from '@/utils/authGuides'
+import { useToast } from '@/stores/toast'
 
 const props = defineProps<{ vendors: VendorView[]; resume?: Upstream | null }>()
 const emit = defineEmits<{ done: [] }>()
 const open = defineModel<boolean>('open', { default: false })
 const router = useRouter()
 const { busy, run } = useAction()
+const toast = useToast()
 
 const step = ref<'choose' | 'authorize' | 'done'>('choose')
 const platform = ref('')
@@ -24,6 +26,28 @@ const code = ref('')
 const projectID = ref('')
 const apiKey = ref('')
 const team = ref({ organization: '', project: '' })
+const proxies = ref<Proxy[]>([])
+const proxyID = ref<number | ''>('')
+const requireSellerProxy = ref(true)
+const loadingProxies = ref(false)
+const proxyLoadError = ref(false)
+const availableProxies = computed(() => proxies.value.filter((p) => p.status === 'available' && !p.assigned_upstream_id && p.sub2api_proxy_id))
+
+async function loadProxyChoices() {
+  loadingProxies.value = true
+  proxyLoadError.value = false
+  try {
+    const [list, config] = await Promise.all([seller.proxies(), market.config()])
+    proxies.value = list ?? []
+    requireSellerProxy.value = config.require_seller_proxy
+    if (!availableProxies.value.some((p) => p.id === proxyID.value)) proxyID.value = ''
+  } catch (e) {
+    proxyLoadError.value = true
+    toast.error(e)
+  } finally {
+    loadingProxies.value = false
+  }
+}
 
 const vendor = computed(() => props.vendors.find((v) => v.platform === platform.value))
 const currentType = computed(() => upstream.value?.auth_type ?? authType.value)
@@ -45,6 +69,8 @@ watch(open, (v) => {
     authType.value = props.resume.auth_type
     step.value = 'authorize'
   } else {
+    proxyID.value = ''
+    void loadProxyChoices()
     upstream.value = null
     platform.value = props.vendors[0]?.platform ?? ''
     authType.value = props.vendors[0]?.auth_types[0] ?? ''
@@ -59,7 +85,7 @@ function pick(v: VendorView) {
 }
 
 async function create() {
-  const u = await run(() => seller.createUpstream(platform.value, authType.value))
+  const u = await run(() => seller.createUpstream(platform.value, authType.value, proxyID.value || undefined))
   if (!u) return
   upstream.value = u
   step.value = 'authorize'
@@ -102,7 +128,7 @@ function goDetail() {
 <template>
   <ModalDialog v-model:open="open" title="接入上游" wide>
     <template v-if="step === 'choose'">
-      <p class="text-sm text-ink-500">只接受官方订阅账号（OAuth 授权）与国产 Coding Plan 订阅 key。平台为每个上游分配专用代理，账号凭证由底层网关保管。</p>
+      <p class="text-sm text-ink-500">只接受官方订阅账号（OAuth 授权）与国产 Coding Plan 订阅 key。每个账号独占一个代理 IP，账号凭证由底层网关保管。</p>
       <div v-if="vendors.length === 0" class="callout callout-warn">平台暂未开放任何厂商接入。</div>
       <div>
         <div class="label">厂商</div>
@@ -127,6 +153,21 @@ function goDetail() {
               <span class="block text-xs leading-relaxed text-ink-500">{{ authGuides[`${platform}:${t}`]?.summary }}</span>
             </span>
           </label>
+        </div>
+      </div>
+      <div>
+        <label class="label" for="onboarding-proxy">代理 IP{{ requireSellerProxy ? '（必选）' : '（可由平台关联）' }}</label>
+        <select id="onboarding-proxy" v-model="proxyID" class="input" :disabled="loadingProxies || proxyLoadError">
+          <option value="">{{ requireSellerProxy ? '请选择已配置的空闲代理' : '由平台自动关联专用代理' }}</option>
+          <option v-for="p in availableProxies" :key="p.id" :value="p.id">{{ p.name }} · {{ p.protocol }}://{{ p.host.includes(':') ? `[${p.host}]` : p.host }}:{{ p.port }}{{ p.region ? ` · ${p.region}` : '' }}</option>
+        </select>
+        <p v-if="loadingProxies" class="hint" role="status">正在加载代理列表…</p>
+        <p v-else-if="proxyLoadError" class="hint text-red-600" role="alert">代理列表加载失败，请重试。</p>
+        <p v-else-if="availableProxies.length === 0" class="hint">暂无空闲且已就绪的代理，请先添加代理或在列表中重试连接。</p>
+        <p v-else class="hint">仅显示你自己配置的空闲代理，绑定后其他账号无法选择。</p>
+        <div class="mt-2 flex items-center gap-3 text-sm">
+          <RouterLink to="/seller/proxies" class="link" @click="open = false">配置代理 IP 列表</RouterLink>
+          <button class="btn-ghost btn-sm" :disabled="loadingProxies || busy" @click="loadProxyChoices">刷新列表</button>
         </div>
       </div>
     </template>
@@ -205,7 +246,7 @@ function goDetail() {
 
     <template #footer>
       <button class="btn-secondary" @click="open = false">关闭</button>
-      <button v-if="step === 'choose'" class="btn-primary" :disabled="busy || !platform || !authType" @click="create">下一步</button>
+      <button v-if="step === 'choose'" class="btn-primary" :disabled="busy || loadingProxies || proxyLoadError || !platform || !authType || (requireSellerProxy && !proxyID)" @click="create">下一步</button>
       <button v-else-if="step === 'authorize'" class="btn-primary" :disabled="busy || (isOAuth ? !code.trim() : !apiKey.trim())" @click="submit">提交</button>
       <button v-else class="btn-primary" @click="goDetail">查看上游</button>
     </template>

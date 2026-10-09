@@ -30,6 +30,7 @@ const sections: Record<string, { title: string; en: string; items: NavItem[] }> 
     en: 'SELLER',
     items: [
       { to: '/seller/upstreams', text: '我的上游' },
+      { to: '/seller/proxies', text: '代理 IP' },
       { to: '/seller/usage', text: '用量' },
       { to: '/seller/listings', text: '挂单' },
       { to: '/seller/earnings', text: '收益与提现' },

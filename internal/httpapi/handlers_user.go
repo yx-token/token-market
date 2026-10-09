@@ -139,7 +139,8 @@ func (s *Server) marketConfig(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]any{
 		"edge_url": s.EdgeURL, "commission_rate": st.CommissionRate, "freeze_days": st.FreezeDays,
 		"withdraw_min": st.WithdrawMin, "max_hops": 5,
-		"payment_channels": channels, "recharge_min": st.RechargeMin, "recharge_max": st.RechargeMax,
+		"require_seller_proxy": st.RequireSellerProxy,
+		"payment_channels":     channels, "recharge_min": st.RechargeMin, "recharge_max": st.RechargeMax,
 	})
 }
 

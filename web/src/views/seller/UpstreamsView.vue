@@ -47,6 +47,7 @@ function openResume(u: Upstream) {
           { key: 'id', label: '上游' },
           { key: 'platform', label: '厂商' },
           { key: 'auth_type', label: '接入方式' },
+          { key: 'proxy_id', label: '代理 IP' },
           { key: 'status', label: '状态' },
           { key: 'health', label: '健康' },
           { key: 'grade', label: '等级' },
@@ -65,6 +66,7 @@ function openResume(u: Upstream) {
         </template>
         <template #cell-platform="{ row }">{{ label('platform', row.platform).text }}</template>
         <template #cell-auth_type="{ row }">{{ authTypeText(row.platform, row.auth_type) }}</template>
+        <template #cell-proxy_id="{ row }">{{ row.proxy_id ? `代理 #${row.proxy_id}` : '—' }}</template>
         <template #cell-status="{ row }">
           <StatusBadge kind="upstreamStatus" :value="row.status" />
           <div v-if="row.failure_reason && ['verify_failed', 'failed', 'suspended'].includes(row.status)" class="mt-0.5 max-w-xs truncate text-xs text-red-600" :title="row.failure_reason">

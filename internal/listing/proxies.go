@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/DueGin/token-market/internal/platform/crypto"
@@ -15,6 +18,7 @@ import (
 
 type Proxy struct {
 	ID                 int64     `json:"id"`
+	SellerID           *int64    `json:"seller_id,omitempty"`
 	Name               string    `json:"name"`
 	Protocol           string    `json:"protocol"`
 	Host               string    `json:"host"`
@@ -37,18 +41,18 @@ type CreateProxyInput struct {
 	Region   string `json:"region"`
 }
 
-const proxyColumns = `id, name, protocol, host, port, username, region, sub2api_proxy_id, status, assigned_upstream_id, created_at`
+const proxyColumns = `id, seller_id, name, protocol, host, port, username, region, sub2api_proxy_id, status, assigned_upstream_id, created_at`
 
 func scanProxy(row pgx.Row) (*Proxy, error) {
 	var p Proxy
-	err := row.Scan(&p.ID, &p.Name, &p.Protocol, &p.Host, &p.Port, &p.Username, &p.Region, &p.Sub2APIProxyID, &p.Status, &p.AssignedUpstreamID, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.SellerID, &p.Name, &p.Protocol, &p.Host, &p.Port, &p.Username, &p.Region, &p.Sub2APIProxyID, &p.Status, &p.AssignedUpstreamID, &p.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &p, nil
 }
 
-// ProxyService 管理平台代理库存，并同步到 sub2api。
+// ProxyService 管理平台和卖家代理库存，并同步到 sub2api。
 type ProxyService struct {
 	DB      DB
 	Admin   *adminclient.Client
@@ -56,6 +60,20 @@ type ProxyService struct {
 }
 
 func (s *ProxyService) Create(ctx context.Context, in CreateProxyInput) (*Proxy, error) {
+	return s.create(ctx, nil, in)
+}
+
+func (s *ProxyService) CreateSeller(ctx context.Context, sellerID int64, in CreateProxyInput) (*Proxy, error) {
+	return s.create(ctx, &sellerID, in)
+}
+
+var proxyHostname = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`)
+
+func (s *ProxyService) create(ctx context.Context, sellerID *int64, in CreateProxyInput) (*Proxy, error) {
+	in.Name = strings.TrimSpace(in.Name)
+	in.Host = strings.ToLower(strings.TrimSpace(in.Host))
+	in.Host = strings.TrimSuffix(strings.TrimPrefix(in.Host, "["), "]")
+	in.Region = strings.TrimSpace(in.Region)
 	switch in.Protocol {
 	case "http", "https", "socks5", "socks5h":
 	default:
@@ -64,11 +82,14 @@ func (s *ProxyService) Create(ctx context.Context, in CreateProxyInput) (*Proxy,
 	if in.Name == "" || in.Host == "" || in.Port <= 0 || in.Port > 65535 {
 		return nil, httpx.BadRequest("INVALID_PROXY", "name, host and port are required")
 	}
+	if ip := net.ParseIP(in.Host); ip != nil {
+		in.Host = ip.String()
+	} else if len(in.Host) > 253 || !proxyHostname.MatchString(in.Host) || strings.Contains(in.Host, "..") {
+		return nil, httpx.BadRequest("INVALID_PROXY", "host must be an IP address or hostname, without a scheme or port")
+	}
 	var passEnc []byte
 	var id int64
-	if err := s.DB.QueryRow(ctx, `INSERT INTO proxies (name, protocol, host, port, username, region)
-		VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, '')) RETURNING id`,
-		in.Name, in.Protocol, in.Host, in.Port, in.Username, in.Region).Scan(&id); err != nil {
+	if err := s.DB.QueryRow(ctx, `SELECT nextval('proxies_id_seq')`).Scan(&id); err != nil {
 		return nil, err
 	}
 	if in.Password != "" {
@@ -76,14 +97,27 @@ func (s *ProxyService) Create(ctx context.Context, in CreateProxyInput) (*Proxy,
 		if passEnc, err = s.Keyring.SealString(in.Password, fmt.Sprintf("proxy:%d", id)); err != nil {
 			return nil, err
 		}
-		if _, err := s.DB.Exec(ctx, "UPDATE proxies SET password_enc = $2 WHERE id = $1", id, passEnc); err != nil {
-			return nil, err
+	}
+	if _, err := s.DB.Exec(ctx, `INSERT INTO proxies (id, seller_id, name, protocol, host, port, username, region, password_enc)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9)`,
+		id, sellerID, in.Name, in.Protocol, in.Host, in.Port, in.Username, in.Region, passEnc); err != nil {
+		if isUnique(err) {
+			return nil, httpx.Conflict("PROXY_ALREADY_EXISTS", "this proxy address is already registered")
 		}
+		return nil, err
 	}
 	if err := s.sync(ctx, id, in.Password); err != nil {
-		return nil, fmt.Errorf("proxy saved but sync to sub2api failed (retry with sync): %w", err)
+		return nil, httpx.Unavailable("PROXY_SYNC_FAILED", "proxy saved but sync failed; retry synchronization from the proxy list")
 	}
 	return s.Get(ctx, id)
+}
+
+func (s *ProxyService) GetSeller(ctx context.Context, sellerID, id int64) (*Proxy, error) {
+	p, err := scanProxy(s.DB.QueryRow(ctx, "SELECT "+proxyColumns+" FROM proxies WHERE id = $1 AND seller_id = $2", id, sellerID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, httpx.NotFound("PROXY_NOT_FOUND", "proxy not found")
+	}
+	return p, err
 }
 
 func (s *ProxyService) Get(ctx context.Context, id int64) (*Proxy, error) {
@@ -95,7 +129,15 @@ func (s *ProxyService) Get(ctx context.Context, id int64) (*Proxy, error) {
 }
 
 func (s *ProxyService) List(ctx context.Context) ([]Proxy, error) {
-	rows, err := s.DB.Query(ctx, "SELECT "+proxyColumns+" FROM proxies ORDER BY id")
+	return s.list(ctx, nil)
+}
+
+func (s *ProxyService) ListSeller(ctx context.Context, sellerID int64) ([]Proxy, error) {
+	return s.list(ctx, &sellerID)
+}
+
+func (s *ProxyService) list(ctx context.Context, sellerID *int64) ([]Proxy, error) {
+	rows, err := s.DB.Query(ctx, "SELECT "+proxyColumns+" FROM proxies WHERE ($1::bigint IS NULL OR seller_id = $1) ORDER BY id", sellerID)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +151,20 @@ func (s *ProxyService) List(ctx context.Context) ([]Proxy, error) {
 		out = append(out, *p)
 	}
 	return out, rows.Err()
+}
+
+func (s *ProxyService) SyncSeller(ctx context.Context, sellerID, id int64) (*Proxy, error) {
+	if _, err := s.GetSeller(ctx, sellerID, id); err != nil {
+		return nil, err
+	}
+	return s.Sync(ctx, id)
+}
+
+func (s *ProxyService) SetSellerDisabled(ctx context.Context, sellerID, id int64, disabled bool) (*Proxy, error) {
+	if _, err := s.GetSeller(ctx, sellerID, id); err != nil {
+		return nil, err
+	}
+	return s.SetDisabled(ctx, id, disabled)
 }
 
 // Sync 把尚未同步的代理创建到 sub2api（幂等）。

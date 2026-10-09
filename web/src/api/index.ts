@@ -42,10 +42,14 @@ export const buyer = {
 }
 
 export const seller = {
+  proxies: () => http.get<T.Proxy[] | null>('/api/seller/proxies'),
+  createProxy: (body: T.CreateProxyInput) => http.post<T.Proxy>('/api/seller/proxies', body),
+  syncProxy: (id: number) => http.post<T.Proxy>(`/api/seller/proxies/${id}/sync`),
+  setProxyDisabled: (id: number, disabled: boolean) => http.post<T.Proxy>(`/api/seller/proxies/${id}/${disabled ? 'disable' : 'enable'}`),
   vendors: () => http.get<T.VendorView[] | null>('/api/seller/vendors'),
   upstreams: () => http.get<T.Upstream[] | null>('/api/seller/upstreams'),
   upstream: (id: number) => http.get<T.UpstreamDetail>(`/api/seller/upstreams/${id}`),
-  createUpstream: (platform: string, auth_type: string) => http.post<T.Upstream>('/api/seller/upstreams', { platform, auth_type }),
+  createUpstream: (platform: string, auth_type: string, proxy_id?: number) => http.post<T.Upstream>('/api/seller/upstreams', { platform, auth_type, proxy_id }),
   startOAuth: (id: number, opts?: T.AuthorizationOptions) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/oauth/start`, opts),
   completeOAuth: (id: number, code: string) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/oauth/complete`, { code }),
   reauthorize: (id: number, opts?: T.AuthorizationOptions) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/reauthorize`, opts),
@@ -87,7 +91,7 @@ export const admin = {
   vendors: () => http.get<T.VendorConfig[] | null>('/api/admin/vendors'),
   updateVendor: (platform: string, body: Partial<T.VendorConfig>) => http.put<T.VendorConfig>(`/api/admin/vendors/${platform}`, body),
   proxies: () => http.get<T.Proxy[] | null>('/api/admin/proxies'),
-  createProxy: (body: Record<string, unknown>) => http.post<T.Proxy>('/api/admin/proxies', body),
+  createProxy: (body: T.CreateProxyInput) => http.post<T.Proxy>('/api/admin/proxies', body),
   syncProxy: (id: number) => http.post<T.Proxy>(`/api/admin/proxies/${id}/sync`),
   setProxyDisabled: (id: number, disabled: boolean) => http.post<T.Proxy>(`/api/admin/proxies/${id}/${disabled ? 'disable' : 'enable'}`),
   pools: () => http.get<T.Pool[] | null>('/api/admin/pools'),

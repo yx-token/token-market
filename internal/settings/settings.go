@@ -32,6 +32,7 @@ type Settings struct {
 	SchedulerChangeBudget      int                `json:"scheduler_change_budget"`       // 每轮最多改动的 sub2api 账号数
 	BalanceMismatchTolerance   float64            `json:"balance_mismatch_tolerance"`    // 余额对账容差
 	AllowNoProxy               bool               `json:"allow_no_proxy"`                // 没有可用代理时是否允许上架（仅开发环境）
+	RequireSellerProxy         bool               `json:"require_seller_proxy"`          // 新接入账号必须选择卖家自己配置的代理
 	PriceModels                []string           `json:"price_models"`                  // 市场展示官方价格的模型（价格取自 sub2api 内置价目表）
 	// PaymentPublicURL 是控制面对外地址：支付异步通知发到 <地址>/api/payments/{alipay|wechat}/notify，网页支付完成后跳回钱包
 	PaymentPublicURL string `json:"payment_public_url"`
@@ -60,6 +61,7 @@ func Defaults() Settings {
 		NewSellerDirectCap:         500,
 		SchedulerChangeBudget:      50,
 		BalanceMismatchTolerance:   0.05,
+		RequireSellerProxy:         true,
 		PriceModels: []string{"claude-opus-4-1", "claude-sonnet-4-5", "claude-haiku-4-5", "gpt-5.1", "gpt-5.1-codex",
 			"gemini-2.5-pro", "gemini-2.5-flash", "grok-4", "kimi-for-coding", "glm-4.6", "MiniMax-M2"},
 		PaymentChannels:             map[string]bool{"alipay_page": true, "alipay_f2f": true, "wechat_native": true, "manual": true},

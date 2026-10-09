@@ -70,7 +70,7 @@ var (
 )
 
 // CreateUpstream 创建上游草稿并分配专用代理。reference 为 true 时创建平台基线账号（仅管理员）。
-func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, authType string, reference bool) (*Upstream, error) {
+func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, authType string, reference bool, selectedProxyID *int64) (*Upstream, error) {
 	v, err := GetVendor(ctx, s.DB, platform)
 	if err != nil {
 		return nil, err
@@ -88,6 +88,12 @@ func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, 
 	if err != nil {
 		return nil, err
 	}
+	if selectedProxyID != nil && *selectedProxyID <= 0 {
+		return nil, httpx.BadRequest("INVALID_PROXY", "proxy_id must be positive")
+	}
+	if !reference && st.RequireSellerProxy && selectedProxyID == nil {
+		return nil, httpx.BadRequest("SELLER_PROXY_REQUIRED", "please configure and select your own proxy before adding an account")
+	}
 
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -101,8 +107,26 @@ func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, 
 		return nil, err
 	}
 	var proxyID int64
-	err = tx.QueryRow(ctx, `SELECT id FROM proxies WHERE status = 'available' AND sub2api_proxy_id IS NOT NULL
-		ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&proxyID)
+	if selectedProxyID != nil {
+		p, err := scanProxy(tx.QueryRow(ctx, "SELECT "+proxyColumns+" FROM proxies WHERE id = $1 AND seller_id = $2 FOR UPDATE", *selectedProxyID, sellerID))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, httpx.NotFound("PROXY_NOT_FOUND", "proxy not found")
+		}
+		if err != nil {
+			return nil, err
+		}
+		if p.Status != "available" || p.AssignedUpstreamID != nil {
+			return nil, httpx.Conflict("PROXY_IN_USE", "proxy is assigned or disabled")
+		}
+		if p.Sub2APIProxyID == nil {
+			return nil, httpx.Conflict("PROXY_NOT_SYNCED", "synchronize the proxy before selecting it")
+		}
+		proxyID = p.ID
+	} else {
+		err = tx.QueryRow(ctx, `SELECT id FROM proxies WHERE seller_id IS NULL AND status = 'available'
+			AND assigned_upstream_id IS NULL AND sub2api_proxy_id IS NOT NULL
+			ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&proxyID)
+	}
 	switch {
 	case err == nil:
 		if _, err := tx.Exec(ctx, `UPDATE proxies SET status = 'assigned', assigned_upstream_id = $2 WHERE id = $1`, proxyID, id); err != nil {

@@ -17,6 +17,7 @@ export interface LoginResult {
 }
 
 export interface MarketConfig {
+  require_seller_proxy: boolean
   edge_url: string
   commission_rate: number
   freeze_days: number
@@ -265,6 +266,7 @@ export interface BillDay {
 
 export interface Upstream {
   id: number
+  proxy_id?: number
   seller_id: number
   platform: string
   auth_type: string
@@ -318,6 +320,7 @@ export interface UpstreamStats {
 }
 
 export interface UpstreamDetail extends Upstream {
+  proxy?: Proxy
   listing?: Listing
   quote?: Quote
   stats_24h: UpstreamStats
@@ -460,6 +463,7 @@ export interface Withdrawal {
 // ---- 管理后台 ----
 
 export interface Settings {
+  require_seller_proxy: boolean
   commission_rate: number
   freeze_days: number
   withdraw_min: number
@@ -500,6 +504,7 @@ export interface VendorConfig {
 
 export interface Proxy {
   id: number
+  seller_id?: number
   name: string
   protocol: string
   host: string
@@ -510,6 +515,16 @@ export interface Proxy {
   status: string
   assigned_upstream_id?: number
   created_at: string
+}
+
+export interface CreateProxyInput {
+  name: string
+  protocol: string
+  host: string
+  port: number
+  username?: string
+  password?: string
+  region?: string
 }
 
 export interface Pool {

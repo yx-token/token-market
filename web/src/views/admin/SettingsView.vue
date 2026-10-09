@@ -77,8 +77,14 @@ async function save() {
         <input id="models" v-model="models" class="input" />
         <p class="hint">价格取自 sub2api 内置价目表，查不到的模型不展示</p>
       </div>
+      <div class="md:col-span-2">
+        <label class="flex items-center gap-2 text-sm">
+          <input v-model="s.require_seller_proxy" type="checkbox" /> 要求卖家提供代理 IP
+        </label>
+        <p class="hint">默认开启：卖家先配置自己的代理列表，再为每个账号选择一个空闲代理。关闭后，卖家也可以选择由平台自动关联专用代理；已有账号的绑定保持不变。</p>
+      </div>
       <label class="flex items-center gap-2 text-sm">
-        <input v-model="s.allow_no_proxy" type="checkbox" /> 没有可用代理时允许接入（仅开发环境）
+        <input v-model="s.allow_no_proxy" type="checkbox" /> 平台没有可用代理时允许直接接入（仅开发环境；卖家必填要求仍生效）
       </label>
     </div>
 

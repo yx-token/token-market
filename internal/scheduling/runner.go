@@ -293,10 +293,7 @@ func (r *Runner) processRemovals(ctx context.Context, actual Actual, pending map
 			}
 		}
 		if acc == nil {
-			if _, err := r.DB.Exec(ctx, `UPDATE proxies SET status = 'available', assigned_upstream_id = NULL WHERE assigned_upstream_id = $1`, it.id); err != nil {
-				return removed, enqueued, err
-			}
-			if _, err := r.DB.Exec(ctx, `UPDATE upstreams SET status = 'removed', removed_at = now(), updated_at = now() WHERE id = $1`, it.id); err != nil {
+			if err := r.completeRemoval(ctx, it.id); err != nil {
 				return removed, enqueued, err
 			}
 			// 账号已删除，探测分组不再有用
@@ -332,6 +329,22 @@ func (r *Runner) processRemovals(ctx context.Context, actual Actual, pending map
 		enqueued++
 	}
 	return removed, enqueued, nil
+}
+
+// completeRemoval 同时完成移除与代理释放，避免代理被重用时旧账号仍占用绑定。
+func (r *Runner) completeRemoval(ctx context.Context, upstreamID int64) error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `UPDATE upstreams SET status = 'removed', removed_at = now(), updated_at = now() WHERE id = $1`, upstreamID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE proxies SET status = 'available', assigned_upstream_id = NULL WHERE assigned_upstream_id = $1`, upstreamID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // reportOrphans 记录 sub2api 中存在、但本系统没有记录的 tm- 账号，不自动删除。

@@ -129,14 +129,22 @@ buyback_quotes (
   created_at   timestamptz not null default now()
 );
 
-proxies (                                -- 平台代理库存
+proxies (                                -- 平台和卖家代理库存
   id               bigserial primary key,
-  url_enc          bytea not null,
+  seller_id        bigint references users, -- NULL 表示平台库存，否则仅所属卖家可选
+  name             text not null,
+  protocol         text not null,          -- http / https / socks5 / socks5h
+  host             text not null,
+  port             int not null,
+  username         text,
+  password_enc     bytea,                  -- 加密保存，不通过 API 返回
   region           text,
-  sub2api_proxy_id bigint,
-  assigned_upstream_id bigint,
-  health           text not null
+  sub2api_proxy_id bigint unique,
+  assigned_upstream_id bigint unique,
+  status           text not null,          -- available / assigned / disabled
+  created_at       timestamptz not null default now()
 );
+-- 卖家代理地址 (lower(host), port) 唯一；非 removed 上游的 proxy_id 唯一。
 ```
 
 ## 4. 默认分组与调度

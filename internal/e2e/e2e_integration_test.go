@@ -35,6 +35,7 @@ import (
 	"github.com/DueGin/token-market/internal/httpapi"
 	"github.com/DueGin/token-market/internal/platform/config"
 	"github.com/DueGin/token-market/internal/quality"
+	"github.com/DueGin/token-market/internal/settings"
 	"github.com/DueGin/token-market/internal/sub2api/compatguard"
 	"github.com/DueGin/token-market/internal/sub2api/ops"
 	"github.com/DueGin/token-market/internal/sub2api/opshandlers"
@@ -115,6 +116,10 @@ func setup(t *testing.T, opts ...func(cfg *config.Config)) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(a.Close)
+	// 原有端到端场景验证平台代理分配；卖家代理专项测试会恢复默认的必填策略。
+	if _, err := settings.Update(ctx, a.DB, json.RawMessage(`{"require_seller_proxy":false}`)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := a.Accounts.EnsureBootstrapAdmin(ctx, cfg.Auth.BootstrapAdminEmail, cfg.Auth.BootstrapAdminPassword); err != nil {
 		t.Fatal(err)
 	}

@@ -13,11 +13,12 @@ func (s *Server) createUpstream(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Platform string `json:"platform"`
 		AuthType string `json:"auth_type"`
+		ProxyID  *int64 `json:"proxy_id"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	u, err := s.Listings.CreateUpstream(r.Context(), httpx.MustUser(r).UserID, in.Platform, in.AuthType, false)
+	u, err := s.Listings.CreateUpstream(r.Context(), httpx.MustUser(r).UserID, in.Platform, in.AuthType, false, in.ProxyID)
 	if err != nil {
 		return err
 	}
@@ -36,6 +37,7 @@ type upstreamDetail struct {
 	*listing.Upstream
 	Listing  *listing.Listing `json:"listing,omitempty"`
 	Quote    *listing.Quote   `json:"quote,omitempty"`
+	Proxy    *listing.Proxy   `json:"proxy,omitempty"`
 	Stats24h upstreamStats    `json:"stats_24h"`
 }
 
@@ -58,6 +60,11 @@ func (s *Server) getUpstream(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	d := upstreamDetail{Upstream: u}
+	if u.ProxyID != nil {
+		if d.Proxy, err = s.Proxies.Get(r.Context(), *u.ProxyID); err != nil {
+			return err
+		}
+	}
 	if d.Listing, err = listing.OpenListing(r.Context(), s.DB, id); err != nil {
 		return err
 	}

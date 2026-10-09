@@ -82,7 +82,11 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/seller/vendors` | 可接入的厂商与接入方式（由管理员启用的厂商决定） |
-| POST | `/api/seller/upstreams` | 创建上游草稿：`platform`、`auth_type`，同时分配专用代理 |
+| GET | `/api/seller/proxies` | 自己配置的代理列表（含占用状态，不含密码），供接入账号时选择 |
+| POST | `/api/seller/proxies` | 配置代理：`name`、`protocol`、`host`（IP / 域名）、`port`，可选 `username`、`password`、`region`；同步失败返回 `PROXY_SYNC_FAILED`，已保存的代理可从列表重试 |
+| POST | `/api/seller/proxies/:id/sync` | 重试同步代理配置；未就绪的代理不能绑定账号 |
+| POST | `/api/seller/proxies/:id/disable`、`/enable` | 停用 / 启用自己的空闲代理；已绑定代理不能停用 |
+| POST | `/api/seller/upstreams` | 创建上游草稿：`platform`、`auth_type`、`proxy_id`（默认必填，选择自己的空闲代理）；`require_seller_proxy=false` 时可不传，由平台从平台库存关联 |
 | POST | `/api/seller/upstreams/:id/oauth/start` | 获取授权链接（30 分钟有效）；Gemini Code Assist 可选 `project_id`（GCP 项目 ID） |
 | POST | `/api/seller/upstreams/:id/oauth/complete` | 提交授权码或完整回调地址：`code`。需要 state 的厂商（OpenAI、Gemini 等）请粘贴完整回调地址 |
 | POST | `/api/seller/upstreams/:id/coding-key` | 提交 Coding Plan key：`api_key`；智谱国内站团队版另填 `organization`、可选 `project`；查不到官方窗口用量的 key 被拒绝 |
@@ -152,7 +156,7 @@
 |---|---|
 | 系统设置 | `GET/PUT /api/admin/settings`：抽佣率、冻结天数、最低提现额、自动审核阈值、等级系数、报价有效期、改价冷却、退款等待、新卖家期、价目模型等（部分更新） |
 | 厂商 | `GET /api/admin/vendors`、`PUT /api/admin/vendors/:platform`：是否开放接入、开放的接入方式（`auth_types`，只能从 `supported_auth_types` 中选）、寄售倍率区间、回收基础倍率表（按档位）、默认并发、限流参数 |
-| 代理库存 | `GET/POST /api/admin/proxies`、`POST /api/admin/proxies/:id/sync`（同步到 sub2api）、`/disable`、`/enable` |
+| 代理库存 | `GET/POST /api/admin/proxies`、`POST /api/admin/proxies/:id/sync`（同步到 sub2api）、`/disable`、`/enable`；列表包含平台代理和卖家代理，`seller_id` 区分来源，后台新增代理归平台 |
 | 默认分组 | `GET/POST /api/admin/pools`、`PUT /api/admin/pools/:id`（售价 D、最低毛利、安全缓冲、启用）、`POST /api/admin/pools/:id/sync` |
 | 检测策略 | `GET /api/admin/detection-policies`、`PUT /api/admin/detection-policies/:platform[?auth_type=]`（`enabled`、`scheduled_enabled`、周期、套件、模型、预算、阈值、`auto_pause`、`default_grade`、`third_party`，见 [05](05-quality.md) 第 3、9 节） |
 | 第三方检测 | `GET /api/admin/detection-providers`（可接入的检测站、配置、最近 1 小时提交次数）、`PUT /api/admin/detection-providers/:name`（`enabled`、`base_url`、`api_key`、`settings`、`max_runs_per_hour`、`timeout_minutes`）、`GET /api/admin/third-party-checks[?upstream_id=]` |

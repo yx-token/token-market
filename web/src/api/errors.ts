@@ -13,6 +13,14 @@ const messages: Record<string, string> = {
   SUB2API_SAFE_MODE: '平台底层服务维护中，请稍后重试',
   VENDOR_DISABLED: '该厂商暂未开放接入',
   NO_PROXY_AVAILABLE: '平台暂无可用代理，请联系平台',
+  SELLER_PROXY_REQUIRED: '请先配置代理 IP，再选择一个空闲代理接入账号',
+  PROXY_NOT_FOUND: '代理不存在或不属于你的账号',
+  PROXY_IN_USE: '代理已被账号占用或已停用，请选择其他代理',
+  PROXY_NOT_SYNCED: '代理尚未就绪，请在代理列表重试连接',
+  PROXY_SYNC_FAILED: '代理已保存，但连接服务失败，请在代理列表重试连接',
+  PROXY_ALREADY_EXISTS: '这个代理地址和端口已登记，请使用其他代理',
+  INVALID_PROXY: '请填写名称、有效的 IP 或域名及端口（1–65535）',
+  INVALID_PROTOCOL: '请选择 HTTP、HTTPS、SOCKS5 或 SOCKS5H 协议',
   ACCOUNT_ALREADY_LISTED: '该官方账号已经挂在平台上',
   INVALID_STATE: '当前状态不允许该操作',
   AUTH_SESSION_EXPIRED: '授权会话已过期，请重新获取授权链接',
@@ -71,7 +79,6 @@ const messages: Record<string, string> = {
   REFERENCE_ACCOUNT: '基线账号不能挂单',
   INVALID_PAYOUT_ACCOUNT: '请填写收款方式与账号',
   INVALID_NAME: '名称不正确',
-  PROXY_IN_USE: '代理正在使用中',
   POOL_EXISTS: '默认分组已存在',
 }
 

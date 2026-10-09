@@ -108,6 +108,11 @@ func (s *Server) Handler() http.Handler {
 		{"GET /api/buyer/bills", s.buyerBills},
 
 		{"GET /api/seller/vendors", s.marketVendors},
+		{"GET /api/seller/proxies", s.listSellerProxies},
+		{"POST /api/seller/proxies", s.createSellerProxy},
+		{"POST /api/seller/proxies/{id}/sync", s.syncSellerProxy},
+		{"POST /api/seller/proxies/{id}/disable", s.setSellerProxyDisabled(true)},
+		{"POST /api/seller/proxies/{id}/enable", s.setSellerProxyDisabled(false)},
 		{"POST /api/seller/upstreams", s.createUpstream},
 		{"GET /api/seller/upstreams", s.listUpstreams},
 		{"GET /api/seller/upstreams/{id}", s.getUpstream},

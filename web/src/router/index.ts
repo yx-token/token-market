@@ -17,6 +17,7 @@ const routes: RouteRecordRaw[] = [
 
   { path: '/seller', redirect: '/seller/upstreams' },
   { path: '/seller/upstreams', name: 'seller-upstreams', component: () => import('@/views/seller/UpstreamsView.vue'), meta: { auth: true } },
+  { path: '/seller/proxies', name: 'seller-proxies', component: () => import('@/views/seller/ProxiesView.vue'), meta: { auth: true } },
   {
     path: '/seller/upstreams/:id',
     name: 'seller-upstream',
