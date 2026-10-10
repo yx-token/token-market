@@ -169,12 +169,12 @@ async function check(p: Proxy, quality: boolean) {
       </template>
       <template #cell-actions="{ row }">
         <div class="grid grid-cols-2 gap-x-1 gap-y-1">
-          <button class="btn-ghost btn-sm" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, false)">检测连接</button>
-          <button class="btn-ghost btn-sm" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, true)">质量检测</button>
-          <button v-if="row.connection_report || row.quality_report" class="btn-ghost btn-sm" @click="viewReport(row)">查看报告</button>
-          <button v-if="!row.sub2api_proxy_id" class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.syncProxy(row.id), '连接配置已就绪')">重试连接</button>
-          <button v-if="row.status !== 'disabled'" class="btn-ghost btn-sm" :disabled="busy || !!row.assigned_upstream_id" @click="act(() => api.setProxyDisabled(row.id, true), '已停用')">停用</button>
-          <button v-else class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.setProxyDisabled(row.id, false), '已启用')">启用</button>
+          <button type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, false)">检测连接</button>
+          <button type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, true)">质量检测</button>
+          <button v-if="row.connection_report || row.quality_report" type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" @click="viewReport(row)">查看报告</button>
+          <button v-if="!row.sub2api_proxy_id" type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy" @click="act(() => api.syncProxy(row.id), '连接配置已就绪')">重试连接</button>
+          <button v-if="row.status !== 'disabled'" type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy || !!row.assigned_upstream_id" @click="act(() => api.setProxyDisabled(row.id, true), '已停用')">停用</button>
+          <button v-else type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy" @click="act(() => api.setProxyDisabled(row.id, false), '已启用')">启用</button>
         </div>
       </template>
     </DataTable>

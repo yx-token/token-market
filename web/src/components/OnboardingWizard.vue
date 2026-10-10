@@ -233,7 +233,7 @@ function goDetail() {
         <p v-if="!loadingProxies && !proxyLoadError && untestedCount > 0" class="hint">另有 {{ untestedCount }} 个空闲代理尚未检测或检测未通过，在代理列表检测连接成功后才能选择。</p>
         <div class="mt-2 flex items-center gap-3 text-sm">
           <RouterLink to="/seller/proxies" class="link" @click="open = false">配置代理 IP 列表</RouterLink>
-          <button class="btn-ghost btn-sm" :disabled="loadingProxies || busy" @click="loadProxyChoices">刷新列表</button>
+          <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="loadingProxies || busy" @click="loadProxyChoices">刷新列表</button>
         </div>
       </div>
     </template>
@@ -289,7 +289,7 @@ function goDetail() {
           <li>授权完成后，把页面显示的授权码，或浏览器地址栏中的完整回调地址粘贴到下面。</li>
         </ol>
         <div class="flex flex-wrap items-center gap-2">
-          <button class="btn-secondary" :disabled="busy" @click="getLink">{{ authURL ? '重新获取授权链接' : '获取授权链接' }}</button>
+          <button type="button" class="xm-btn xm-btn-ghost" :disabled="busy" @click="getLink">{{ authURL ? '重新获取授权链接' : '获取授权链接' }}</button>
           <a v-if="authURL" :href="authURL" target="_blank" rel="noopener" class="link break-all text-xs">{{ authURL }}</a>
         </div>
         <div>
@@ -343,10 +343,10 @@ function goDetail() {
     </template>
 
     <template #footer>
-      <button class="btn-secondary" @click="open = false">关闭</button>
-      <button v-if="step === 'choose'" class="btn-primary" :disabled="busy || loadingProxies || proxyLoadError || !platform || !authType || (requireSellerProxy && !proxyID)" @click="create">下一步</button>
-      <button v-else-if="step === 'authorize'" class="btn-primary" :disabled="busy || (mode === 'import' ? !canImport : (isOAuth ? !code.trim() : !apiKey.trim()))" @click="submit">{{ mode === 'import' ? '导入并检测' : '提交' }}</button>
-      <button v-else class="btn-primary" @click="goDetail">查看上游</button>
+      <button type="button" class="xm-btn xm-btn-ghost" @click="open = false">关闭</button>
+      <button v-if="step === 'choose'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || loadingProxies || proxyLoadError || !platform || !authType || (requireSellerProxy && !proxyID)" @click="create">下一步</button>
+      <button v-else-if="step === 'authorize'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || (mode === 'import' ? !canImport : (isOAuth ? !code.trim() : !apiKey.trim()))" @click="submit">{{ mode === 'import' ? '导入并检测' : '提交' }}</button>
+      <button v-else type="button" class="xm-btn xm-btn-primary" @click="goDetail">查看上游</button>
     </template>
   </ModalDialog>
 </template>
