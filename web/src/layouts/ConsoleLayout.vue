@@ -165,6 +165,10 @@ function logout() {
             <p v-if="headerDesc">{{ headerDesc }}</p>
           </div>
           <div class="console-top-actions">
+            <RouterLink to="/" class="console-btn-ghost console-home-btn" title="返回主页">
+              <ConsoleIcon name="house" size="sm" />
+              <span class="console-home-label">返回主页</span>
+            </RouterLink>
             <NetworkStatus />
             <div class="console-user-menu">
               <button class="console-user" type="button" :title="email" aria-haspopup="menu">

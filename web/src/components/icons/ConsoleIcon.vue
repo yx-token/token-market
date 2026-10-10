@@ -24,6 +24,7 @@ import filter from '@/assets/icons/filter.svg?raw'
 import flaskConical from '@/assets/icons/flask-conical.svg?raw'
 import globe from '@/assets/icons/globe.svg?raw'
 import handCoins from '@/assets/icons/hand-coins.svg?raw'
+import house from '@/assets/icons/house.svg?raw'
 import layers from '@/assets/icons/layers.svg?raw'
 import layoutDashboard from '@/assets/icons/layout-dashboard.svg?raw'
 import logIn from '@/assets/icons/log-in.svg?raw'
@@ -68,6 +69,7 @@ const icons = {
   'flask-conical': flaskConical,
   globe,
   'hand-coins': handCoins,
+  house,
   layers,
   'layout-dashboard': layoutDashboard,
   'log-in': logIn,

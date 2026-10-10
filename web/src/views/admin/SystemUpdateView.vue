@@ -5,6 +5,7 @@ import { ApiError } from '@/api/client'
 import type { SystemVersion, SystemUpdateCheck } from '@/api/types'
 import { useToast } from '@/stores/toast'
 import { dateTime } from '@/utils/format'
+import { renderMarkdown } from '@/utils/markdown'
 import PageHeader from '@/components/PageHeader.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 
@@ -22,6 +23,7 @@ const active = computed(() => !!status.value?.job && !finished.has(status.value.
 const canUpdate = computed(() => status.value?.enabled && check.value?.update_available && check.value.release.compatible
   && !active.value && !checking.value && !submitting.value && !reconnecting.value && !statusError.value && !checkError.value
   && status.value.job?.phase !== 'rollback_failed')
+const notesHtml = computed(() => renderMarkdown(check.value?.release.notes || '此版本暂无发布说明。'))
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 let polling = false
@@ -153,7 +155,7 @@ onUnmounted(() => { disposed = true; clearTimeout(timer) })
           </div>
           <p class="mt-2 text-xs text-gray-500">发布于 {{ dateTime(check.release.published_at) }}</p>
           <p v-if="!check.release.compatible" class="mt-4 text-sm text-red-600">此版本尚未提供当前平台的完整更新包，请通过镜像升级。</p>
-          <pre class="mt-5 max-h-96 overflow-y-auto whitespace-pre-wrap break-words border-t border-gray-100 pt-4 font-sans text-sm leading-relaxed text-gray-700">{{ check.release.notes || '此版本暂无发布说明。' }}</pre>
+          <div class="markdown-body mt-5 max-h-96 overflow-y-auto border-t border-gray-100 pt-4" data-testid="release-notes" v-html="notesHtml" />
         </template>
         <p class="mt-5 border-t border-gray-100 pt-4 text-xs leading-relaxed text-gray-500">更新会同步替换三个服务和前端，服务将短暂重启；新版本健康检查失败时自动回退。数据库迁移不会随程序回退撤销。</p>
       </div>
