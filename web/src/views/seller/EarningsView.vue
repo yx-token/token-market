@@ -7,6 +7,7 @@ import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
 import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
+import RefreshButton from '@/components/RefreshButton.vue'
 import StatCard from '@/components/StatCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -50,6 +51,7 @@ async function withdraw() {
 <template>
   <div>
     <PageHeader :title="'收益与提现'" :description="`收益按小时结算，冻结 ${cfg.config.freeze_days} 天后可提现（1 个收益单位 = 1 元）。平台检测消耗的额度同样计入收益。`">
+      <RefreshButton :loading="earnings.loading.value || lines.loading.value || withdrawals.loading.value" @click="reload" />
       <button class="btn-primary" @click="showWithdraw = true">申请提现</button>
     </PageHeader>
     <div class="grid grid-cols-2 gap-4 md:grid-cols-6">

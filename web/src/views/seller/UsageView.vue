@@ -6,6 +6,7 @@ import { seller } from '@/api'
 import type { SellerUsage, SellerUsageRecord, Upstream } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
 import PageHeader from '@/components/PageHeader.vue'
+import RefreshButton from '@/components/RefreshButton.vue'
 import StatCard from '@/components/StatCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -56,6 +57,12 @@ watch([upstreamID, days], () => {
 })
 watch([upstreamID, channel, model], () => loadRecords())
 
+function reload() {
+  upstreams.load()
+  usage.load()
+  loadRecords()
+}
+
 const connected = computed(() => (upstreams.data.value ?? []).filter((u) => !['draft', 'authorizing', 'removed'].includes(u.status)))
 const t = computed(() => usage.data.value?.totals)
 const today = computed(() => usage.data.value?.today)
@@ -75,6 +82,7 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
         <option :value="30">近 30 天</option>
         <option :value="90">近 90 天</option>
       </select>
+      <RefreshButton :loading="usage.loading.value || loadingRecords" @click="reload" />
     </PageHeader>
 
     <div class="grid grid-cols-2 gap-4 md:grid-cols-4">

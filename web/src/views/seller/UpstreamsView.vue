@@ -4,6 +4,7 @@ import { seller } from '@/api'
 import type { Upstream, VendorView } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
 import PageHeader from '@/components/PageHeader.vue'
+import RefreshButton from '@/components/RefreshButton.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
@@ -39,6 +40,7 @@ function openResume(u: Upstream) {
 <template>
   <div>
     <PageHeader title="我的上游" description="一个上游是一个官方订阅账号或一个 Coding Plan key。首次接入需要通过上架检测才能挂单。">
+      <RefreshButton :loading="upstreams.loading.value" @click="upstreams.load()" />
       <button class="btn-primary" @click="openNew">接入上游</button>
     </PageHeader>
     <div class="card">

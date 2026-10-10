@@ -62,4 +62,15 @@ describe('proxy diagnostics', () => {
     expect(seller.checkProxyQuality).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+
+  it('reloads the proxy list from the refresh button', async () => {
+    const wrapper = await inventory('seller')
+    expect(seller.proxies).toHaveBeenCalledTimes(1)
+    vi.mocked(seller.proxies).mockResolvedValue([checked])
+    await wrapper.findAll('button').find((b) => b.text() === '刷新')!.trigger('click')
+    await flushPromises()
+    expect(seller.proxies).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('80 分')
+    wrapper.unmount()
+  })
 })
