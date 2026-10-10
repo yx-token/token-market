@@ -129,6 +129,8 @@ func (s *Server) routes() http.Handler {
 	admin("PUT /api/v1/admin/groups/{id}", s.updateGroup)
 	admin("DELETE /api/v1/admin/groups/{id}", s.softDelete("groups"))
 	admin("POST /api/v1/admin/proxies", s.idempotent(s.createProxy))
+	admin("POST /api/v1/admin/proxies/{id}/test", s.testProxy)
+	admin("POST /api/v1/admin/proxies/{id}/quality-check", s.checkProxyQuality)
 	admin("DELETE /api/v1/admin/proxies/{id}", s.softDelete("proxies"))
 	admin("POST /api/v1/admin/accounts", s.idempotent(s.createAccount))
 	admin("PUT /api/v1/admin/accounts/{id}", s.updateAccount)
@@ -716,6 +718,13 @@ func (s *Server) cnQuota(_ http.ResponseWriter, r *http.Request) (any, error) {
 	a, err := s.getAccount(r, id)
 	if err != nil {
 		return nil, err
+	}
+	creds, err := s.AccountCredentials(id)
+	if err != nil {
+		return nil, err
+	}
+	if key, _ := creds["api_key"].(string); strings.HasPrefix(key, "invalid-") {
+		return map[string]any{"provider": a.Platform, "success": false, "credential_valid": false, "tiers": []any{}}, nil
 	}
 	return map[string]any{"provider": a.Platform, "success": true, "credential_valid": true, "plan_level": "pro",
 		"tiers": []map[string]any{{"window": "5h", "used_percent": 10.0, "reset_at": time.Now().Add(time.Hour).Format(time.RFC3339)}}}, nil

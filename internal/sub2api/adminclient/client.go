@@ -14,9 +14,10 @@ import (
 )
 
 type Client struct {
-	wire      *apiwire.Client
-	apiKey    string
-	writeGate func(context.Context) error
+	wire            *apiwire.Client
+	diagnosticsWire *apiwire.Client
+	apiKey          string
+	writeGate       func(context.Context) error
 }
 
 type Option func(*options)
@@ -45,7 +46,13 @@ func New(baseURL, apiKey string, timeout time.Duration, opts ...Option) *Client 
 	for _, opt := range opts {
 		opt(&o)
 	}
-	return &Client{wire: apiwire.New(baseURL, timeout, o.httpClient), apiKey: apiKey, writeGate: o.writeGate}
+	diagnosticsHTTP := &http.Client{}
+	if o.httpClient != nil {
+		*diagnosticsHTTP = *o.httpClient
+	}
+	diagnosticsHTTP.Timeout = 3 * time.Minute
+	return &Client{wire: apiwire.New(baseURL, timeout, o.httpClient),
+		diagnosticsWire: apiwire.New(baseURL, 3*time.Minute, diagnosticsHTTP), apiKey: apiKey, writeGate: o.writeGate}
 }
 
 // APIError 与 IsRetryable 透出公共传输层的定义，方便调用方只依赖本包。

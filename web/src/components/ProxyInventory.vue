@@ -8,6 +8,7 @@ import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
+import ProxyDiagnosticReport from '@/components/ProxyDiagnosticReport.vue'
 import { options } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
 
@@ -24,6 +25,9 @@ const { queryParams, resetQuery, handleQuery } = useListQuery({
 const proxies = useLoader(() => api.proxies(), [] as Proxy[] | null)
 const { busy, run } = useAction()
 const show = ref(false)
+const reportProxy = ref<Proxy | null>(null)
+const reportOpen = ref(false)
+const checking = ref<{ id: number; quality: boolean } | null>(null)
 const form = reactive({ name: '', protocol: 'socks5', host: '', port: '', username: '', password: '', region: '' })
 const valid = computed(() => !!form.name.trim() && !!form.host.trim() && Number.isInteger(Number(form.port)) && Number(form.port) > 0 && Number(form.port) <= 65535)
 const columns = computed(() => [
@@ -32,6 +36,8 @@ const columns = computed(() => [
   ...(!isSeller.value ? [{ key: 'owner', label: '来源' }] : []),
   { key: 'addr', label: '代理地址' },
   { key: 'region', label: '地区' },
+  { key: 'connection', label: '连通性 / 延迟' },
+  { key: 'quality', label: '质量' },
   { key: 'status', label: '状态' },
   { key: 'assigned_upstream_id', label: '绑定账号' },
   { key: 'ready', label: '连接配置' },
@@ -74,6 +80,22 @@ async function create() {
 
 async function act(fn: () => Promise<unknown>, msg: string) {
   if (await run(fn, msg)) await proxies.load()
+}
+
+function viewReport(p: Proxy) {
+  reportProxy.value = p
+  reportOpen.value = true
+}
+
+async function check(p: Proxy, quality: boolean) {
+  if (busy.value) return
+  checking.value = { id: p.id, quality }
+  const updated = await run(() => quality ? api.checkProxyQuality(p.id) : api.testProxy(p.id))
+  checking.value = null
+  if (updated) {
+    viewReport(updated)
+    await proxies.load()
+  }
 }
 </script>
 
@@ -118,10 +140,23 @@ async function act(fn: () => Promise<unknown>, msg: string) {
     </template>
 
     <p v-if="isSeller" class="mb-4 text-sm text-ink-600">请使用固定出口 IP 的代理。已绑定的代理不能停用；需要更换时，先移除对应账号，再用新的代理重新接入。</p>
+    <p v-if="checking" class="mb-4 text-sm text-ink-600" role="status">正在{{ checking.quality ? '检测代理质量，逐项探测 AI 站点，可能需要 1–3 分钟' : '检测连通性和出口地区' }}…</p>
 
     <DataTable :columns="columns" :rows="pageRows" :loading="proxies.loading.value" row-key="id" empty="还没有代理 IP，请先添加">
       <template #cell-owner="{ row }">{{ row.seller_id ? `卖家 #${row.seller_id}` : '平台' }}</template>
       <template #cell-addr="{ row }"><span class="font-mono text-xs">{{ row.protocol }}://{{ row.host.includes(':') ? `[${row.host}]` : row.host }}:{{ row.port }}</span></template>
+      <template #cell-region="{ row }">
+        <div>{{ row.region || '—' }}</div>
+        <div class="font-mono text-xs text-ink-500">{{ row.quality_checked_at && (!row.connection_checked_at || row.quality_checked_at > row.connection_checked_at) ? row.quality_report?.exit_ip : row.connection_report?.ip_address }}</div>
+      </template>
+      <template #cell-connection="{ row }">
+        <span v-if="row.connection_report" :class="row.connection_report.success ? 'text-green-700' : 'text-red-600'">{{ row.connection_report.success ? `${row.connection_report.latency_ms} ms` : '连接失败' }}</span>
+        <span v-else class="text-ink-500">未检测</span>
+      </template>
+      <template #cell-quality="{ row }">
+        <button v-if="row.quality_report" class="link" @click="viewReport(row)">{{ row.quality_report.grade }} · {{ row.quality_report.score }} 分</button>
+        <span v-else class="text-ink-500">未检测</span>
+      </template>
       <template #cell-status="{ row }"><StatusBadge kind="proxyStatus" :value="row.status" /></template>
       <template #cell-assigned_upstream_id="{ row }">
         <RouterLink v-if="row.assigned_upstream_id && isSeller" :to="`/seller/upstreams/${row.assigned_upstream_id}`" class="link">账号 #{{ row.assigned_upstream_id }}</RouterLink>
@@ -130,6 +165,9 @@ async function act(fn: () => Promise<unknown>, msg: string) {
       <template #cell-ready="{ row }">{{ row.sub2api_proxy_id ? '已就绪' : '待重试' }}</template>
       <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
       <template #cell-actions="{ row }">
+        <button class="btn-ghost btn-sm" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, false)">检测连接</button>
+        <button class="btn-ghost btn-sm" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, true)">质量检测</button>
+        <button v-if="row.connection_report || row.quality_report" class="btn-ghost btn-sm" @click="viewReport(row)">查看报告</button>
         <button v-if="!row.sub2api_proxy_id" class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.syncProxy(row.id), '连接配置已就绪')">重试连接</button>
         <button v-if="row.status !== 'disabled'" class="btn-ghost btn-sm" :disabled="busy || !!row.assigned_upstream_id" @click="act(() => api.setProxyDisabled(row.id, true), '已停用')">停用</button>
         <button v-else class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.setProxyDisabled(row.id, false), '已启用')">启用</button>
@@ -182,5 +220,9 @@ async function act(fn: () => Promise<unknown>, msg: string) {
       <button class="btn-secondary" :disabled="busy" @click="show = false">取消</button>
       <button type="submit" form="proxy-form" class="btn-primary" :disabled="busy || !valid">添加</button>
     </template>
+  </ModalDialog>
+  <ModalDialog v-model:open="reportOpen" :title="`代理检测报告 · ${reportProxy?.name ?? ''}`" wide>
+    <ProxyDiagnosticReport v-if="reportProxy" :proxy="reportProxy" />
+    <template #footer><button class="btn-secondary" @click="reportOpen = false">关闭</button></template>
   </ModalDialog>
 </template>

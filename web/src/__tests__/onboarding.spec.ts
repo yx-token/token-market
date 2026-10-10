@@ -6,7 +6,7 @@ import OnboardingWizard from '@/components/OnboardingWizard.vue'
 import { market, seller } from '@/api'
 import type { MarketConfig, Proxy } from '@/api/types'
 
-vi.mock('@/api', () => ({ market: { config: vi.fn() }, seller: { proxies: vi.fn(), createUpstream: vi.fn() } }))
+vi.mock('@/api', () => ({ market: { config: vi.fn() }, seller: { proxies: vi.fn(), createUpstream: vi.fn(), importAccount: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 const proxy = (id: number, extra: Partial<Proxy> = {}): Proxy => ({ id, name: `proxy-${id}`, protocol: 'socks5', host: '203.0.113.10', port: 1080, status: 'available', sub2api_proxy_id: id, created_at: '', ...extra })
@@ -67,6 +67,33 @@ describe('onboarding proxy selection', () => {
     await flushPromises()
     await wrapper.get('#onboarding-proxy').setValue('1')
     expect(next.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('imports one selected account from a sub2api export without an OAuth login', async () => {
+    const wrapper = await openWizard()
+    await wrapper.get('#onboarding-proxy').setValue('1')
+    await wrapper.findAll('button').find((b) => b.text() === '下一步')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text() === '导入 sub2api 账号')!.trigger('click')
+    const submit = () => wrapper.findAll('button').find((b) => b.text() === '导入并检测')!
+    expect(submit().attributes('disabled')).toBeDefined()
+    await wrapper.get('#account-import-json').setValue('{bad json')
+    expect(wrapper.text()).toContain('请输入有效的 JSON')
+    const data = { type: 'sub2api-data', version: 1, accounts: [
+      { name: 'OpenAI account', platform: 'openai', type: 'oauth', credentials: { access_token: 'test-oa-token' } },
+      { name: 'Claude account', platform: 'anthropic', type: 'oauth', credentials: { access_token: 'test-claude-token' } },
+    ] }
+    await wrapper.get('#account-import-json').setValue(JSON.stringify(data))
+    expect(wrapper.text()).toContain('与当前上游不一致')
+    expect(submit().attributes('disabled')).toBeDefined()
+    await wrapper.get('#account-import-selection').setValue(1)
+    expect(submit().attributes('disabled')).toBeUndefined()
+    vi.mocked(seller.importAccount).mockResolvedValue({ id: 10, status: 'verifying', platform: 'anthropic', auth_type: 'oauth' } as Awaited<ReturnType<typeof seller.importAccount>>)
+    await submit().trigger('click')
+    await flushPromises()
+    expect(seller.importAccount).toHaveBeenCalledWith(10, data, 1)
+    expect(wrapper.text()).toContain('正在进行上架检测')
     wrapper.unmount()
   })
 })

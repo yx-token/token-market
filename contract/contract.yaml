@@ -68,6 +68,8 @@ admin_api:
   - {method: DELETE, path: "/api/v1/admin/groups/:id"}
   - {method: POST,   path: /api/v1/admin/proxies,                request: [name, protocol, host, port, username, password], idempotency_key: required}
   - {method: DELETE, path: "/api/v1/admin/proxies/:id"}
+  - {method: POST,   path: "/api/v1/admin/proxies/:id/test"}
+  - {method: POST,   path: "/api/v1/admin/proxies/:id/quality-check"}
   - {method: POST,   path: /api/v1/admin/accounts,               request: [name, notes, platform, type, credentials, extra, proxy_id, concurrency, priority, rate_multiplier, load_factor, group_ids], idempotency_key: required}
   - {method: PUT,    path: "/api/v1/admin/accounts/:id",           request: [credentials, extra, concurrency, priority, rate_multiplier, load_factor, status, group_ids]}
   - {method: POST,   path: "/api/v1/admin/accounts/:id/clear-error"}
