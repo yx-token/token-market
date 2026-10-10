@@ -71,6 +71,8 @@ git tag v0.2.0-rc.1 && git push origin v0.2.0-rc.1   # 带 - 的是预发布：�
 
 国内服务器拉取 GHCR 较慢时，可以让发布流程同时推送到一个镜像仓库副本（例如阿里云容器镜像服务）：在仓库 Settings → Secrets and variables → Actions 中添加变量 `MIRROR_IMAGE`（如 `registry.cn-hangzhou.aliyuncs.com/<命名空间>/token-market`）和密钥 `MIRROR_USERNAME`、`MIRROR_PASSWORD`。
 
+发版成功或失败后，会按组织统一配置的渠道（飞书机器人、邮件）发送通知：渠道配置在 [`yx-token/.github`](https://github.com/yx-token/.github) 仓库，本仓库只需添加密钥 `NOTIFY_DISPATCH_TOKEN`，即一个只有 `yx-token/.github` 仓库 Actions 读写权限的 fine-grained token（创建方法见该仓库 README）。不配置这个密钥，或者组织没有配置任何渠道时，不发通知。
+
 ### 部署
 
 一个镜像包含全部组件，`deploy/docker-compose.yml` 是部署示例（本系统的 PostgreSQL、Redis、api、worker、edge；sub2api 单独部署）。仓库是私有的，镜像也是私有的，服务器需要先用一个有 `read:packages` 权限的 GitHub token 登录 GHCR：
