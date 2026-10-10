@@ -39,12 +39,19 @@ type Engine struct {
 	Kicker      listing.Kicker
 	Settings    func(ctx context.Context) (settings.Settings, error)
 	Log         *slog.Logger
-	Concurrency int
-	Now         func() time.Time
+	Concurrency int // 同时执行的检测批次上限
+	// Gate 返回 false 时 RunBatches 不派发新批次（兼容自检未通过的安全模式）
+	Gate func(ctx context.Context) (bool, string)
+	Now  func() time.Time
 	// 第三方检测：Edge 配置存储（发布临时令牌）、Edge 对外地址（交给检测站）、访问检测站的 HTTP 客户端
 	Edge           edgecfg.Store
 	EdgePublicURL  string
 	ThirdPartyHTTP *http.Client
+
+	batches sync.WaitGroup      // 后台执行中的批次
+	mu      sync.Mutex          // 保护 running、wake
+	running map[string]struct{} // 本进程正在执行的批次
+	wake    chan struct{}       // 批次结束时通知 RunBatches 立即补位
 }
 
 func (e *Engine) now() time.Time {
@@ -143,13 +150,11 @@ func (e *Engine) QueueRun(ctx context.Context, upstreamID int64, trigger string)
 	return id, nil
 }
 
-// Tick 是一轮质量调度：排队到期的检测、执行排队中的批次、被动分析、回收续报价、补足探测余额。
+// Tick 是一轮质量调度：排队到期的检测、推进第三方检测、被动分析、回收续报价、补足探测余额。
+// 排队中的批次由 RunBatches 在后台执行，不占用这里的单轮时限。
 func (e *Engine) Tick(ctx context.Context) error {
 	if err := e.scheduleDue(ctx); err != nil {
 		return fmt.Errorf("schedule: %w", err)
-	}
-	if err := e.runQueued(ctx); err != nil {
-		return fmt.Errorf("run queued: %w", err)
 	}
 	if err := e.advanceThirdParty(ctx); err != nil {
 		e.Log.Warn("third-party detection", "err", err)
@@ -234,7 +239,72 @@ func (e *Engine) scheduleDue(ctx context.Context) error {
 	return nil
 }
 
-func (e *Engine) runQueued(ctx context.Context) error {
+// probeLimits 是检测的超时设置，取自系统设置，修改后对之后开始的批次生效。
+type probeLimits struct {
+	request time.Duration // 单次请求
+	batch   time.Duration // 整批
+}
+
+func limitsOf(st settings.Settings) probeLimits {
+	return probeLimits{
+		request: time.Duration(st.ProbeRequestTimeoutSeconds) * time.Second,
+		batch:   time.Duration(st.ProbeBatchTimeoutMinutes) * time.Minute,
+	}
+}
+
+// orphanGrace 是批次超过总时限后的宽限时间，过后仍处于执行中且不在本进程执行的批次视为已中断。
+const orphanGrace = 5 * time.Minute
+
+// RunBatches 循环派发排队中的检测批次，直到 ctx 结束；退出前等待进行中的批次收尾。
+// 批次在后台执行，慢批次不会拖住排队、第三方检测推进等其他步骤，也不受质量调度单轮时限的限制。
+func (e *Engine) RunBatches(ctx context.Context, interval time.Duration) {
+	defer e.WaitBatches()
+	wake := e.wakeup()
+	for {
+		allowed := true
+		if e.Gate != nil {
+			allowed, _ = e.Gate(ctx)
+		}
+		if allowed {
+			if err := e.DispatchQueued(ctx); err != nil && ctx.Err() == nil {
+				e.Log.Error("dispatch probe batches", "err", err)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		case <-wake:
+		}
+	}
+}
+
+// WaitBatches 等待已派发的批次全部结束。
+func (e *Engine) WaitBatches() {
+	e.batches.Wait()
+}
+
+// DispatchQueued 回收已中断的批次，再把排队中的批次交给后台执行（同时最多 Concurrency 个），不等待批次结束。
+// 批次在 ctx 取消时中断并重新排队，调用方需保证 ctx 覆盖批次的执行时间。
+func (e *Engine) DispatchQueued(ctx context.Context) error {
+	st, err := e.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	lim := limitsOf(st)
+	if err := e.failOrphaned(ctx, lim); err != nil {
+		return fmt.Errorf("orphaned batches: %w", err)
+	}
+	conc := e.Concurrency
+	if conc <= 0 {
+		conc = 4
+	}
+	e.mu.Lock()
+	full := len(e.running) >= conc
+	e.mu.Unlock()
+	if full {
+		return nil
+	}
 	rows, err := e.DB.Query(ctx, `SELECT batch_id FROM probe_runs WHERE status = 'queued' GROUP BY batch_id ORDER BY min(queued_at) LIMIT 50`)
 	if err != nil {
 		return err
@@ -250,24 +320,87 @@ func (e *Engine) runQueued(ctx context.Context) error {
 		e.Log.Info("probe user balance is being topped up, probe batches deferred", "batches", len(batches))
 		return nil
 	}
-	conc := e.Concurrency
-	if conc <= 0 {
-		conc = 4
-	}
-	sem := make(chan struct{}, conc)
-	var wg sync.WaitGroup
 	for _, b := range batches {
-		sem <- struct{}{}
-		wg.Add(1)
-		go func(batch string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			if err := e.ExecuteBatch(ctx, batch); err != nil {
-				e.Log.Error("probe batch", "batch", batch, "err", err)
+		if !e.claim(b, conc) {
+			continue
+		}
+		e.batches.Add(1)
+		go func() {
+			defer e.batches.Done()
+			defer e.release(b)
+			if err := e.executeBatch(ctx, b, lim); err != nil {
+				e.Log.Error("probe batch", "batch", b, "err", err)
 			}
-		}(b)
+		}()
 	}
-	wg.Wait()
+	return nil
+}
+
+// claim 登记本进程开始执行批次；并发已满或该批次已在执行时返回 false。
+func (e *Engine) claim(batch string, limit int) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.running[batch]; ok || len(e.running) >= limit {
+		return false
+	}
+	if e.running == nil {
+		e.running = map[string]struct{}{}
+	}
+	e.running[batch] = struct{}{}
+	return true
+}
+
+func (e *Engine) release(batch string) {
+	e.mu.Lock()
+	delete(e.running, batch)
+	e.mu.Unlock()
+	select {
+	case e.wakeup() <- struct{}{}:
+	default:
+	}
+}
+
+func (e *Engine) wakeup() chan struct{} {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.wake == nil {
+		e.wake = make(chan struct{}, 1)
+	}
+	return e.wake
+}
+
+// failOrphaned 把超过总时限仍处于执行中、且不在本进程执行的检测记为失败。只有持主锁的 worker 执行检测，
+// 这类记录来自已经退出的进程（例如崩溃）；不处理会一直算作"检测中"，挡住该上游之后的检测。
+func (e *Engine) failOrphaned(ctx context.Context, lim probeLimits) error {
+	rows, err := e.DB.Query(ctx, `SELECT id, upstream_id, trigger, model, batch_id FROM probe_runs
+		WHERE status = 'running' AND started_at < now() - make_interval(secs => $1)`, (lim.batch + orphanGrace).Seconds())
+	if err != nil {
+		return err
+	}
+	type orphan struct {
+		run   runRow
+		batch string
+	}
+	orphans, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (orphan, error) {
+		var o orphan
+		err := row.Scan(&o.run.id, &o.run.upstreamID, &o.run.trigger, &o.run.model, &o.batch)
+		return o, err
+	})
+	if err != nil {
+		return err
+	}
+	for _, o := range orphans {
+		e.mu.Lock()
+		_, mine := e.running[o.batch]
+		e.mu.Unlock()
+		if mine {
+			continue
+		}
+		e.Log.Warn("probe run orphaned, marking failed", "run_id", o.run.id, "batch", o.batch)
+		if err := e.failRun(ctx, o.run, "check was interrupted before finishing"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -278,8 +411,18 @@ type runRow struct {
 	model      string
 }
 
-// ExecuteBatch 执行一个批次：先跑基线账号，再用同一批题跑被测上游，最后判定与处置。
+// ExecuteBatch 按当前系统设置的超时执行一个批次，见 executeBatch。
 func (e *Engine) ExecuteBatch(ctx context.Context, batch string) error {
+	st, err := e.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	return e.executeBatch(ctx, batch, limitsOf(st))
+}
+
+// executeBatch 执行一个批次：先跑基线账号，再用同一批题跑被测上游，最后判定与处置。
+// 整批不超过 lim.batch；超时或出错时记为检测失败。ctx 被取消（worker 停止）时整批重新排队，下次从头执行。
+func (e *Engine) executeBatch(ctx context.Context, batch string, lim probeLimits) error {
 	rows, err := e.DB.Query(ctx, `UPDATE probe_runs SET status = 'running', started_at = now()
 		WHERE batch_id = $1 AND status = 'queued' RETURNING id, upstream_id, trigger, model`, batch)
 	if err != nil {
@@ -306,18 +449,104 @@ func (e *Engine) ExecuteBatch(ctx context.Context, batch string) error {
 		_, err := e.DB.Exec(ctx, `UPDATE probe_runs SET status = 'done', finished_at = now() WHERE batch_id = $1`, batch)
 		return err
 	}
+	bctx, cancel := context.WithTimeout(ctx, lim.batch)
+	defer cancel()
+	// 超时或中断后 ctx 已失效，收尾的写入改用独立的短时 ctx，否则记录会一直停在"执行中"
+	cleanup := func(fn func(ctx context.Context) error) error {
+		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+		defer cancel()
+		return fn(cctx)
+	}
 	seed := seedOf(batch)
 	for _, t := range targets {
-		if err := e.executeTarget(ctx, t, ref, seed); err != nil {
-			_, _ = e.DB.Exec(ctx, `UPDATE probe_runs SET status = 'failed', finished_at = now(), summary = $2 WHERE id = $1`,
-				t.id, mustJSON(map[string]string{"error": err.Error()}))
-			e.Log.Error("probe run failed", "run_id", t.id, "err", err)
+		err := e.executeTarget(bctx, t, ref, seed, lim.request)
+		if err == nil {
+			continue
+		}
+		if errors.Is(ctx.Err(), context.Canceled) {
+			e.Log.Info("probe batch interrupted, requeued", "batch", batch)
+			return cleanup(func(ctx context.Context) error { return e.requeueBatch(ctx, batch) })
+		}
+		msg := err.Error()
+		if errors.Is(bctx.Err(), context.DeadlineExceeded) {
+			msg = fmt.Sprintf("check did not finish within %s", lim.batch)
+		}
+		e.Log.Error("probe run failed", "run_id", t.id, "err", err)
+		if err := cleanup(func(ctx context.Context) error { return e.failRun(ctx, t, msg) }); err != nil {
+			return err
 		}
 	}
 	if ref != nil {
-		_, _ = e.DB.Exec(ctx, `UPDATE probe_runs SET status = 'done', finished_at = now() WHERE id = $1 AND status = 'running'`, ref.id)
+		return cleanup(func(ctx context.Context) error {
+			_, err := e.DB.Exec(ctx, `UPDATE probe_runs SET status = 'done', finished_at = now() WHERE id = $1 AND status = 'running'`, ref.id)
+			return err
+		})
 	}
 	return nil
+}
+
+// requeueBatch 把被中断的批次放回队列，丢弃已有的部分结果。
+func (e *Engine) requeueBatch(ctx context.Context, batch string) error {
+	tx, err := e.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `DELETE FROM probe_results WHERE run_id IN (SELECT id FROM probe_runs WHERE batch_id = $1 AND status = 'running')`, batch); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE probe_runs SET status = 'queued', started_at = NULL WHERE batch_id = $1 AND status = 'running'`, batch); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// failRun 记录检测失败（超时、中断或出错），并让依赖这次检测的流程继续：上架检测记为不通过（卖家可以重新检测），
+// 申诉回到待处理，恢复复测按退避重新安排。
+func (e *Engine) failRun(ctx context.Context, run runRow, msg string) error {
+	tx, err := e.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	tag, err := tx.Exec(ctx, `UPDATE probe_runs SET status = 'failed', finished_at = now(), summary = $2 WHERE id = $1 AND status = 'running'`,
+		run.id, mustJSON(map[string]string{"error": msg}))
+	if err != nil || tag.RowsAffected() == 0 {
+		return err
+	}
+	if run.trigger != "reference" {
+		// 失败也记为一次检测，避免疑似上游的追加检测每轮立即重排
+		if _, err := tx.Exec(ctx, `UPDATE upstream_quality_state SET last_run_at = now() WHERE upstream_id = $1`, run.upstreamID); err != nil {
+			return err
+		}
+	}
+	switch run.trigger {
+	case "onboarding":
+		if err := listing.MarkVerified(ctx, tx, run.upstreamID, false, "onboarding check failed: "+msg); err != nil {
+			return err
+		}
+	case "appeal":
+		if _, err := tx.Exec(ctx, `UPDATE appeals SET status = 'open'
+			WHERE status = 'retesting' AND report_id IN (SELECT id FROM test_reports WHERE upstream_id = $1)`, run.upstreamID); err != nil {
+			return err
+		}
+	case "recovery":
+		// 恢复复测排队时清空了下次时间，失败后不重新安排就不会再自动复测
+		var attempts int
+		err := tx.QueryRow(ctx, `SELECT recovery_attempts FROM upstream_quality_state WHERE upstream_id = $1`, run.upstreamID).Scan(&attempts)
+		if errors.Is(err, pgx.ErrNoRows) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		next := e.now().Add(recoveryBackoff[min(attempts, len(recoveryBackoff)-1)])
+		if _, err := tx.Exec(ctx, `UPDATE upstream_quality_state SET next_recovery_at = $2, recovery_attempts = recovery_attempts + 1
+			WHERE upstream_id = $1 AND next_recovery_at IS NULL`, run.upstreamID, next); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func seedOf(s string) int64 {
@@ -330,7 +559,7 @@ func mustJSON(v any) []byte {
 	return b
 }
 
-func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, seed int64) error {
+func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, seed int64, timeout time.Duration) error {
 	u, err := e.loadUpstream(ctx, run.upstreamID)
 	if err != nil {
 		return err
@@ -402,14 +631,14 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, see
 		req := ProbeRequest{Model: run.model, Prompt: prompt, MaxTokens: it.MaxTokens, ReasoningEffort: effort}
 		o := Outcome{ItemID: it.ID, Suite: it.Suite}
 		if refKey != "" {
-			r := e.probe(ctx, refUp.platform, refKey, req)
+			r := e.probe(ctx, refUp.platform, refKey, req, timeout)
 			pass, _ := grade(it.Grader, r.Text, needle)
 			o.Ref, o.RefPass = &r, pass && r.OK()
 			if err := e.saveResult(ctx, ref.id, it, r, o.RefPass); err != nil {
 				return err
 			}
 		}
-		t := e.probe(ctx, u.platform, targetKey, req)
+		t := e.probe(ctx, u.platform, targetKey, req, timeout)
 		pass, _ := grade(it.Grader, t.Text, needle)
 		o.Target, o.TargetPass = t, pass && t.OK()
 		if hist, ok, err := e.refHistory(ctx, u.platform, it.ID); err != nil {
@@ -443,8 +672,8 @@ func containsAny(list []string, want ...string) bool {
 	return false
 }
 
-func (e *Engine) probe(ctx context.Context, platform, key string, req ProbeRequest) ProbeResult {
-	pctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+func (e *Engine) probe(ctx context.Context, platform, key string, req ProbeRequest, timeout time.Duration) ProbeResult {
+	pctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return e.Prober.Probe(pctx, platform, key, req)
 }

@@ -487,6 +487,8 @@ export interface Settings {
   recharge_order_timeout_minutes: number
   refund_original_route: boolean
   refund_original_route_days: number
+  probe_request_timeout_seconds: number
+  probe_batch_timeout_minutes: number
 }
 
 export interface VendorConfig {

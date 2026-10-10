@@ -160,10 +160,32 @@ var pongRe = regexp.MustCompile(`PONG\d+`)
 func (e *env) tick() {
 	e.t.Helper()
 	for i := 0; i < 3; i++ {
-		if err := e.app.Quality.Tick(e.ctx); err != nil {
+		if err := e.qualityRound(e.ctx); err != nil {
 			e.t.Fatalf("quality tick: %v", err)
 		}
 		e.drain()
+	}
+}
+
+// qualityRound 执行一轮质量调度，再跑完排队中的检测批次（生产环境由 RunBatches 在后台执行，一批结束立即补位）。
+func (e *env) qualityRound(ctx context.Context) error {
+	if err := e.app.Quality.Tick(ctx); err != nil {
+		return err
+	}
+	for last := -1; ; {
+		var queued int
+		if err := e.app.DB.QueryRow(ctx, "SELECT count(*) FROM probe_runs WHERE status = 'queued'").Scan(&queued); err != nil {
+			return err
+		}
+		// 队列已空，或者没有进展（例如探测用户余额待补足，批次顺延）
+		if queued == 0 || queued == last {
+			return nil
+		}
+		last = queued
+		if err := e.app.Quality.DispatchQueued(ctx); err != nil {
+			return err
+		}
+		e.app.Quality.WaitBatches()
 	}
 }
 
