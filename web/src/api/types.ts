@@ -515,6 +515,37 @@ export interface Proxy {
   status: string
   assigned_upstream_id?: number
   created_at: string
+  connection_report?: ProxyTestResult
+  quality_report?: ProxyQualityResult
+  connection_checked_at?: string
+  quality_checked_at?: string
+}
+
+export interface ProxyTestResult {
+  success: boolean
+  message: string
+  latency_ms: number
+  ip_address?: string
+  city?: string
+  region?: string
+  country?: string
+  country_code?: string
+}
+
+export interface ProxyQualityResult {
+  score: number
+  grade: string
+  summary: string
+  exit_ip?: string
+  country?: string
+  country_code?: string
+  base_latency_ms: number
+  passed_count: number
+  warn_count: number
+  failed_count: number
+  challenge_count: number
+  checked_at: number
+  items: { target: string; status: string; http_status?: number; latency_ms: number; message?: string; cf_ray?: string }[]
 }
 
 export interface CreateProxyInput {

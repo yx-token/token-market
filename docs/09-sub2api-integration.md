@@ -74,6 +74,10 @@ sub2api 的 Admin API 不能替用户创建 key，只能用影子用户的登录
 
 不读取 `accounts.credentials`。
 
+代理诊断复用 `POST /api/v1/admin/proxies/:id/test` 与 `POST /api/v1/admin/proxies/:id/quality-check`。token-market 保存最近一次检测报告及检测时间，成功识别出口后更新地区。质量检测使用独立的 3 分钟请求超时；检测请求错误保留原报告，实际连接失败则保存失败结果。卖家只能检测自己的代理，管理员可以检测全部库存。
+
+账号凭证导入解析 sub2api v1 导出格式后，通过现有账号创建接口写入专用探测分组。导入不会直接调用 sub2api 的批量迁移接口，也不会采用导出文件的代理或调度配置；Coding Plan 仍校验官方额度，OAuth 仍执行隐私设置及上架检测。
+
 ## 5. 契约
 
 契约描述本系统依赖 sub2api 的哪些东西，由三部分组成。

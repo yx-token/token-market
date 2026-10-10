@@ -2,6 +2,7 @@ package listing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -17,18 +18,22 @@ import (
 )
 
 type Proxy struct {
-	ID                 int64     `json:"id"`
-	SellerID           *int64    `json:"seller_id,omitempty"`
-	Name               string    `json:"name"`
-	Protocol           string    `json:"protocol"`
-	Host               string    `json:"host"`
-	Port               int       `json:"port"`
-	Username           *string   `json:"username,omitempty"`
-	Region             *string   `json:"region,omitempty"`
-	Sub2APIProxyID     *int64    `json:"sub2api_proxy_id,omitempty"`
-	Status             string    `json:"status"`
-	AssignedUpstreamID *int64    `json:"assigned_upstream_id,omitempty"`
-	CreatedAt          time.Time `json:"created_at"`
+	ID                  int64                           `json:"id"`
+	SellerID            *int64                          `json:"seller_id,omitempty"`
+	Name                string                          `json:"name"`
+	Protocol            string                          `json:"protocol"`
+	Host                string                          `json:"host"`
+	Port                int                             `json:"port"`
+	Username            *string                         `json:"username,omitempty"`
+	Region              *string                         `json:"region,omitempty"`
+	Sub2APIProxyID      *int64                          `json:"sub2api_proxy_id,omitempty"`
+	Status              string                          `json:"status"`
+	AssignedUpstreamID  *int64                          `json:"assigned_upstream_id,omitempty"`
+	CreatedAt           time.Time                       `json:"created_at"`
+	ConnectionReport    *adminclient.ProxyTestResult    `json:"connection_report,omitempty"`
+	QualityReport       *adminclient.ProxyQualityResult `json:"quality_report,omitempty"`
+	ConnectionCheckedAt *time.Time                      `json:"connection_checked_at,omitempty"`
+	QualityCheckedAt    *time.Time                      `json:"quality_checked_at,omitempty"`
 }
 
 type CreateProxyInput struct {
@@ -41,13 +46,24 @@ type CreateProxyInput struct {
 	Region   string `json:"region"`
 }
 
-const proxyColumns = `id, seller_id, name, protocol, host, port, username, region, sub2api_proxy_id, status, assigned_upstream_id, created_at`
+const proxyColumns = `id, seller_id, name, protocol, host, port, username, region, sub2api_proxy_id, status, assigned_upstream_id, created_at, connection_report, quality_report, connection_checked_at, quality_checked_at`
 
 func scanProxy(row pgx.Row) (*Proxy, error) {
 	var p Proxy
-	err := row.Scan(&p.ID, &p.SellerID, &p.Name, &p.Protocol, &p.Host, &p.Port, &p.Username, &p.Region, &p.Sub2APIProxyID, &p.Status, &p.AssignedUpstreamID, &p.CreatedAt)
+	var connection, quality []byte
+	err := row.Scan(&p.ID, &p.SellerID, &p.Name, &p.Protocol, &p.Host, &p.Port, &p.Username, &p.Region, &p.Sub2APIProxyID, &p.Status, &p.AssignedUpstreamID, &p.CreatedAt, &connection, &quality, &p.ConnectionCheckedAt, &p.QualityCheckedAt)
 	if err != nil {
 		return nil, err
+	}
+	if len(connection) > 0 {
+		if err := json.Unmarshal(connection, &p.ConnectionReport); err != nil {
+			return nil, err
+		}
+	}
+	if len(quality) > 0 {
+		if err := json.Unmarshal(quality, &p.QualityReport); err != nil {
+			return nil, err
+		}
 	}
 	return &p, nil
 }

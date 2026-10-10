@@ -9,6 +9,7 @@ import ModalDialog from '@/components/ModalDialog.vue'
 import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
 import { authGuides, takesProjectID, takesTeam } from '@/utils/authGuides'
 import { useToast } from '@/stores/toast'
+import { accountImportChoices } from '@/utils/accountImport'
 
 const props = defineProps<{ vendors: VendorView[]; resume?: Upstream | null }>()
 const emit = defineEmits<{ done: [] }>()
@@ -23,6 +24,38 @@ const authType = ref('')
 const upstream = ref<Upstream | null>(null)
 const authURL = ref('')
 const code = ref('')
+const entryMode = ref<'authorize' | 'import'>('authorize')
+const importText = ref('')
+const importIndex = ref(0)
+const importPreview = computed(() => {
+  if (!importText.value.trim()) return { data: undefined, choices: [], error: '' }
+  try {
+    if (new TextEncoder().encode(importText.value).length > 900000) throw new Error('导入内容过大，请使用小于 900 KB 的文件')
+    const data: unknown = JSON.parse(importText.value)
+    return { data, choices: accountImportChoices(data), error: '' }
+  } catch (e) {
+    return { data: undefined, choices: [], error: e instanceof SyntaxError ? '请输入有效的 JSON 账号数据' : (e as Error).message }
+  }
+})
+watch(importText, () => { importIndex.value = 0 })
+const selectedImport = computed(() => importPreview.value.choices[importIndex.value])
+const importMismatch = computed(() => {
+  const a = selectedImport.value
+  const expected = isOAuth.value ? (currentType.value === 'setup-token' ? 'setup-token' : 'oauth') : 'apikey'
+  return !!a && ((!!a.platform && a.platform !== platform.value) || (!!a.type && a.type !== expected))
+})
+const canImport = computed(() => !!selectedImport.value && !importPreview.value.error && !importMismatch.value)
+
+async function readImportFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    if (file.size > 900000) throw new Error('导入文件需小于 900 KB')
+    importText.value = await file.text()
+  } catch (e) { toast.error(e) }
+  finally { input.value = '' }
+}
 const projectID = ref('')
 const apiKey = ref('')
 const team = ref({ organization: '', project: '' })
@@ -59,6 +92,9 @@ const withTeam = computed(() => takesTeam(platform.value, currentType.value))
 watch(open, (v) => {
   if (!v) return
   code.value = ''
+  entryMode.value = 'authorize'
+  importText.value = ''
+  importIndex.value = 0
   apiKey.value = ''
   authURL.value = ''
   projectID.value = ''
@@ -111,10 +147,13 @@ async function submit() {
       ? { organization: team.value.organization.trim(), project: team.value.project.trim() || undefined }
       : {}),
   }
-  const u = await run(() => (isOAuth.value ? seller.completeOAuth(id, code.value.trim()) : seller.submitCodingKey(id, body)))
+  const u = await run(() => entryMode.value === 'import'
+    ? seller.importAccount(id, importPreview.value.data, importIndex.value)
+    : (isOAuth.value ? seller.completeOAuth(id, code.value.trim()) : seller.submitCodingKey(id, body)))
   if (u) {
     upstream.value = u
     step.value = 'done'
+    importText.value = ''
     emit('done')
   }
 }
@@ -180,7 +219,33 @@ function goDetail() {
       </div>
       <p v-if="guide" class="text-sm text-ink-600">{{ guide.summary }}</p>
 
-      <template v-if="isOAuth">
+      <div class="flex gap-2" role="group" aria-label="账号接入方式">
+        <button type="button" :class="['choice', entryMode === 'authorize' && 'choice-on']" :disabled="busy" @click="entryMode = 'authorize'">{{ isOAuth ? '官方授权' : '填写 API Key' }}</button>
+        <button type="button" :class="['choice', entryMode === 'import' && 'choice-on']" :disabled="busy" @click="entryMode = 'import'">导入 sub2api 账号</button>
+      </div>
+
+      <template v-if="entryMode === 'import'">
+        <p class="text-sm text-ink-600">只有授权信息也可以接入，无需账号密码。支持 sub2api 导出的 JSON 文件、账号数组、单个账号或 credentials 对象；多账号文件每次选择一个账号导入。</p>
+        <div>
+          <label class="label" for="account-import-file">选择 JSON 文件</label>
+          <input id="account-import-file" type="file" accept=".json,application/json" class="input" :disabled="busy" @change="readImportFile" />
+        </div>
+        <div>
+          <label class="label" for="account-import-json">或粘贴账号 JSON</label>
+          <textarea id="account-import-json" v-model="importText" class="input font-mono text-xs" rows="6" :disabled="busy" spellcheck="false" autocomplete="off" placeholder='{"platform":"anthropic","type":"oauth","credentials":{"access_token":"…","refresh_token":"…"}}' />
+          <p v-if="importPreview.error" class="hint text-red-600" role="alert">{{ importPreview.error }}</p>
+        </div>
+        <div v-if="importPreview.choices.length">
+          <label class="label" for="account-import-selection">本次导入的账号（共 {{ importPreview.choices.length }} 个）</label>
+          <select id="account-import-selection" v-model="importIndex" class="input" :disabled="busy">
+            <option v-for="(a, i) in importPreview.choices" :key="i" :value="i">{{ a.name }}{{ a.platform ? ` · ${label('platform', a.platform).text}` : '' }}{{ a.type ? ` · ${a.type}` : '' }}</option>
+          </select>
+          <p v-if="importMismatch" class="hint text-red-600" role="alert">所选账号的厂商或接入方式与当前上游不一致，请选择匹配的账号。</p>
+        </div>
+        <p class="hint">导入账号沿用本上游已绑定的代理。导出文件中的代理、分组和调度配置不会被导入；导入后仍需通过隐私设置及上架检测，Coding Plan 会校验官方订阅额度。</p>
+      </template>
+
+      <template v-else-if="isOAuth">
         <div v-if="withProject">
           <label class="label" for="project">GCP 项目 ID（可选）</label>
           <input id="project" v-model="projectID" class="input font-mono" placeholder="例如 my-project-123456" autocomplete="off" />
@@ -247,7 +312,7 @@ function goDetail() {
     <template #footer>
       <button class="btn-secondary" @click="open = false">关闭</button>
       <button v-if="step === 'choose'" class="btn-primary" :disabled="busy || loadingProxies || proxyLoadError || !platform || !authType || (requireSellerProxy && !proxyID)" @click="create">下一步</button>
-      <button v-else-if="step === 'authorize'" class="btn-primary" :disabled="busy || (isOAuth ? !code.trim() : !apiKey.trim())" @click="submit">提交</button>
+      <button v-else-if="step === 'authorize'" class="btn-primary" :disabled="busy || (entryMode === 'import' ? !canImport : (isOAuth ? !code.trim() : !apiKey.trim()))" @click="submit">{{ entryMode === 'import' ? '导入并检测' : '提交' }}</button>
       <button v-else class="btn-primary" @click="goDetail">查看上游</button>
     </template>
   </ModalDialog>
