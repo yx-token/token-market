@@ -263,7 +263,7 @@ func TestAPISurface(t *testing.T) {
 	admin.expect(404, "POST", fmt.Sprintf("/api/admin/probe-items/%d/retire", item.ID), nil)
 	admin.must("POST", fmt.Sprintf("/api/admin/upstreams/%d/probe", upC.ID), nil, nil) // 管理员可以对关闭检测的厂商强制检测
 	for i := 0; i < 2; i++ {
-		if err := e.app.Quality.Tick(ctx); err != nil {
+		if err := e.qualityRound(ctx); err != nil {
 			t.Fatal(err)
 		}
 		e.drain()
@@ -313,7 +313,7 @@ func TestAPISurface(t *testing.T) {
 		"reconcile":       func() error { _, err := e.app.Reconciler.RunAttempts(ctx); return err },
 		"balances":        func() error { _, err := e.app.Reconciler.RunBalances(ctx); return err },
 		"risk":            func() error { _, err := e.app.Risk.Detect(ctx); return err },
-		"quality":         func() error { return e.app.Quality.Tick(ctx) },
+		"quality":         func() error { return e.qualityRound(ctx) },
 		"unfreeze":        func() error { _, err := billing.Unfreeze(ctx, e.app.DB, 7, time.Now().Add(8*24*time.Hour)); return err },
 	}
 	for name, fn := range jobs {

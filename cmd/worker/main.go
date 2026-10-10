@@ -102,6 +102,7 @@ func run(configPath string, log *slog.Logger) error {
 		}
 	}
 	a.Ingester.Gate = guard.AllowWrites
+	a.Quality.Gate = guard.AllowWrites
 	jobs := []job{
 		{"funds.track_crediting", 10 * time.Second, a.Funds.TrackCrediting},
 		{"funds.advance_refunds", 10 * time.Second, a.Funds.AdvanceRefunds},
@@ -159,10 +160,12 @@ func run(configPath string, log *slog.Logger) error {
 	spawn(func() { sender.Run(ctx, cfg.Worker.OpsPollInterval) })
 	spawn(func() { a.Scheduler.Run(ctx, cfg.Worker.SchedulerInterval) })
 	spawn(func() { a.Ingester.Run(ctx, cfg.Worker.IngestInterval) })
+	// 检测批次在后台执行，每批的总时限取自系统设置，不受 quality.tick 单轮超时的限制
+	spawn(func() { a.Quality.RunBatches(ctx, cfg.Worker.QualityInterval) })
 	for _, j := range jobs {
 		spawn(func() { j.loop(ctx, log) })
 	}
-	log.Info("worker started", "jobs", len(jobs)+4, "version", buildinfo.Version)
+	log.Info("worker started", "jobs", len(jobs)+5, "version", buildinfo.Version)
 	wg.Wait()
 	log.Info("worker stopped")
 	return nil

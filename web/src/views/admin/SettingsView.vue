@@ -26,6 +26,8 @@ const numberFields: { key: keyof Settings; label: string; hint: string; step?: s
   { key: 'new_seller_direct_cap', label: '新卖家单一买家收益上限（元）', hint: '超过记风险事件', step: '0.01' },
   { key: 'scheduler_change_budget', label: '每轮调度最大改动账号数', hint: '' },
   { key: 'balance_mismatch_tolerance', label: '余额对账容差（元）', hint: '', step: '0.01' },
+  { key: 'probe_request_timeout_seconds', label: '质量检测单次请求超时（秒）', hint: '每道题发给被测上游或基线账号的单次请求，超时按请求失败计；10–1800' },
+  { key: 'probe_batch_timeout_minutes', label: '质量检测总时限（分钟）', hint: '一次检测整批题的总时长，超过记为检测失败（上架检测记为不通过，可重新检测）；不能短于单次请求超时' },
 ]
 
 

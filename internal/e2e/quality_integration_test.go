@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -54,7 +55,7 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 	tick := func() {
 		t.Helper()
 		for i := 0; i < 3; i++ {
-			if err := e.app.Quality.Tick(ctx); err != nil {
+			if err := e.qualityRound(ctx); err != nil {
 				t.Fatalf("quality tick: %v", err)
 			}
 			e.drain() // 探测用户充值等出站操作
@@ -293,4 +294,169 @@ func TestOnboardingCheckIsMandatory(t *testing.T) {
 	if res.Status != "verify_failed" || res.FailureReason == nil || !strings.Contains(*res.FailureReason, "could not start") {
 		t.Fatalf("onboarding without models: %+v", res)
 	}
+}
+
+// 检测超时与中断：超过总时限记为检测失败（上架检测不通过，可以重新检测）；worker 停止时整批重新排队；
+// 进程中断遗留的"执行中"记录超过时限后记为失败，不再挡住之后的检测。超时在系统设置中调整。
+func TestProbeTimeouts(t *testing.T) {
+	e := setup(t)
+	ctx := e.ctx
+	admin := e.login("admin@market.test", "admin-password-1")
+	admin.must("PUT", "/api/admin/vendors/anthropic", map[string]any{"enabled": true}, nil)
+	for i := 1; i <= 8; i++ {
+		admin.must("POST", "/api/admin/proxies", map[string]any{"name": fmt.Sprintf("p%d", i), "protocol": "socks5", "host": "10.0.0.5", "port": 6080 + i}, nil)
+	}
+
+	// 默认单次请求 180 秒、整批 30 分钟；整批不能短于单次请求
+	var st struct {
+		Request int `json:"probe_request_timeout_seconds"`
+		Batch   int `json:"probe_batch_timeout_minutes"`
+	}
+	admin.must("GET", "/api/admin/settings", nil, &st)
+	if st.Request != 180 || st.Batch != 30 {
+		t.Fatalf("default probe timeouts: %+v", st)
+	}
+	admin.expect(400, "PUT", "/api/admin/settings", map[string]any{"probe_request_timeout_seconds": 600, "probe_batch_timeout_minutes": 5})
+	admin.must("PUT", "/api/admin/settings", map[string]any{"probe_request_timeout_seconds": 120, "probe_batch_timeout_minutes": 20}, &st)
+	if st.Request != 120 || st.Batch != 20 {
+		t.Fatalf("probe timeouts should be adjustable: %+v", st)
+	}
+
+	// 账号回答 hangAfter 次后挂起，直到测试结束
+	var mu sync.Mutex
+	hangAfter, answered := map[int64]int{}, map[int64]int{}
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	e.fake.SetResponder(func(acc int64, prompt string) string {
+		mu.Lock()
+		n, ok := hangAfter[acc]
+		hang := ok && answered[acc] >= n
+		answered[acc]++
+		mu.Unlock()
+		if hang {
+			<-release
+		}
+		return "The code is " + pongRe.FindString(prompt)
+	})
+	setHang := func(acc int64, after int) {
+		mu.Lock()
+		defer mu.Unlock()
+		answered[acc] = 0
+		if after < 0 {
+			delete(hangAfter, acc)
+		} else {
+			hangAfter[acc] = after
+		}
+	}
+	seller := e.newUser("seller@market.test")
+	onboard := func(code string, hang int) (upstreamID, acc int64, batch string) {
+		var up idOnly
+		seller.must("POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"}, &up)
+		seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/start", up.ID), nil, nil)
+		seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/complete", up.ID), map[string]string{"code": code}, nil)
+		mustScan(t, e.app.DB.QueryRow(ctx, "SELECT sub2api_account_id FROM upstreams WHERE id = $1", up.ID), &acc)
+		mustScan(t, e.app.DB.QueryRow(ctx, "SELECT batch_id FROM probe_runs WHERE upstream_id = $1 AND status = 'queued'", up.ID), &batch)
+		setHang(acc, hang)
+		return up.ID, acc, batch
+	}
+	failedOnboarding := func(upstreamID int64, batch, runErr string) {
+		t.Helper()
+		var status, summary, upStatus, reason string
+		mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status, summary->>'error' FROM probe_runs WHERE batch_id = $1", batch), &status, &summary)
+		if status != "failed" || !strings.Contains(summary, runErr) {
+			t.Fatalf("run of batch %s should fail with %q: %s %s", batch, runErr, status, summary)
+		}
+		mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status, failure_reason FROM upstreams WHERE id = $1", upstreamID), &upStatus, &reason)
+		if upStatus != "verify_failed" || !strings.Contains(reason, "onboarding check failed: "+runErr) {
+			t.Fatalf("upstream %d should fail its onboarding check so the seller can retry: %s %s", upstreamID, upStatus, reason)
+		}
+	}
+	// 先让一个正常账号通过上架检测（同时给探测用户充值）
+	first, _, _ := onboard("ivy", -1)
+	e.passOnboarding(first)
+
+	// 超过总时限：检测失败、上架检测不通过；修复后可以重新检测
+	up1, acc1, batch1 := onboard("jack", 0)
+	tctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	err := e.app.Quality.ExecuteBatch(tctx, batch1)
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedOnboarding(up1, batch1, "check did not finish within 20m0s")
+	setHang(acc1, -1)
+	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/retry-verification", up1), nil, nil)
+	e.passOnboarding(up1)
+
+	// worker 停止（ctx 取消）：整批放回队列并丢弃部分结果，之后正常执行
+	up2, acc2, batch2 := onboard("kate", 1)
+	cctx, cancel := context.WithCancel(ctx)
+	time.AfterFunc(time.Second, cancel)
+	if err := e.app.Quality.ExecuteBatch(cctx, batch2); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	var cleared bool
+	var results int
+	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT status, started_at IS NULL, (SELECT count(*) FROM probe_results WHERE run_id = r.id)
+		FROM probe_runs r WHERE batch_id = $1`, batch2), &status, &cleared, &results)
+	if status != "queued" || !cleared || results != 0 {
+		t.Fatalf("interrupted batch should be requeued from scratch: status=%s cleared=%v results=%d", status, cleared, results)
+	}
+	setHang(acc2, -1)
+	e.passOnboarding(up2)
+
+	// 进程中断遗留的"执行中"记录：超过总时限与宽限后记为失败，卖家可以重新检测
+	up3, _, batch3 := onboard("liam", -1)
+	if _, err := e.app.DB.Exec(ctx, "UPDATE probe_runs SET status = 'running', started_at = now() - interval '24 minutes' WHERE batch_id = $1", batch3); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.app.Quality.DispatchQueued(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status FROM probe_runs WHERE batch_id = $1", batch3), &status)
+	if status != "running" {
+		t.Fatalf("a run still within its time limit must not be touched: %s", status)
+	}
+	if _, err := e.app.DB.Exec(ctx, "UPDATE probe_runs SET started_at = now() - interval '26 minutes' WHERE batch_id = $1", batch3); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.app.Quality.DispatchQueued(ctx); err != nil {
+		t.Fatal(err)
+	}
+	failedOnboarding(up3, batch3, "check was interrupted before finishing")
+	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/retry-verification", up3), nil, nil)
+	e.passOnboarding(up3)
+
+	// 后台执行：同时最多 Concurrency 个批次，一批结束立即补位而不等下一轮；停止时进行中的批次放回队列
+	e.app.Quality.Concurrency = 1
+	upA, _, _ := onboard("mia", -1)
+	upB, _, _ := onboard("noah", -1)
+	upC, accC, batchC := onboard("olga", 0)
+	rctx, stop := context.WithCancel(ctx)
+	stopped := make(chan struct{})
+	go func() {
+		e.app.Quality.RunBatches(rctx, time.Hour)
+		close(stopped)
+	}()
+	for i := 0; ; i++ {
+		var ok bool
+		mustScan(t, e.app.DB.QueryRow(ctx, `SELECT (SELECT count(*) FROM upstreams WHERE id IN ($1, $2) AND status = 'ready') = 2
+			AND (SELECT status FROM probe_runs WHERE batch_id = $3) = 'running'`, upA, upB, batchC), &ok)
+		if ok {
+			break
+		}
+		if i == 150 {
+			t.Fatal("background batches should run one after another without waiting for the next round")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	stop()
+	<-stopped
+	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status FROM probe_runs WHERE batch_id = $1", batchC), &status)
+	if status != "queued" {
+		t.Fatalf("stopping the worker should requeue the running batch: %s", status)
+	}
+	setHang(accC, -1)
+	e.passOnboarding(upC)
 }

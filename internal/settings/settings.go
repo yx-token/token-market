@@ -43,6 +43,8 @@ type Settings struct {
 	RechargeOrderTimeoutMinutes int             `json:"recharge_order_timeout_minutes"` // 在线支付订单的支付时限
 	RefundOriginalRoute         bool            `json:"refund_original_route"`          // 余额退款优先原路退回到在线充值单
 	RefundOriginalRouteDays     int             `json:"refund_original_route_days"`     // 只原路退回这么多天内的充值单（渠道的可退款期限）
+	ProbeRequestTimeoutSeconds  int             `json:"probe_request_timeout_seconds"`  // 质量检测单次请求（一道题发给被测上游或基线账号）的超时
+	ProbeBatchTimeoutMinutes    int             `json:"probe_batch_timeout_minutes"`    // 一次质量检测（被测上游与基线账号的整批题）的总时限
 }
 
 func Defaults() Settings {
@@ -70,6 +72,8 @@ func Defaults() Settings {
 		RechargeOrderTimeoutMinutes: 30,
 		RefundOriginalRoute:         true,
 		RefundOriginalRouteDays:     90,
+		ProbeRequestTimeoutSeconds:  180,
+		ProbeBatchTimeoutMinutes:    30,
 	}
 }
 
@@ -95,6 +99,12 @@ func (s Settings) Validate() error {
 		return errors.New("recharge_order_timeout_minutes must be between 5 and 1440")
 	case s.RefundOriginalRouteDays < 0:
 		return errors.New("refund_original_route_days must be >= 0")
+	case s.ProbeRequestTimeoutSeconds < 10 || s.ProbeRequestTimeoutSeconds > 1800:
+		return errors.New("probe_request_timeout_seconds must be between 10 and 1800")
+	case s.ProbeBatchTimeoutMinutes < 1 || s.ProbeBatchTimeoutMinutes > 1440:
+		return errors.New("probe_batch_timeout_minutes must be between 1 and 1440")
+	case s.ProbeBatchTimeoutMinutes*60 < s.ProbeRequestTimeoutSeconds:
+		return errors.New("probe_batch_timeout_minutes must not be shorter than probe_request_timeout_seconds")
 	}
 	if s.PaymentPublicURL != "" {
 		u, err := url.Parse(s.PaymentPublicURL)
