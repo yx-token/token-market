@@ -9,6 +9,7 @@ import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
+import DateField from '@/components/common/DateField.vue'
 import RouteEditor from '@/components/RouteEditor.vue'
 import { dateTime, money } from '@/utils/format'
 import { toRoute, validateChain, type HopChoice } from '@/utils/route'
@@ -242,7 +243,7 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
           </div>
           <div>
             <label class="label" for="exp">到期日</label>
-            <input id="exp" v-model="form.expires" class="input" type="date" />
+            <DateField id="exp" v-model="form.expires" placeholder="可选到期日" />
           </div>
         </div>
         <p class="hint">花费限额按已入账用量统计，有几分钟延迟。</p>

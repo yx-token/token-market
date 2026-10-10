@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/stores/auth'
 import ToastHost from '@/components/ToastHost.vue'
@@ -36,43 +36,31 @@ const sections: Record<string, { title: string; en: string; items: NavItem[] }> 
       { to: '/seller/earnings', text: '收益与提现' },
     ],
   },
-  admin: {
-    title: '管理后台',
-    en: 'ADMIN',
-    items: [
-      { to: '/admin', text: '概览' },
-      { to: '/admin/upstreams', text: '上游' },
-      { to: '/admin/quality', text: '质量与申诉' },
-      { to: '/admin/detection', text: '检测策略' },
-      { to: '/admin/third-party', text: '第三方检测' },
-      { to: '/admin/probe-items', text: '题库与基线账号' },
-      { to: '/admin/pools', text: '默认分组' },
-      { to: '/admin/vendors', text: '厂商' },
-      { to: '/admin/proxies', text: '代理' },
-      { to: '/admin/funds', text: '充值、退款、提现' },
-      { to: '/admin/payments', text: '支付配置' },
-      { to: '/admin/billing', text: '计费异常与调账' },
-      { to: '/admin/users', text: '用户与实名' },
-      { to: '/admin/risk', text: '风控' },
-      { to: '/admin/settings', text: '系统设置' },
-      { to: '/admin/system-update', text: '系统更新' },
-      { to: '/admin/audit', text: '审计日志' },
-    ],
-  },
 }
+
+/** 管理端使用独立 Console 壳，不走市场 masthead */
+const isConsole = computed(() => route.path.startsWith('/console'))
 const top = computed(() => route.path.split('/')[1] || 'market')
-const section = computed(() => sections[top.value])
+const section = computed(() => (isConsole.value ? undefined : sections[top.value]))
 const mainNav = computed(() => {
   const items = [{ key: 'market', to: '/', text: '市场' }]
   if (auth.loggedIn) {
     items.push({ key: 'buyer', to: '/buyer', text: '买家中心' }, { key: 'seller', to: '/seller', text: '卖家中心' })
-    if (auth.isAdmin) items.push({ key: 'admin', to: '/admin', text: '管理后台' })
+    if (auth.isAdmin) items.push({ key: 'console', to: '/console', text: '控制台' })
   }
   return items
 })
-const isActive = (to: string) => route.path === to || (to !== '/admin' && route.path.startsWith(`${to}/`))
+const isActive = (to: string) => route.path === to || route.path.startsWith(`${to}/`)
 const pad = (n: number) => String(n + 1).padStart(2, '0')
 const initial = computed(() => (auth.user?.email ?? '?').slice(0, 1).toUpperCase())
+
+watch(
+  isConsole,
+  (on) => {
+    document.documentElement.classList.toggle('is-console', on)
+  },
+  { immediate: true },
+)
 
 function logout() {
   auth.logout()
@@ -81,7 +69,10 @@ function logout() {
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col">
+  <!-- 管理端：独立布局，无行情带 / 印章版头 -->
+  <RouterView v-if="isConsole" />
+
+  <div v-else class="flex min-h-screen flex-col">
     <TickerTape />
     <header class="masthead sticky top-0 z-30 bg-paper/95 backdrop-blur-sm">
       <div class="mx-auto flex max-w-[1320px] flex-wrap items-end gap-x-4 gap-y-3 px-5 pb-3 pt-4 md:px-8 lg:gap-x-10">
@@ -99,7 +90,7 @@ function logout() {
             :to="n.to"
             :class="[
               'flex shrink-0 items-baseline gap-1.5 border-b-2 pb-1 transition-colors',
-              top === n.key ? 'border-brand-500 text-ink-900' : 'border-transparent text-ink-600 hover:border-ink-300 hover:text-ink-900',
+              top === n.key || (n.key === 'console' && isConsole) ? 'border-brand-500 text-ink-900' : 'border-transparent text-ink-600 hover:border-ink-300 hover:text-ink-900',
             ]"
           >
             <span class="font-mono text-[10px] text-ink-400">{{ pad(i) }}</span>
@@ -120,7 +111,6 @@ function logout() {
           </template>
         </div>
       </div>
-      <!-- 小屏：分区导航横向滚动 -->
       <nav v-if="section" class="flex gap-4 overflow-x-auto border-t border-ink-200 px-5 py-2 text-sm md:hidden" aria-label="分区导航">
         <RouterLink
           v-for="item in section.items"

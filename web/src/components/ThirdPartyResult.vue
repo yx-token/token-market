@@ -30,7 +30,7 @@ const severityTone: Record<string, string> = { critical: 'text-red-600', warning
 </script>
 
 <template>
-  <div class="border border-ink-200 border-l-[3px] border-l-ink-900 bg-white p-3 text-sm">
+  <div class="rounded-xl border border-gray-200 border-l-[3px] border-l-[#0555ce] bg-white p-3 text-sm shadow-sm console-tp-card">
     <div class="flex flex-wrap items-center gap-2">
       <span class="font-medium">{{ providerNames[provider] ?? provider }}</span>
       <StatusBadge kind="tpStatus" :value="status" />

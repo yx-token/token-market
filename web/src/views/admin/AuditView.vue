@@ -1,54 +1,103 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import { admin } from '@/api'
 import type { AuditLog } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
-import PageHeader from '@/components/PageHeader.vue'
+import { filterByDateField, useClientPage, useListQuery } from '@/composables/useListQuery'
+import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import DataTable from '@/components/DataTable.vue'
 import { dateTime } from '@/utils/format'
 
-const target = ref('')
-const offset = ref(0)
-const pageSize = 50
-const logs = useLoader(() => admin.auditLogs({ target: target.value, limit: pageSize, offset: offset.value }), [] as AuditLog[] | null)
+const { queryParams, resetQuery, handleQuery } = useListQuery({
+  target: '',
+  action: '',
+  startDate: '',
+  endDate: '',
+})
+
+const logs = useLoader(
+  () => admin.auditLogs({ target: queryParams.target.trim() || undefined, limit: 200, offset: 0 }),
+  [] as AuditLog[] | null,
+)
 onMounted(logs.load)
+
+const filtered = computed(() => {
+  let rows = logs.data.value ?? []
+  if (queryParams.action.trim()) {
+    const a = queryParams.action.trim().toLowerCase()
+    rows = rows.filter((r) => String(r.action).toLowerCase().includes(a))
+  }
+  rows = filterByDateField(rows, 'created_at', queryParams.startDate, queryParams.endDate)
+  return rows
+})
+const { pageNum, pageSize, total, pageRows, resetPage } = useClientPage(filtered)
+
 function search() {
-  offset.value = 0
+  handleQuery()
+  resetPage()
   logs.load()
 }
-function page(d: number) {
-  offset.value = Math.max(0, offset.value + d * pageSize)
+function onReset() {
+  resetQuery()
+  resetPage()
   logs.load()
 }
 </script>
 
 <template>
-  <div>
-    <PageHeader title="审计日志" description="管理员的所有写操作。">
-      <input v-model="target" class="input w-56" placeholder="按对象筛选，例如 upstream:12" aria-label="对象" @keyup.enter="search" />
-      <button class="btn-secondary" @click="search">查询</button>
-    </PageHeader>
-    <div class="card">
-      <DataTable
-        :columns="[
-          { key: 'created_at', label: '时间' },
-          { key: 'actor_id', label: '管理员' },
-          { key: 'action', label: '操作' },
-          { key: 'target', label: '对象' },
-          { key: 'detail', label: '详情' },
-        ]"
-        :rows="logs.data.value"
-        :loading="logs.loading.value"
-        row-key="id"
-      >
-        <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
-        <template #cell-actor_id="{ row }">#{{ row.actor_id }}</template>
-        <template #cell-detail="{ row }"><code class="block max-w-md truncate text-xs" :title="JSON.stringify(row.detail)">{{ JSON.stringify(row.detail) }}</code></template>
-      </DataTable>
-      <div class="mt-3 flex justify-end gap-2">
-        <button class="btn-secondary btn-sm" :disabled="offset === 0" @click="page(-1)">上一页</button>
-        <button class="btn-secondary btn-sm" :disabled="(logs.data.value?.length ?? 0) < pageSize" @click="page(1)">下一页</button>
+  <ConsoleListPage id="console-audit-page" title="审计日志" description="管理员的所有写操作，可按对象、动作与时间筛选。">
+    <template #filters>
+      <div class="filter-item">
+        <label class="filter-label">对象</label>
+        <div class="relative w-full flex-1">
+          <input v-model="queryParams.target" class="filter-input w-full" placeholder="如 upstream:12" @keyup.enter="search" />
+        </div>
       </div>
-    </div>
-  </div>
+      <div class="filter-item">
+        <label class="filter-label">动作</label>
+        <div class="relative w-full flex-1">
+          <input v-model="queryParams.action" class="filter-input w-full" placeholder="动作关键字" @keyup.enter="search" />
+        </div>
+      </div>
+      <div class="filter-item">
+        <label class="filter-label">时间</label>
+        <div class="flex w-full flex-1 items-center gap-2">
+          <DateRangePicker v-model:start-date="queryParams.startDate" v-model:end-date="queryParams.endDate" />
+        </div>
+      </div>
+      <div class="filter-item" aria-hidden="true" />
+      <div class="filter-actions lg:col-span-4">
+        <button type="button" class="btn btn-secondary" @click="onReset">重置</button>
+        <button type="button" class="btn btn-primary" @click="search">查询</button>
+      </div>
+    </template>
+
+    <DataTable
+      :columns="[
+        { key: 'created_at', label: '时间' },
+        { key: 'actor_id', label: '管理员' },
+        { key: 'action', label: '操作' },
+        { key: 'target', label: '对象' },
+        { key: 'detail', label: '详情' },
+      ]"
+      :rows="pageRows"
+      :loading="logs.loading.value"
+      row-key="id"
+      empty="没有符合条件的审计记录"
+    >
+      <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
+      <template #cell-actor_id="{ row }">#{{ row.actor_id }}</template>
+      <template #cell-detail="{ row }">
+        <code class="block max-w-md truncate text-xs" :title="JSON.stringify(row.detail)">{{ JSON.stringify(row.detail) }}</code>
+      </template>
+    </DataTable>
+
+    <template #footer>
+      <span class="mr-auto text-xs text-gray-500">共 {{ total }} 条</span>
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum <= 1" @click="pageNum--">上一页</button>
+      <span class="text-xs text-gray-500">{{ pageNum }} / {{ Math.max(1, Math.ceil(total / pageSize)) }}</span>
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum * pageSize >= total" @click="pageNum++">下一页</button>
+    </template>
+  </ConsoleListPage>
 </template>

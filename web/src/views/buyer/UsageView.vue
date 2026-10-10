@@ -7,6 +7,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import { dateTime, money, ms, tokens } from '@/utils/format'
 
 const filter = reactive({ key_id: '', model: '', from: '', to: '', offset: 0 })
@@ -74,13 +75,9 @@ async function openDetail(requestID?: string) {
         <label class="label" for="model">模型</label>
         <input id="model" v-model="filter.model" class="input w-48" placeholder="例如 claude-sonnet-4-5" />
       </div>
-      <div>
-        <label class="label" for="from">开始日期</label>
-        <input id="from" v-model="filter.from" class="input" type="date" />
-      </div>
-      <div>
-        <label class="label" for="to">结束日期</label>
-        <input id="to" v-model="filter.to" class="input" type="date" />
+      <div class="min-w-[220px] flex-1">
+        <label class="label">日期范围</label>
+        <DateRangePicker v-model:start-date="filter.from" v-model:end-date="filter.to" />
       </div>
       <button class="btn-primary" @click="search">查询</button>
     </div>

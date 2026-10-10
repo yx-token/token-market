@@ -4,11 +4,15 @@ const stack: symbol[] = []
 </script>
 
 <script setup lang="ts">
-// 对话框：一张压在墨色遮罩上的纸，顶部朱红细条，硬投影。
-import { onUnmounted, watch } from 'vue'
+import { computed, onUnmounted, watch } from 'vue'
+import { documentIsConsole, useIsConsole } from '@/composables/useIsConsole'
+import ConsoleIcon from '@/components/icons/ConsoleIcon.vue'
 
 defineProps<{ title: string; wide?: boolean }>()
 const open = defineModel<boolean>('open', { default: false })
+const routeIsConsole = useIsConsole()
+/** Teleport 到 body 后仍以 html 类为准，避免串成市场账本弹层 */
+const isConsole = computed(() => routeIsConsole.value || documentIsConsole())
 
 const id = Symbol('dialog')
 function onKey(e: KeyboardEvent) {
@@ -18,6 +22,7 @@ function release() {
   const i = stack.indexOf(id)
   if (i >= 0) stack.splice(i, 1)
   window.removeEventListener('keydown', onKey)
+  if (!stack.length) document.body.style.removeProperty('overflow')
 }
 watch(
   open,
@@ -26,6 +31,7 @@ watch(
     if (v) {
       stack.push(id)
       window.addEventListener('keydown', onKey)
+      document.body.style.overflow = 'hidden'
     }
   },
   { immediate: true },
@@ -35,22 +41,34 @@ onUnmounted(release)
 
 <template>
   <Teleport to="body">
-    <Transition enter-active-class="transition duration-200 ease-out" enter-from-class="opacity-0" leave-active-class="transition duration-150 ease-in" leave-to-class="opacity-0">
-      <div v-if="open" class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-ink-900/45 p-4 pt-[8vh] backdrop-blur-[2px]" @click.self="open = false">
+    <Transition name="yh-modal">
+      <div
+        v-if="open"
+        :class="['yh-modal-mask', isConsole ? 'yh-modal-mask--console' : 'yh-modal-mask--market']"
+        @click.self="open = false"
+      >
         <div
-          :class="['relative w-full animate-rise border border-ink-900 bg-white shadow-hard', wide ? 'max-w-3xl' : 'max-w-lg']"
+          :class="[
+            'yh-modal-panel',
+            isConsole ? 'yh-modal-panel--console' : 'yh-modal-panel--market',
+            wide ? 'yh-modal-panel--wide' : '',
+          ]"
           role="dialog"
+          aria-modal="true"
           :aria-label="title"
         >
-          <div class="h-1 bg-brand-500" />
-          <div class="flex items-center justify-between border-b border-ink-200 px-6 py-4">
-            <h3 class="font-display text-[18px] font-bold tracking-wide">{{ title }}</h3>
-            <button class="grid h-7 w-7 place-items-center border border-transparent text-ink-500 transition-colors hover:border-ink-900 hover:text-ink-900" aria-label="关闭" @click="open = false">✕</button>
+          <div v-if="!isConsole" class="yh-modal-accent" aria-hidden="true" />
+          <div class="yh-modal-head">
+            <h3 class="yh-modal-title">{{ title }}</h3>
+            <button type="button" class="yh-modal-close" aria-label="关闭" @click="open = false">
+              <ConsoleIcon v-if="isConsole" name="x" size="sm" />
+              <span v-else aria-hidden="true">✕</span>
+            </button>
           </div>
-          <div class="space-y-4 px-6 py-5">
+          <div class="yh-modal-body">
             <slot />
           </div>
-          <div v-if="$slots.footer" class="flex flex-wrap justify-end gap-2 border-t border-ink-200 bg-paper px-6 py-3.5">
+          <div v-if="$slots.footer" class="yh-modal-foot">
             <slot name="footer" />
           </div>
         </div>

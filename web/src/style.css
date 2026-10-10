@@ -328,3 +328,1157 @@
     background-size: 24px 24px;
   }
 }
+
+/* ==========================================================================
+ * Console（/console）· 对齐 YourHub Liquid Glass 管理端
+ * 主色 #0555CE · mesh 背景 · 毛玻璃卡片 · 与市场暖纸/朱红分离
+ * ========================================================================== */
+html.is-console {
+  --color-primary: #0555ce;
+  --color-primary-hover: #0446a7;
+  --color-primary-light: #e6eefa;
+  --color-text-primary: #262626;
+  --color-text-secondary: #868686;
+  --color-border: #e8e8e8;
+  --color-bg-page: #f2f4f7;
+  --color-white: #ffffff;
+}
+html.is-console body {
+  background: #f2f4f7;
+  color: #262626;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+html.is-console body::before {
+  display: none;
+}
+html.is-console ::selection {
+  background: #0555ce;
+  color: #fff;
+}
+html.is-console :focus-visible {
+  outline: 2px solid rgba(5, 85, 206, 0.45);
+  outline-offset: 2px;
+}
+
+.console-app {
+  position: relative;
+  display: grid;
+  grid-template-columns: 256px 1fr;
+  min-height: 100vh;
+  background: #f2f4f7;
+  color: #262626;
+  transition: grid-template-columns 0.2s ease;
+}
+.console-app.is-side-collapsed {
+  grid-template-columns: 72px 1fr;
+}
+.console-mesh {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: var(--tw-gradient-mesh-deep, none);
+  background-image: radial-gradient(ellipse 80% 60% at 20% 10%, rgba(5, 85, 206, 0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 80% 15%, rgba(56, 120, 230, 0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 50% 80%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 60% at 10% 60%, rgba(5, 85, 206, 0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 40% 30% at 90% 70%, rgba(56, 120, 230, 0.05) 0%, transparent 45%);
+}
+.console-side,
+.console-main {
+  position: relative;
+  z-index: 1;
+}
+@media (max-width: 900px) {
+  .console-app {
+    grid-template-columns: 1fr;
+  }
+  .console-side {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    max-height: min(42vh, 320px);
+    border-right: none;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  }
+  .console-side-foot {
+    display: none;
+  }
+}
+
+.console-side {
+  display: flex;
+  flex-direction: column;
+  padding: 20px 14px 16px;
+  max-height: 100vh;
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px) saturate(1.8);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  border-right: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+.console-brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 4px 10px 18px;
+  border-bottom: 1px solid var(--color-border, #e8e8e8);
+  margin-bottom: 12px;
+}
+.console-brand-name {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: #0f172a;
+}
+.console-brand-sub {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 4px;
+}
+.console-nav {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 2px;
+}
+.console-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.console-nav-node {
+  margin: 0;
+}
+.console-nav-branch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.console-nav-branch:hover {
+  color: #0555ce;
+  background: rgba(5, 85, 206, 0.06);
+}
+.console-nav-branch.is-active {
+  color: #0555ce;
+}
+.console-nav-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console-nav-chevron {
+  flex-shrink: 0;
+  opacity: 0.55;
+  transition: transform 0.18s ease;
+}
+.console-nav-chevron.is-open {
+  transform: rotate(90deg);
+  opacity: 0.9;
+}
+.console-nav-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.35;
+  flex-shrink: 0;
+  margin: 0 5px;
+}
+.console-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.console-link-icon {
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+.console-link:hover {
+  color: #0555ce;
+  background: rgba(5, 85, 206, 0.06);
+}
+.console-link.is-on {
+  color: #0555ce;
+  background: rgba(5, 85, 206, 0.1);
+  font-weight: 600;
+}
+.console-link.is-on .console-link-icon {
+  opacity: 1;
+}
+.console-side-foot {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border, #e8e8e8);
+}
+.console-collapse-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: #868686;
+  cursor: pointer;
+  text-align: left;
+}
+.console-collapse-btn:hover {
+  color: #0555ce;
+  background: rgba(5, 85, 206, 0.06);
+}
+.console-app.is-side-collapsed .console-side {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+.console-app.is-side-collapsed .console-brand {
+  align-items: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+.console-app.is-side-collapsed .console-brand-name {
+  font-size: 18px;
+  text-align: center;
+}
+.console-app.is-side-collapsed .console-nav-branch,
+.console-app.is-side-collapsed .console-link {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+.console-app.is-side-collapsed .console-collapse-btn {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+.console-nav-node {
+  position: relative;
+}
+.console-nav-flyout {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  z-index: 50;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px) saturate(1.8);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+}
+.console-nav-flyout-title {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: #868686;
+}
+.console-nav-flyout-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #64748b;
+}
+.console-nav-flyout-link:hover {
+  color: #0555ce;
+  background: rgba(5, 85, 206, 0.06);
+}
+.console-nav-flyout-link.is-on {
+  color: #0555ce;
+  background: rgba(5, 85, 206, 0.1);
+  font-weight: 600;
+}
+
+.console-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.console-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  height: 56px;
+  padding: 0 40px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px) saturate(1.8);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.console-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.console-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #64748b;
+  max-width: 220px;
+}
+.console-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: #e6eefa;
+  color: #0555ce;
+  border: 1px solid rgba(5, 85, 206, 0.2);
+}
+.console-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e8e8e8;
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  color: #262626;
+  cursor: pointer;
+}
+.console-btn-ghost:hover {
+  border-color: #0555ce;
+  color: #0555ce;
+  background: #e6eefa;
+}
+.console-body {
+  padding: 28px 40px 40px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 1100px) {
+  .console-top {
+    padding: 0 28px;
+  }
+  .console-body {
+    padding: 24px 28px 32px;
+  }
+}
+@media (max-width: 900px) {
+  .console-top {
+    padding: 0 20px;
+  }
+  .console-body {
+    padding: 20px 20px 28px;
+  }
+}
+.console-body > .console-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.console-body > .console-page > * {
+  flex: 1;
+  min-height: 0;
+}
+.console-page {
+  animation: console-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  height: 100%;
+}
+@keyframes console-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .console-page {
+    animation: none;
+  }
+}
+
+/* filter-grid（YourHub 标准，禁止页面 scoped 覆盖） */
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+@media (min-width: 640px) {
+  .filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .filter-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.filter-label {
+  width: 4rem;
+  flex-shrink: 0;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+}
+.filter-input {
+  flex: 1;
+  min-width: 0;
+  border-radius: 0.375rem;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+  color: #111827;
+}
+.filter-input:focus {
+  border-color: #3878e6;
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(5, 85, 206, 0.25);
+}
+select.filter-input {
+  cursor: pointer;
+  appearance: none;
+  padding-right: 1.75rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236B7280' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.55rem center;
+}
+.filter-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.375rem;
+}
+
+/* --------------------------------------------------------------------------
+ * Console skin：抹掉市场账本 / 暖纸 / 硬阴影 / 报头线（含 Teleport 弹层）
+ * -------------------------------------------------------------------------- */
+html.is-console,
+html.is-console body {
+  --paper: #f2f4f7;
+  --ink: #262626;
+  --rule: rgba(15, 23, 42, 0.08);
+  --rule-strong: #e8e8e8;
+  --vermilion: #0555ce;
+  --vermilion-deep: #0446a7;
+}
+
+/* 真白：覆盖市场 warm white #FCFAF5 */
+html.is-console .bg-white,
+html.is-console .console-body .bg-white {
+  background-color: #ffffff !important;
+}
+html.is-console .bg-paper,
+html.is-console .bg-paper\/60,
+html.is-console .console-body .bg-paper {
+  background-color: #f2f4f7 !important;
+}
+
+html.is-console .font-display,
+html.is-console .console-body .font-display,
+html.is-console .console-body h1,
+html.is-console .console-body h2,
+html.is-console .console-body h3 {
+  font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
+  letter-spacing: -0.01em;
+}
+
+/* 墨线 / 虚线账本 → 浅灰实线 */
+html.is-console .border-ink-900,
+html.is-console .border-ink-800,
+html.is-console .border-ink-700,
+html.is-console .border-ink-300,
+html.is-console .border-ink-200,
+html.is-console .border-ink-100,
+html.is-console .console-body [class*='border-ink'] {
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+html.is-console .console-body .border-dashed {
+  border-style: solid !important;
+}
+
+html.is-console .text-ink-900 {
+  color: #111827 !important;
+}
+html.is-console .text-ink-700,
+html.is-console .text-ink-800 {
+  color: #374151 !important;
+}
+html.is-console .text-ink-500,
+html.is-console .text-ink-600 {
+  color: #6b7280 !important;
+}
+html.is-console .text-ink-400,
+html.is-console .text-ink-300 {
+  color: #9ca3af !important;
+}
+
+html.is-console .bg-brand-50,
+html.is-console .hover\:bg-brand-50:hover {
+  background: #e6eefa !important;
+}
+html.is-console .text-brand-500,
+html.is-console .text-brand-600,
+html.is-console .text-brand-400 {
+  color: #0555ce !important;
+}
+html.is-console .bg-brand-500,
+html.is-console .bg-brand-600 {
+  background: #0555ce !important;
+}
+html.is-console .border-brand-500 {
+  border-color: #0555ce !important;
+}
+html.is-console .decoration-brand-500 {
+  text-decoration-color: #0555ce !important;
+}
+html.is-console .shadow-hard,
+html.is-console .shadow-hard-sm,
+html.is-console .shadow-hard-red,
+html.is-console .shadow-sheet {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* 按钮（含弹层内） */
+html.is-console .btn,
+html.is-console .btn-primary,
+html.is-console .btn-secondary,
+html.is-console .btn-danger,
+html.is-console .btn-ghost {
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font-weight: 500;
+}
+html.is-console .btn-primary {
+  border: 1px solid #0555ce !important;
+  background: #0555ce !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(5, 85, 206, 0.25) !important;
+}
+html.is-console .btn-primary:hover {
+  background: #0446a7 !important;
+  border-color: #0446a7 !important;
+  transform: translateY(-1px) !important;
+}
+html.is-console .btn-secondary {
+  border: 1px solid #e5e7eb !important;
+  background: #fff !important;
+  color: #374151 !important;
+}
+html.is-console .btn-secondary:hover {
+  background: #f9fafb !important;
+  border-color: #d1d5db !important;
+}
+html.is-console .btn-danger {
+  border: 1px solid #ef4444 !important;
+  background: #ef4444 !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2) !important;
+}
+html.is-console .btn-ghost {
+  border: none !important;
+  background: transparent !important;
+  color: #6b7280 !important;
+  text-decoration: none !important;
+}
+html.is-console .btn-ghost:hover {
+  background: rgba(5, 85, 206, 0.06) !important;
+  color: #0555ce !important;
+}
+
+/* 输入 */
+html.is-console .input,
+html.is-console .console-body textarea.input {
+  border-radius: 0.5rem !important;
+  border: 1px solid #e5e7eb !important;
+  background: #fff !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+}
+html.is-console .input:hover {
+  border-color: #d1d5db !important;
+}
+html.is-console .input:focus {
+  border-color: #0555ce !important;
+  box-shadow: 0 0 0 3px rgba(5, 85, 206, 0.15) !important;
+  outline: none !important;
+}
+html.is-console .label {
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: #6b7280 !important;
+}
+html.is-console .hint {
+  color: #9ca3af !important;
+  font-size: 12px !important;
+}
+html.is-console .link {
+  color: #0555ce !important;
+  text-decoration-color: #0555ce !important;
+  text-underline-offset: 2px;
+}
+
+/* 卡片 / 标题方点 */
+html.is-console .card {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(16px) saturate(1.8);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
+  border-radius: 1rem !important;
+  padding: 24px 28px !important;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+}
+html.is-console .card-title {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  color: #111827 !important;
+}
+html.is-console .card-title::before {
+  display: none !important;
+}
+html.is-console .card-title-icon {
+  color: #0555ce;
+}
+
+/* 表格：对齐 YourHub DataTable 表头规范 */
+html.is-console .table {
+  width: 100% !important;
+  min-width: max-content;
+  border: none !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  background: transparent !important;
+}
+html.is-console .table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 210;
+  padding: 0.75rem 1rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 500 !important;
+  font-family: inherit !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  text-align: left;
+  color: #6b7280 !important;
+  background: rgb(249 250 251) !important;
+  border: none !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08) !important;
+  white-space: nowrap;
+  box-shadow: none !important;
+}
+html.is-console .table tbody td {
+  padding: 0.625rem 1rem !important;
+  font-size: 0.75rem !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.05) !important;
+  border-style: solid !important;
+  color: #374151 !important;
+  background: #fff;
+}
+html.is-console .table tbody tr:hover td {
+  background: rgba(5, 85, 206, 0.03) !important;
+}
+html.is-console .table tbody tr:hover td:first-child {
+  box-shadow: none !important;
+}
+html.is-console .table tbody tr:last-child td {
+  border-bottom: none !important;
+}
+
+/* 状态 chip：圆角胶囊，去方印感 */
+html.is-console .chip {
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  letter-spacing: 0 !important;
+  padding: 2px 8px !important;
+  border-width: 1px !important;
+}
+html.is-console .chip::before {
+  border-radius: 999px;
+  width: 5px !important;
+  height: 5px !important;
+}
+html.is-console .chip-ink {
+  border-color: #0555ce !important;
+  background: #0555ce !important;
+  color: #fff !important;
+}
+html.is-console .chip-gray {
+  border-color: #e5e7eb !important;
+  background: #f9fafb !important;
+  color: #6b7280 !important;
+}
+html.is-console .chip-blue {
+  border-color: #bfdbfe !important;
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+
+/* 分段 / 选项卡残留 */
+html.is-console .seg {
+  border: 1px solid #e5e7eb !important;
+  border-radius: 0.5rem !important;
+  overflow: hidden;
+}
+html.is-console .seg > button {
+  color: #6b7280 !important;
+}
+html.is-console .seg > button + button {
+  border-left: 1px solid #e5e7eb !important;
+}
+html.is-console .seg > button.on {
+  background: #0555ce !important;
+  color: #fff !important;
+}
+html.is-console .choice {
+  border-radius: 0.75rem !important;
+  border-color: #e5e7eb !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+html.is-console .choice-on {
+  border-color: #0555ce !important;
+  box-shadow: 0 0 0 1px #0555ce !important;
+  transform: none !important;
+}
+html.is-console .choice-on::after {
+  display: none !important;
+}
+html.is-console .callout {
+  border-radius: 0.75rem !important;
+  border-left-width: 3px !important;
+  border-left-color: #0555ce !important;
+  background: #f8fafc !important;
+}
+html.is-console .codeblock {
+  border-radius: 0.75rem !important;
+  border: 1px solid #e5e7eb !important;
+  background: #111827 !important;
+}
+
+/* 页脚分页文案：去等宽电报感 */
+html.is-console .y-footer .font-mono,
+html.is-console .console-body .y-footer span {
+  font-family: inherit !important;
+  color: #868686 !important;
+}
+html.is-console .y-footer {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-top-color: rgba(15, 23, 42, 0.06) !important;
+}
+
+/* 统计卡 */
+html.is-console .stat,
+html.is-console .liquid-stat {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(16px) saturate(1.8);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+  padding: 1rem;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
+  animation: console-stat-in 0.45s ease both;
+}
+html.is-console .stat::after {
+  display: none !important;
+}
+html.is-console .stat:hover,
+html.is-console .liquid-stat:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+}
+html.is-console .stat-label,
+html.is-console .liquid-stat-label {
+  font-family: inherit !important;
+  font-size: 0.75rem !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: #6b7280 !important;
+}
+html.is-console .stat-value,
+html.is-console .liquid-stat-value {
+  margin-top: 0.25rem;
+  font-family: inherit !important;
+  font-size: 1.5rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.15;
+  color: #111827 !important;
+  font-variant-numeric: tabular-nums;
+}
+html.is-console .liquid-stat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  border-radius: 0.75rem;
+  background: rgba(5, 85, 206, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(5, 85, 206, 0.12);
+  color: #0555ce;
+}
+html.is-console .liquid-stat-icon--sm {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.625rem;
+}
+html.is-console .liquid-stat-icon--active {
+  background: rgba(5, 85, 206, 0.16);
+  color: #0446a7;
+}
+html.is-console .liquid-stat-icon--success {
+  background: rgba(16, 185, 129, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+html.is-console .liquid-stat-icon--warning {
+  background: rgba(245, 158, 11, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.15);
+  color: #d97706;
+}
+
+html.is-console .kv > dt,
+html.is-console .kv > dd {
+  border-style: solid !important;
+  border-color: rgba(15, 23, 42, 0.06) !important;
+}
+html.is-console .kv > dt {
+  color: #6b7280 !important;
+  font-size: 12px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  font-family: inherit !important;
+}
+
+html.is-console .kicker {
+  display: none !important;
+}
+
+@keyframes console-stat-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.is-console .stat,
+  html.is-console .liquid-stat {
+    animation: none !important;
+  }
+}
+
+/* 市场面：第三方结果条仍用账本左边线（非 console 时还原） */
+html:not(.is-console) .console-tp-card {
+  border-radius: 0;
+  border-color: #e2dbcd;
+  border-left-color: #17140f;
+  box-shadow: none;
+}
+
+/* --------------------------------------------------------------------------
+ * ModalDialog（市场账本 / 控制台 Liquid Glass 双皮肤）
+ * -------------------------------------------------------------------------- */
+.yh-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 1rem;
+  padding-top: 8vh;
+}
+.yh-modal-mask--market {
+  background: rgba(23, 20, 15, 0.45);
+  backdrop-filter: blur(2px);
+}
+.yh-modal-mask--console {
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(6px) saturate(1.2);
+  -webkit-backdrop-filter: blur(6px) saturate(1.2);
+}
+
+.yh-modal-panel {
+  position: relative;
+  width: 100%;
+  max-width: 32rem;
+  overflow: hidden;
+}
+.yh-modal-panel--wide {
+  max-width: 48rem;
+}
+.yh-modal-panel--market {
+  border: 1px solid #17140f;
+  background: #fff;
+  box-shadow: 4px 4px 0 #17140f;
+  animation: yh-modal-rise 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.yh-modal-panel--console {
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow:
+    0 24px 48px rgba(15, 23, 42, 0.14),
+    0 4px 16px rgba(5, 85, 206, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  animation: yh-modal-glass-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.yh-modal-accent {
+  height: 4px;
+  background: #f5c518;
+}
+
+.yh-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 1rem 1.5rem;
+}
+.yh-modal-panel--market .yh-modal-head {
+  border-bottom: 1px solid #e2dbcd;
+}
+.yh-modal-panel--console .yh-modal-head {
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 1rem 1.25rem 0.875rem;
+}
+
+.yh-modal-title {
+  margin: 0;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+}
+.yh-modal-panel--market .yh-modal-title {
+  font-family: var(--font-display, Georgia, 'Noto Serif SC', serif);
+  color: #17140f;
+}
+.yh-modal-panel--console .yh-modal-title {
+  font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #111827;
+}
+
+.yh-modal-close {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #868686;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+.yh-modal-panel--market .yh-modal-close:hover {
+  border-color: #17140f;
+  color: #17140f;
+}
+.yh-modal-panel--console .yh-modal-close {
+  border-radius: 0.5rem;
+  color: #9ca3af;
+}
+.yh-modal-panel--console .yh-modal-close:hover {
+  background: rgba(5, 85, 206, 0.08);
+  color: #0555ce;
+}
+
+.yh-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+}
+.yh-modal-panel--console .yh-modal-body {
+  padding: 1.25rem;
+  gap: 1.125rem;
+}
+
+.yh-modal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.875rem 1.5rem;
+}
+.yh-modal-panel--market .yh-modal-foot {
+  border-top: 1px solid #e2dbcd;
+  background: #fcfaf5;
+}
+.yh-modal-panel--console .yh-modal-foot {
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(249, 250, 251, 0.72);
+  padding: 0.875rem 1.25rem;
+}
+
+/* 弹层内抹掉账本 label / 输入残留 */
+.yh-modal-panel--console .label {
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: #6b7280 !important;
+}
+.yh-modal-panel--console .hint {
+  color: #9ca3af !important;
+  font-size: 12px !important;
+}
+.yh-modal-panel--console .input {
+  border-radius: 0.5rem !important;
+  border: 1px solid #e5e7eb !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+.yh-modal-panel--console .input:focus {
+  border-color: #0555ce !important;
+  box-shadow: 0 0 0 3px rgba(5, 85, 206, 0.15) !important;
+}
+.yh-modal-panel--console .btn,
+.yh-modal-panel--console .btn-primary,
+.yh-modal-panel--console .btn-secondary,
+.yh-modal-panel--console .btn-danger,
+.yh-modal-panel--console .btn-ghost {
+  border-radius: 0.5rem !important;
+  box-shadow: none !important;
+}
+.yh-modal-panel--console .btn-primary {
+  border: 1px solid #0555ce !important;
+  background: #0555ce !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(5, 85, 206, 0.25) !important;
+}
+.yh-modal-panel--console .btn-secondary {
+  border: 1px solid #e5e7eb !important;
+  background: #fff !important;
+  color: #374151 !important;
+}
+
+@keyframes yh-modal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes yh-modal-glass-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.yh-modal-enter-active,
+.yh-modal-leave-active {
+  transition: opacity 0.18s ease;
+}
+.yh-modal-enter-from,
+.yh-modal-leave-to {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .yh-modal-panel--market,
+  .yh-modal-panel--console {
+    animation: none;
+  }
+  .yh-modal-enter-active,
+  .yh-modal-leave-active {
+    transition: none;
+  }
+}

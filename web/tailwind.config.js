@@ -35,18 +35,38 @@ export default {
         // 钴蓝：信息、进行中
         sky: { 50: '#E8EDF7', 100: '#D3DCEF', 200: '#A9B9DE', 300: '#7F95CC', 400: '#5672B9', 500: '#3657A8', 600: '#2B4DA0', 700: '#24479A', 800: '#1C3878', 900: '#142856' },
         violet: { 50: '#EDEAF0', 100: '#DAD3E0', 700: '#3D2F47', 800: '#2E2336' },
+        // 控制台主色（对齐 YourHub Liquid Glass，与市场朱红 brand 分离）
+        primary: {
+          50: '#E6EEFA',
+          100: '#CDDDF5',
+          200: '#9BBBF0',
+          300: '#6A9AEB',
+          400: '#3878E6',
+          500: '#0555CE',
+          600: '#0446A7',
+          700: '#033880',
+          800: '#022A5A',
+          900: '#011C33',
+          950: '#000E1A',
+        },
       },
       fontFamily: {
         display: ['"Noto Serif SC"', '"Songti SC"', '"STSong"', 'serif'],
         sans: ['"Schibsted Grotesk"', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"', 'sans-serif'],
         mono: ['"Spline Sans Mono"', 'ui-monospace', '"SFMono-Regular"', 'Menlo', 'monospace'],
       },
-      borderRadius: { DEFAULT: '3px', md: '3px', lg: '4px' },
+      borderRadius: { DEFAULT: '3px', md: '3px', lg: '4px', '2xl': '1rem' },
       boxShadow: {
         hard: '4px 4px 0 0 #17140F',
         'hard-sm': '2px 2px 0 0 #17140F',
         'hard-red': '3px 3px 0 0 #D9421B',
         sheet: '0 1px 0 0 #E2DBCD, 0 12px 32px -18px rgba(23, 20, 15, 0.35)',
+        primary: '0 4px 16px 0 rgba(5, 85, 206, 0.25)',
+        glass: '0 8px 32px rgba(0, 0, 0, 0.08)',
+      },
+      backgroundImage: {
+        'mesh-deep':
+          'radial-gradient(ellipse 80% 60% at 20% 10%, rgba(5, 85, 206, 0.12) 0%, transparent 60%), radial-gradient(ellipse 60% 50% at 80% 15%, rgba(56, 120, 230, 0.08) 0%, transparent 55%), radial-gradient(ellipse 50% 40% at 50% 80%, rgba(99, 102, 241, 0.06) 0%, transparent 50%), radial-gradient(ellipse 70% 60% at 10% 60%, rgba(5, 85, 206, 0.08) 0%, transparent 55%), radial-gradient(ellipse 40% 30% at 90% 70%, rgba(56, 120, 230, 0.05) 0%, transparent 45%)',
       },
       keyframes: {
         ticker: { from: { transform: 'translateX(0)' }, to: { transform: 'translateX(-50%)' } },

@@ -2,41 +2,12 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>闲猫 · 管理后台</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="_center-shell.css" />
+  <meta http-equiv="refresh" content="0; url=console.html" />
+  <link rel="canonical" href="console.html" />
+  <title>Redirect · Console</title>
+  <script>location.replace("console.html" + location.hash);</script>
 </head>
 <body>
-  <header class="header">
-    <div class="header-row">
-      <a class="logo" href="market-home.html">
-        <img src="assets/xianmao-pet.svg" alt="" width="36" height="36" />
-        闲猫
-      </a>
-      <span class="role-tag">管理后台</span>
-      <div class="spacer"></div>
-      <a class="nav-link" href="market-home.html">回市场</a>
-    </div>
-  </header>
-
-  <main class="wrap">
-    <span class="route">/admin</span>
-    <h1>管理后台</h1>
-    <p class="lead">独立路由入口，不和买卖中心混在一起。正式应用需管理员权限（meta.admin）。</p>
-
-    <div class="grid">
-      <div class="card"><strong>总览</strong><span>/admin</span></div>
-      <div class="card"><strong>用户</strong><span>/admin/users</span></div>
-      <div class="card"><strong>上游</strong><span>/admin/upstreams</span></div>
-      <div class="card"><strong>资金 / 账单</strong><span>/admin/funds · /admin/billing</span></div>
-      <div class="card"><strong>风控 / 审计</strong><span>/admin/risk · /admin/audit</span></div>
-      <div class="card"><strong>设置</strong><span>/admin/settings</span></div>
-    </div>
-
-    <p class="note">原型占位页。正式实现见 <code>web/src/views/admin/*</code>。非管理员访问会被踢回市场。</p>
-  </main>
+  <p><a href="console.html">控制台已迁移至 console.html（路由 /console）</a></p>
 </body>
 </html>

@@ -3,15 +3,24 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { admin, seller } from '@/api'
 import type { Proxy } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
-import PageHeader from '@/components/PageHeader.vue'
+import { filterByKeyword, useClientPage, useListQuery } from '@/composables/useListQuery'
+import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
+import { options } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
 
 const props = defineProps<{ scope: 'seller' | 'admin' }>()
 const isSeller = computed(() => props.scope === 'seller')
 const api = isSeller.value ? seller : admin
+
+const { queryParams, resetQuery, handleQuery } = useListQuery({
+  keyword: '',
+  status: '',
+  owner: '',
+})
+
 const proxies = useLoader(() => api.proxies(), [] as Proxy[] | null)
 const { busy, run } = useAction()
 const show = ref(false)
@@ -27,9 +36,30 @@ const columns = computed(() => [
   { key: 'assigned_upstream_id', label: '绑定账号' },
   { key: 'ready', label: '连接配置' },
   { key: 'created_at', label: '添加时间' },
-  { key: 'actions', label: '' },
+  { key: 'actions', label: '操作' },
 ])
 onMounted(proxies.load)
+
+const filtered = computed(() => {
+  let rows = proxies.data.value ?? []
+  if (queryParams.status) rows = rows.filter((p) => p.status === queryParams.status)
+  if (!isSeller.value && queryParams.owner === 'platform') rows = rows.filter((p) => !p.seller_id)
+  if (!isSeller.value && queryParams.owner === 'seller') rows = rows.filter((p) => !!p.seller_id)
+  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'name', 'host', 'region', 'seller_id', 'assigned_upstream_id'] as (keyof Proxy)[])
+  return rows
+})
+const { pageNum, pageSize, total, pageRows, resetPage } = useClientPage(filtered)
+
+function search() {
+  handleQuery()
+  resetPage()
+  proxies.load()
+}
+function onReset() {
+  resetQuery()
+  resetPage()
+  proxies.load()
+}
 
 async function create() {
   if (!valid.value) return
@@ -48,70 +78,109 @@ async function act(fn: () => Promise<unknown>, msg: string) {
 </script>
 
 <template>
-  <div>
-    <PageHeader
-      :title="isSeller ? '我的代理 IP' : '代理 IP'"
-      :description="isSeller ? '先配置代理列表，接入账号时选择一个空闲代理。每个账号独占一个代理，账号移除完成后释放。' : '管理平台库存与卖家提供的代理。由平台关联时仅分配平台的空闲代理，每个账号独占一个。'"
-    >
-      <button class="btn-primary" @click="show = true">添加代理 IP</button>
-    </PageHeader>
+  <ConsoleListPage
+    :id="isSeller ? 'seller-proxies-page' : 'console-proxies-page'"
+    :title="isSeller ? '我的代理 IP' : '代理 IP'"
+    :description="isSeller ? '先配置代理列表，接入账号时选择一个空闲代理。每个账号独占一个代理，账号移除完成后释放。' : '管理平台库存与卖家提供的代理。由平台关联时仅分配平台的空闲代理，每个账号独占一个。'"
+  >
+    <template #actions>
+      <button type="button" class="btn btn-primary" @click="show = true">添加代理 IP</button>
+    </template>
+
+    <template #filters>
+      <div class="filter-item">
+        <label class="filter-label">关键字</label>
+        <div class="relative w-full flex-1">
+          <input v-model="queryParams.keyword" class="filter-input w-full" placeholder="名称 / IP / 地区" @keyup.enter="search" />
+        </div>
+      </div>
+      <div class="filter-item">
+        <label class="filter-label">状态</label>
+        <select v-model="queryParams.status" class="filter-input flex-1">
+          <option value="">全部</option>
+          <option v-for="o in options('proxyStatus')" :key="o.value" :value="o.value">{{ o.text }}</option>
+        </select>
+      </div>
+      <div v-show="!isSeller" class="filter-item">
+        <label class="filter-label">来源</label>
+        <select v-model="queryParams.owner" class="filter-input flex-1" :disabled="isSeller">
+          <option value="">全部</option>
+          <option value="platform">平台</option>
+          <option value="seller">卖家</option>
+        </select>
+      </div>
+      <div v-show="isSeller" class="filter-item" aria-hidden="true" />
+      <div class="filter-item" aria-hidden="true" />
+      <div class="filter-actions lg:col-span-4">
+        <button type="button" class="btn btn-secondary" @click="onReset">重置</button>
+        <button type="button" class="btn btn-primary" @click="search">查询</button>
+      </div>
+    </template>
+
     <p v-if="isSeller" class="mb-4 text-sm text-ink-600">请使用固定出口 IP 的代理。已绑定的代理不能停用；需要更换时，先移除对应账号，再用新的代理重新接入。</p>
-    <div class="card">
-      <DataTable :columns="columns" :rows="proxies.data.value" :loading="proxies.loading.value" row-key="id" empty="还没有代理 IP，请先添加">
-        <template #cell-owner="{ row }">{{ row.seller_id ? `卖家 #${row.seller_id}` : '平台' }}</template>
-        <template #cell-addr="{ row }"><span class="font-mono text-xs">{{ row.protocol }}://{{ row.host.includes(':') ? `[${row.host}]` : row.host }}:{{ row.port }}</span></template>
-        <template #cell-status="{ row }"><StatusBadge kind="proxyStatus" :value="row.status" /></template>
-        <template #cell-assigned_upstream_id="{ row }">
-          <RouterLink v-if="row.assigned_upstream_id && isSeller" :to="`/seller/upstreams/${row.assigned_upstream_id}`" class="link">账号 #{{ row.assigned_upstream_id }}</RouterLink>
-          <span v-else>{{ row.assigned_upstream_id ? `账号 #${row.assigned_upstream_id}` : '—' }}</span>
-        </template>
-        <template #cell-ready="{ row }">{{ row.sub2api_proxy_id ? '已就绪' : '待重试' }}</template>
-        <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
-        <template #cell-actions="{ row }">
-          <button v-if="!row.sub2api_proxy_id" class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.syncProxy(row.id), '连接配置已就绪')">重试连接</button>
-          <button v-if="row.status !== 'disabled'" class="btn-ghost btn-sm" :disabled="busy || !!row.assigned_upstream_id" @click="act(() => api.setProxyDisabled(row.id, true), '已停用')">停用</button>
-          <button v-else class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.setProxyDisabled(row.id, false), '已启用')">启用</button>
-        </template>
-      </DataTable>
-    </div>
-    <ModalDialog v-model:open="show" title="添加代理 IP">
-      <form id="proxy-form" class="grid grid-cols-1 gap-3 sm:grid-cols-2" @submit.prevent="create">
-        <div class="sm:col-span-2">
-          <label class="label" for="proxy-name">名称</label>
-          <input id="proxy-name" v-model="form.name" class="input" required placeholder="例如 美国固定 IP 01" />
-        </div>
-        <div>
-          <label class="label" for="proxy-protocol">协议</label>
-          <select id="proxy-protocol" v-model="form.protocol" class="input">
-            <option v-for="p in ['socks5', 'socks5h', 'http', 'https']" :key="p" :value="p">{{ p }}</option>
-          </select>
-        </div>
-        <div>
-          <label class="label" for="proxy-region">地区（可选）</label>
-          <input id="proxy-region" v-model="form.region" class="input" placeholder="us / jp …" />
-        </div>
-        <div>
-          <label class="label" for="proxy-host">IP 或域名</label>
-          <input id="proxy-host" v-model="form.host" class="input font-mono" required placeholder="203.0.113.10" autocomplete="off" />
-          <p class="hint">只填写主机，不包含协议和端口</p>
-        </div>
-        <div>
-          <label class="label" for="proxy-port">端口</label>
-          <input id="proxy-port" v-model="form.port" class="input" type="number" min="1" max="65535" step="1" required placeholder="1080" />
-        </div>
-        <div>
-          <label class="label" for="proxy-user">用户名（可选）</label>
-          <input id="proxy-user" v-model="form.username" class="input" autocomplete="off" />
-        </div>
-        <div>
-          <label class="label" for="proxy-password">密码（可选）</label>
-          <input id="proxy-password" v-model="form.password" class="input" type="password" autocomplete="new-password" />
-        </div>
-      </form>
-      <template #footer>
-        <button class="btn-secondary" :disabled="busy" @click="show = false">取消</button>
-        <button type="submit" form="proxy-form" class="btn-primary" :disabled="busy || !valid">添加</button>
+
+    <DataTable :columns="columns" :rows="pageRows" :loading="proxies.loading.value" row-key="id" empty="还没有代理 IP，请先添加">
+      <template #cell-owner="{ row }">{{ row.seller_id ? `卖家 #${row.seller_id}` : '平台' }}</template>
+      <template #cell-addr="{ row }"><span class="font-mono text-xs">{{ row.protocol }}://{{ row.host.includes(':') ? `[${row.host}]` : row.host }}:{{ row.port }}</span></template>
+      <template #cell-status="{ row }"><StatusBadge kind="proxyStatus" :value="row.status" /></template>
+      <template #cell-assigned_upstream_id="{ row }">
+        <RouterLink v-if="row.assigned_upstream_id && isSeller" :to="`/seller/upstreams/${row.assigned_upstream_id}`" class="link">账号 #{{ row.assigned_upstream_id }}</RouterLink>
+        <span v-else>{{ row.assigned_upstream_id ? `账号 #${row.assigned_upstream_id}` : '—' }}</span>
       </template>
-    </ModalDialog>
-  </div>
+      <template #cell-ready="{ row }">{{ row.sub2api_proxy_id ? '已就绪' : '待重试' }}</template>
+      <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
+      <template #cell-actions="{ row }">
+        <button v-if="!row.sub2api_proxy_id" class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.syncProxy(row.id), '连接配置已就绪')">重试连接</button>
+        <button v-if="row.status !== 'disabled'" class="btn-ghost btn-sm" :disabled="busy || !!row.assigned_upstream_id" @click="act(() => api.setProxyDisabled(row.id, true), '已停用')">停用</button>
+        <button v-else class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.setProxyDisabled(row.id, false), '已启用')">启用</button>
+      </template>
+    </DataTable>
+
+    <template #footer>
+      <span class="mr-auto text-xs text-gray-500">共 {{ total }} 条</span>
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum <= 1" @click="pageNum--">上一页</button>
+      <span class="text-xs text-gray-500">{{ pageNum }} / {{ Math.max(1, Math.ceil(total / pageSize)) }}</span>
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum * pageSize >= total" @click="pageNum++">下一页</button>
+    </template>
+  </ConsoleListPage>
+
+  <ModalDialog v-model:open="show" title="添加代理 IP">
+    <form id="proxy-form" class="grid grid-cols-1 gap-3 sm:grid-cols-2" @submit.prevent="create">
+      <div class="sm:col-span-2">
+        <label class="label" for="proxy-name">名称</label>
+        <input id="proxy-name" v-model="form.name" class="input" required placeholder="例如 美国固定 IP 01" />
+      </div>
+      <div>
+        <label class="label" for="proxy-protocol">协议</label>
+        <select id="proxy-protocol" v-model="form.protocol" class="input">
+          <option v-for="p in ['socks5', 'socks5h', 'http', 'https']" :key="p" :value="p">{{ p }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="label" for="proxy-region">地区（可选）</label>
+        <input id="proxy-region" v-model="form.region" class="input" placeholder="us / jp …" />
+      </div>
+      <div>
+        <label class="label" for="proxy-host">IP 或域名</label>
+        <input id="proxy-host" v-model="form.host" class="input font-mono" required placeholder="203.0.113.10" autocomplete="off" />
+        <p class="hint">只填写主机，不包含协议和端口</p>
+      </div>
+      <div>
+        <label class="label" for="proxy-port">端口</label>
+        <input id="proxy-port" v-model="form.port" class="input" type="number" min="1" max="65535" step="1" required placeholder="1080" />
+      </div>
+      <div>
+        <label class="label" for="proxy-user">用户名（可选）</label>
+        <input id="proxy-user" v-model="form.username" class="input" autocomplete="off" />
+      </div>
+      <div>
+        <label class="label" for="proxy-password">密码（可选）</label>
+        <input id="proxy-password" v-model="form.password" class="input" type="password" autocomplete="new-password" />
+      </div>
+    </form>
+    <template #footer>
+      <button class="btn-secondary" :disabled="busy" @click="show = false">取消</button>
+      <button type="submit" form="proxy-form" class="btn-primary" :disabled="busy || !valid">添加</button>
+    </template>
+  </ModalDialog>
 </template>

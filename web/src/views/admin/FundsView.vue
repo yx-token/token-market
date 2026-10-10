@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { admin } from '@/api'
 import type { RechargeOrder, Refund, RefundPayout, Withdrawal } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
-import PageHeader from '@/components/PageHeader.vue'
+import { filterByDateField, filterByKeyword, useClientPage, useListQuery } from '@/composables/useListQuery'
+import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import TabBar from '@/components/TabBar.vue'
@@ -11,23 +13,137 @@ import { label } from '@/utils/labels'
 import { dateTime, money } from '@/utils/format'
 
 const tab = ref('recharges')
-const rStatus = ref('pending')
-const fStatus = ref('paying')
-const wStatus = ref('pending_review')
-const recharges = useLoader(() => admin.recharges(rStatus.value), [] as RechargeOrder[] | null)
-const refunds = useLoader(() => admin.refunds(fStatus.value), [] as Refund[] | null)
-const withdrawals = useLoader(() => admin.withdrawals(wStatus.value), [] as Withdrawal[] | null)
+const defaultStatus: Record<string, string> = {
+  recharges: 'pending',
+  refunds: 'paying',
+  withdrawals: 'pending_review',
+}
+const pageMeta: Record<string, { title: string; description: string }> = {
+  recharges: {
+    title: '充值',
+    description: '在线充值（支付宝、微信支付）由渠道通知与主动查单自动到账；商户与支付方式在「支付配置」中设置。',
+  },
+  refunds: {
+    title: '退款',
+    description: '余额退款优先原路退回，其余部分由管理员线下打款后登记。',
+  },
+  withdrawals: {
+    title: '提现',
+    description: '卖家提现由管理员审核并线下打款后登记。',
+  },
+}
+const pageTitle = computed(() => pageMeta[tab.value]?.title ?? '资金')
+const pageDescription = computed(() => pageMeta[tab.value]?.description ?? '')
+
+const { queryParams, handleQuery } = useListQuery({
+  keyword: '',
+  status: defaultStatus.recharges,
+  startDate: '',
+  endDate: '',
+})
+
+const recharges = useLoader(() => admin.recharges(queryParams.status), [] as RechargeOrder[] | null)
+const refunds = useLoader(() => admin.refunds(queryParams.status), [] as Refund[] | null)
+const withdrawals = useLoader(() => admin.withdrawals(queryParams.status), [] as Withdrawal[] | null)
 const { busy, run } = useAction()
 
-function loadAll() {
-  recharges.load()
-  refunds.load()
-  withdrawals.load()
+function loadCurrent() {
+  if (tab.value === 'recharges') recharges.load()
+  else if (tab.value === 'refunds') refunds.load()
+  else withdrawals.load()
 }
-onMounted(loadAll)
-watch(rStatus, () => recharges.load())
-watch(fStatus, () => refunds.load())
-watch(wStatus, () => withdrawals.load())
+onMounted(loadCurrent)
+
+watch(tab, (t) => {
+  queryParams.status = defaultStatus[t] ?? ''
+  queryParams.keyword = ''
+  queryParams.startDate = ''
+  queryParams.endDate = ''
+  resetAllPages()
+  loadCurrent()
+})
+
+const filteredRecharges = computed(() => {
+  let rows = recharges.data.value ?? []
+  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'user_id', 'channel', 'out_trade_no', 'provider_ref'] as (keyof RechargeOrder)[])
+  rows = filterByDateField(rows, 'created_at', queryParams.startDate, queryParams.endDate)
+  return rows
+})
+const filteredRefunds = computed(() => {
+  let rows = refunds.data.value ?? []
+  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'user_id', 'note', 'status'] as (keyof Refund)[])
+  rows = filterByDateField(rows, 'created_at', queryParams.startDate, queryParams.endDate)
+  return rows
+})
+const filteredWithdrawals = computed(() => {
+  let rows = withdrawals.data.value ?? []
+  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'seller_id', 'account_info', 'channel', 'review_reason'] as (keyof Withdrawal)[])
+  rows = filterByDateField(rows, 'created_at', queryParams.startDate, queryParams.endDate)
+  return rows
+})
+
+const {
+  pageNum: rechargePageNum,
+  pageSize: rechargePageSize,
+  total: rechargeTotal,
+  pageRows: rechargeRows,
+  resetPage: resetRechargePage,
+} = useClientPage(filteredRecharges)
+const {
+  pageNum: refundPageNum,
+  pageSize: refundPageSize,
+  total: refundTotal,
+  pageRows: refundRows,
+  resetPage: resetRefundPage,
+} = useClientPage(filteredRefunds)
+const {
+  pageNum: withdrawalPageNum,
+  pageSize: withdrawalPageSize,
+  total: withdrawalTotal,
+  pageRows: withdrawalRows,
+  resetPage: resetWithdrawalPage,
+} = useClientPage(filteredWithdrawals)
+
+function resetAllPages() {
+  resetRechargePage()
+  resetRefundPage()
+  resetWithdrawalPage()
+}
+
+const pageNum = computed({
+  get: () => (tab.value === 'recharges' ? rechargePageNum.value : tab.value === 'refunds' ? refundPageNum.value : withdrawalPageNum.value),
+  set: (n: number) => {
+    if (tab.value === 'recharges') rechargePageNum.value = n
+    else if (tab.value === 'refunds') refundPageNum.value = n
+    else withdrawalPageNum.value = n
+  },
+})
+const pageSize = computed(() =>
+  tab.value === 'recharges' ? rechargePageSize.value : tab.value === 'refunds' ? refundPageSize.value : withdrawalPageSize.value,
+)
+const total = computed(() =>
+  tab.value === 'recharges' ? rechargeTotal.value : tab.value === 'refunds' ? refundTotal.value : withdrawalTotal.value,
+)
+
+const loading = computed(() => {
+  if (tab.value === 'recharges') return recharges.loading.value
+  if (tab.value === 'refunds') return refunds.loading.value
+  return withdrawals.loading.value
+})
+
+function search() {
+  handleQuery()
+  resetAllPages()
+  loadCurrent()
+}
+function onReset() {
+  queryParams.keyword = ''
+  queryParams.startDate = ''
+  queryParams.endDate = ''
+  queryParams.status = defaultStatus[tab.value] ?? ''
+  resetAllPages()
+  loadCurrent()
+}
 
 async function confirmRecharge(o: RechargeOrder) {
   const ref = prompt(`确认订单 #${o.id}（${money(o.amount)}）已到账，填写付款流水号：`)
@@ -71,164 +187,202 @@ async function paid(w: Withdrawal, failed: boolean) {
 </script>
 
 <template>
-  <div>
-    <PageHeader
-      title="充值、退款、提现"
-      description="在线充值（支付宝、微信支付）由渠道通知与主动查单自动到账；余额退款优先原路退回，其余部分与提现由管理员线下打款后登记。商户与支付方式在“支付配置”中设置。"
-    />
-    <TabBar
-      v-model="tab"
-      :tabs="[
-        { key: 'recharges', text: '充值' },
-        { key: 'refunds', text: '退款' },
-        { key: 'withdrawals', text: '提现' },
+  <ConsoleListPage
+    id="console-funds-page"
+    :title="pageTitle"
+    :description="pageDescription"
+  >
+    <template #tabs>
+      <TabBar
+        v-model="tab"
+        :tabs="[
+          { key: 'recharges', text: '充值' },
+          { key: 'refunds', text: '退款' },
+          { key: 'withdrawals', text: '提现' },
+        ]"
+      />
+    </template>
+
+    <template #filters>
+      <div class="filter-item">
+        <label class="filter-label">关键字</label>
+        <div class="relative w-full flex-1">
+          <input
+            v-model="queryParams.keyword"
+            class="filter-input w-full"
+            :placeholder="tab === 'withdrawals' ? '编号 / 卖家 / 账号' : '编号 / 用户 / 单号'"
+            @keyup.enter="search"
+          />
+        </div>
+      </div>
+      <div class="filter-item">
+        <label class="filter-label">状态</label>
+        <select v-model="queryParams.status" class="filter-input flex-1">
+          <template v-if="tab === 'recharges'">
+            <option value="pending">待支付</option>
+            <option value="crediting">到账中</option>
+            <option value="credited">已到账</option>
+            <option value="failed">失败</option>
+            <option value="expired">已过期</option>
+            <option value="cancelled">已取消</option>
+            <option value="">全部</option>
+          </template>
+          <template v-else-if="tab === 'refunds'">
+            <option value="paying">待打款</option>
+            <option value="locking">暂停 Key 中</option>
+            <option value="subtracting">扣减余额中</option>
+            <option value="done">已完成</option>
+            <option value="">全部</option>
+          </template>
+          <template v-else>
+            <option value="pending_review">待审核</option>
+            <option value="approved">待打款</option>
+            <option value="paid">已打款</option>
+            <option value="rejected">已驳回</option>
+            <option value="failed">打款失败</option>
+            <option value="">全部</option>
+          </template>
+        </select>
+      </div>
+      <div class="filter-item">
+        <label class="filter-label">时间</label>
+        <div class="flex w-full flex-1 items-center gap-2">
+          <DateRangePicker v-model:start-date="queryParams.startDate" v-model:end-date="queryParams.endDate" />
+        </div>
+      </div>
+      <div class="filter-item" aria-hidden="true" />
+      <div class="filter-actions lg:col-span-4">
+        <button type="button" class="btn btn-secondary" @click="onReset">重置</button>
+        <button type="button" class="btn btn-primary" @click="search">查询</button>
+      </div>
+    </template>
+
+    <DataTable
+      v-if="tab === 'recharges'"
+      :columns="[
+        { key: 'id', label: '订单' },
+        { key: 'user_id', label: '用户' },
+        { key: 'channel', label: '支付方式' },
+        { key: 'amount', label: '金额', align: 'right' },
+        { key: 'status', label: '状态' },
+        { key: 'provider_ref', label: '商户单号 / 渠道流水' },
+        { key: 'created_at', label: '创建时间' },
+        { key: 'actions', label: '操作' },
       ]"
-    />
+      :rows="rechargeRows"
+      :loading="loading"
+      row-key="id"
+      empty="没有符合条件的充值订单"
+    >
+      <template #cell-id="{ row }">#{{ row.id }}</template>
+      <template #cell-user_id="{ row }">#{{ row.user_id }}</template>
+      <template #cell-channel="{ row }">{{ label('paymentChannel', row.channel).text }}</template>
+      <template #cell-amount="{ row }">
+        {{ money(row.amount) }}
+        <span v-if="row.refunded_amount > 0" class="block text-xs text-slate-400">已退 {{ money(row.refunded_amount) }}</span>
+      </template>
+      <template #cell-status="{ row }">
+        <StatusBadge kind="rechargeStatus" :value="row.status" />
+        <span v-if="row.close_reason" class="block text-xs text-slate-400">{{ label('closeReason', row.close_reason).text }}</span>
+      </template>
+      <template #cell-provider_ref="{ row }">
+        <span class="text-xs">{{ row.out_trade_no ?? '—' }}</span>
+        <span v-if="row.provider_ref" class="block text-xs text-slate-400">{{ row.provider_ref }}</span>
+      </template>
+      <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
+      <template #cell-actions="{ row }">
+        <button v-if="row.status === 'pending' && row.channel === 'manual'" class="btn-primary btn-sm" :disabled="busy" @click="confirmRecharge(row)">
+          确认到账
+        </button>
+        <button v-if="row.status === 'pending' && row.channel !== 'manual'" class="btn-secondary btn-sm" :disabled="busy" @click="syncRecharge(row)">
+          向渠道查单
+        </button>
+      </template>
+    </DataTable>
 
-    <div v-if="tab === 'recharges'" class="card">
-      <select v-model="rStatus" class="input mb-3 w-36" aria-label="状态">
-        <option value="pending">待支付</option>
-        <option value="crediting">到账中</option>
-        <option value="credited">已到账</option>
-        <option value="failed">失败</option>
-        <option value="expired">已过期</option>
-        <option value="cancelled">已取消</option>
-        <option value="">全部</option>
-      </select>
-      <DataTable
-        :columns="[
-          { key: 'id', label: '订单' },
-          { key: 'user_id', label: '用户' },
-          { key: 'channel', label: '支付方式' },
-          { key: 'amount', label: '金额', align: 'right' },
-          { key: 'status', label: '状态' },
-          { key: 'provider_ref', label: '商户单号 / 渠道流水' },
-          { key: 'created_at', label: '创建时间' },
-          { key: 'actions', label: '' },
-        ]"
-        :rows="recharges.data.value"
-        :loading="recharges.loading.value"
-        row-key="id"
-      >
-        <template #cell-id="{ row }">#{{ row.id }}</template>
-        <template #cell-user_id="{ row }">#{{ row.user_id }}</template>
-        <template #cell-channel="{ row }">{{ label('paymentChannel', row.channel).text }}</template>
-        <template #cell-amount="{ row }">
-          {{ money(row.amount) }}
-          <span v-if="row.refunded_amount > 0" class="block text-xs text-slate-400">已退 {{ money(row.refunded_amount) }}</span>
-        </template>
-        <template #cell-status="{ row }">
-          <StatusBadge kind="rechargeStatus" :value="row.status" />
-          <span v-if="row.close_reason" class="block text-xs text-slate-400">{{ label('closeReason', row.close_reason).text }}</span>
-        </template>
-        <template #cell-provider_ref="{ row }">
-          <span class="text-xs">{{ row.out_trade_no ?? '—' }}</span>
-          <span v-if="row.provider_ref" class="block text-xs text-slate-400">{{ row.provider_ref }}</span>
-        </template>
-        <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
-        <template #cell-actions="{ row }">
-          <button v-if="row.status === 'pending' && row.channel === 'manual'" class="btn-primary btn-sm" :disabled="busy" @click="confirmRecharge(row)">
-            确认到账
-          </button>
-          <button v-if="row.status === 'pending' && row.channel !== 'manual'" class="btn-secondary btn-sm" :disabled="busy" @click="syncRecharge(row)">
-            向渠道查单
-          </button>
-        </template>
-      </DataTable>
-    </div>
+    <DataTable
+      v-else-if="tab === 'refunds'"
+      :columns="[
+        { key: 'id', label: '编号' },
+        { key: 'user_id', label: '用户' },
+        { key: 'amount', label: '金额', align: 'right' },
+        { key: 'status', label: '状态' },
+        { key: 'payouts', label: '打款明细' },
+        { key: 'note', label: '备注' },
+        { key: 'created_at', label: '申请时间' },
+        { key: 'actions', label: '操作' },
+      ]"
+      :rows="refundRows"
+      :loading="loading"
+      row-key="id"
+      empty="没有符合条件的退款"
+    >
+      <template #cell-id="{ row }">#{{ row.id }}</template>
+      <template #cell-user_id="{ row }">#{{ row.user_id }}</template>
+      <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
+      <template #cell-status="{ row }"><StatusBadge kind="refundStatus" :value="row.status" /></template>
+      <template #cell-payouts="{ row }">
+        <ul v-if="row.payouts?.length" class="space-y-1 text-xs">
+          <li v-for="p in row.payouts" :key="p.id" class="flex flex-wrap items-center gap-1">
+            <span>{{ p.channel === 'manual' ? '人工打款' : `原路·${label('paymentChannel', p.channel).text}` }}</span>
+            <span>{{ money(p.amount) }}</span>
+            <StatusBadge kind="payoutStatus" :value="p.status" />
+            <span v-if="p.recharge_order_id" class="text-slate-400">订单 #{{ p.recharge_order_id }}</span>
+            <span v-if="p.error" class="text-red-600" :title="p.error">{{ p.error.slice(0, 40) }}</span>
+            <template v-if="p.status === 'failed'">
+              <button v-if="p.recharge_order_id" class="btn-ghost btn-sm" :disabled="busy" @click="retryPayout(p)">重试</button>
+              <button class="btn-ghost btn-sm" :disabled="busy" @click="toManual(p)">改人工</button>
+            </template>
+          </li>
+        </ul>
+        <span v-else class="text-slate-400">—</span>
+      </template>
+      <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
+      <template #cell-actions="{ row }">
+        <button v-if="needsManual(row)" class="btn-primary btn-sm" :disabled="busy" @click="refundPaid(row)">登记人工打款</button>
+      </template>
+    </DataTable>
 
-    <div v-if="tab === 'refunds'" class="card">
-      <select v-model="fStatus" class="input mb-3 w-36" aria-label="状态">
-        <option value="paying">待打款</option>
-        <option value="locking">暂停 Key 中</option>
-        <option value="subtracting">扣减余额中</option>
-        <option value="done">已完成</option>
-        <option value="">全部</option>
-      </select>
-      <DataTable
-        :columns="[
-          { key: 'id', label: '编号' },
-          { key: 'user_id', label: '用户' },
-          { key: 'amount', label: '金额', align: 'right' },
-          { key: 'status', label: '状态' },
-          { key: 'payouts', label: '打款明细' },
-          { key: 'note', label: '备注' },
-          { key: 'created_at', label: '申请时间' },
-          { key: 'actions', label: '' },
-        ]"
-        :rows="refunds.data.value"
-        :loading="refunds.loading.value"
-        row-key="id"
-      >
-        <template #cell-id="{ row }">#{{ row.id }}</template>
-        <template #cell-user_id="{ row }">#{{ row.user_id }}</template>
-        <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
-        <template #cell-status="{ row }"><StatusBadge kind="refundStatus" :value="row.status" /></template>
-        <template #cell-payouts="{ row }">
-          <ul v-if="row.payouts?.length" class="space-y-1 text-xs">
-            <li v-for="p in row.payouts" :key="p.id" class="flex flex-wrap items-center gap-1">
-              <span>{{ p.channel === 'manual' ? '人工打款' : `原路·${label('paymentChannel', p.channel).text}` }}</span>
-              <span>{{ money(p.amount) }}</span>
-              <StatusBadge kind="payoutStatus" :value="p.status" />
-              <span v-if="p.recharge_order_id" class="text-slate-400">订单 #{{ p.recharge_order_id }}</span>
-              <span v-if="p.error" class="text-red-600" :title="p.error">{{ p.error.slice(0, 40) }}</span>
-              <template v-if="p.status === 'failed'">
-                <button v-if="p.recharge_order_id" class="btn-ghost btn-sm" :disabled="busy" @click="retryPayout(p)">重试</button>
-                <button class="btn-ghost btn-sm" :disabled="busy" @click="toManual(p)">改人工</button>
-              </template>
-            </li>
-          </ul>
-          <span v-else class="text-slate-400">—</span>
+    <DataTable
+      v-else
+      :columns="[
+        { key: 'id', label: '编号' },
+        { key: 'seller_id', label: '卖家' },
+        { key: 'amount', label: '金额', align: 'right' },
+        { key: 'account', label: '收款账号' },
+        { key: 'status', label: '状态' },
+        { key: 'review_reason', label: '审核说明' },
+        { key: 'created_at', label: '申请时间' },
+        { key: 'actions', label: '操作' },
+      ]"
+      :rows="withdrawalRows"
+      :loading="loading"
+      row-key="id"
+      empty="没有符合条件的提现"
+    >
+      <template #cell-id="{ row }">#{{ row.id }}</template>
+      <template #cell-seller_id="{ row }">#{{ row.seller_id }}</template>
+      <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
+      <template #cell-account="{ row }">{{ row.channel }}：{{ row.account_info }}</template>
+      <template #cell-status="{ row }"><StatusBadge kind="withdrawalStatus" :value="row.status" /></template>
+      <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
+      <template #cell-actions="{ row }">
+        <template v-if="row.status === 'pending_review'">
+          <button class="btn-primary btn-sm" :disabled="busy" @click="review(row, true)">通过</button>
+          <button class="btn-ghost btn-sm text-red-600" :disabled="busy" @click="review(row, false)">驳回</button>
         </template>
-        <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
-        <template #cell-actions="{ row }">
-          <button v-if="needsManual(row)" class="btn-primary btn-sm" :disabled="busy" @click="refundPaid(row)">登记人工打款</button>
+        <template v-if="row.status === 'approved'">
+          <button class="btn-primary btn-sm" :disabled="busy" @click="paid(row, false)">登记已打款</button>
+          <button class="btn-ghost btn-sm text-red-600" :disabled="busy" @click="paid(row, true)">打款失败</button>
         </template>
-      </DataTable>
-    </div>
+      </template>
+    </DataTable>
 
-    <div v-if="tab === 'withdrawals'" class="card">
-      <select v-model="wStatus" class="input mb-3 w-36" aria-label="状态">
-        <option value="pending_review">待审核</option>
-        <option value="approved">待打款</option>
-        <option value="paid">已打款</option>
-        <option value="rejected">已驳回</option>
-        <option value="failed">打款失败</option>
-        <option value="">全部</option>
-      </select>
-      <DataTable
-        :columns="[
-          { key: 'id', label: '编号' },
-          { key: 'seller_id', label: '卖家' },
-          { key: 'amount', label: '金额', align: 'right' },
-          { key: 'account', label: '收款账号' },
-          { key: 'status', label: '状态' },
-          { key: 'review_reason', label: '审核说明' },
-          { key: 'created_at', label: '申请时间' },
-          { key: 'actions', label: '' },
-        ]"
-        :rows="withdrawals.data.value"
-        :loading="withdrawals.loading.value"
-        row-key="id"
-      >
-        <template #cell-id="{ row }">#{{ row.id }}</template>
-        <template #cell-seller_id="{ row }">#{{ row.seller_id }}</template>
-        <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
-        <template #cell-account="{ row }">{{ row.channel }}：{{ row.account_info }}</template>
-        <template #cell-status="{ row }"><StatusBadge kind="withdrawalStatus" :value="row.status" /></template>
-        <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
-        <template #cell-actions="{ row }">
-          <template v-if="row.status === 'pending_review'">
-            <button class="btn-primary btn-sm" :disabled="busy" @click="review(row, true)">通过</button>
-            <button class="btn-ghost btn-sm text-red-600" :disabled="busy" @click="review(row, false)">驳回</button>
-          </template>
-          <template v-if="row.status === 'approved'">
-            <button class="btn-primary btn-sm" :disabled="busy" @click="paid(row, false)">登记已打款</button>
-            <button class="btn-ghost btn-sm text-red-600" :disabled="busy" @click="paid(row, true)">打款失败</button>
-          </template>
-        </template>
-      </DataTable>
-    </div>
-
-  </div>
+    <template #footer>
+      <span class="mr-auto text-xs text-gray-500">共 {{ total }} 条</span>
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum <= 1" @click="pageNum--">上一页</button>
+      <span class="text-xs text-gray-500">{{ pageNum }} / {{ Math.max(1, Math.ceil(total / pageSize)) }}</span>
+      <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum * pageSize >= total" @click="pageNum++">下一页</button>
+    </template>
+  </ConsoleListPage>
 </template>
