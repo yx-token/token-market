@@ -29,7 +29,7 @@ func TestSpendingLimitAndRiskControls(t *testing.T) {
 	var created struct {
 		Listing idOnly `json:"listing"`
 	}
-	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5}, &created)
+	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}}, &created)
 	e.schedule()
 
 	buyer := e.newUser("buyer@market.test")

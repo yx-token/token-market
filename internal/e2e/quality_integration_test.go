@@ -88,7 +88,7 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 	if up.Status != "verifying" {
 		t.Fatalf("detection is on, upstream should be verifying: %+v", up)
 	}
-	seller.expect(409, "POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5})
+	seller.expect(409, "POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}})
 	tick()
 	var status, health string
 	var grade *string
@@ -99,7 +99,7 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 	var created struct {
 		Listing idOnly `json:"listing"`
 	}
-	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5}, &created)
+	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}}, &created)
 	e.schedule()
 	var acc, poolGroup int64
 	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT sub2api_account_id FROM upstreams WHERE id = $1", up.ID), &acc)
@@ -260,7 +260,7 @@ func TestOnboardingCheckIsMandatory(t *testing.T) {
 	if status != "verify_failed" {
 		t.Fatalf("failing the onboarding check must block listing even with detection off: %s", status)
 	}
-	seller.expect(409, "POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5})
+	seller.expect(409, "POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}})
 	var reports []struct {
 		Verdict string `json:"verdict"`
 		Trigger string `json:"trigger"`

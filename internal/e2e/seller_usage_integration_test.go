@@ -30,7 +30,7 @@ func TestSellerUsageAndQuota(t *testing.T) {
 		} `json:"listing"`
 	}
 	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5,
-		"join_default_pool": false}, &created)
+		"join_default_pool": false, "categories": []string{"coding"}}, &created)
 
 	buyer := e.newUser("usage-buyer@market.test")
 	var rc struct {

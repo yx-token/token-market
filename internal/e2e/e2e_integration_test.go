@@ -370,14 +370,14 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 	if up1.Status != "verifying" {
 		t.Fatalf("new upstream must be verified before listing: %+v", up1)
 	}
-	seller1.expect(409, "POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up1.ID), map[string]any{"mode": "consignment", "multiplier": 0.5})
+	seller1.expect(409, "POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up1.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}})
 	e.passOnboarding(up1.ID)
 	var created struct {
 		Listing struct {
 			ID int64 `json:"id"`
 		} `json:"listing"`
 	}
-	seller1.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up1.ID), map[string]any{"mode": "consignment", "multiplier": 0.5}, &created)
+	seller1.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up1.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}}, &created)
 	listing1 := created.Listing.ID
 
 	// 同一个官方账号不能重复挂载

@@ -50,7 +50,7 @@ func TestAPISurface(t *testing.T) {
 	var la struct {
 		Listing idOnly `json:"listing"`
 	}
-	sellerA.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", upA.ID), map[string]any{"mode": "consignment", "multiplier": 0.5}, &la)
+	sellerA.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", upA.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}}, &la)
 
 	// 卖家 B：ChatGPT 回收（需要关闭训练数据使用）
 	sellerB := e.newUser("b@market.test")
@@ -95,7 +95,7 @@ func TestAPISurface(t *testing.T) {
 	var lc struct {
 		Listing idOnly `json:"listing"`
 	}
-	sellerC.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", upC.ID), map[string]any{"mode": "consignment", "multiplier": 0.6, "join_default_pool": false}, &lc)
+	sellerC.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", upC.ID), map[string]any{"mode": "consignment", "multiplier": 0.6, "join_default_pool": false, "categories": []string{"coding"}}, &lc)
 	e.schedule()
 
 	// 卖家对挂单的各项操作
