@@ -7,6 +7,7 @@ import { useAction, useLoader } from '@/composables/useAsync'
 import { useConfig } from '@/stores/config'
 import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
+import RefreshButton from '@/components/RefreshButton.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import StatCard from '@/components/StatCard.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -143,6 +144,7 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
 <template>
   <div v-if="u">
     <PageHeader :title="`上游 #${u.id}`" :description="`${label('platform', u.platform).text} · ${authTypeText(u.platform, u.auth_type)}`">
+      <RefreshButton :loading="detail.loading.value || reports.loading.value || trend.loading.value" @click="reload" />
       <RouterLink v-if="hasAccount" :to="`/seller/usage?upstream=${u.id}`" class="btn-secondary">用量明细</RouterLink>
       <button v-if="u.status === 'verify_failed'" class="btn-secondary" :disabled="busy" @click="listingAction(() => seller.retryVerification(u!.id), '已重新开始检测')">
         重新检测

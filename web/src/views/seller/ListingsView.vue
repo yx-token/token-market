@@ -5,6 +5,7 @@ import type { Listing, PriceVersion } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { useConfig } from '@/stores/config'
 import PageHeader from '@/components/PageHeader.vue'
+import RefreshButton from '@/components/RefreshButton.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
@@ -32,7 +33,9 @@ async function showHistory(id: number) {
 
 <template>
   <div>
-    <PageHeader title="挂单" description="在上游详情页创建挂单、改价、暂停或关闭。" />
+    <PageHeader title="挂单" description="在上游详情页创建挂单、改价、暂停或关闭。">
+      <RefreshButton :loading="listings.loading.value" @click="listings.load()" />
+    </PageHeader>
     <div class="card">
       <DataTable
         :columns="[

@@ -9,6 +9,7 @@ import MarketListPage from '@/components/MarketListPage.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
+import RefreshButton from '@/components/RefreshButton.vue'
 import ProxyDiagnosticReport from '@/components/ProxyDiagnosticReport.vue'
 import { options } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
@@ -102,6 +103,7 @@ async function check(p: Proxy, quality: boolean) {
     :description="isSeller ? '先配置代理列表，接入账号时选择一个空闲代理。每个账号独占一个代理，账号移除完成后释放。' : '管理平台库存与卖家提供的代理。由平台关联时仅分配平台的空闲代理，每个账号独占一个。'"
   >
     <template #actions>
+      <RefreshButton :loading="proxies.loading.value" @click="proxies.load()" />
       <button type="button" class="btn btn-primary" @click="show = true">添加代理 IP</button>
     </template>
 
