@@ -44,7 +44,16 @@ const importMismatch = computed(() => {
   const expected = isOAuth.value ? (currentType.value === 'setup-token' ? 'setup-token' : 'oauth') : 'apikey'
   return !!a && ((!!a.platform && a.platform !== platform.value) || (!!a.type && a.type !== expected))
 })
-const canImport = computed(() => !!selectedImport.value && !importPreview.value.error && !importMismatch.value)
+// 上游未绑定代理时由导入文件带入代理；必须使用卖家代理时，所选账号在文件中必须有代理。
+const pendingProxy = computed(() => !!upstream.value && !upstream.value.proxy_id)
+const importOnly = computed(() => pendingProxy.value && requireSellerProxy.value)
+const mode = computed(() => (importOnly.value ? 'import' : entryMode.value))
+const importProxyBlocked = computed(() => {
+  const a = selectedImport.value
+  return pendingProxy.value && !!a && (!!a.proxyMissing || (importOnly.value && !a.proxy))
+})
+const canImport = computed(() => !!selectedImport.value && !importPreview.value.error && !importMismatch.value && !importProxyBlocked.value)
+const proxyAddress = (p: { protocol: string; host: string; port: number }) => `${p.protocol}://${p.host.includes(':') ? `[${p.host}]` : p.host}:${p.port}`
 
 async function readImportFile(event: Event) {
   const input = event.target as HTMLInputElement
@@ -60,11 +69,15 @@ const projectID = ref('')
 const apiKey = ref('')
 const team = ref({ organization: '', project: '' })
 const proxies = ref<Proxy[]>([])
-const proxyID = ref<number | ''>('')
+// 'import' 表示暂不绑定代理，导入账号时使用导出文件中的代理。
+const proxyID = ref<number | '' | 'import'>('')
 const requireSellerProxy = ref(true)
 const loadingProxies = ref(false)
 const proxyLoadError = ref(false)
-const availableProxies = computed(() => proxies.value.filter((p) => p.status === 'available' && !p.assigned_upstream_id && p.sub2api_proxy_id))
+const idleProxies = computed(() => proxies.value.filter((p) => p.status === 'available' && !p.assigned_upstream_id && p.sub2api_proxy_id))
+// 只有最近一次连通性检测成功的代理可以选择，后端同样校验。
+const availableProxies = computed(() => idleProxies.value.filter((p) => p.connection_report?.success))
+const untestedCount = computed(() => idleProxies.value.length - availableProxies.value.length)
 
 async function loadProxyChoices() {
   loadingProxies.value = true
@@ -73,7 +86,7 @@ async function loadProxyChoices() {
     const [list, config] = await Promise.all([seller.proxies(), market.config()])
     proxies.value = list ?? []
     requireSellerProxy.value = config.require_seller_proxy
-    if (!availableProxies.value.some((p) => p.id === proxyID.value)) proxyID.value = ''
+    if (proxyID.value !== 'import' && !availableProxies.value.some((p) => p.id === proxyID.value)) proxyID.value = ''
   } catch (e) {
     proxyLoadError.value = true
     toast.error(e)
@@ -104,6 +117,8 @@ watch(open, (v) => {
     platform.value = props.resume.platform
     authType.value = props.resume.auth_type
     step.value = 'authorize'
+    // 读取代理策略，判断未绑定代理的上游是否只能通过导入接入。
+    void loadProxyChoices()
   } else {
     proxyID.value = ''
     void loadProxyChoices()
@@ -121,9 +136,14 @@ function pick(v: VendorView) {
 }
 
 async function create() {
-  const u = await run(() => seller.createUpstream(platform.value, authType.value, proxyID.value || undefined))
+  const fromImport = proxyID.value === 'import'
+  const selected = typeof proxyID.value === 'number' ? proxyID.value : undefined
+  const u = await run(() => fromImport
+    ? seller.createUpstream(platform.value, authType.value, undefined, true)
+    : seller.createUpstream(platform.value, authType.value, selected))
   if (!u) return
   upstream.value = u
+  if (fromImport) entryMode.value = 'import'
   step.value = 'authorize'
   emit('done')
 }
@@ -147,7 +167,8 @@ async function submit() {
       ? { organization: team.value.organization.trim(), project: team.value.project.trim() || undefined }
       : {}),
   }
-  const u = await run(() => entryMode.value === 'import'
+  const importing = mode.value === 'import'
+  const u = await run(() => importing
     ? seller.importAccount(id, importPreview.value.data, importIndex.value)
     : (isOAuth.value ? seller.completeOAuth(id, code.value.trim()) : seller.submitCodingKey(id, body)))
   if (u) {
@@ -155,6 +176,9 @@ async function submit() {
     step.value = 'done'
     importText.value = ''
     emit('done')
+  } else if (importing && pendingProxy.value) {
+    // 代理检测通过后账号创建仍可能失败，此时代理已绑定，刷新以显示正确的代理提示。
+    seller.upstream(id).then((d) => { if (upstream.value?.id === id) upstream.value = d }).catch(() => {})
   }
 }
 
@@ -197,13 +221,16 @@ function goDetail() {
       <div>
         <label class="label" for="onboarding-proxy">代理 IP{{ requireSellerProxy ? '（必选）' : '（可由平台关联）' }}</label>
         <select id="onboarding-proxy" v-model="proxyID" class="input" :disabled="loadingProxies || proxyLoadError">
-          <option value="">{{ requireSellerProxy ? '请选择已配置的空闲代理' : '由平台自动关联专用代理' }}</option>
-          <option v-for="p in availableProxies" :key="p.id" :value="p.id">{{ p.name }} · {{ p.protocol }}://{{ p.host.includes(':') ? `[${p.host}]` : p.host }}:{{ p.port }}{{ p.region ? ` · ${p.region}` : '' }}</option>
+          <option value="">{{ requireSellerProxy ? '请选择连通性检测通过的空闲代理' : '由平台自动关联专用代理' }}</option>
+          <option value="import">使用 sub2api 导入文件中的代理（导入时检测连通性）</option>
+          <option v-for="p in availableProxies" :key="p.id" :value="p.id">{{ p.name }} · {{ proxyAddress(p) }}{{ p.region ? ` · ${p.region}` : '' }}</option>
         </select>
         <p v-if="loadingProxies" class="hint" role="status">正在加载代理列表…</p>
         <p v-else-if="proxyLoadError" class="hint text-red-600" role="alert">代理列表加载失败，请重试。</p>
-        <p v-else-if="availableProxies.length === 0" class="hint">暂无空闲且已就绪的代理，请先添加代理或在列表中重试连接。</p>
-        <p v-else class="hint">仅显示你自己配置的空闲代理，绑定后其他账号无法选择。</p>
+        <p v-else-if="proxyID === 'import'" class="hint">接入时只能导入 sub2api 账号：导入前会登记并检测文件中该账号的代理，连通性检测通过才会导入。</p>
+        <p v-else-if="availableProxies.length === 0" class="hint">暂无连通性检测通过的空闲代理，请先添加代理并在列表中检测连接，或使用导入文件中的代理。</p>
+        <p v-else class="hint">仅显示你自己配置、连通性检测通过的空闲代理，绑定后其他账号无法选择。</p>
+        <p v-if="!loadingProxies && !proxyLoadError && untestedCount > 0" class="hint">另有 {{ untestedCount }} 个空闲代理尚未检测或检测未通过，在代理列表检测连接成功后才能选择。</p>
         <div class="mt-2 flex items-center gap-3 text-sm">
           <RouterLink to="/seller/proxies" class="link" @click="open = false">配置代理 IP 列表</RouterLink>
           <button class="btn-ghost btn-sm" :disabled="loadingProxies || busy" @click="loadProxyChoices">刷新列表</button>
@@ -220,11 +247,11 @@ function goDetail() {
       <p v-if="guide" class="text-sm text-ink-600">{{ guide.summary }}</p>
 
       <div class="flex gap-2" role="group" aria-label="账号接入方式">
-        <button type="button" :class="['choice', entryMode === 'authorize' && 'choice-on']" :disabled="busy" @click="entryMode = 'authorize'">{{ isOAuth ? '官方授权' : '填写 API Key' }}</button>
-        <button type="button" :class="['choice', entryMode === 'import' && 'choice-on']" :disabled="busy" @click="entryMode = 'import'">导入 sub2api 账号</button>
+        <button type="button" :class="['choice', mode === 'authorize' && 'choice-on']" :disabled="busy || importOnly" :title="importOnly ? '本上游未绑定代理，只能导入带代理的 sub2api 账号' : undefined" @click="entryMode = 'authorize'">{{ isOAuth ? '官方授权' : '填写 API Key' }}</button>
+        <button type="button" :class="['choice', mode === 'import' && 'choice-on']" :disabled="busy" @click="entryMode = 'import'">导入 sub2api 账号</button>
       </div>
 
-      <template v-if="entryMode === 'import'">
+      <template v-if="mode === 'import'">
         <p class="text-sm text-ink-600">只有授权信息也可以接入，无需账号密码。支持 sub2api 导出的 JSON 文件、账号数组、单个账号或 credentials 对象；多账号文件每次选择一个账号导入。</p>
         <div>
           <label class="label" for="account-import-file">选择 JSON 文件</label>
@@ -242,7 +269,13 @@ function goDetail() {
           </select>
           <p v-if="importMismatch" class="hint text-red-600" role="alert">所选账号的厂商或接入方式与当前上游不一致，请选择匹配的账号。</p>
         </div>
-        <p class="hint">导入账号沿用本上游已绑定的代理。导出文件中的代理、分组和调度配置不会被导入；导入后仍需通过隐私设置及上架检测，Coding Plan 会校验官方订阅额度。</p>
+        <template v-if="pendingProxy && selectedImport">
+          <p v-if="selectedImport.proxy" class="hint">将使用导入文件中该账号的代理 {{ selectedImport.proxy.name ? `${selectedImport.proxy.name} · ` : '' }}{{ proxyAddress(selectedImport.proxy) }}：导入前登记到你的代理列表并检测连通性，检测通过才会绑定并导入。</p>
+          <p v-else-if="selectedImport.proxyMissing" class="hint text-red-600" role="alert">导入文件中缺少该账号引用的代理，请导出时一并包含代理。</p>
+          <p v-else-if="importOnly" class="hint text-red-600" role="alert">所选账号在导入文件中没有代理，无法导入。请选择带代理的账号，或重新接入并选择已配置的代理。</p>
+          <p v-else class="hint">所选账号在导入文件中没有代理，将按平台设置接入。</p>
+        </template>
+        <p class="hint">{{ pendingProxy ? '' : '导入账号沿用本上游已绑定的代理，导出文件中的代理不会被使用。' }}分组和调度配置不会被导入；导入后仍需通过隐私设置及上架检测，Coding Plan 会校验官方订阅额度。</p>
       </template>
 
       <template v-else-if="isOAuth">
@@ -312,7 +345,7 @@ function goDetail() {
     <template #footer>
       <button class="btn-secondary" @click="open = false">关闭</button>
       <button v-if="step === 'choose'" class="btn-primary" :disabled="busy || loadingProxies || proxyLoadError || !platform || !authType || (requireSellerProxy && !proxyID)" @click="create">下一步</button>
-      <button v-else-if="step === 'authorize'" class="btn-primary" :disabled="busy || (entryMode === 'import' ? !canImport : (isOAuth ? !code.trim() : !apiKey.trim()))" @click="submit">{{ entryMode === 'import' ? '导入并检测' : '提交' }}</button>
+      <button v-else-if="step === 'authorize'" class="btn-primary" :disabled="busy || (mode === 'import' ? !canImport : (isOAuth ? !code.trim() : !apiKey.trim()))" @click="submit">{{ mode === 'import' ? '导入并检测' : '提交' }}</button>
       <button v-else class="btn-primary" @click="goDetail">查看上游</button>
     </template>
   </ModalDialog>

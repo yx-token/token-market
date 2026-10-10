@@ -83,9 +83,35 @@ func (s *ProxyService) CreateSeller(ctx context.Context, sellerID int64, in Crea
 	return s.create(ctx, &sellerID, in)
 }
 
+// ensureSeller 用于导入账号时带入导出文件中的代理：卖家已登记同一地址时复用原记录（以库存中的配置为准），
+// 否则新建并同步到 sub2api。地址已由其他卖家登记时拒绝。
+func (s *ProxyService) ensureSeller(ctx context.Context, sellerID int64, in CreateProxyInput) (*Proxy, error) {
+	in, err := normalizeProxyInput(in)
+	if err != nil {
+		return nil, err
+	}
+	p, err := scanProxy(s.DB.QueryRow(ctx, "SELECT "+proxyColumns+" FROM proxies WHERE seller_id IS NOT NULL AND lower(host) = $1 AND port = $2", in.Host, in.Port))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s.create(ctx, &sellerID, in)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if *p.SellerID != sellerID {
+		return nil, httpx.Conflict("PROXY_ALREADY_EXISTS", "this proxy address is already registered")
+	}
+	if p.Sub2APIProxyID == nil {
+		if p, err = s.Sync(ctx, p.ID); err != nil {
+			return nil, httpx.Unavailable("PROXY_SYNC_FAILED", "proxy saved but sync failed; retry synchronization from the proxy list")
+		}
+	}
+	return p, nil
+}
+
 var proxyHostname = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`)
 
-func (s *ProxyService) create(ctx context.Context, sellerID *int64, in CreateProxyInput) (*Proxy, error) {
+// normalizeProxyInput 校验代理参数，并把地址规范成唯一索引使用的形式。
+func normalizeProxyInput(in CreateProxyInput) (CreateProxyInput, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	in.Host = strings.ToLower(strings.TrimSpace(in.Host))
 	in.Host = strings.TrimSuffix(strings.TrimPrefix(in.Host, "["), "]")
@@ -93,15 +119,23 @@ func (s *ProxyService) create(ctx context.Context, sellerID *int64, in CreatePro
 	switch in.Protocol {
 	case "http", "https", "socks5", "socks5h":
 	default:
-		return nil, httpx.BadRequest("INVALID_PROTOCOL", "protocol must be http, https, socks5 or socks5h")
+		return in, httpx.BadRequest("INVALID_PROTOCOL", "protocol must be http, https, socks5 or socks5h")
 	}
 	if in.Name == "" || in.Host == "" || in.Port <= 0 || in.Port > 65535 {
-		return nil, httpx.BadRequest("INVALID_PROXY", "name, host and port are required")
+		return in, httpx.BadRequest("INVALID_PROXY", "name, host and port are required")
 	}
 	if ip := net.ParseIP(in.Host); ip != nil {
 		in.Host = ip.String()
 	} else if len(in.Host) > 253 || !proxyHostname.MatchString(in.Host) || strings.Contains(in.Host, "..") {
-		return nil, httpx.BadRequest("INVALID_PROXY", "host must be an IP address or hostname, without a scheme or port")
+		return in, httpx.BadRequest("INVALID_PROXY", "host must be an IP address or hostname, without a scheme or port")
+	}
+	return in, nil
+}
+
+func (s *ProxyService) create(ctx context.Context, sellerID *int64, in CreateProxyInput) (*Proxy, error) {
+	in, err := normalizeProxyInput(in)
+	if err != nil {
+		return nil, err
 	}
 	var passEnc []byte
 	var id int64
@@ -109,7 +143,6 @@ func (s *ProxyService) create(ctx context.Context, sellerID *int64, in CreatePro
 		return nil, err
 	}
 	if in.Password != "" {
-		var err error
 		if passEnc, err = s.Keyring.SealString(in.Password, fmt.Sprintf("proxy:%d", id)); err != nil {
 			return nil, err
 		}
