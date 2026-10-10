@@ -5,6 +5,10 @@
 #   仓库变量 MIRROR_IMAGE   = registry.cn-hangzhou.aliyuncs.com/<命名空间>/token-market
 #   仓库密钥 MIRROR_USERNAME、MIRROR_PASSWORD = 该镜像仓库的登录凭证
 # 不设置 MIRROR_IMAGE 时只推送 GHCR。
+#
+# 发版成功或失败后按组织统一配置的渠道（飞书、邮件）发通知：触发 yx-token/.github 仓库的 Notify workflow，渠道在那个仓库配置。
+#   仓库密钥 NOTIFY_DISPATCH_TOKEN = 只有 yx-token/.github 仓库 Actions 读写权限的 fine-grained token
+# 不设置 NOTIFY_DISPATCH_TOKEN 时不通知。
 name: Release
 
 on:
@@ -170,3 +174,53 @@ jobs:
             gh release create "$GITHUB_REF_NAME" "$asset" release-assets/* --verify-tag --title "$GITHUB_REF_NAME" \
               --notes-file notes.md --generate-notes "${prerelease[@]}"
           fi
+
+  # 发版结束（成功或任一环节失败）后通知；手动取消的发版不通知
+  notify:
+    name: 发版通知
+    needs: [ci, image, assets, release]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: 通知组织已配置的渠道
+        env:
+          GH_TOKEN: ${{ secrets.NOTIFY_DISPATCH_TOKEN }}
+          CI_RESULT: ${{ needs.ci.result }}
+          IMAGE_RESULT: ${{ needs.image.result }}
+          ASSETS_RESULT: ${{ needs.assets.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::未配置 NOTIFY_DISPATCH_TOKEN，跳过发版通知"
+            exit 0
+          fi
+          kind="正式版"
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then kind="预发布"; fi
+          content="**版本**：${GITHUB_REF_NAME}（${kind}）"
+          if [ "$RELEASE_RESULT" = success ]; then
+            status=success
+            title="token-market ${GITHUB_REF_NAME} 发布成功"
+            content+=$'\n'"**镜像**：ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME}"
+            url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
+          else
+            status=failure
+            title="token-market ${GITHUB_REF_NAME} 发布失败"
+            failed=()
+            if [ "$CI_RESULT" = failure ]; then failed+=("CI"); fi
+            if [ "$IMAGE_RESULT" = failure ]; then failed+=("构建并推送镜像"); fi
+            if [ "$ASSETS_RESULT" = failure ]; then failed+=("构建站内更新包"); fi
+            if [ "$RELEASE_RESULT" = failure ]; then failed+=("创建 Release"); fi
+            failed_list="$(printf '%s、' "${failed[@]}")"
+            failed_list="${failed_list%、}"
+            content+=$'\n'"**失败环节**：${failed_list:-未知}"
+            url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          fi
+          content+=$'\n'"**发布人**：${GITHUB_ACTOR}"
+          # 显式指定 --ref：不指定时 gh 会查询目标仓库的默认分支，token 没有这个权限
+          gh workflow run notify.yml -R "${GITHUB_REPOSITORY_OWNER}/.github" --ref main \
+            -f title="$title" \
+            -f content="$content" \
+            -f url="$url" \
+            -f status="$status" \
+            -f source="$GITHUB_REPOSITORY"
