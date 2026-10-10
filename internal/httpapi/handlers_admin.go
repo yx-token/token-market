@@ -375,7 +375,7 @@ func (s *Server) createReference(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	u, err := s.Listings.CreateUpstream(r.Context(), adminID(r), in.Platform, in.AuthType, true, nil)
+	u, err := s.Listings.CreateUpstream(r.Context(), adminID(r), in.Platform, in.AuthType, true, nil, false)
 	if err != nil {
 		return err
 	}

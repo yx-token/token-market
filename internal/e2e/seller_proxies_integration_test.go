@@ -86,6 +86,17 @@ func TestSellerProxyOnboarding(t *testing.T) {
 	other.expect(400, "POST", "/api/seller/proxies", spoofed)
 
 	create := map[string]any{"platform": "anthropic", "auth_type": "oauth", "proxy_id": proxy.ID}
+	// 只有连通性检测成功的代理才能绑定账号。
+	if raw := seller.expect(409, "POST", "/api/seller/upstreams", create); !strings.Contains(raw, "PROXY_NOT_CONNECTED") {
+		t.Fatalf("untested proxy must not be selectable: %s", raw)
+	}
+	var unreachable listing.Proxy
+	seller.must("POST", "/api/seller/proxies", listing.CreateProxyInput{Name: "down", Protocol: "http", Host: "unreachable.example.test", Port: 1080}, &unreachable)
+	seller.must("POST", fmt.Sprintf("/api/seller/proxies/%d/test", unreachable.ID), nil, nil)
+	if raw := seller.expect(409, "POST", "/api/seller/upstreams", map[string]any{"platform": "anthropic", "auth_type": "oauth", "proxy_id": unreachable.ID}); !strings.Contains(raw, "PROXY_NOT_CONNECTED") {
+		t.Fatalf("proxy with a failed connection test must not be selectable: %s", raw)
+	}
+	seller.must("POST", fmt.Sprintf("/api/seller/proxies/%d/test", proxy.ID), nil, &proxy)
 	seller.must("POST", fmt.Sprintf("/api/seller/proxies/%d/disable", proxy.ID), nil, nil)
 	seller.expect(409, "POST", "/api/seller/upstreams", create)
 	seller.must("POST", fmt.Sprintf("/api/seller/proxies/%d/enable", proxy.ID), nil, nil)
@@ -131,6 +142,7 @@ func TestSellerProxyConcurrencyAndPlatformFallback(t *testing.T) {
 	seller := e.newUser("proxy-race@market.test")
 	var proxy listing.Proxy
 	seller.must("POST", "/api/seller/proxies", listing.CreateProxyInput{Name: "race", Protocol: "http", Host: "10.1.2.1", Port: 1080}, &proxy)
+	seller.must("POST", fmt.Sprintf("/api/seller/proxies/%d/test", proxy.ID), nil, &proxy)
 	var wg sync.WaitGroup
 	statuses := make(chan int, 2)
 	for range 2 {
@@ -204,6 +216,7 @@ func TestSellerProxySyncRecovery(t *testing.T) {
 	if err := e.replica.QueryRow(e.ctx, "SELECT password FROM proxies WHERE id = $1", *proxy.Sub2APIProxyID).Scan(&password); err != nil || password != "recovery-password" {
 		t.Fatalf("retry must decrypt and submit the original password: %v", err)
 	}
+	seller.must("POST", fmt.Sprintf("/api/seller/proxies/%d/test", proxy.ID), nil, &proxy)
 	seller.must("POST", "/api/seller/upstreams", body, nil)
 	// 密码不进入 HTTP 返回的数据。
 	raw, err := json.Marshal(proxy)

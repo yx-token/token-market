@@ -51,7 +51,8 @@ export const seller = {
   vendors: () => http.get<T.VendorView[] | null>('/api/seller/vendors'),
   upstreams: () => http.get<T.Upstream[] | null>('/api/seller/upstreams'),
   upstream: (id: number) => http.get<T.UpstreamDetail>(`/api/seller/upstreams/${id}`),
-  createUpstream: (platform: string, auth_type: string, proxy_id?: number) => http.post<T.Upstream>('/api/seller/upstreams', { platform, auth_type, proxy_id }),
+  createUpstream: (platform: string, auth_type: string, proxy_id?: number, proxy_from_import?: boolean) =>
+    http.post<T.Upstream>('/api/seller/upstreams', { platform, auth_type, proxy_id, ...(proxy_from_import ? { proxy_from_import } : {}) }),
   importAccount: (id: number, data: unknown, account_index: number) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/import`, { data, account_index }),
   startOAuth: (id: number, opts?: T.AuthorizationOptions) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/oauth/start`, opts),
   completeOAuth: (id: number, code: string) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/oauth/complete`, { code }),

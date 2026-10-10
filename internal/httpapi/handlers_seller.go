@@ -11,14 +11,15 @@ import (
 
 func (s *Server) createUpstream(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
-		Platform string `json:"platform"`
-		AuthType string `json:"auth_type"`
-		ProxyID  *int64 `json:"proxy_id"`
+		Platform        string `json:"platform"`
+		AuthType        string `json:"auth_type"`
+		ProxyID         *int64 `json:"proxy_id"`
+		ProxyFromImport bool   `json:"proxy_from_import"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	u, err := s.Listings.CreateUpstream(r.Context(), httpx.MustUser(r).UserID, in.Platform, in.AuthType, false, in.ProxyID)
+	u, err := s.Listings.CreateUpstream(r.Context(), httpx.MustUser(r).UserID, in.Platform, in.AuthType, false, in.ProxyID, in.ProxyFromImport)
 	if err != nil {
 		return err
 	}

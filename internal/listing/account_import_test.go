@@ -33,6 +33,33 @@ func TestParseImportedAccount(t *testing.T) {
 	}
 }
 
+func TestParseImportedAccountProxy(t *testing.T) {
+	proxies := `"proxies":[{"proxy_key":"socks5|10.0.0.1|1080|u|p","name":"keyed","protocol":"socks5","host":"10.0.0.1","port":1080,"username":"u","password":"p"},` +
+		`{"name":"derived","protocol":"http","host":"10.0.0.2","port":8080}]`
+	accounts := `"accounts":[{"credentials":{"access_token":"a"},"proxy_key":"socks5|10.0.0.1|1080|u|p"},{"credentials":{"access_token":"b"},"proxy_key":"http|10.0.0.2|8080||"},` +
+		`{"credentials":{"access_token":"c"},"proxy_key":"http|10.0.0.9|1||"},{"credentials":{"access_token":"d"}}]`
+	raw := json.RawMessage(`{"data":{"type":"sub2api-data","version":1,` + proxies + `,` + accounts + `}}`)
+	for index, want := range []string{"keyed", "derived", "", ""} {
+		a, err := parseImportedAccount(ImportAccountInput{Data: raw, AccountIndex: index})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := ""
+		if a.proxy != nil {
+			got = a.proxy.Name
+		}
+		if got != want {
+			t.Fatalf("account %d resolved proxy %q, want %q", index, got, want)
+		}
+	}
+	if a, _ := parseImportedAccount(ImportAccountInput{Data: raw, AccountIndex: 2}); a.ProxyKey == "" {
+		t.Fatal("dangling proxy_key must be kept so the import can reject it")
+	}
+	if _, err := parseImportedAccount(ImportAccountInput{Data: json.RawMessage(`{"proxies":{},` + accounts + `}`)}); err == nil {
+		t.Fatal("malformed proxies accepted")
+	}
+}
+
 func TestImportedAccountValidation(t *testing.T) {
 	for _, tc := range []struct {
 		raw, platform, auth string

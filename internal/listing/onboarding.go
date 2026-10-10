@@ -70,7 +70,8 @@ var (
 )
 
 // CreateUpstream 创建上游草稿并分配专用代理。reference 为 true 时创建平台基线账号（仅管理员）。
-func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, authType string, reference bool, selectedProxyID *int64) (*Upstream, error) {
+// proxyFromImport 为 true 时暂不绑定代理，等导入账号时使用导出文件中的代理（检测连通后绑定）。
+func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, authType string, reference bool, selectedProxyID *int64, proxyFromImport bool) (*Upstream, error) {
 	v, err := GetVendor(ctx, s.DB, platform)
 	if err != nil {
 		return nil, err
@@ -91,7 +92,10 @@ func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, 
 	if selectedProxyID != nil && *selectedProxyID <= 0 {
 		return nil, httpx.BadRequest("INVALID_PROXY", "proxy_id must be positive")
 	}
-	if !reference && st.RequireSellerProxy && selectedProxyID == nil {
+	if proxyFromImport && (reference || selectedProxyID != nil) {
+		return nil, httpx.BadRequest("INVALID_PROXY", "proxy_from_import cannot be combined with proxy_id")
+	}
+	if !reference && !proxyFromImport && st.RequireSellerProxy && selectedProxyID == nil {
 		return nil, httpx.BadRequest("SELLER_PROXY_REQUIRED", "please configure and select your own proxy before adding an account")
 	}
 
@@ -121,13 +125,18 @@ func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, 
 		if p.Sub2APIProxyID == nil {
 			return nil, httpx.Conflict("PROXY_NOT_SYNCED", "synchronize the proxy before selecting it")
 		}
+		if p.ConnectionReport == nil || !p.ConnectionReport.Success {
+			return nil, httpx.Conflict("PROXY_NOT_CONNECTED", "test the proxy connection successfully before selecting it")
+		}
 		proxyID = p.ID
-	} else {
+	} else if !proxyFromImport {
 		err = tx.QueryRow(ctx, `SELECT id FROM proxies WHERE seller_id IS NULL AND status = 'available'
 			AND assigned_upstream_id IS NULL AND sub2api_proxy_id IS NOT NULL
 			ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&proxyID)
 	}
 	switch {
+	case proxyFromImport:
+		// 导入账号时再登记、检测并绑定导出文件中的代理。
 	case err == nil:
 		if _, err := tx.Exec(ctx, `UPDATE proxies SET status = 'assigned', assigned_upstream_id = $2 WHERE id = $1`, proxyID, id); err != nil {
 			return nil, err
@@ -184,8 +193,23 @@ func ProbeGroupName(upstreamID int64) string  { return fmt.Sprintf("tm-probe-%d"
 func AccountName(upstreamID int64) string     { return fmt.Sprintf("tm-u-%d", upstreamID) }
 func ListingGroupName(listingID int64) string { return fmt.Sprintf("tm-l-%d", listingID) }
 
+// proxySub2APIID 返回上游绑定代理在 sub2api 中的 ID。尚未创建账号的上游没有绑定代理时（例如等待导入文件带入代理），
+// 必须符合当前代理策略，不能借此绕过卖家代理必填直接授权或提交 key。
 func (s *Service) proxySub2APIID(ctx context.Context, u *Upstream) (*int64, error) {
 	if u.ProxyID == nil {
+		if u.Sub2APIAccountID != nil {
+			return nil, nil
+		}
+		st, err := s.Settings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !u.IsReference && st.RequireSellerProxy {
+			return nil, httpx.BadRequest("SELLER_PROXY_REQUIRED", "this upstream has no proxy; import an account that carries a reachable proxy")
+		}
+		if !st.AllowNoProxy {
+			return nil, ErrNoProxy
+		}
 		return nil, nil
 	}
 	var id *int64
@@ -438,14 +462,15 @@ func (s *Service) SubmitCodingKey(ctx context.Context, sellerID, upstreamID int6
 			return nil, httpx.BadRequest("INVALID_TEAM_ID", "invalid organization or project id")
 		}
 	}
+	// 先检查代理策略，未通过时不能占用账号身份。
+	proxyID, err := s.proxySub2APIID(ctx, u)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.ensureProbeGroup(ctx, u); err != nil {
 		return nil, fmt.Errorf("prepare probe group: %w", err)
 	}
 	if err := s.claimIdentity(ctx, u.ID, u.Platform+":key:"+apiKey); err != nil {
-		return nil, err
-	}
-	proxyID, err := s.proxySub2APIID(ctx, u)
-	if err != nil {
 		return nil, err
 	}
 	// 推理地址只用官方固定地址（国内站留空由 sub2api 按 account_mode 选默认），防止中转 key 冒充订阅

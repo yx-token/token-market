@@ -88,11 +88,11 @@
 | POST | `/api/seller/proxies/:id/test` | 检测连接、出口 IP、国家 / 地区及延迟，返回更新后的代理与 `connection_report`、`connection_checked_at` |
 | POST | `/api/seller/proxies/:id/quality-check` | 检测 AI 站点可达性，返回更新后的代理与 `quality_report`、`quality_checked_at`（评分、等级及逐项结果）；最长 3 分钟 |
 | POST | `/api/seller/proxies/:id/disable`、`/enable` | 停用 / 启用自己的空闲代理；已绑定代理不能停用 |
-| POST | `/api/seller/upstreams` | 创建上游草稿：`platform`、`auth_type`、`proxy_id`（默认必填，选择自己的空闲代理）；`require_seller_proxy=false` 时可不传，由平台从平台库存关联 |
+| POST | `/api/seller/upstreams` | 创建上游草稿：`platform`、`auth_type`、`proxy_id`（默认必填，选择自己的空闲代理，且最近一次连通性检测须成功，否则返回 `PROXY_NOT_CONNECTED`）；`require_seller_proxy=false` 时可不传，由平台从平台库存关联。`proxy_from_import=true`（不能与 `proxy_id` 同时传）时暂不绑定代理，导入账号时使用导出文件中的代理；这类上游在绑定代理前不能走官方授权或提交 key |
 | POST | `/api/seller/upstreams/:id/oauth/start` | 获取授权链接（30 分钟有效）；Gemini Code Assist 可选 `project_id`（GCP 项目 ID） |
 | POST | `/api/seller/upstreams/:id/oauth/complete` | 提交授权码或完整回调地址：`code`。需要 state 的厂商（OpenAI、Gemini 等）请粘贴完整回调地址 |
 | POST | `/api/seller/upstreams/:id/coding-key` | 提交 Coding Plan key：`api_key`；智谱国内站团队版另填 `organization`、可选 `project`；查不到官方窗口用量的 key 被拒绝 |
-| POST | `/api/seller/upstreams/:id/import` | 导入授权信息：`data` 为 sub2api v1 导出文件、账号数组、单个账号或纯凭证对象；`account_index` 可选，默认 0。每次导入一个账号，沿用所选代理，仍执行隐私设置、订阅额度校验与上架检测 |
+| POST | `/api/seller/upstreams/:id/import` | 导入授权信息：`data` 为 sub2api v1 导出文件、账号数组、单个账号或纯凭证对象；`account_index` 可选，默认 0。每次导入一个账号。上游已绑定代理时沿用该代理、忽略文件中的代理；未绑定时按账号的 `proxy_key` 取文件 `proxies` 中的代理，登记到自己的代理列表（同一地址复用原记录）并实测连通，失败返回 `IMPORT_PROXY_UNREACHABLE`，文件缺少引用的代理返回 `IMPORT_PROXY_NOT_FOUND`，代理已被占用或停用返回 `PROXY_IN_USE`。仍执行隐私设置、订阅额度校验与上架检测 |
 | POST | `/api/seller/upstreams/:id/reauthorize` | 授权失效后重新授权：返回新的授权链接，之后同样用 `oauth/complete` 提交；必须是同一个官方账号；可选 `project_id` 同上 |
 | POST | `/api/seller/upstreams/:id/retry-verification` | 上架检测失败后重新检测 |
 | GET | `/api/seller/upstreams` | 上游列表 |
