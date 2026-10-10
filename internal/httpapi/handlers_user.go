@@ -276,7 +276,7 @@ func (s *Server) marketRecommend(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out, err := s.Market.BuildRecommendations(r.Context(), pools)
+	out, err := s.Market.CachedRecommendations(r.Context(), pools)
 	if err != nil {
 		return err
 	}

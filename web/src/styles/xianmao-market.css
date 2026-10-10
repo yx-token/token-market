@@ -909,13 +909,14 @@
   inset: 0;
   z-index: 200;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 160px 16px 40px;
+  padding: 48px 16px 40px;
   background: rgba(0, 0, 0, 0.45);
   opacity: 0;
   visibility: hidden;
-  overflow: visible;
+  overflow-x: hidden;
+  overflow-y: auto;
   transition: opacity 0.28s ease, visibility 0.28s;
 }
 .xm-login-mask.is-open {
@@ -925,6 +926,9 @@
 .xm-login-wrap {
   position: relative;
   width: min(420px, 100%);
+  margin: auto 0;
+  padding-top: 132px; /* 给趴姿猫留顶栏，爪搭在卡片上沿 */
+  overflow: visible;
 }
 .xm-login-card {
   position: relative;
@@ -940,19 +944,20 @@
 .xm-login-cat {
   position: absolute;
   left: 20px;
-  bottom: calc(100% - 36px);
+  top: 0;
   width: 280px;
   height: 168px;
   z-index: 5;
   pointer-events: none;
   filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.16));
-  opacity: 0;
-  transform: translateX(110vw) rotate(10deg);
+  opacity: 1;
+  transform: none;
 }
 .xm-login-cat img {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  object-position: left bottom;
   display: block;
 }
 .xm-login-mask.is-open .xm-login-cat.is-run {
@@ -961,7 +966,7 @@
 @keyframes xm-cat-run-from-right {
   0% { opacity: 1; transform: translateX(110vw) translateY(-20px) rotate(14deg); }
   55% { opacity: 1; transform: translateX(-8%) translateY(8px) rotate(-4deg); }
-  75% { transform: translateX(4%) translateY(-6px) rotate(2deg); }
+  75% { transform: translateX(4%) translateY(-6px) rotate(-2deg); }
   100% { opacity: 1; transform: translateX(0) translateY(0) rotate(0); }
 }
 @media (prefers-reduced-motion: reduce) {

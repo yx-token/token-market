@@ -499,13 +499,46 @@ type RecommendResult struct {
 	Tiles         []TileRec `json:"tiles"`
 }
 
+const recommendCacheTTL = 45 * time.Second
+
+// InvalidateRecommendCache 运营改推荐配置后清缓存。
+func (s *Service) InvalidateRecommendCache() {
+	s.recMu.Lock()
+	s.recCache = nil
+	s.recUntil = time.Time{}
+	s.recMu.Unlock()
+}
+
+// CachedRecommendations 短时缓存首页四格，避免每次进站重扫挂单。
+func (s *Service) CachedRecommendations(ctx context.Context, pools []PoolItem) (*RecommendResult, error) {
+	now := time.Now()
+	s.recMu.Lock()
+	if s.recCache != nil && now.Before(s.recUntil) {
+		out := s.recCache
+		s.recMu.Unlock()
+		return out, nil
+	}
+	s.recMu.Unlock()
+
+	out, err := s.BuildRecommendations(ctx, pools)
+	if err != nil {
+		return nil, err
+	}
+	s.recMu.Lock()
+	s.recCache = out
+	s.recUntil = time.Now().Add(recommendCacheTTL)
+	s.recMu.Unlock()
+	return out, nil
+}
+
 // BuildRecommendations 按三层配置生成首页四格。
 func (s *Service) BuildRecommendations(ctx context.Context, pools []PoolItem) (*RecommendResult, error) {
 	cfg, err := LoadRecommend(ctx, s.DB)
 	if err != nil {
 		return nil, err
 	}
-	items, err := s.List(ctx, Filter{Sort: "price"}, 500, 0)
+	// 轻量列表：不做 24h 成功率/TTFT 侧向聚合（打分对空指标有默认值）
+	items, err := s.ListForRecommend(ctx, 200)
 	if err != nil {
 		return nil, err
 	}

@@ -75,10 +75,11 @@ function logout() {
 </script>
 
 <template>
+  <!-- 挂在根上：避免进站 show() 早于市场壳挂载时猫动画 watch 漏触发 -->
+  <LoginModal />
   <RouterView v-if="isConsole" />
 
   <div v-else class="xm-market flex min-h-screen flex-col">
-    <LoginModal />
     <MarketMasthead />
 
     <!-- 市场浏览：全宽，对齐原型 .page -->

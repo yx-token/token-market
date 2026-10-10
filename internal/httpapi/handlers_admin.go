@@ -117,6 +117,9 @@ func (s *Server) updateMarketRecommend(w http.ResponseWriter, r *http.Request) e
 	if err != nil {
 		return err
 	}
+	if s.Market != nil {
+		s.Market.InvalidateRecommendCache()
+	}
 	s.audit(r, "market_recommend.update", "settings", json.RawMessage(raw))
 	return ok(w, out)
 }

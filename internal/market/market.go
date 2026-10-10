@@ -3,6 +3,7 @@ package market
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/DueGin/token-market/internal/listing"
@@ -49,20 +50,39 @@ type Service struct {
 	DB         *pgxpool.Pool
 	Commission func(ctx context.Context) (float64, error)
 	Prices     *PriceBook
+
+	recMu    sync.Mutex
+	recCache *RecommendResult
+	recUntil time.Time
 }
 
 // List 返回生效中的寄售挂单（已排除降智、不可用、被冻结的上游）。
+// 含 24h 成功率 / 首字延迟聚合，货架列表用；首页推荐请用 ListForRecommend。
 func (s *Service) List(ctx context.Context, f Filter, limit, offset int) ([]Item, error) {
+	return s.list(ctx, f, limit, offset, true)
+}
+
+// ListForRecommend 首页四格打分用：跳过 edge_attempts / usage_records 侧向聚合，显著降低延迟。
+func (s *Service) ListForRecommend(ctx context.Context, limit int) ([]Item, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	return s.list(ctx, Filter{Sort: "price"}, limit, 0, false)
+}
+
+func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMetrics bool) ([]Item, error) {
 	c, err := s.Commission(ctx)
 	if err != nil {
 		return nil, err
 	}
 	order := "l.multiplier ASC"
-	switch f.Sort {
-	case "success":
-		order = "success_rate DESC NULLS LAST"
-	case "ttft":
-		order = "ttft_p50 ASC NULLS LAST"
+	if withMetrics {
+		switch f.Sort {
+		case "success":
+			order = "success_rate DESC NULLS LAST"
+		case "ttft":
+			order = "ttft_p50 ASC NULLS LAST"
+		}
 	}
 	maxSeller := 1e9
 	if f.MaxPrice > 0 {
@@ -72,7 +92,9 @@ func (s *Service) List(ctx context.Context, f Filter, limit, offset int) ([]Item
 	if kind != "pack" && kind != "channel" {
 		kind = ""
 	}
-	rows, err := s.DB.Query(ctx, `SELECT l.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
+	var q string
+	if withMetrics {
+		q = `SELECT l.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
 			att.success_rate, COALESCE(att.requests, 0), usage.ttft_p50,
 			l.mode, l.sku_kind, l.face_value, l.stock, l.stock_sold, l.min_amount::float8, l.title, l.description,
 			COALESCE(l.categories, '{}')
@@ -91,7 +113,22 @@ func (s *Service) List(ctx context.Context, f Filter, limit, offset int) ([]Item
 			AND ($1 = '' OR u.platform = $1) AND ($2 = '' OR u.grade = $2) AND l.multiplier <= $3
 			AND ($6 = '' OR l.sku_kind = $6)
 			AND ($7 = '' OR $7 = ANY (COALESCE(l.categories, '{}')))
-		ORDER BY `+order+` LIMIT $4 OFFSET $5`, f.Platform, f.Grade, maxSeller, limit, offset, kind, f.Category)
+		ORDER BY ` + order + ` LIMIT $4 OFFSET $5`
+	} else {
+		q = `SELECT l.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
+			NULL::float8, 0, NULL::float8,
+			l.mode, l.sku_kind, l.face_value, l.stock, l.stock_sold, l.min_amount::float8, l.title, l.description,
+			COALESCE(l.categories, '{}')
+		FROM listings l
+		JOIN upstreams u ON u.id = l.upstream_id
+		WHERE l.mode IN ('consignment', 'pack') AND l.status = 'active' AND u.status = 'listed' AND u.health NOT IN ('degraded', 'unavailable')
+			AND NOT EXISTS (SELECT 1 FROM upstream_runtime_params rp WHERE rp.upstream_id = u.id AND NOT rp.buyer_facing)
+			AND ($1 = '' OR u.platform = $1) AND ($2 = '' OR u.grade = $2) AND l.multiplier <= $3
+			AND ($6 = '' OR l.sku_kind = $6)
+			AND ($7 = '' OR $7 = ANY (COALESCE(l.categories, '{}')))
+		ORDER BY ` + order + ` LIMIT $4 OFFSET $5`
+	}
+	rows, err := s.DB.Query(ctx, q, f.Platform, f.Grade, maxSeller, limit, offset, kind, f.Category)
 	if err != nil {
 		return nil, err
 	}

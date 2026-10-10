@@ -19,6 +19,7 @@ watch(
   async (v) => {
     catRun.value = false
     if (v) {
+      // 进站时 store 可能在本组件挂载前就已 open=true，必须 immediate，否则猫一直 opacity:0
       await nextTick()
       requestAnimationFrame(() => {
         catRun.value = true
@@ -28,6 +29,7 @@ watch(
       password.value = ''
     }
   },
+  { immediate: true },
 )
 
 async function submit() {
@@ -67,10 +69,11 @@ function onMaskClick(e: MouseEvent) {
       @click="onMaskClick"
     >
       <div class="xm-login-wrap" @click.stop>
+        <!-- 猫放在 wrap 顶栏占位内，避免 flex 居中把探出卡片的部分裁掉 -->
+        <div class="xm-login-cat" :class="{ 'is-run': catRun }" aria-hidden="true">
+          <img src="/assets/xianmao-pet-lie.svg" alt="" width="280" height="168" />
+        </div>
         <div class="xm-login-card">
-          <div class="xm-login-cat" :class="{ 'is-run': catRun }" aria-hidden="true">
-            <img src="/assets/xianmao-pet-lie.svg" alt="" width="280" height="168" />
-          </div>
           <button type="button" class="xm-login-close" aria-label="关闭" @click="modal.hide()">×</button>
           <h2 id="xm-login-title">{{ modal.mode === 'login' ? '欢迎来闲猫' : '注册闲猫账号' }}</h2>
           <p class="sub">{{ modal.mode === 'login' ? '登录后买卖挂单、充值调用' : '同一个账号既能买也能卖' }}</p>

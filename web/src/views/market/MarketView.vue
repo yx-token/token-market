@@ -278,21 +278,16 @@ function labelOn(action: MarketAction) {
   return false
 }
 
-onMounted(async () => {
+onMounted(() => {
   syncFromRoute()
   listings.load()
   pools.load()
-  await discoveryStore.reload()
-  try {
-    catTree.value = (await market.categories()) ?? []
-  } catch {
-    catTree.value = []
-  }
-  try {
-    recommend.value = await market.recommend()
-  } catch {
-    recommend.value = null
-  }
+  // 类目树 / 四宫格 / 运营配置并行拉，避免串行瀑布拖慢首屏运营区
+  void Promise.all([
+    discoveryStore.ensure(),
+    market.categories().then((v) => { catTree.value = v ?? [] }).catch(() => { catTree.value = [] }),
+    market.recommend().then((v) => { recommend.value = v }).catch(() => { recommend.value = null }),
+  ])
 })
 
 watch(
