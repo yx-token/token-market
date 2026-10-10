@@ -40,6 +40,15 @@ export interface MarketItem {
   requests_24h: number
   ttft_p50_ms: number | null
   listed_since: string
+  mode?: string
+  sku_kind?: string
+  face_value?: number
+  stock?: number
+  stock_sold?: number
+  min_amount?: number
+  title?: string
+  description?: string
+  categories?: string[]
 }
 
 export interface PoolItem {
@@ -294,9 +303,130 @@ export interface Listing {
   multiplier?: number
   join_default_pool: boolean
   price_changed_at?: string
+  sku_kind?: string
+  face_value?: number
+  stock?: number
+  stock_sold?: number
+  min_amount?: number
+  title?: string
+  description?: string
+  categories?: string[]
   created_at: string
   updated_at: string
   closed_at?: string
+}
+
+export interface ListingCategoryOption {
+  id: string
+  name: string
+  desc: string
+  parent_id?: string
+  path?: string
+}
+
+export interface RecommendFactor {
+  id: string
+  name: string
+  desc: string
+  group: string
+  enabled: boolean
+  default_weight: number
+  reserved?: boolean
+}
+
+export interface RecommendProfile {
+  id: string
+  name: string
+  desc: string
+  enabled: boolean
+  filter_kind: string
+  filter_val: string
+  action_tag?: string
+  action_kind?: string
+  action_plat?: string
+  weights: Record<string, number>
+  low_rate_max_multiplier: number
+  per_tile_sku: number
+  fresh_days: number
+  diversity_per_plat: number
+  min_sku_to_show_tile: number
+}
+
+export interface HomeTile {
+  id: string
+  title: string
+  desc: string
+  eng: string
+  theme: string
+  enabled: boolean
+  sort: number
+  boost: number
+  profile_id: string
+}
+
+/** 三层推荐运营配置：因子 → 推荐类型 → 首页四格 */
+export interface RecommendConfig {
+  version: number
+  factors: RecommendFactor[]
+  profiles: RecommendProfile[]
+  tiles: HomeTile[]
+  max_tiles: number
+  hide_empty_tiles: boolean
+}
+
+export interface RecommendTileItem {
+  listing_id?: number
+  key: string
+  title: string
+  plat: string
+  price: string
+  score: number
+  pool?: boolean
+  kind: string
+  face_value?: number
+  mult?: number
+}
+
+export interface RecommendTile {
+  id: string
+  title: string
+  desc: string
+  eng: string
+  theme: string
+  score: number
+  profile_id?: string
+  action: { tag?: string; kindTab?: string; plat?: string }
+  items: RecommendTileItem[]
+}
+
+export interface RecommendResult {
+  config_version: number
+  generated_at: string
+  tiles: RecommendTile[]
+}
+
+export interface MarketCategory {
+  id: string
+  parent_id?: string
+  name: string
+  description: string
+  sort: number
+  enabled: boolean
+  seller_pickable: boolean
+  icon?: string
+  children?: MarketCategory[]
+}
+
+export interface QuotaPack {
+  id: number
+  listing_id: number
+  buyer_id: number
+  buyer_key_id?: number
+  face_value: number
+  remaining: number
+  status: string
+  paid_amount: number
+  pay_channel?: string
 }
 
 export interface Quote {

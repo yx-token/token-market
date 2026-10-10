@@ -69,6 +69,20 @@ func TestPlanBuybackFirstThenCheapConsignment(t *testing.T) {
 	}
 }
 
+func TestPlanPackStaysOutOfDefaultPool(t *testing.T) {
+	ups := []UpstreamInput{
+		{ID: 9, Platform: "anthropic", Status: "listed", Health: "healthy", AccountID: 19, ProbeGroupID: i64(1009),
+			Listing: &ListingInput{ID: 9, Mode: "pack", Status: "active", Multiplier: f64(0.30), JoinDefaultPool: false, GroupID: i64(5009)}},
+	}
+	d := Plan(planCtx(), ups)[0]
+	if !d.BuyerFacing || !equalIDs(d.GroupIDs, []int64{1009, 5009}) {
+		t.Fatalf("pack must stay out of default pools: %+v", d)
+	}
+	if d.ListingGroupRate == nil || *d.ListingGroupRate != 0.36 {
+		t.Fatalf("pack listing group rate: %+v", d.ListingGroupRate)
+	}
+}
+
 func TestPlanNotBuyerFacing(t *testing.T) {
 	base := func(mut func(*UpstreamInput)) UpstreamInput {
 		u := UpstreamInput{ID: 1, Platform: "anthropic", Status: "listed", Health: "healthy", AccountID: 11, ProbeGroupID: i64(1001),

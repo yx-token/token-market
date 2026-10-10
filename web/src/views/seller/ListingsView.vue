@@ -33,38 +33,56 @@ async function showHistory(id: number) {
 
 <template>
   <div>
-    <PageHeader title="挂单" description="在上游详情页创建挂单、改价、暂停或关闭。">
+    <PageHeader title="我的供给" description="在上游详情页创建挂单、改价、暂停或关闭。可挂「按量通道」或「额度包」。">
       <RefreshButton :loading="listings.loading.value" @click="listings.load()" />
+      <RouterLink to="/seller/publish" class="xm-btn xm-btn-primary">发布供给 →</RouterLink>
+      <RouterLink to="/seller/upstreams" class="xm-btn xm-btn-ghost">我的上游 →</RouterLink>
     </PageHeader>
     <div class="card">
       <DataTable
         :columns="[
           { key: 'id', label: '挂单' },
           { key: 'upstream_id', label: '上游' },
-          { key: 'mode', label: '模式' },
+          { key: 'mode', label: '形态' },
+          { key: 'price', label: '价格' },
           { key: 'status', label: '状态' },
-          { key: 'multiplier', label: '你的倍率', align: 'right' },
-          { key: 'buyer', label: '买家价', align: 'right' },
-          { key: 'join_default_pool', label: '默认分组' },
           { key: 'created_at', label: '创建时间' },
           { key: 'actions', label: '' },
         ]"
         :rows="listings.data.value"
         :loading="listings.loading.value"
         row-key="id"
+        empty="还没有挂单，去「我的上游」或「发布供给」"
       >
-        <template #cell-id="{ row }">#{{ row.id }}</template>
-        <template #cell-upstream_id="{ row }">
-          <RouterLink :to="`/seller/upstreams/${row.upstream_id}`" class="link">#{{ row.upstream_id }}</RouterLink>
+        <template #cell-id="{ row }">
+          <span class="font-bold">#{{ row.id }}</span>
+          <span v-if="row.title" class="ml-2 text-[#666]">{{ row.title }}</span>
         </template>
-        <template #cell-mode="{ row }"><StatusBadge kind="mode" :value="row.mode" /></template>
+        <template #cell-upstream_id="{ row }">
+          <RouterLink :to="`/seller/upstreams/${row.upstream_id}?from=listings`" class="font-bold underline underline-offset-2">#{{ row.upstream_id }} →</RouterLink>
+        </template>
+        <template #cell-mode="{ row }">
+          <span class="xm-tag" :class="row.mode === 'pack' ? 'pack' : ''">
+            {{ row.mode === 'pack' ? '额度包' : row.mode === 'buyback' ? '回收' : '按量' }}
+          </span>
+        </template>
+        <template #cell-price="{ row }">
+          <template v-if="row.mode === 'pack'">
+            ¥{{ Number(row.face_value ?? 0).toFixed(0) }} · 剩 {{ Math.max(0, (row.stock ?? 0) - (row.stock_sold ?? 0)) }} 份
+            <span class="text-[#888]"> · {{ multiplier(row.multiplier) }}</span>
+          </template>
+          <template v-else-if="row.mode === 'consignment' && row.multiplier">
+            {{ multiplier(row.multiplier) }} · 买家 {{ multiplier(row.multiplier * (1 + cfg.config.commission_rate)) }}
+            <span v-if="(row.min_amount ?? 0) === 0" class="text-[#888]"> · M=0</span>
+            <span v-else class="text-[#888]"> · M=¥{{ Number(row.min_amount).toFixed(0) }}</span>
+          </template>
+          <template v-else>{{ multiplier(row.multiplier) }}</template>
+        </template>
         <template #cell-status="{ row }"><StatusBadge kind="listingStatus" :value="row.status" /></template>
-        <template #cell-multiplier="{ row }">{{ multiplier(row.multiplier) }}</template>
-        <template #cell-buyer="{ row }">{{ row.mode === 'consignment' && row.multiplier ? multiplier(row.multiplier * (1 + cfg.config.commission_rate)) : '—' }}</template>
-        <template #cell-join_default_pool="{ row }">{{ row.mode === 'buyback' ? '是' : row.join_default_pool ? '是' : '否' }}</template>
         <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
         <template #cell-actions="{ row }">
-          <button class="btn-ghost btn-sm" @click="showHistory(row.id)">价格历史</button>
+          <RouterLink :to="`/seller/upstreams/${row.upstream_id}?from=listings`" class="xm-btn xm-btn-ghost xm-btn-sm">管理 →</RouterLink>
+          <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" @click="showHistory(row.id)">价格历史</button>
         </template>
       </DataTable>
     </div>

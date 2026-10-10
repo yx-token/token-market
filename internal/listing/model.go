@@ -42,6 +42,7 @@ const (
 const (
 	ModeConsignment = "consignment"
 	ModeBuyback     = "buyback"
+	ModePack        = "pack" // 额度包：固定面额、可售份数，不进保障池
 
 	ListingPendingQuote   = "pending_quote"
 	ListingPendingConfirm = "pending_confirm"
@@ -129,20 +130,33 @@ type Listing struct {
 	ListingGroupID   *int64     `json:"-"`
 	ListingGroupRate *float64   `json:"-"`
 	PriceChangedAt   *time.Time `json:"price_changed_at,omitempty"`
+	SKUKind          string     `json:"sku_kind"`
+	FaceValue        *float64   `json:"face_value,omitempty"`
+	Stock            *int       `json:"stock,omitempty"`
+	StockSold        int        `json:"stock_sold"`
+	MinAmount        float64    `json:"min_amount"`
+	Title            *string    `json:"title,omitempty"`
+	Description      *string    `json:"description,omitempty"`
+	Categories       []string   `json:"categories,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 	ClosedAt         *time.Time `json:"closed_at,omitempty"`
 }
 
 const listingColumns = `id, upstream_id, seller_id, mode, status, paused_by, multiplier, join_default_pool,
-	listing_group_id, listing_group_rate, price_changed_at, created_at, updated_at, closed_at`
+	listing_group_id, listing_group_rate, price_changed_at, sku_kind, face_value, stock, stock_sold, min_amount,
+	title, description, COALESCE(categories, '{}'), created_at, updated_at, closed_at`
 
 func scanListing(row pgx.Row) (*Listing, error) {
 	var l Listing
 	err := row.Scan(&l.ID, &l.UpstreamID, &l.SellerID, &l.Mode, &l.Status, &l.PausedBy, &l.Multiplier, &l.JoinDefaultPool,
-		&l.ListingGroupID, &l.ListingGroupRate, &l.PriceChangedAt, &l.CreatedAt, &l.UpdatedAt, &l.ClosedAt)
+		&l.ListingGroupID, &l.ListingGroupRate, &l.PriceChangedAt, &l.SKUKind, &l.FaceValue, &l.Stock, &l.StockSold, &l.MinAmount,
+		&l.Title, &l.Description, &l.Categories, &l.CreatedAt, &l.UpdatedAt, &l.ClosedAt)
 	if err != nil {
 		return nil, err
+	}
+	if l.Categories == nil {
+		l.Categories = []string{}
 	}
 	return &l, nil
 }

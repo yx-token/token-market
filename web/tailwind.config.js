@@ -35,6 +35,15 @@ export default {
         // 钴蓝：信息、进行中
         sky: { 50: '#E8EDF7', 100: '#D3DCEF', 200: '#A9B9DE', 300: '#7F95CC', 400: '#5672B9', 500: '#3657A8', 600: '#2B4DA0', 700: '#24479A', 800: '#1C3878', 900: '#142856' },
         violet: { 50: '#EDEAF0', 100: '#DAD3E0', 700: '#3D2F47', 800: '#2E2336' },
+        // 闲猫市场品牌黄（与账本朱红 / 控制台蓝分离）
+        cat: {
+          DEFAULT: '#ffe60f',
+          soft: '#fff6a8',
+          deep: '#e6cf00',
+          price: '#ff5000',
+          ink: '#303030',
+          bg: '#f5f5f5',
+        },
         // 控制台主色（对齐 YourHub Liquid Glass，与市场朱红 brand 分离）
         primary: {
           50: '#E6EEFA',
@@ -53,9 +62,10 @@ export default {
       fontFamily: {
         display: ['"Noto Serif SC"', '"Songti SC"', '"STSong"', 'serif'],
         sans: ['"Schibsted Grotesk"', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"', 'sans-serif'],
+        market: ['"Plus Jakarta Sans"', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"', 'sans-serif'],
         mono: ['"Spline Sans Mono"', 'ui-monospace', '"SFMono-Regular"', 'Menlo', 'monospace'],
       },
-      borderRadius: { DEFAULT: '3px', md: '3px', lg: '4px', '2xl': '1rem' },
+      borderRadius: { DEFAULT: '3px', md: '3px', lg: '4px', '2xl': '1rem', pill: '999px', card: '14px' },
       boxShadow: {
         hard: '4px 4px 0 0 #17140F',
         'hard-sm': '2px 2px 0 0 #17140F',

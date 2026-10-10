@@ -104,7 +104,7 @@ async function check(p: Proxy, quality: boolean) {
   >
     <template #actions>
       <RefreshButton :loading="proxies.loading.value" @click="proxies.load()" />
-      <button type="button" class="btn btn-primary" @click="show = true">添加代理 IP</button>
+      <button type="button" :class="isSeller ? 'xm-btn xm-btn-primary' : 'btn btn-primary'" @click="show = true">添加代理 IP</button>
     </template>
 
     <template #filters>
@@ -127,9 +127,11 @@ async function check(p: Proxy, quality: boolean) {
           <option value="seller">卖家</option>
         </select>
       </div>
-      <div :class="isSeller ? 'flex items-center justify-end gap-2' : 'filter-actions'">
-        <button type="button" class="btn btn-secondary" @click="onReset">重置</button>
-        <button type="button" class="btn btn-primary" @click="search">查询</button>
+      <div v-show="isSeller" class="filter-item" aria-hidden="true" />
+      <div class="filter-item" aria-hidden="true" />
+      <div class="filter-actions lg:col-span-4">
+        <button type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn btn-secondary'" @click="onReset">重置</button>
+        <button type="button" :class="isSeller ? 'xm-btn xm-btn-primary xm-btn-sm' : 'btn btn-primary'" @click="search">查询</button>
       </div>
     </template>
 
@@ -178,10 +180,20 @@ async function check(p: Proxy, quality: boolean) {
     </DataTable>
 
     <template #footer>
-      <span class="mr-auto text-xs text-ink-500">共 {{ total }} 条</span>
-      <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum <= 1" @click="pageNum--">上一页</button>
-      <span class="font-mono text-xs text-ink-500">{{ pageNum }} / {{ Math.max(1, Math.ceil(total / pageSize)) }}</span>
-      <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum * pageSize >= total" @click="pageNum++">下一页</button>
+      <span class="mr-auto text-xs text-gray-500">共 {{ total }} 条</span>
+      <button
+        type="button"
+        :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn btn-secondary btn-sm'"
+        :disabled="pageNum <= 1"
+        @click="pageNum--"
+      >上一页</button>
+      <span class="text-xs text-gray-500">{{ pageNum }} / {{ Math.max(1, Math.ceil(total / pageSize)) }}</span>
+      <button
+        type="button"
+        :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn btn-secondary btn-sm'"
+        :disabled="pageNum * pageSize >= total"
+        @click="pageNum++"
+      >下一页</button>
     </template>
   </component>
 
@@ -220,13 +232,15 @@ async function check(p: Proxy, quality: boolean) {
       </div>
     </form>
     <template #footer>
-      <button class="btn-secondary" :disabled="busy" @click="show = false">取消</button>
-      <button type="submit" form="proxy-form" class="btn-primary" :disabled="busy || !valid">添加</button>
+      <button :class="isSeller ? 'xm-btn xm-btn-ghost' : 'btn-secondary'" :disabled="busy" @click="show = false">取消</button>
+      <button type="submit" form="proxy-form" :class="isSeller ? 'xm-btn xm-btn-primary' : 'btn-primary'" :disabled="busy || !valid">添加</button>
     </template>
   </ModalDialog>
   <ModalDialog v-model:open="reportOpen" :title="`代理检测报告 · ${reportProxy?.name ?? ''}`" wide>
     <ProxyDiagnosticReport v-if="reportProxy" :proxy="reportProxy" />
-    <template #footer><button class="btn-secondary" @click="reportOpen = false">关闭</button></template>
+    <template #footer>
+      <button :class="isSeller ? 'xm-btn xm-btn-ghost' : 'btn-secondary'" @click="reportOpen = false">关闭</button>
+    </template>
   </ModalDialog>
 </template>
 

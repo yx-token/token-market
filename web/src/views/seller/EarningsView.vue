@@ -8,7 +8,7 @@ import { useConfig } from '@/stores/config'
 import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import RefreshButton from '@/components/RefreshButton.vue'
-import StatCard from '@/components/StatCard.vue'
+
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
@@ -52,19 +52,19 @@ async function withdraw() {
   <div>
     <PageHeader :title="'收益与提现'" :description="`收益按小时结算，冻结 ${cfg.config.freeze_days} 天后可提现（1 个收益单位 = 1 元）。平台检测消耗的额度同样计入收益。`">
       <RefreshButton :loading="earnings.loading.value || lines.loading.value || withdrawals.loading.value" @click="reload" />
-      <button class="btn-primary" @click="showWithdraw = true">申请提现</button>
+      <button type="button" class="xm-btn xm-btn-primary" @click="showWithdraw = true">申请提现</button>
     </PageHeader>
-    <div class="grid grid-cols-2 gap-4 md:grid-cols-6">
-      <StatCard label="可提现" :value="money(earnings.data.value?.available)" />
-      <StatCard label="待结算（冻结中）" :value="money(earnings.data.value?.pending)" />
-      <StatCard label="提现中" :value="money(earnings.data.value?.withdrawing)" />
-      <StatCard label="今日" :value="money(earnings.data.value?.today)" />
-      <StatCard label="近 7 天" :value="money(earnings.data.value?.last_7_days)" />
-      <StatCard label="累计" :value="money(earnings.data.value?.total)" />
+    <div class="xm-stats" style="grid-template-columns: repeat(3, 1fr)">
+      <div class="xm-stat"><b>可提现</b><strong>{{ money(earnings.data.value?.available) }}</strong></div>
+      <div class="xm-stat"><b>待结算（冻结中）</b><strong>{{ money(earnings.data.value?.pending) }}</strong></div>
+      <div class="xm-stat"><b>提现中</b><strong>{{ money(earnings.data.value?.withdrawing) }}</strong></div>
+      <div class="xm-stat"><b>今日</b><strong>{{ money(earnings.data.value?.today) }}</strong></div>
+      <div class="xm-stat"><b>近 7 天</b><strong>{{ money(earnings.data.value?.last_7_days) }}</strong></div>
+      <div class="xm-stat"><b>累计</b><strong>{{ money(earnings.data.value?.total) }}</strong></div>
     </div>
 
     <div class="card mt-5">
-      <h2 class="card-title">提现记录</h2>
+      <h2 class="mb-3 text-[15px] font-extrabold text-[#1f1f1f]">提现记录</h2>
       <DataTable
         :columns="[
           { key: 'id', label: '编号' },
@@ -88,7 +88,7 @@ async function withdraw() {
     </div>
 
     <div class="card mt-5">
-      <h2 class="card-title">结算明细（按上游 × 小时 × 渠道）</h2>
+      <h2 class="mb-3 text-[15px] font-extrabold text-[#1f1f1f]">结算明细（按上游 × 小时 × 渠道）</h2>
       <DataTable
         :columns="[
           { key: 'hour', label: '时段' },
@@ -113,7 +113,7 @@ async function withdraw() {
 
     <ModalDialog v-model:open="showWithdraw" title="申请提现">
       <div v-if="auth.user?.kyc_status !== 'verified'" class="callout callout-warn">
-        提现前需要完成实名认证。<RouterLink to="/me" class="link">去认证</RouterLink>
+        提现前需要完成实名认证。<RouterLink to="/me?from=earnings" class="link">去认证 →</RouterLink>
       </div>
       <p class="text-sm text-slate-600">可提现 {{ money(earnings.data.value?.available) }}，最低 {{ money(cfg.config.withdraw_min) }}。</p>
       <div>

@@ -25,12 +25,23 @@ type Item struct {
 	Requests24h      int       `json:"requests_24h"`
 	TTFTp50Ms        *float64  `json:"ttft_p50_ms"`
 	ListedSince      time.Time `json:"listed_since"`
+	Mode             string    `json:"mode"`
+	SKUKind          string    `json:"sku_kind"`
+	FaceValue        *float64  `json:"face_value,omitempty"`
+	Stock            *int      `json:"stock,omitempty"`
+	StockSold        int       `json:"stock_sold"`
+	MinAmount        float64   `json:"min_amount"`
+	Title            *string   `json:"title,omitempty"`
+	Description      *string   `json:"description,omitempty"`
+	Categories       []string  `json:"categories,omitempty"`
 }
 
 type Filter struct {
 	Platform string
 	Grade    string
 	MaxPrice float64
+	Kind     string // channel / pack / 空=全部
+	Category string // low_rate / coding / featured / pack
 	Sort     string // price / success / ttft
 }
 
@@ -57,8 +68,14 @@ func (s *Service) List(ctx context.Context, f Filter, limit, offset int) ([]Item
 	if f.MaxPrice > 0 {
 		maxSeller = f.MaxPrice / (1 + c)
 	}
+	kind := f.Kind
+	if kind != "pack" && kind != "channel" {
+		kind = ""
+	}
 	rows, err := s.DB.Query(ctx, `SELECT l.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
-			att.success_rate, COALESCE(att.requests, 0), usage.ttft_p50
+			att.success_rate, COALESCE(att.requests, 0), usage.ttft_p50,
+			l.mode, l.sku_kind, l.face_value, l.stock, l.stock_sold, l.min_amount::float8, l.title, l.description,
+			COALESCE(l.categories, '{}')
 		FROM listings l
 		JOIN upstreams u ON u.id = l.upstream_id
 		LEFT JOIN LATERAL (
@@ -69,17 +86,23 @@ func (s *Service) List(ctx context.Context, f Filter, limit, offset int) ([]Item
 		LEFT JOIN LATERAL (
 			SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY first_token_ms) AS ttft_p50
 			FROM usage_records WHERE upstream_id = u.id AND created_at > now() - interval '24 hours' AND first_token_ms IS NOT NULL) usage ON true
-		WHERE l.mode = 'consignment' AND l.status = 'active' AND u.status = 'listed' AND u.health NOT IN ('degraded', 'unavailable')
+		WHERE l.mode IN ('consignment', 'pack') AND l.status = 'active' AND u.status = 'listed' AND u.health NOT IN ('degraded', 'unavailable')
 			AND NOT EXISTS (SELECT 1 FROM upstream_runtime_params rp WHERE rp.upstream_id = u.id AND NOT rp.buyer_facing)
 			AND ($1 = '' OR u.platform = $1) AND ($2 = '' OR u.grade = $2) AND l.multiplier <= $3
-		ORDER BY `+order+` LIMIT $4 OFFSET $5`, f.Platform, f.Grade, maxSeller, limit, offset)
+			AND ($6 = '' OR l.sku_kind = $6)
+			AND ($7 = '' OR $7 = ANY (COALESCE(l.categories, '{}')))
+		ORDER BY `+order+` LIMIT $4 OFFSET $5`, f.Platform, f.Grade, maxSeller, limit, offset, kind, f.Category)
 	if err != nil {
 		return nil, err
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Item, error) {
 		var it Item
 		err := row.Scan(&it.ListingID, &it.Platform, &it.AuthType, &it.Tier, &it.Grade, &it.Health, &it.SellerMultiplier, &it.ListedSince,
-			&it.SuccessRate24h, &it.Requests24h, &it.TTFTp50Ms)
+			&it.SuccessRate24h, &it.Requests24h, &it.TTFTp50Ms,
+			&it.Mode, &it.SKUKind, &it.FaceValue, &it.Stock, &it.StockSold, &it.MinAmount, &it.Title, &it.Description, &it.Categories)
+		if it.Categories == nil {
+			it.Categories = []string{}
+		}
 		it.BuyerPrice = listing.BuyerPrice(it.SellerMultiplier, c)
 		return it, err
 	})

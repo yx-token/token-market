@@ -159,14 +159,30 @@ func postUsage(ctx context.Context, tx pgx.Tx, fromID int64) (int64, error) {
 		SELECT DISTINCT 'buyer', buyer_user_id, 'buyer_cash' FROM usage_records WHERE ledger_txn_id = $1 AND buyer_user_id IS NOT NULL
 		UNION SELECT DISTINCT 'seller', seller_id, 'seller_pending' FROM usage_records WHERE ledger_txn_id = $1 AND seller_id IS NOT NULL
 		UNION SELECT 'platform', 0, 'platform_revenue'
+		UNION SELECT 'platform', 0, 'platform_cash'
 		UNION SELECT 'platform', 0, 'platform_probe_cost'
 		ON CONFLICT DO NOTHING`, txnID); err != nil {
 		return 0, err
 	}
+	// 额度包 Key 的用量：购买时已账面预付，不再扣 buyer_cash；从 platform_cash 释放预付并记卖家/收入。
 	if _, err := tx.Exec(ctx, `INSERT INTO ledger_entries (txn_id, account_id, amount)
 		SELECT $1, a.id, x.amount FROM (
-			SELECT 'buyer' AS ot, buyer_user_id AS oid, 'buyer_cash' AS kind, sum(actual_cost) AS amount
-				FROM usage_records WHERE ledger_txn_id = $1 AND channel IN ('pool', 'direct') AND buyer_user_id IS NOT NULL GROUP BY buyer_user_id
+			SELECT 'buyer' AS ot, ur.buyer_user_id AS oid, 'buyer_cash' AS kind, sum(ur.actual_cost) AS amount
+				FROM usage_records ur
+				WHERE ur.ledger_txn_id = $1 AND ur.channel IN ('pool', 'direct') AND ur.buyer_user_id IS NOT NULL
+					AND NOT EXISTS (
+						SELECT 1 FROM quota_packs qp
+						WHERE qp.buyer_key_id = ur.buyer_key_id AND qp.status IN ('active', 'depleted')
+					)
+				GROUP BY ur.buyer_user_id
+			UNION ALL
+			SELECT 'platform', 0, 'platform_cash', sum(ur.actual_cost)
+				FROM usage_records ur
+				WHERE ur.ledger_txn_id = $1 AND ur.channel IN ('pool', 'direct') AND ur.buyer_user_id IS NOT NULL
+					AND EXISTS (
+						SELECT 1 FROM quota_packs qp
+						WHERE qp.buyer_key_id = ur.buyer_key_id AND qp.status IN ('active', 'depleted')
+					)
 			UNION ALL
 			SELECT 'seller', seller_id, 'seller_pending', -sum(payout)
 				FROM usage_records WHERE ledger_txn_id = $1 AND seller_id IS NOT NULL GROUP BY seller_id
@@ -179,6 +195,19 @@ func postUsage(ctx context.Context, tx pgx.Tx, fromID int64) (int64, error) {
 				FROM usage_records WHERE ledger_txn_id = $1 AND channel = 'probe' AND seller_id IS NOT NULL
 		) x JOIN ledger_accounts a ON a.owner_type = x.ot AND a.owner_id = x.oid AND a.kind = x.kind
 		WHERE x.amount IS NOT NULL AND x.amount <> 0`, txnID); err != nil {
+		return 0, err
+	}
+	// 扣减额度包剩余；用尽则标 depleted
+	if _, err := tx.Exec(ctx, `UPDATE quota_packs qp SET
+			remaining = GREATEST(qp.remaining - u.spent, 0),
+			status = CASE WHEN qp.remaining - u.spent <= 0 THEN 'depleted' ELSE qp.status END
+		FROM (
+			SELECT buyer_key_id, sum(actual_cost)::numeric AS spent
+			FROM usage_records
+			WHERE ledger_txn_id = $1 AND buyer_key_id IS NOT NULL AND channel IN ('pool', 'direct')
+			GROUP BY buyer_key_id
+		) u
+		WHERE qp.buyer_key_id = u.buyer_key_id AND qp.status = 'active'`, txnID); err != nil {
 		return 0, err
 	}
 	// 汇总到"上游 × 小时 × 渠道"的结算行

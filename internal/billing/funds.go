@@ -263,9 +263,15 @@ func (f *Funds) advanceRefund(ctx context.Context, r Refund) error {
 			}); err != nil && !errors.Is(err, ErrDuplicateTxn) {
 				return err
 			}
-			// 拆分打款：优先原路退回到近期的在线充值单，其余人工打款
-			if err := f.planPayouts(ctx, tx, r.ID, r.UserID, amount); err != nil {
+			// 额度包原路退款已预写打款明细；普通退款再按充值单拆分
+			has, err := payoutsExist(ctx, tx, r.ID)
+			if err != nil {
 				return err
+			}
+			if !has {
+				if err := f.planPayouts(ctx, tx, r.ID, r.UserID, amount); err != nil {
+					return err
+				}
 			}
 			if _, err := tx.Exec(ctx, "UPDATE refunds SET status = 'paying' WHERE id = $1", r.ID); err != nil {
 				return err
@@ -273,9 +279,17 @@ func (f *Funds) advanceRefund(ctx context.Context, r Refund) error {
 			if err := tx.Commit(ctx); err != nil {
 				return err
 			}
-			// sub2api 余额已清零，可以解锁 Key
+			// 额度包原路退款未锁 Key；普通退款在扣完影子余额后解锁
+			if r.Note != nil && len(*r.Note) >= 14 && (*r.Note)[:14] == "pack_original:" {
+				return nil
+			}
 			return f.Keys.SetBuyerLocked(ctx, r.UserID, false)
 		case ops.StatusDead:
+			if r.Note != nil && len(*r.Note) >= 14 && (*r.Note)[:14] == "pack_original:" {
+				// 额度包原路：账面已退回余额；渠道扣减失败则结束，避免反复锁 Key
+				_, err := f.DB.Exec(ctx, "UPDATE refunds SET status = 'failed', finished_at = now() WHERE id = $1", r.ID)
+				return err
+			}
 			// 期间余额发生变化导致扣减失败：重新读取余额再试
 			_, err := f.DB.Exec(ctx, "UPDATE refunds SET status = 'locking', lock_until = now(), op_id = NULL, amount = NULL WHERE id = $1", r.ID)
 			return err

@@ -154,6 +154,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 		DB: a.DB, Replica: a.Replica, Shadow: a.Shadow, Keys: a.Keys, Keyring: a.Keyring,
 		KYC: a.Accounts, Risk: a.Risk, Settings: a.Settings, Payments: a.Payments, Log: log,
 	}
+	a.Keys.PackFunds = a.Funds
 	a.Market = &market.Service{DB: a.DB, Commission: func(ctx context.Context) (float64, error) {
 		st, err := a.Settings(ctx)
 		return st.CommissionRate, err

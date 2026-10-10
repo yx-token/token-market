@@ -343,6 +343,18 @@ html.is-console {
   --color-bg-page: #f2f4f7;
   --color-white: #ffffff;
 }
+html.is-market,
+html.is-market body {
+  background: #f5f5f5;
+}
+html.is-market body::before {
+  display: none;
+}
+html.is-market ::selection {
+  background: #ffe60f;
+  color: #1f1f1f;
+}
+
 html.is-console body {
   background: #f2f4f7;
   color: #262626;
@@ -399,8 +411,7 @@ html.is-console :focus-visible {
     top: 0;
     z-index: 40;
     max-height: min(42vh, 320px);
-    border-right: none;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    border: none;
   }
   .console-side-foot {
     display: none;
@@ -417,15 +428,15 @@ html.is-console :focus-visible {
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(16px) saturate(1.8);
   -webkit-backdrop-filter: blur(16px) saturate(1.8);
-  border-right: 1px solid rgba(255, 255, 255, 0.45);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  border: none;
+  box-shadow: none;
 }
 .console-brand {
   display: flex;
   flex-direction: column;
   justify-content: center;
   padding: 4px 10px 18px;
-  border-bottom: 1px solid var(--color-border, #e8e8e8);
+  border: none;
   margin-bottom: 12px;
 }
 .console-brand-name {
@@ -442,9 +453,17 @@ html.is-console :focus-visible {
 }
 .console-nav {
   flex: 1;
+  overflow-x: hidden;
   overflow-y: auto;
   min-height: 0;
-  padding-right: 2px;
+  padding-right: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.console-nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 .console-nav-list {
   list-style: none;
@@ -459,14 +478,14 @@ html.is-console :focus-visible {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 650;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   color: #64748b;
   cursor: pointer;
   text-align: left;
@@ -508,9 +527,9 @@ html.is-console :focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
+  padding: 8px 10px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: #64748b;
   transition: background 0.15s ease, color 0.15s ease;
@@ -533,7 +552,7 @@ html.is-console :focus-visible {
 }
 .console-side-foot {
   padding-top: 12px;
-  border-top: 1px solid var(--color-border, #e8e8e8);
+  border: none;
 }
 .console-collapse-btn {
   display: flex;
@@ -545,7 +564,7 @@ html.is-console :focus-visible {
   border-radius: 8px;
   background: transparent;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   color: #868686;
   cursor: pointer;
   text-align: left;
@@ -608,7 +627,7 @@ html.is-console :focus-visible {
   gap: 8px;
   padding: 8px 10px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 14px;
   color: #64748b;
 }
 .console-nav-flyout-link:hover {
@@ -628,31 +647,78 @@ html.is-console :focus-visible {
 }
 .console-top {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  height: 56px;
-  padding: 0 40px;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(16px) saturate(1.8);
-  -webkit-backdrop-filter: blur(16px) saturate(1.8);
-  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  flex-direction: column;
   position: sticky;
   top: 0;
   z-index: 20;
+  /* 顶栏 + 页签统一液态玻璃（对齐 YourHub AppHeader + AppTabBar） */
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(32px) saturate(1.8);
+  -webkit-backdrop-filter: blur(32px) saturate(1.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.console-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 72px;
+  padding: 14px 28px;
+  background: transparent;
+  border-bottom: none;
+}
+.console-top-title {
+  min-width: 0;
+  flex: 1;
+}
+.console-top-title h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #0f172a;
+}
+.console-top-title p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 42rem;
 }
 .console-top-actions {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
+}
+.console-user-menu {
+  position: relative;
 }
 .console-user {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  max-width: 220px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  font: inherit;
   font-size: 12px;
   color: #64748b;
-  max-width: 220px;
+  cursor: pointer;
+}
+.console-user:hover,
+.console-user-menu:focus-within .console-user {
+  color: #0f172a;
+  background: rgba(5, 85, 206, 0.06);
+  border-color: rgba(5, 85, 206, 0.12);
 }
 .console-avatar {
   width: 28px;
@@ -670,6 +736,69 @@ html.is-console :focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.console-user-caret {
+  opacity: 0.5;
+  transition: transform 0.18s ease;
+}
+.console-user-menu:hover .console-user-caret,
+.console-user-menu:focus-within .console-user-caret {
+  transform: rotate(180deg);
+  opacity: 0.8;
+}
+.console-user-drop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 156px;
+  padding: 6px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px) saturate(1.8);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+  pointer-events: none;
+  z-index: 40;
+}
+.console-user-drop::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+.console-user-menu:hover .console-user-drop,
+.console-user-menu:focus-within .console-user-drop {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+}
+.console-user-drop a,
+.console-user-drop button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: #334155;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.console-user-drop a:hover,
+.console-user-drop button:hover {
+  color: #0555ce;
+  background: rgba(5, 85, 206, 0.08);
 }
 .console-btn-ghost {
   display: inline-flex;
@@ -691,26 +820,34 @@ html.is-console :focus-visible {
   background: #e6eefa;
 }
 .console-body {
-  padding: 28px 40px 40px;
+  padding: 12px 16px 16px;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 @media (max-width: 1100px) {
-  .console-top {
-    padding: 0 28px;
+  .console-top-bar {
+    padding-left: 28px;
+    padding-right: 28px;
   }
   .console-body {
-    padding: 24px 28px 32px;
+    padding: 10px 14px 14px;
   }
 }
 @media (max-width: 900px) {
-  .console-top {
-    padding: 0 20px;
+  .console-top-bar {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .console-side {
+    border-bottom: none;
+  }
+  .console-email {
+    display: none;
   }
   .console-body {
-    padding: 20px 20px 28px;
+    padding: 8px 10px 12px;
   }
 }
 .console-body > .console-page {
@@ -1270,8 +1407,8 @@ html:not(.is-console) .console-tp-card {
   padding-top: 8vh;
 }
 .yh-modal-mask--market {
-  background: rgba(23, 20, 15, 0.45);
-  backdrop-filter: blur(2px);
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
 }
 .yh-modal-mask--console {
   background: rgba(15, 23, 42, 0.28);
@@ -1289,9 +1426,10 @@ html:not(.is-console) .console-tp-card {
   max-width: 48rem;
 }
 .yh-modal-panel--market {
-  border: 1px solid #17140f;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
   background: #fff;
-  box-shadow: 4px 4px 0 #17140f;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.14);
   animation: yh-modal-rise 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .yh-modal-panel--console {
@@ -1308,8 +1446,8 @@ html:not(.is-console) .console-tp-card {
 }
 
 .yh-modal-accent {
-  height: 4px;
-  background: #f5c518;
+  height: 5px;
+  background: #ffe60f;
 }
 
 .yh-modal-head {
@@ -1320,7 +1458,7 @@ html:not(.is-console) .console-tp-card {
   padding: 1rem 1.5rem;
 }
 .yh-modal-panel--market .yh-modal-head {
-  border-bottom: 1px solid #e2dbcd;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 .yh-modal-panel--console .yh-modal-head {
   border-bottom: 1px solid rgba(15, 23, 42, 0.08);
@@ -1336,8 +1474,11 @@ html:not(.is-console) .console-tp-card {
   line-height: 1.3;
 }
 .yh-modal-panel--market .yh-modal-title {
-  font-family: var(--font-display, Georgia, 'Noto Serif SC', serif);
-  color: #17140f;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #1f1f1f;
 }
 .yh-modal-panel--console .yh-modal-title {
   font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -1360,9 +1501,13 @@ html:not(.is-console) .console-tp-card {
   font: inherit;
   line-height: 1;
 }
+.yh-modal-panel--market .yh-modal-close {
+  border-radius: 10px;
+}
 .yh-modal-panel--market .yh-modal-close:hover {
-  border-color: #17140f;
-  color: #17140f;
+  border-color: transparent;
+  background: #f5f5f5;
+  color: #1f1f1f;
 }
 .yh-modal-panel--console .yh-modal-close {
   border-radius: 0.5rem;
@@ -1392,8 +1537,8 @@ html:not(.is-console) .console-tp-card {
   padding: 0.875rem 1.5rem;
 }
 .yh-modal-panel--market .yh-modal-foot {
-  border-top: 1px solid #e2dbcd;
-  background: #fcfaf5;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: #fafafa;
 }
 .yh-modal-panel--console .yh-modal-foot {
   border-top: 1px solid rgba(15, 23, 42, 0.08);
@@ -1442,6 +1587,290 @@ html:not(.is-console) .console-tp-card {
   border: 1px solid #e5e7eb !important;
   background: #fff !important;
   color: #374151 !important;
+}
+
+/* 市场弹层：表单/按钮跟闲猫黄，去掉账本衬线与硬投影 */
+.yh-modal-panel--market .label {
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: #666 !important;
+  margin-bottom: 6px !important;
+}
+.yh-modal-panel--market .hint {
+  color: #888 !important;
+  font-size: 12px !important;
+}
+.yh-modal-panel--market .input {
+  border-radius: 12px !important;
+  border: 1.5px solid rgba(0, 0, 0, 0.1) !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  padding: 10px 12px !important;
+}
+.yh-modal-panel--market .input:focus {
+  border-color: #1f1f1f !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.yh-modal-panel--market .btn,
+.yh-modal-panel--market .btn-primary,
+.yh-modal-panel--market .btn-secondary,
+.yh-modal-panel--market .btn-danger,
+.yh-modal-panel--market .btn-ghost {
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
+}
+.yh-modal-panel--market .btn-primary {
+  border: none !important;
+  background: #ffe60f !important;
+  color: #1f1f1f !important;
+}
+.yh-modal-panel--market .btn-primary:hover {
+  filter: brightness(0.97);
+  transform: none !important;
+  box-shadow: none !important;
+}
+.yh-modal-panel--market .btn-secondary {
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  background: #fff !important;
+  color: #1f1f1f !important;
+}
+.yh-modal-panel--market .btn-danger {
+  border: none !important;
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+.yh-modal-panel--market .btn-ghost {
+  border: none !important;
+  background: transparent !important;
+  text-decoration: none !important;
+  color: #666 !important;
+}
+.yh-modal-panel--market .btn-ghost:hover {
+  background: #f5f5f5 !important;
+  color: #1f1f1f !important;
+  text-decoration: none !important;
+}
+
+/* --------------------------------------------------------------------------
+ * 闲猫市场面：按钮 / 表单 / 卡片（去账本黑白硬投影）
+ * -------------------------------------------------------------------------- */
+html.is-market .btn,
+html.is-market .btn-primary,
+html.is-market .btn-secondary,
+html.is-market .btn-danger,
+html.is-market .btn-ghost {
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  transform: none !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
+}
+html.is-market .btn-primary {
+  border: none !important;
+  background: #ffe60f !important;
+  color: #1f1f1f !important;
+}
+html.is-market .btn-primary:hover {
+  filter: brightness(0.97);
+  transform: none !important;
+  box-shadow: none !important;
+}
+html.is-market .btn-secondary {
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  background: #fff !important;
+  color: #1f1f1f !important;
+}
+html.is-market .btn-secondary:hover {
+  background: #fafafa !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+html.is-market .btn-danger {
+  border: none !important;
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+html.is-market .btn-ghost {
+  border: none !important;
+  background: transparent !important;
+  text-decoration: none !important;
+  color: #666 !important;
+  font-weight: 700 !important;
+}
+html.is-market .btn-ghost:hover {
+  background: #f5f5f5 !important;
+  color: #1f1f1f !important;
+  text-decoration: none !important;
+}
+html.is-market .btn-ghost.text-red-600:hover {
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+}
+
+html.is-market .input {
+  border-radius: 12px !important;
+  border: 1.5px solid rgba(0, 0, 0, 0.1) !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+html.is-market .input:hover {
+  border-color: rgba(0, 0, 0, 0.18) !important;
+}
+html.is-market .input:focus {
+  border-color: #1f1f1f !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+html.is-market .label {
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: #666 !important;
+}
+html.is-market .hint {
+  color: #888 !important;
+}
+html.is-market .link {
+  color: #1f1f1f !important;
+  text-decoration-color: #ffe60f !important;
+  text-underline-offset: 3px;
+}
+html.is-market .link:hover {
+  color: #000 !important;
+}
+
+html.is-market .card {
+  border-radius: 16px !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: none !important;
+  background: #fff !important;
+}
+html.is-market .card-title {
+  font-family: inherit !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+  color: #1f1f1f !important;
+}
+html.is-market .card-title::before {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 2px;
+  background: #ffe60f !important;
+}
+html.is-market .choice {
+  border-radius: 14px !important;
+  border: 1.5px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+html.is-market .choice-on {
+  border-color: #1f1f1f !important;
+  background: rgba(255, 230, 15, 0.28) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+html.is-market .choice-on::after {
+  display: none !important;
+}
+html.is-market .shadow-hard,
+html.is-market .shadow-hard-sm,
+html.is-market .shadow-hard-red,
+html.is-market .shadow-sheet {
+  box-shadow: none !important;
+}
+html.is-market .seg {
+  border-radius: 10px;
+  overflow: hidden;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+}
+html.is-market .seg > button.on {
+  background: #ffe60f !important;
+  color: #1f1f1f !important;
+}
+
+html.is-market .chip {
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+}
+html.is-market .chip::before {
+  border-radius: 2px;
+}
+html.is-market .chip-ink {
+  background: #1f1f1f !important;
+  border-color: #1f1f1f !important;
+  color: #ffe60f !important;
+}
+
+html.is-market .stat {
+  border-radius: 14px !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  background: #fff !important;
+}
+html.is-market .stat:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+html.is-market .stat::after {
+  display: none !important;
+}
+html.is-market .stat-label {
+  font-family: inherit !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: #888 !important;
+}
+html.is-market .stat-value {
+  font-family: inherit !important;
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  color: #1f1f1f !important;
+}
+html.is-market .stat-value.text-brand-600,
+html.is-market .stat-value.\!text-brand-600 {
+  color: #ff5000 !important;
+}
+
+html.is-market .callout {
+  border-radius: 12px !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  border-left: 4px solid #ffe60f !important;
+  background: #fffdf0 !important;
+  color: #444 !important;
+}
+html.is-market .callout-warn {
+  border-left-color: #f59e0b !important;
+  background: #fffbeb !important;
+  color: #92400e !important;
+}
+html.is-market .callout-ok {
+  border-left-color: #22c55e !important;
+  background: #f0fdf4 !important;
+  color: #166534 !important;
+}
+html.is-market .callout-err {
+  border-left-color: #ef4444 !important;
+  background: #fef2f2 !important;
+  color: #991b1b !important;
+}
+html.is-market .callout-info {
+  border-left-color: #1f1f1f !important;
+  background: #fafafa !important;
+  color: #333 !important;
 }
 
 @keyframes yh-modal-rise {

@@ -1,11 +1,24 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuth } from '@/stores/auth'
+import { useLoginModal } from '@/stores/loginModal'
 
 const adminMeta = { auth: true, admin: true } as const
 
 const consoleChildren: RouteRecordRaw[] = [
   { path: '', name: 'console', component: () => import('@/views/admin/DashboardView.vue') },
   { path: 'settings', name: 'console-settings', component: () => import('@/views/admin/SettingsView.vue') },
+  // 运营 · 推荐运营
+  { path: 'ops/recommend/factors', name: 'console-rec-factors', component: () => import('@/views/admin/RecommendFactorsView.vue') },
+  { path: 'ops/recommend/profiles', name: 'console-rec-profiles', component: () => import('@/views/admin/RecommendProfilesView.vue') },
+  { path: 'ops/recommend/tiles', name: 'console-rec-tiles', component: () => import('@/views/admin/RecommendTilesView.vue') },
+  { path: 'ops/categories', name: 'console-ops-categories', component: () => import('@/views/admin/CategoriesView.vue') },
+  { path: 'ops/hot-searches', name: 'console-ops-hot', component: () => import('@/views/admin/MarketHotSearchView.vue') },
+  { path: 'ops/extras', name: 'console-ops-extras', component: () => import('@/views/admin/MarketExtrasView.vue') },
+  // 旧路径兼容
+  { path: 'ops/discovery', redirect: '/console/ops/extras' },
+  { path: 'market-recommend', redirect: '/console/ops/recommend/tiles' },
+  { path: 'market-categories', redirect: '/console/ops/categories' },
+  { path: 'market-discovery', redirect: '/console/ops/extras' },
   { path: 'system-update', name: 'console-system-update', component: () => import('@/views/admin/SystemUpdateView.vue') },
   { path: 'vendors', name: 'console-vendors', component: () => import('@/views/admin/VendorsView.vue') },
   { path: 'proxies', name: 'console-proxies', component: () => import('@/views/admin/ProxiesView.vue') },
@@ -31,13 +44,14 @@ const routes: RouteRecordRaw[] = [
   { path: '/register', name: 'register', component: () => import('@/views/auth/RegisterView.vue') },
   { path: '/me', name: 'me', component: () => import('@/views/auth/ProfileView.vue'), meta: { auth: true } },
 
-  { path: '/buyer', redirect: '/buyer/wallet' },
+  { path: '/buyer', redirect: '/buyer/keys' },
   { path: '/buyer/wallet', name: 'buyer-wallet', component: () => import('@/views/buyer/WalletView.vue'), meta: { auth: true } },
   { path: '/buyer/keys', name: 'buyer-keys', component: () => import('@/views/buyer/KeysView.vue'), meta: { auth: true } },
   { path: '/buyer/usage', name: 'buyer-usage', component: () => import('@/views/buyer/UsageView.vue'), meta: { auth: true } },
   { path: '/buyer/bills', name: 'buyer-bills', component: () => import('@/views/buyer/BillsView.vue'), meta: { auth: true } },
 
-  { path: '/seller', redirect: '/seller/upstreams' },
+  { path: '/seller', redirect: '/seller/publish' },
+  { path: '/seller/publish', name: 'seller-publish', component: () => import('@/views/seller/PublishView.vue'), meta: { auth: true } },
   { path: '/seller/upstreams', name: 'seller-upstreams', component: () => import('@/views/seller/UpstreamsView.vue'), meta: { auth: true } },
   { path: '/seller/proxies', name: 'seller-proxies', component: () => import('@/views/seller/ProxiesView.vue'), meta: { auth: true } },
   {
@@ -77,10 +91,34 @@ export const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
 })
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
   const auth = useAuth()
   if (!auth.loaded) await auth.load()
-  if (to.meta.auth && !auth.loggedIn) return { name: 'login', query: { redirect: to.fullPath } }
+
+  // 市场面登录 / 注册：弹窗，不进整页
+  if (to.name === 'login' || to.name === 'register') {
+    if (auth.loggedIn) {
+      return typeof to.query.redirect === 'string' ? to.query.redirect : '/'
+    }
+    useLoginModal().show({
+      redirect: typeof to.query.redirect === 'string' ? to.query.redirect : from.fullPath || '/',
+      mode: to.name === 'register' ? 'register' : 'login',
+    })
+    // 直接打开 /login 时落到首页并弹窗；站内跳转则留在当前页
+    if (!from.name) return { name: 'market' }
+    return false
+  }
+
+  // 需登录的买卖页：弹窗并记下回跳
+  if (to.meta.auth && !auth.loggedIn) {
+    if (to.path.startsWith('/console')) {
+      return { name: 'login', query: { redirect: to.fullPath } }
+    }
+    useLoginModal().show({ redirect: to.fullPath })
+    if (!from.name) return { name: 'market' }
+    return false
+  }
+
   if (to.meta.admin && !auth.isAdmin) return { name: 'market' }
   return true
 })

@@ -22,9 +22,12 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/market/listings` | 生效中的寄售挂单（已排除降智、不可用、不面向买家的上游）。筛选：`platform`、`grade`、`max_price`；排序 `sort`：`price`（默认）/ `success` / `ttft` |
-| GET | `/api/market/listings/:id` | 挂单摘要：厂商、档位、买家价 `price`（= m_s × (1 + c)）、健康状态、等级、24h 成功率与请求数、首字延迟 |
+| GET | `/api/market/listings` | 生效中的寄售 / 额度包（已排除降智、不可用、不面向买家的上游）。筛选：`platform`、`grade`、`max_price`、`kind`（`channel` / `pack`）；排序 `sort`：`price`（默认）/ `success` / `ttft` |
+| GET | `/api/market/listings/:id` | 挂单摘要：厂商、档位、买家价 `price`（= m_s × (1 + c)）、`sku_kind`、额度包 `face_value`/`stock`、按量 `min_amount`、健康状态、等级、24h 成功率与请求数、首字延迟 |
 | GET | `/api/market/pools` | 默认分组列表及售价 D |
+| GET | `/api/market/discovery` | 首页运营配置（类目树、横幅、静态槽位等） |
+| GET | `/api/market/recommend` | 首页四宫格推荐结果（按 `market_recommend` 因子打分） |
+| GET | `/api/market/categories` | 公开分类树（仅启用节点） |
 | GET | `/api/market/vendors` | 已开放接入的厂商、接入方式、寄售倍率区间、是否支持自留比例 |
 | GET | `/api/market/config` | 前端需要的公开参数：Edge 调用地址、抽佣率、冻结天数、最低提现额、最大跳数、可用的支付方式 `payment_channels`、单笔充值上下限 |
 | GET | `/api/market/prices` | 官方价目（美元 / 百万 token），倍率的计算基准；取自 sub2api 内置价目表，模型列表由系统设置 `price_models` 决定 |
@@ -39,6 +42,9 @@
 | POST | `/api/buyer/recharge/:id/cancel` | 取消未支付订单（在线订单先向渠道关单，发现已支付返回 409 `ORDER_PAID`） |
 | POST | `/api/buyer/refunds` | 申请退还全部剩余余额（退到分）：先暂停该买家全部 Key，等待 `refund_lock_seconds` 后扣减 sub2api 余额，再按打款明细原路退回或人工打款 |
 | GET | `/api/buyer/refunds` | 退款记录，含打款明细 `payouts`（渠道、金额、状态） |
+| POST | `/api/buyer/packs` | 购买额度包：`listing_id`，可选 `channel`（第一期仅 `balance`）、`name`。校验可调用余额 ≥ 面额后账面预付、占库存并签发 Key（明文只返回一次）；调用抵包内 remaining，未用量可退回账面 |
+| GET | `/api/buyer/packs` | 我的额度包：面额、剩余、状态 |
+| POST | `/api/buyer/packs/:id/refund` | 按未用量退货：停用 Key、释放卖家库存。可选 `dest`（`balance` / `original`，第一期记状态） |
 | POST | `/api/buyer/keys` | 创建 Key，明文只返回一次 |
 | GET | `/api/buyer/keys` | Key 列表 |
 | GET | `/api/buyer/keys/:id` | Key 详情，含各跳状态：`ready` / `provisioning`（内部资源开通中）/ `skipped`（挂单当前不接流量）；限额封禁原因 `limit_block_reason` |
@@ -73,7 +79,7 @@
 
 也可以只走默认分组：`{"route": {"type": "default", "pool": "tm-pool-claude"}}`。
 
-校验：最多 5 跳；默认分组只能在最后一跳；同一挂单不能重复出现；只能指定生效中的**寄售**挂单（回收挂单只通过默认分组售卖）；链内各跳是同一平台，最后一跳的默认分组必须是同平台分组或全模型分组（`platform = composite`），避免同一请求在不同协议的上游之间转换。
+校验：最多 5 跳；默认分组只能在最后一跳；同一挂单不能重复出现；只能指定生效中的寄售或额度包挂单（回收挂单只通过默认分组售卖）；链内各跳是同一平台，最后一跳的默认分组必须是同平台分组或全模型分组（`platform = composite`），避免同一请求在不同协议的上游之间转换。额度包购买走 `/api/buyer/packs`，不要手工把额度包挂进多跳链。
 
 ## 4. 卖家
 
@@ -105,12 +111,14 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/seller/upstreams/:id/listing` | 创建挂单：`mode`（consignment / buyback）；寄售需填 `multiplier`，可选 `join_default_pool`（默认加入）；回收返回报价 |
+| POST | `/api/seller/upstreams/:id/listing` | 创建挂单：`mode`（consignment / buyback / pack）。寄售需 `multiplier`，可选 `join_default_pool`、`min_amount`；额度包需 `multiplier`、`face_value`（≥10）、`stock`（≥1），不进保障池；回收返回报价。可选 `title`、`description`、`categories`（须为卖家可选分类，至少一类） |
+| GET | `/api/seller/listing-categories` | 卖家可勾选的市场分类（扁平，含路径名） |
 | GET | `/api/seller/listings` | 挂单列表 |
 | GET | `/api/seller/listings/:id` | 挂单详情，含价格历史 |
 | GET | `/api/seller/upstreams/:id/quote` | 当前回收报价 |
 | POST | `/api/seller/listings/:id/accept-quote`、`/reject-quote` | 接受 / 拒绝回收报价 |
 | PUT | `/api/seller/listings/:id/price` | 寄售改价：`multiplier`（有冷却时间 `price_change_cooldown_minutes`） |
+| PUT | `/api/seller/listings/:id/meta` | 更新展示：`title`、`description`、`categories`（寄售/额度包，未关闭） |
 | PUT | `/api/seller/listings/:id/default-pool` | 加入 / 退出默认分组：`join`（仅寄售） |
 | POST | `/api/seller/listings/:id/pause`、`/resume`、`/close` | 暂停、恢复、关闭 |
 
@@ -158,6 +166,8 @@
 | 模块 | 接口 |
 |---|---|
 | 系统设置 | `GET/PUT /api/admin/settings`：抽佣率、冻结天数、最低提现额、自动审核阈值、等级系数、报价有效期、改价冷却、退款等待、新卖家期、价目模型、质量检测超时（`probe_request_timeout_seconds`、`probe_batch_timeout_minutes`）等（部分更新） |
+| 市场运营 | `GET/PUT /api/admin/market-discovery`：首页类目/横幅等运营配置；`GET/PUT /api/admin/market-recommend`：三层推荐配置（`factors` 因子目录 → `profiles` 推荐类型 → `tiles` 首页四格选型）；`GET/POST /api/admin/market-categories`、`PUT/DELETE /api/admin/market-categories/:id`：分类树 CRUD |
+
 | 系统更新 | `GET /api/admin/system/version`：当前版本、提交、运行平台、可用状态和最近更新任务；`GET /api/admin/system/check-update[?force=true]`：最新正式 Release 与更新包是否兼容；`POST /api/admin/system/update`：提交 `{"version":"vX.Y.Z"}`，成功返回 202 和任务，管理员操作写入审计日志 |
 | 厂商 | `GET /api/admin/vendors`、`PUT /api/admin/vendors/:platform`：是否开放接入、开放的接入方式（`auth_types`，只能从 `supported_auth_types` 中选）、寄售倍率区间、回收基础倍率表（按档位）、默认并发、限流参数 |
 | 代理库存 | `GET/POST /api/admin/proxies`、`POST /api/admin/proxies/:id/sync`（同步到 sub2api）、`/test`、`/quality-check`、`/disable`、`/enable`；检测响应与卖家接口相同。列表包含平台代理和卖家代理，`seller_id` 区分来源，后台新增代理归平台 |

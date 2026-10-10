@@ -1,43 +1,41 @@
 <script setup lang="ts">
-// 登录 / 注册版式：左侧墨色宣言页（印章、行情摘要），右侧纸面表单。
-import { onMounted } from 'vue'
-import { useMarketBoard } from '@/stores/marketBoard'
-import SealMark from '@/components/SealMark.vue'
-import { label } from '@/utils/labels'
-
+// 登录 / 注册：闲猫黄壳，对齐市场品牌（非账本印章页）
 defineProps<{ title: string; subtitle?: string }>()
-const board = useMarketBoard()
-onMounted(board.start)
 </script>
 
 <template>
-  <div class="mx-auto grid grid-cols-1 max-w-5xl overflow-hidden border border-ink-900 bg-white shadow-hard md:grid-cols-[1.05fr_1fr]">
-    <div class="bg-grid-ink relative hidden flex-col justify-between bg-ink-900 p-10 text-ink-200 md:flex">
+  <div class="xm-auth mx-auto grid max-w-5xl grid-cols-1 overflow-hidden rounded-[18px] border border-black/8 bg-white md:grid-cols-[1.05fr_1fr]">
+    <div class="xm-auth-hero relative hidden flex-col justify-between p-10 md:flex">
       <div>
-        <SealMark :size="64" animate />
-        <p class="mt-10 font-display text-[30px] font-bold leading-[1.35] text-white">
+        <div class="flex items-center gap-2.5 text-[28px] font-black tracking-tight text-[#303030]">
+          <img src="/assets/xianmao-pet.svg" alt="" width="36" height="36" />
+          闲猫
+        </div>
+        <p class="mt-10 text-[28px] font-extrabold leading-[1.35] tracking-tight text-[#1f1f1f]">
           用不完的订阅，<br />有人正需要。
         </p>
-        <p class="mt-4 max-w-xs text-[13.5px] leading-[1.85] text-ink-300">
-          同一个账号既能买也能卖：按官方价打折调用大模型，或者把闲置额度挂出来按小时结算收益。
+        <p class="mt-4 max-w-xs text-[14px] leading-[1.75] text-[#555]">
+          同一个账号既能买也能卖：按官方价打折调用大模型，或者把闲置额度挂出来结算收益。
         </p>
       </div>
-      <div class="mt-10 border-t border-ink-700 pt-5">
-        <div class="mb-3 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-400">此刻 · 最低买家价</div>
-        <div v-if="board.board.length" class="space-y-2">
-          <div v-for="r in board.board.slice(0, 4)" :key="r.platform" class="flex items-baseline justify-between border-b border-dashed border-ink-700 pb-2">
-            <span class="text-[13.5px] text-white">{{ label('platform', r.platform).text }}</span>
-            <span class="font-mono text-[15px] text-brand-400">{{ r.best.toFixed(2) }}×</span>
-          </div>
-        </div>
-        <p v-else class="font-mono text-xs text-ink-400">等待第一笔挂单</p>
-      </div>
+      <img
+        class="xm-auth-pet pointer-events-none absolute bottom-4 right-2 w-[160px] opacity-95"
+        src="/assets/xianmao-pet-lie.svg"
+        alt=""
+      />
     </div>
     <div class="p-8 md:p-12">
-      <div class="kicker mb-3 flex items-center gap-2"><span class="h-px w-6 bg-brand-500" />闲置算力交易所</div>
-      <h1 class="font-display text-[30px] font-bold tracking-[0.04em]">{{ title }}</h1>
-      <p v-if="subtitle" class="mt-2 text-[13.5px] text-ink-500">{{ subtitle }}</p>
+      <div class="mb-3 text-[13px] font-extrabold text-[#888]">闲猫 · Token 集市</div>
+      <h1 class="text-[28px] font-extrabold tracking-tight text-[#1f1f1f]">{{ title }}</h1>
+      <p v-if="subtitle" class="mt-2 text-[14px] text-[#666]">{{ subtitle }}</p>
       <div class="mt-8"><slot /></div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.xm-auth-hero {
+  background: #ffe60f;
+  min-height: 420px;
+}
+</style>

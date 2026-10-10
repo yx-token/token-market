@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/DueGin/token-market/internal/platform/httpx"
@@ -17,6 +18,7 @@ func BuyerPrice(multiplier, commission float64) float64 {
 }
 
 func round4(f float64) float64 { return math.Round(f*10000) / 10000 }
+func round2(f float64) float64 { return math.Round(f*100) / 100 }
 
 // PoolCap 返回某平台全部启用默认分组中最严格的倍率上限 D × (1 − 最低毛利 − 安全缓冲)。
 // 没有默认分组时返回 0, false。
@@ -77,6 +79,12 @@ type CreateListingInput struct {
 	Mode            string   `json:"mode"`
 	Multiplier      *float64 `json:"multiplier"`
 	JoinDefaultPool *bool    `json:"join_default_pool"`
+	FaceValue       *float64 `json:"face_value"`
+	Stock           *int     `json:"stock"`
+	Title           *string  `json:"title"`
+	Description     *string  `json:"description"`
+	MinAmount       *float64 `json:"min_amount"`
+	Categories      []string `json:"categories"`
 }
 
 // CreateListing 创建挂单。寄售直接生效；回收先生成报价，卖家接受后生效。
@@ -106,6 +114,17 @@ func (s *Service) CreateListing(ctx context.Context, sellerID, upstreamID int64,
 		if err := s.validateConsignment(ctx, u.Platform, *in.Multiplier); err != nil {
 			return nil, nil, err
 		}
+		allowed, err := sellerPickableSet(ctx, s.DB)
+		if err != nil {
+			return nil, nil, err
+		}
+		cats, err := NormalizeCategories(ModeConsignment, in.Categories, allowed)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := requireSellerCategory(cats); err != nil {
+			return nil, nil, err
+		}
 		st, err := s.Settings(ctx)
 		if err != nil {
 			return nil, nil, err
@@ -116,8 +135,12 @@ func (s *Service) CreateListing(ctx context.Context, sellerID, upstreamID int64,
 			return nil, nil, err
 		}
 		defer func() { _ = tx.Rollback(ctx) }()
-		l, err := scanListing(tx.QueryRow(ctx, `INSERT INTO listings (upstream_id, seller_id, mode, status, multiplier, join_default_pool, price_changed_at)
-			VALUES ($1, $2, 'consignment', 'active', $3, $4, now()) RETURNING `+listingColumns, u.ID, sellerID, m, join))
+		minAmt := 0.0
+		if in.MinAmount != nil && *in.MinAmount > 0 {
+			minAmt = round2(*in.MinAmount)
+		}
+		l, err := scanListing(tx.QueryRow(ctx, `INSERT INTO listings (upstream_id, seller_id, mode, status, multiplier, join_default_pool, price_changed_at, sku_kind, min_amount, title, description, categories)
+			VALUES ($1, $2, 'consignment', 'active', $3, $4, now(), 'channel', $5, $6, $7, $8) RETURNING `+listingColumns, u.ID, sellerID, m, join, minAmt, in.Title, in.Description, cats))
 		if err != nil {
 			return nil, nil, mapListingErr(err)
 		}
@@ -164,8 +187,58 @@ func (s *Service) CreateListing(ctx context.Context, sellerID, upstreamID int64,
 			return nil, nil, err
 		}
 		return l, q, nil
+
+	case ModePack:
+		if err := validatePackInput(in); err != nil {
+			return nil, nil, err
+		}
+		if err := s.validateConsignment(ctx, u.Platform, *in.Multiplier); err != nil {
+			return nil, nil, err
+		}
+		allowed, err := sellerPickableSet(ctx, s.DB)
+		if err != nil {
+			return nil, nil, err
+		}
+		cats, err := NormalizeCategories(ModePack, in.Categories, allowed)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := requireSellerCategory(cats); err != nil {
+			return nil, nil, err
+		}
+		st, err := s.Settings(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		m := round4(*in.Multiplier)
+		face := round2(*in.FaceValue)
+		tx, err := s.DB.Begin(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		l, err := scanListing(tx.QueryRow(ctx, `INSERT INTO listings (
+				upstream_id, seller_id, mode, status, multiplier, join_default_pool, price_changed_at,
+				sku_kind, face_value, stock, stock_sold, min_amount, title, description, categories)
+			VALUES ($1, $2, 'pack', 'active', $3, false, now(), 'pack', $4, $5, 0, 0, $6, $7, $8)
+			RETURNING `+listingColumns, u.ID, sellerID, m, face, *in.Stock, in.Title, in.Description, cats))
+		if err != nil {
+			return nil, nil, mapListingErr(err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO listing_price_versions (listing_id, multiplier, buyer_price, source) VALUES ($1, $2, $3, 'seller')`,
+			l.ID, m, BuyerPrice(m, st.CommissionRate)); err != nil {
+			return nil, nil, err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE upstreams SET status = 'listed', updated_at = now() WHERE id = $1`, u.ID); err != nil {
+			return nil, nil, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, nil, err
+		}
+		s.kick(ctx)
+		return l, nil, nil
 	default:
-		return nil, nil, httpx.BadRequest("INVALID_MODE", "mode must be consignment or buyback")
+		return nil, nil, httpx.BadRequest("INVALID_MODE", "mode must be consignment, buyback or pack")
 	}
 }
 
@@ -289,7 +362,7 @@ func (s *Service) ChangePrice(ctx context.Context, sellerID, listingID int64, mu
 	if err != nil {
 		return nil, err
 	}
-	if l.Mode != ModeConsignment || l.Status == ListingClosed {
+	if (l.Mode != ModeConsignment && l.Mode != ModePack) || l.Status == ListingClosed {
 		return nil, ErrBadState
 	}
 	u, err := GetUpstream(ctx, s.DB, l.UpstreamID)
@@ -323,6 +396,55 @@ func (s *Service) ChangePrice(ctx context.Context, sellerID, listingID int64, mu
 		return nil, err
 	}
 	s.kick(ctx)
+	return GetListing(ctx, s.DB, l.ID)
+}
+
+// UpdateListingMetaInput 卖家改挂单展示信息与分类（不改价）。
+type UpdateListingMetaInput struct {
+	Title       *string  `json:"title"`
+	Description *string  `json:"description"`
+	Categories  []string `json:"categories"`
+}
+
+// UpdateListingMeta 更新标题/描述/分类；仅寄售与额度包、未关闭时可改。
+func (s *Service) UpdateListingMeta(ctx context.Context, sellerID, listingID int64, in UpdateListingMetaInput) (*Listing, error) {
+	l, err := s.sellerListing(ctx, sellerID, listingID)
+	if err != nil {
+		return nil, err
+	}
+	if (l.Mode != ModeConsignment && l.Mode != ModePack) || l.Status == ListingClosed {
+		return nil, ErrBadState
+	}
+	allowed, err := sellerPickableSet(ctx, s.DB)
+	if err != nil {
+		return nil, err
+	}
+	cats, err := NormalizeCategories(l.Mode, in.Categories, allowed)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireSellerCategory(cats); err != nil {
+		return nil, err
+	}
+	title := in.Title
+	desc := in.Description
+	if title == nil {
+		title = l.Title
+	}
+	if desc == nil {
+		desc = l.Description
+	}
+	// 空串视为清空
+	if title != nil && strings.TrimSpace(*title) == "" {
+		title = nil
+	}
+	if desc != nil && strings.TrimSpace(*desc) == "" {
+		desc = nil
+	}
+	if _, err := s.DB.Exec(ctx, `UPDATE listings SET title = $2, description = $3, categories = $4, updated_at = now() WHERE id = $1`,
+		l.ID, title, desc, cats); err != nil {
+		return nil, err
+	}
 	return GetListing(ctx, s.DB, l.ID)
 }
 

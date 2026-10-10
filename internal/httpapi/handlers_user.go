@@ -98,7 +98,8 @@ func (s *Server) marketListings(w http.ResponseWriter, r *http.Request) error {
 	limit, offset := page(r)
 	maxPrice, _ := strconv.ParseFloat(r.URL.Query().Get("max_price"), 64)
 	items, err := s.Market.List(r.Context(), market.Filter{
-		Platform: r.URL.Query().Get("platform"), Grade: r.URL.Query().Get("grade"), MaxPrice: maxPrice, Sort: r.URL.Query().Get("sort"),
+		Platform: r.URL.Query().Get("platform"), Grade: r.URL.Query().Get("grade"), MaxPrice: maxPrice,
+		Kind: r.URL.Query().Get("kind"), Category: r.URL.Query().Get("category"), Sort: r.URL.Query().Get("sort"),
 	}, limit, offset)
 	if err != nil {
 		return err
@@ -248,6 +249,78 @@ func (s *Server) listRefunds(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return ok(w, rs)
+}
+
+func (s *Server) purchasePack(w http.ResponseWriter, r *http.Request) error {
+	var in buyer.PurchasePackInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	out, err := s.Keys.PurchasePack(r.Context(), httpx.MustUser(r).UserID, in, httpx.ClientIP(r))
+	if err != nil {
+		return err
+	}
+	return created(w, out)
+}
+
+func (s *Server) marketDiscovery(w http.ResponseWriter, r *http.Request) error {
+	cfg, err := market.LoadDiscovery(r.Context(), s.DB)
+	if err != nil {
+		return err
+	}
+	return ok(w, cfg)
+}
+
+func (s *Server) marketRecommend(w http.ResponseWriter, r *http.Request) error {
+	pools, err := s.Market.Pools(r.Context())
+	if err != nil {
+		return err
+	}
+	out, err := s.Market.BuildRecommendations(r.Context(), pools)
+	if err != nil {
+		return err
+	}
+	return ok(w, out)
+}
+
+func (s *Server) listingCategories(w http.ResponseWriter, r *http.Request) error {
+	opts, err := listing.SellerCategoryOptions(r.Context(), s.DB)
+	if err != nil {
+		return err
+	}
+	return ok(w, opts)
+}
+
+func (s *Server) marketCategories(w http.ResponseWriter, r *http.Request) error {
+	tree, err := listing.CategoryTree(r.Context(), s.DB, false)
+	if err != nil {
+		return err
+	}
+	return ok(w, tree)
+}
+
+func (s *Server) listPacks(w http.ResponseWriter, r *http.Request) error {
+	ps, err := s.Keys.ListPacks(r.Context(), httpx.MustUser(r).UserID)
+	if err != nil {
+		return err
+	}
+	return ok(w, ps)
+}
+
+func (s *Server) refundPack(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Dest string `json:"dest"`
+	}
+	_ = httpx.Decode(r, &in)
+	p, err := s.Keys.RefundPack(r.Context(), httpx.MustUser(r).UserID, id, in.Dest)
+	if err != nil {
+		return err
+	}
+	return ok(w, p)
 }
 
 // ---- 买家：Key ----

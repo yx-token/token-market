@@ -75,27 +75,20 @@ const isConsole = useIsConsole()
     </table>
   </div>
 
-  <!-- 市场：账本表 -->
-  <div v-else class="-mx-1 overflow-x-auto px-1">
-    <table class="table">
+  <!-- 市场 / 买卖中心：闲猫圆角表 -->
+  <div v-else class="xm-table-wrap overflow-x-auto">
+    <table class="xm-table">
       <thead>
         <tr>
-          <th v-for="c in columns" :key="c.key" :class="c.align === 'right' ? '!text-right' : ''">{{ c.label }}</th>
+          <th v-for="c in columns" :key="c.key" :class="c.align === 'right' ? 'text-right' : ''">{{ c.label }}</th>
         </tr>
       </thead>
       <tbody>
         <tr v-if="loading">
-          <td :colspan="columns.length" class="!py-8 text-center">
-            <span class="inline-flex items-center gap-1.5 font-mono text-xs text-ink-400">
-              <span v-for="i in 3" :key="i" class="h-1 w-1 animate-blink bg-ink-400" :style="{ animationDelay: `${i * 160}ms` }" />
-              载入中
-            </span>
-          </td>
+          <td :colspan="columns.length" class="py-8 text-center text-[#888]">载入中…</td>
         </tr>
         <tr v-else-if="!rows || rows.length === 0">
-          <td :colspan="columns.length" class="!py-8 text-center font-mono text-xs tracking-wide text-ink-400">
-            — {{ empty ?? '暂无数据' }} —
-          </td>
+          <td :colspan="columns.length" class="py-8 text-center text-[#888]">{{ empty ?? '暂无数据' }}</td>
         </tr>
         <template v-else>
           <tr v-for="(row, i) in rows" :key="rowKey ? row[rowKey] : i">

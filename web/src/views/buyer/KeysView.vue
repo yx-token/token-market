@@ -2,12 +2,11 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { buyer, market } from '@/api'
-import type { BuyerKey, Limits, MarketItem, PoolItem } from '@/api/types'
+import type { BuyerKey, Limits, MarketItem, PoolItem, QuotaPack } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { useConfig } from '@/stores/config'
 import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
-import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import DateField from '@/components/common/DateField.vue'
 import RouteEditor from '@/components/RouteEditor.vue'
@@ -18,6 +17,7 @@ const route = useRoute()
 const toast = useToast()
 const cfg = useConfig()
 const keys = useLoader(() => buyer.keys(), [] as BuyerKey[] | null)
+const packs = useLoader(() => buyer.packs(), [] as QuotaPack[] | null)
 const listings = ref<MarketItem[]>([])
 const pools = ref<PoolItem[]>([])
 const { busy, run } = useAction()
@@ -39,8 +39,22 @@ const form = reactive({
 })
 const created = ref<{ key: string; name: string } | null>(null)
 
+async function refundPack(p: QuotaPack) {
+  if (!confirm(`按未用量退货 ¥${p.remaining.toFixed(2)}？Key 将停用，卖家库存加回。`)) return
+  const online = !!(p.pay_channel && p.pay_channel !== 'balance' && p.pay_channel !== 'manual')
+  const dest =
+    online && confirm(`该包通过 ${p.pay_channel} 购买。确定 = 原路退回支付渠道；取消 = 退到平台余额。`)
+      ? 'original'
+      : 'balance'
+  if (await run(() => buyer.refundPack(p.id, dest), dest === 'original' ? '已申请原路退款' : '已退货到余额')) {
+    packs.load()
+    keys.load()
+  }
+}
+
 onMounted(async () => {
   keys.load()
+  packs.load()
   await cfg.ensure()
   const [ls, ps] = await Promise.all([market.listings({ limit: 500 }).catch(() => null), market.pools().catch(() => null)])
   listings.value = ls ?? []
@@ -141,6 +155,10 @@ function hopText(h: { listing_id?: number; pool?: string }) {
   return h.pool ? `默认分组 ${h.pool}` : `卖家挂单 #${h.listing_id}`
 }
 
+function packForKey(keyId: number): QuotaPack | undefined {
+  return (packs.data.value ?? []).find((p) => p.buyer_key_id === keyId && (p.status === 'active' || p.status === 'depleted'))
+}
+
 async function copy(text: string) {
   try {
     await navigator.clipboard.writeText(text)
@@ -155,56 +173,76 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
 
 <template>
   <div>
-    <PageHeader title="API Key" description="每个 Key 可以走平台默认分组，也可以指定卖家并按顺序故障转移。">
-      <button class="btn-primary" @click="openCreate">创建 Key</button>
+    <PageHeader title="API Key" description="点市场选用通道或购买额度包后，Key 会出现在这里。按量超额扣钱包；额度包从包内扣，未用完可退货。">
+      <button type="button" class="xm-btn xm-btn-primary" @click="openCreate">创建 Key</button>
     </PageHeader>
 
-    <div class="mb-5 border border-ink-900 bg-ink-900 bg-grid-ink px-5 py-4 text-ink-200 shadow-hard-red">
-      <div class="flex flex-wrap items-end gap-x-6 gap-y-2">
-        <div class="min-w-0">
-          <div class="font-mono text-[10.5px] uppercase tracking-[0.18em] text-ink-400">调用地址 · Base URL</div>
-          <div class="mt-1 break-all font-mono text-[19px] font-medium text-white">{{ baseURL }}</div>
-        </div>
-        <button class="btn btn-sm ml-auto border-ink-500 bg-transparent text-white hover:border-brand-400 hover:text-brand-300" @click="copy(baseURL)">复制地址</button>
+    <div v-if="(packs.data.value ?? []).length" class="xm-pack-list">
+      <h2>我的额度包</h2>
+      <div v-for="p in packs.data.value" :key="p.id" class="xm-pack-row">
+        <span class="xm-tag pack">额度包</span>
+        <span class="font-semibold">#{{ p.listing_id }}</span>
+        <span>面额 ¥{{ p.face_value.toFixed(0) }} · 剩余 <b style="color:#ff5000">¥{{ p.remaining.toFixed(2) }}</b></span>
+        <span style="color:#888">{{ p.status }}</span>
+        <button
+          v-if="p.status === 'active' && p.remaining > 0"
+          type="button"
+          class="xm-btn xm-btn-dark xm-btn-sm"
+          :disabled="busy"
+          @click="refundPack(p)"
+        >
+          退货
+        </button>
       </div>
-      <p class="mt-3 border-t border-ink-700 pt-3 text-xs leading-relaxed text-ink-300">兼容官方协议：Anthropic Messages（/v1/messages）、OpenAI Chat Completions 与 Responses、Gemini。把 SDK 的 Base URL 换成上面的地址，Key 换成这里创建的 Key 即可。</p>
     </div>
 
-    <div v-if="keys.loading.value && !keys.data.value?.length" class="py-10 text-center text-slate-400">加载中…</div>
-    <div v-else-if="!keys.data.value?.length" class="card py-10 text-center text-slate-500">还没有 Key，先创建一个。</div>
-    <div class="space-y-3">
-      <div v-for="k in keys.data.value ?? []" :key="k.id" class="card">
-        <div class="flex flex-wrap items-center gap-3">
-          <div class="font-medium">{{ k.name }}</div>
-          <code class="text-xs text-slate-500">{{ k.key_prefix }}…</code>
-          <StatusBadge kind="keyStatus" :value="k.status" />
-          <span v-if="k.limit_blocked_until" class="chip chip-red">
-            已限额：{{ k.limit_block_reason }}（至 {{ dateTime(k.limit_blocked_until) }}）
-          </span>
-          <span class="text-xs text-slate-400">创建于 {{ dateTime(k.created_at) }}</span>
-          <div class="ml-auto flex gap-2">
-            <button class="btn-secondary btn-sm" @click="openEdit(k)">编辑</button>
-            <button class="btn-secondary btn-sm" :disabled="busy || k.status === 'provisioning'" @click="toggle(k)">{{ k.status === 'active' ? '停用' : '启用' }}</button>
-            <button class="btn-ghost btn-sm text-red-600" :disabled="busy" @click="remove(k)">删除</button>
+    <div class="xm-edge-box">
+      <div class="lab">调用地址 · Base URL</div>
+      <code>{{ baseURL }}</code>
+      <p>兼容官方协议。把 SDK Base URL 换成上面地址，Key 换成下方创建的 Key。失败不计费；余额不足时请求会被拒绝。</p>
+      <button type="button" class="xm-btn xm-btn-sm xm-btn-primary" style="margin-top:12px" @click="copy(baseURL)">复制地址</button>
+    </div>
+
+    <div class="xm-yellow-callout">
+      额度包购买会账面预付面额（需余额充足）；调用从影子余额实时扣并抵包内剩余。未用完可退货，退回账面并释放卖家库存。
+    </div>
+
+    <div v-if="keys.loading.value && !keys.data.value?.length" class="py-10 text-center text-[#888]">加载中…</div>
+    <div v-else-if="!keys.data.value?.length" class="xm-key-card py-10 text-center text-[#888]">还没有 Key，先创建一个或去市场选用供给。</div>
+    <div v-else class="xm-card-list">
+      <div v-for="k in keys.data.value ?? []" :key="k.id" class="xm-key-card">
+        <div class="xm-key-top">
+          <span class="name">{{ k.name }}</span>
+          <span class="prefix">{{ k.key_prefix }}…</span>
+          <span class="xm-tag" :class="k.status === 'active' ? 'on' : 'off'">{{ k.status === 'active' ? '使用中' : k.status }}</span>
+          <span v-if="packForKey(k.id)" class="xm-tag pack">额度包</span>
+          <span v-if="k.limit_blocked_until" class="xm-tag warn">已限额</span>
+          <div class="xm-key-actions">
+            <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" @click="openEdit(k)">编辑</button>
+            <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="busy || k.status === 'provisioning'" @click="toggle(k)">
+              {{ k.status === 'active' ? '停用' : '启用' }}
+            </button>
+            <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm xm-btn-danger" :disabled="busy" @click="remove(k)">删除</button>
           </div>
         </div>
-        <ol class="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <li v-for="h in k.hops ?? []" :key="h.position" class="flex items-center gap-2">
-            <span v-if="h.position > 1" class="font-mono text-ink-400">→</span>
-            <span class="flex items-center border border-ink-300 bg-paper">
-              <span class="self-stretch border-r border-ink-300 bg-white px-1.5 py-1 font-mono text-[10.5px] text-ink-500">{{ String(h.position).padStart(2, '0') }}</span>
-              <span class="px-2 py-1">{{ hopText(h) }}</span>
-              <StatusBadge kind="hopState" :value="h.state" class="mr-1.5" />
+        <div class="xm-hops">
+          <template v-for="(h, i) in k.hops ?? []" :key="h.position">
+            <span v-if="i > 0" class="xm-arrow">→</span>
+            <span class="xm-hop">
+              <span class="pos">{{ String(h.position).padStart(2, '0') }}</span>
+              <span class="txt">{{ hopText(h) }}<template v-if="packForKey(k.id) && i === 0"> · 剩余 ¥{{ packForKey(k.id)!.remaining.toFixed(2) }}</template></span>
             </span>
-          </li>
-        </ol>
-        <div class="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
-          <span v-if="k.limits.quota_usd">总额度 {{ money(k.limits.quota_usd) }}</span>
-          <span v-if="k.limits.rate_limit_5h_usd">5 小时 {{ money(k.limits.rate_limit_5h_usd) }}</span>
-          <span v-if="k.limits.rate_limit_1d_usd">每天 {{ money(k.limits.rate_limit_1d_usd) }}</span>
-          <span v-if="k.limits.rate_limit_7d_usd">7 天 {{ money(k.limits.rate_limit_7d_usd) }}</span>
-          <span v-if="k.limits.ip_whitelist?.length">IP 白名单 {{ k.limits.ip_whitelist.join(', ') }}</span>
-          <span v-if="k.limits.expires_at">到期 {{ dateTime(k.limits.expires_at) }}</span>
+          </template>
+        </div>
+        <div class="xm-meta">
+          <span v-if="packForKey(k.id)">
+            已用 ¥{{ (packForKey(k.id)!.face_value - packForKey(k.id)!.remaining).toFixed(2) }}
+            / 面额 ¥{{ packForKey(k.id)!.face_value.toFixed(0) }}
+          </span>
+          <span v-else-if="k.limits.quota_usd">总额度 {{ money(k.limits.quota_usd) }}</span>
+          <span v-if="k.limits.rate_limit_5h_usd">5h {{ money(k.limits.rate_limit_5h_usd) }}</span>
+          <span v-if="k.limit_blocked_until">限额至 {{ dateTime(k.limit_blocked_until) }}</span>
+          <span>创建于 {{ dateTime(k.created_at) }}</span>
         </div>
       </div>
     </div>
@@ -257,7 +295,7 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
     <ModalDialog :open="!!created" title="Key 已创建" @update:open="(v: boolean) => !v && (created = null)">
       <p class="text-sm text-amber-700">请立即保存，Key 只显示这一次。</p>
       <div class="flex items-center gap-2">
-        <code class="flex-1 break-all border border-ink-900 !bg-white !px-3 !py-2 text-sm">{{ created?.key }}</code>
+        <code class="flex-1 break-all rounded-xl border border-black/10 !bg-[#fafafa] !px-3 !py-2 text-sm">{{ created?.key }}</code>
         <button class="btn-secondary btn-sm" @click="copy(created!.key)">复制</button>
       </div>
       <pre class="codeblock">curl {{ baseURL }}/v1/messages \

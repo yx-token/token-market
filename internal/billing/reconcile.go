@@ -167,9 +167,11 @@ func (r *Reconciler) RunBalances(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	// 预期余额 = 账面现金 + 未用额度包 remaining（预付未扣 sub2api，仍可调用）
 	rows, err := r.DB.Query(ctx, `SELECT si.owner_id, si.sub2api_user_id,
 			COALESCE((SELECT -sum(e.amount) FROM ledger_accounts a JOIN ledger_entries e ON e.account_id = a.id
 				WHERE a.owner_type = 'buyer' AND a.owner_id = si.owner_id AND a.kind = 'buyer_cash'), 0)::float8
+			+ COALESCE((SELECT sum(remaining) FROM quota_packs WHERE buyer_id = si.owner_id AND status = 'active'), 0)::float8
 		FROM shadow_identities si WHERE si.kind = 'buyer' AND si.sub2api_user_id IS NOT NULL`)
 	if err != nil {
 		return 0, err

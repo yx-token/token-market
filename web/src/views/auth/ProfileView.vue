@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { auth as authApi } from '@/api'
 import { useAuth } from '@/stores/auth'
 import { useAction } from '@/composables/useAsync'
@@ -7,10 +8,19 @@ import PageHeader from '@/components/PageHeader.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { dateTime } from '@/utils/format'
 
+const route = useRoute()
 const auth = useAuth()
 const realName = ref('')
 const idNumber = ref('')
 const { busy, run } = useAction()
+
+const backNav = computed(() => {
+  const from = typeof route.query.from === 'string' ? route.query.from : ''
+  if (from === 'earnings') return { to: '/seller/earnings', label: '收益与提现' }
+  if (from === 'seller') return { to: '/seller/publish', label: '卖家中心' }
+  if (from === 'buyer') return { to: '/buyer/keys', label: '买家中心' }
+  return { to: '/', label: '回市场' }
+})
 
 async function submitKYC() {
   const ok = await run(() => authApi.submitKYC(realName.value, idNumber.value), '已提交，等待审核')
@@ -24,7 +34,7 @@ async function submitKYC() {
 
 <template>
   <div class="mx-auto max-w-2xl">
-    <PageHeader title="账号" description="登录信息与实名认证。" />
+    <PageHeader title="账号" description="登录信息与实名认证。" :back-to="backNav.to" :back-label="backNav.label" />
     <div class="card mb-5">
       <dl class="kv">
         <dt>邮箱</dt>

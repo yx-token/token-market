@@ -38,6 +38,15 @@
   border-bottom: none;
   padding-bottom: 4px;
 }
+/* 标题已上收到顶栏，页内只留操作按钮 */
+.y-header--actions-only {
+  border-bottom: none;
+  padding: 0 0 8px;
+  justify-content: flex-end;
+}
+.y-header--actions-only .y-header-actions {
+  margin-left: 0;
+}
 
 /* 页面级 Tab：切换整页（标题下、筛选上），不塞进表格卡片 */
 .y-page-tabs {
@@ -79,11 +88,11 @@
 .y-container--tight {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
   overflow: auto;
   flex: 1;
   min-height: 0;
-  padding: 16px 0 0;
+  padding: 0;
 }
 
 .y-footer {
@@ -121,12 +130,27 @@
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
-/* 非表格内容（配置表单等）在玻璃卡片内留白 */
+/* 非表格内容（配置表单等）在玻璃壳内可滚动 */
 .table-scroll-container > .console-panel {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 24px 28px 28px;
+}
+
+/* plain：无外层白卡片，仅滚动（分类树 / 市场装修） */
+.content-scroll-plain {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.content-scroll-plain > .lg-stage {
+  flex: 1;
+  min-height: 0;
 }
 
 .table-scroll-container > .console-toolbar {

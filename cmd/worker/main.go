@@ -108,6 +108,7 @@ func run(configPath string, log *slog.Logger) error {
 		{"funds.advance_refunds", 10 * time.Second, a.Funds.AdvanceRefunds},
 		{"funds.sync_payments", 15 * time.Second, a.Funds.SyncPayments},
 		{"funds.refund_payouts", 15 * time.Second, a.Funds.AdvanceRefundPayouts},
+		{"packs.fulfill_checkouts", 10 * time.Second, a.Keys.FulfillPackCheckouts},
 		{"keys.provision_pending", 15 * time.Second, writes(a.Keys.ProvisionPending)},
 		{"keys.publish_skip_list", 15 * time.Second, a.Keys.PublishSkipList},
 		{"keys.publish_all", 10 * time.Minute, a.Keys.PublishAll},

@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterView, useRouter } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/stores/auth'
+import { useConsolePage } from '@/stores/consolePage'
 import ToastHost from '@/components/ToastHost.vue'
 import ConsoleIcon from '@/components/icons/ConsoleIcon.vue'
 import NetworkStatus from '@/components/common/NetworkStatus.vue'
 import ConsoleNav from '@/components/console/ConsoleNav.vue'
+import ConsolePageTabs from '@/components/console/ConsolePageTabs.vue'
 import type { NavNode } from '@/components/console/navTypes'
 
 const STORAGE_KEY = 'console.sidebar.collapsed'
 
 const auth = useAuth()
+const route = useRoute()
 const router = useRouter()
+const page = useConsolePage()
 const collapsed = ref(false)
 
 onMounted(() => {
@@ -70,6 +74,26 @@ const navItems: NavNode[] = [
     ],
   },
   {
+    key: 'ops',
+    text: '运营',
+    icon: 'layout-dashboard',
+    children: [
+      {
+        key: 'recommend-ops',
+        text: '推荐运营',
+        icon: 'sliders-horizontal',
+        children: [
+          { key: 'rec-factors', text: '推荐因子', to: '/console/ops/recommend/factors', icon: 'sliders-horizontal' },
+          { key: 'rec-profiles', text: '推荐类型', to: '/console/ops/recommend/profiles', icon: 'layers' },
+          { key: 'rec-tiles', text: '首页四格', to: '/console/ops/recommend/tiles', icon: 'layout-dashboard' },
+        ],
+      },
+      { key: 'market-categories', text: '市场分类', to: '/console/ops/categories', icon: 'filter' },
+      { key: 'market-hot', text: '热搜词', to: '/console/ops/hot-searches', icon: 'search' },
+      { key: 'market-extras', text: '其他配置', to: '/console/ops/extras', icon: 'settings' },
+    ],
+  },
+  {
     key: 'govern',
     text: '治理',
     icon: 'settings',
@@ -85,6 +109,22 @@ const navItems: NavNode[] = [
 
 const email = computed(() => auth.user?.email ?? '')
 const initial = computed(() => (email.value || '?').slice(0, 1).toUpperCase())
+
+function titleFromNav(nodes: NavNode[], path: string): string {
+  for (const n of nodes) {
+    if (n.to && (path === n.to || (n.to !== '/console' && path.startsWith(`${n.to}/`)))) {
+      return n.text
+    }
+    if (n.children?.length) {
+      const hit = titleFromNav(n.children, path)
+      if (hit) return hit
+    }
+  }
+  return ''
+}
+
+const headerTitle = computed(() => page.title.value || titleFromNav(navItems, route.path) || '控制台')
+const headerDesc = computed(() => page.description.value)
 
 function logout() {
   auth.logout()
@@ -119,22 +159,35 @@ function logout() {
 
     <div class="console-main">
       <header class="console-top">
-        <div class="console-top-actions">
-          <NetworkStatus />
-          <span class="console-user" :title="email">
-            <span class="console-avatar">{{ initial }}</span>
-            <span class="console-email">{{ email }}</span>
-          </span>
-          <button type="button" class="console-btn-ghost" @click="logout">
-            <ConsoleIcon name="log-out" size="sm" />
-            <span>退出</span>
-          </button>
+        <div class="console-top-bar">
+          <div class="console-top-title">
+            <h1>{{ headerTitle }}</h1>
+            <p v-if="headerDesc">{{ headerDesc }}</p>
+          </div>
+          <div class="console-top-actions">
+            <NetworkStatus />
+            <div class="console-user-menu">
+              <button class="console-user" type="button" :title="email" aria-haspopup="menu">
+                <span class="console-avatar">{{ initial }}</span>
+                <span class="console-email">{{ email }}</span>
+                <ConsoleIcon name="chevron-down" size="sm" class="console-user-caret" />
+              </button>
+              <div class="console-user-drop" role="menu">
+                <RouterLink role="menuitem" to="/buyer/keys">买家中心</RouterLink>
+                <RouterLink role="menuitem" to="/">回市场首页</RouterLink>
+                <button role="menuitem" type="button" @click="logout">退出登录</button>
+              </div>
+            </div>
+          </div>
         </div>
+        <ConsolePageTabs :nav-items="navItems" />
       </header>
       <main class="console-body">
         <RouterView v-slot="{ Component, route: r }">
-          <div :key="r.path" class="console-page">
-            <component :is="Component" />
+          <div class="console-page">
+            <KeepAlive :max="16">
+              <component :is="Component" :key="r.path" />
+            </KeepAlive>
           </div>
         </RouterView>
       </main>

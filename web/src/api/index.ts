@@ -14,6 +14,9 @@ export const auth = {
 
 export const market = {
   config: () => http.get<T.MarketConfig>('/api/market/config'),
+  discovery: () => http.get<Record<string, unknown>>('/api/market/discovery'),
+  recommend: () => http.get<T.RecommendResult>('/api/market/recommend'),
+  categories: () => http.get<T.MarketCategory[] | null>('/api/market/categories'),
   listings: (q?: Query) => http.get<T.MarketItem[] | null>('/api/market/listings', q),
   listing: (id: number) => http.get<T.MarketItem>(`/api/market/listings/${id}`),
   pools: () => http.get<T.PoolItem[] | null>('/api/market/pools'),
@@ -29,6 +32,15 @@ export const buyer = {
   cancelRecharge: (id: number) => http.post<Ok>(`/api/buyer/recharge/${id}/cancel`),
   requestRefund: (note: string) => http.post<T.Refund>('/api/buyer/refunds', { note }),
   refunds: () => http.get<T.Refund[] | null>('/api/buyer/refunds'),
+  purchasePack: (listing_id: number, channel = 'balance', name = '') =>
+    http.post<{
+      pack?: T.QuotaPack
+      key?: string
+      note?: string
+      recharge?: T.RechargeOrder
+    }>('/api/buyer/packs', { listing_id, channel, name }),
+  packs: () => http.get<T.QuotaPack[] | null>('/api/buyer/packs'),
+  refundPack: (id: number, dest = 'balance') => http.post<T.QuotaPack>(`/api/buyer/packs/${id}/refund`, { dest }),
   keys: () => http.get<T.BuyerKey[] | null>('/api/buyer/keys'),
   key: (id: number) => http.get<T.BuyerKey>(`/api/buyer/keys/${id}`),
   createKey: (body: { name: string; route: T.RouteInput; limits: T.Limits }) => http.post<T.CreatedKey>('/api/buyer/keys', body),
@@ -62,8 +74,18 @@ export const seller = {
   setSelfReserve: (id: number, self_reserve_percent: number) =>
     http.put<T.Upstream>(`/api/seller/upstreams/${id}/settings`, { self_reserve_percent }),
   removeUpstream: (id: number) => http.del<Ok>(`/api/seller/upstreams/${id}`),
-  createListing: (id: number, body: { mode: string; multiplier?: number; join_default_pool?: boolean }) =>
-    http.post<{ listing: T.Listing; quote?: T.Quote }>(`/api/seller/upstreams/${id}/listing`, body),
+  listingCategories: () => http.get<T.ListingCategoryOption[] | null>('/api/seller/listing-categories'),
+  createListing: (id: number, body: {
+    mode: string
+    multiplier?: number
+    join_default_pool?: boolean
+    face_value?: number
+    stock?: number
+    min_amount?: number
+    title?: string
+    description?: string
+    categories?: string[]
+  }) => http.post<{ listing: T.Listing; quote?: T.Quote }>(`/api/seller/upstreams/${id}/listing`, body),
   quote: (id: number) => http.get<T.Quote | null>(`/api/seller/upstreams/${id}/quote`),
   reports: (id: number) => http.get<T.Report[] | null>(`/api/seller/upstreams/${id}/reports`),
   report: (id: number) => http.get<T.Report>(`/api/seller/reports/${id}`),
@@ -75,6 +97,8 @@ export const seller = {
   acceptQuote: (id: number) => http.post<T.Listing>(`/api/seller/listings/${id}/accept-quote`),
   rejectQuote: (id: number) => http.post<Ok>(`/api/seller/listings/${id}/reject-quote`),
   changePrice: (id: number, multiplier: number) => http.put<T.Listing>(`/api/seller/listings/${id}/price`, { multiplier }),
+  updateListingMeta: (id: number, body: { title?: string; description?: string; categories: string[] }) =>
+    http.put<T.Listing>(`/api/seller/listings/${id}/meta`, body),
   setDefaultPool: (id: number, join: boolean) => http.put<T.Listing>(`/api/seller/listings/${id}/default-pool`, { join }),
   pause: (id: number) => http.post<T.Listing>(`/api/seller/listings/${id}/pause`),
   resume: (id: number) => http.post<T.Listing>(`/api/seller/listings/${id}/resume`),
@@ -95,6 +119,16 @@ export const admin = {
   startSystemUpdate: (version: string) => http.post<T.UpdateJob>('/api/admin/system/update', { version }, 20000),
   settings: () => http.get<T.Settings>('/api/admin/settings'),
   updateSettings: (patch: Partial<T.Settings>) => http.put<T.Settings>('/api/admin/settings', patch),
+  marketDiscovery: () => http.get<Record<string, unknown>>('/api/admin/market-discovery'),
+  updateMarketDiscovery: (body: Record<string, unknown>) =>
+    http.put<Record<string, unknown>>('/api/admin/market-discovery', body),
+  marketRecommend: () => http.get<T.RecommendConfig>('/api/admin/market-recommend'),
+  updateMarketRecommend: (body: T.RecommendConfig) => http.put<T.RecommendConfig>('/api/admin/market-recommend', body),
+  marketCategories: () => http.get<T.MarketCategory[] | null>('/api/admin/market-categories'),
+  createMarketCategory: (body: Record<string, unknown>) => http.post<T.MarketCategory>('/api/admin/market-categories', body),
+  updateMarketCategory: (id: string, body: Record<string, unknown>) =>
+    http.put<T.MarketCategory>(`/api/admin/market-categories/${id}`, body),
+  deleteMarketCategory: (id: string) => http.del<Ok>(`/api/admin/market-categories/${id}`),
   vendors: () => http.get<T.VendorConfig[] | null>('/api/admin/vendors'),
   updateVendor: (platform: string, body: Partial<T.VendorConfig>) => http.put<T.VendorConfig>(`/api/admin/vendors/${platform}`, body),
   proxies: () => http.get<T.Proxy[] | null>('/api/admin/proxies'),

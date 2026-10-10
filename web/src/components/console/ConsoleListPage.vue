@@ -1,26 +1,38 @@
 <script setup lang="ts">
 /**
  * 控制台标准列表页（对齐 YourHub TablePageLayout）
- * Header → [page tabs] → filter-panel → glass table → footer
- * Tab 在页面级切换整页（筛选 / 表体 / 底栏），不嵌在表格卡片内。
+ * 标题在顶栏 AppHeader；页内只保留 actions / filters / table。
  */
+import { onActivated, onUnmounted, watch } from 'vue'
 import '@/assets/styles/console-table-page.css'
+import { useConsolePage } from '@/stores/consolePage'
 
-defineProps<{
-  id: string
-  title: string
-  description?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    id: string
+    title: string
+    description?: string
+    /** 内容区不加外层白卡片（运营/分类树自带底时用） */
+    plain?: boolean
+  }>(),
+  { plain: false },
+)
+
+const { setMeta, clearMeta } = useConsolePage()
+
+function syncMeta() {
+  setMeta(props.title, props.description || '')
+}
+
+watch(() => [props.title, props.description] as const, syncMeta, { immediate: true })
+onActivated(syncMeta)
+onUnmounted(clearMeta)
 </script>
 
 <template>
   <div :id="id" class="y-page table-page-layout">
-    <div class="y-header" :class="{ 'has-page-tabs': !!$slots.tabs }">
-      <div class="min-w-0">
-        <h1 class="y-title">{{ title }}</h1>
-        <p v-if="description" class="y-desc">{{ description }}</p>
-      </div>
-      <div v-if="$slots.actions" class="y-header-actions">
+    <div v-if="$slots.actions" class="y-header y-header--actions-only">
+      <div class="y-header-actions">
         <slot name="actions" />
       </div>
     </div>
@@ -35,7 +47,7 @@ defineProps<{
           <slot name="filters" />
         </div>
       </div>
-      <div class="table-scroll-container">
+      <div :class="plain ? 'content-scroll-plain' : 'table-scroll-container'">
         <slot />
       </div>
       <div v-if="$slots.footer" class="y-footer">

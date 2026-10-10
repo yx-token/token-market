@@ -51,6 +51,7 @@ const table: Record<string, Record<string, Label>> = {
   mode: {
     consignment: { text: '寄售', tone: 'blue' },
     buyback: { text: '平台回收', tone: 'purple' },
+    pack: { text: '额度包', tone: 'yellow' },
   },
   listingStatus: {
     pending_quote: { text: '待报价', tone: 'gray' },

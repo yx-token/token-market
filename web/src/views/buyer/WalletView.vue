@@ -5,7 +5,6 @@ import { buyer } from '@/api'
 import type { RechargeOrder, Refund, Wallet } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import PageHeader from '@/components/PageHeader.vue'
-import StatCard from '@/components/StatCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
@@ -61,19 +60,27 @@ async function refund() {
 
 <template>
   <div>
-    <PageHeader title="钱包" description="充值 1 元 = 1 个余额单位。调用按 sub2api 实际产生的费用扣减，失败的请求不计费。">
-      <button class="btn-secondary" :disabled="!!wallet.data.value?.active_refund" @click="showRefund = true">申请退款</button>
-      <button class="btn-primary" @click="newRecharge">充值</button>
+    <PageHeader title="钱包" description="充值进平台余额，供调用扣费。买额度包需余额 ≥ 面额（账面预付，调用仍从可调用余额扣）。">
+      <button type="button" class="xm-btn xm-btn-ghost" :disabled="!!wallet.data.value?.active_refund" @click="showRefund = true">申请退款</button>
+      <button type="button" class="xm-btn xm-btn-primary" @click="newRecharge">充值</button>
     </PageHeader>
 
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-      <StatCard label="可用余额" :value="money(wallet.data.value?.balance)" hint="实时余额" />
-      <StatCard label="账面余额" :value="money(wallet.data.value?.ledger_cash)" hint="用量入账有几分钟延迟" />
-      <StatCard
-        label="退款"
-        :value="wallet.data.value?.active_refund ? '处理中' : '无'"
-        :hint="wallet.data.value?.active_refund ? '退款完成前所有 Key 暂停使用' : '可随时申请退还剩余余额'"
-      />
+    <div class="xm-stats" style="grid-template-columns: repeat(3, 1fr)">
+      <div class="xm-stat">
+        <b>可调用余额</b>
+        <strong>{{ money(wallet.data.value?.balance) }}</strong>
+        <em>sub2api 实时扣费</em>
+      </div>
+      <div class="xm-stat">
+        <b>账面余额</b>
+        <strong>{{ money(wallet.data.value?.ledger_cash) }}</strong>
+        <em>含额度包预付后的账本</em>
+      </div>
+      <div class="xm-stat">
+        <b>退款</b>
+        <strong>{{ wallet.data.value?.active_refund ? '处理中' : '无' }}</strong>
+        <em>{{ wallet.data.value?.active_refund ? '完成前 Key 暂停' : '可退还剩余余额' }}</em>
+      </div>
     </div>
 
     <div class="card mt-5">

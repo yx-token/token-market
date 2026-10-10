@@ -12,6 +12,8 @@ import '@fontsource/schibsted-grotesk/latin-700.css'
 import '@fontsource/spline-sans-mono/latin-400.css'
 import '@fontsource/spline-sans-mono/latin-500.css'
 import './style.css'
+import './styles/xianmao-market.css'
+import './styles/xianmao-center.css'
 
 const app = createApp(App)
 app.use(createPinia())
@@ -25,4 +27,7 @@ setUnauthorizedHandler(() => {
   }
 })
 
-app.mount('#app')
+// 等首跳完成再挂载，避免 /console 先以 START_LOCATION(/) 渲染市场黄壳
+router.isReady().then(() => {
+  app.mount('#app')
+})

@@ -9,6 +9,7 @@ import (
 
 	"github.com/DueGin/token-market/internal/billing"
 	"github.com/DueGin/token-market/internal/listing"
+	"github.com/DueGin/token-market/internal/market"
 	"github.com/DueGin/token-market/internal/platform/httpx"
 	"github.com/DueGin/token-market/internal/quality"
 	"github.com/DueGin/token-market/internal/scheduling"
@@ -24,6 +25,100 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return ok(w, st)
+}
+
+func (s *Server) getMarketDiscovery(w http.ResponseWriter, r *http.Request) error {
+	cfg, err := market.LoadDiscovery(r.Context(), s.DB)
+	if err != nil {
+		return err
+	}
+	return ok(w, cfg)
+}
+
+func (s *Server) adminMarketCategories(w http.ResponseWriter, r *http.Request) error {
+	tree, err := listing.CategoryTree(r.Context(), s.DB, true)
+	if err != nil {
+		return err
+	}
+	return ok(w, tree)
+}
+
+func (s *Server) createMarketCategory(w http.ResponseWriter, r *http.Request) error {
+	var in listing.CategoryInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	c, err := listing.CreateCategory(r.Context(), s.DB, in)
+	if err != nil {
+		return err
+	}
+	s.audit(r, "market_category.create", "market_category:"+c.ID, nil)
+	return created(w, c)
+}
+
+func (s *Server) updateMarketCategory(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
+	var in listing.CategoryInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	c, err := listing.UpdateCategory(r.Context(), s.DB, id, in)
+	if err != nil {
+		return err
+	}
+	s.audit(r, "market_category.update", "market_category:"+id, nil)
+	return ok(w, c)
+}
+
+func (s *Server) deleteMarketCategory(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
+	if err := listing.DeleteCategory(r.Context(), s.DB, id); err != nil {
+		return err
+	}
+	s.audit(r, "market_category.delete", "market_category:"+id, nil)
+	return ok(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) updateMarketDiscovery(w http.ResponseWriter, r *http.Request) error {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	var cfg market.DiscoveryConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return httpx.BadRequest("INVALID_DISCOVERY", "body must be a JSON object")
+	}
+	out, err := market.SaveDiscovery(r.Context(), s.DB, cfg)
+	if err != nil {
+		return err
+	}
+	s.audit(r, "market_discovery.update", "settings", json.RawMessage(raw))
+	return ok(w, out)
+}
+
+func (s *Server) getMarketRecommend(w http.ResponseWriter, r *http.Request) error {
+	cfg, err := market.LoadRecommend(r.Context(), s.DB)
+	if err != nil {
+		return err
+	}
+	return ok(w, cfg)
+}
+
+func (s *Server) updateMarketRecommend(w http.ResponseWriter, r *http.Request) error {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	var cfg market.RecommendConfig
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return httpx.BadRequest("INVALID_RECOMMEND", "body must be recommend config JSON")
+	}
+	out, err := market.SaveRecommend(r.Context(), s.DB, cfg)
+	if err != nil {
+		return err
+	}
+	s.audit(r, "market_recommend.update", "settings", json.RawMessage(raw))
+	return ok(w, out)
 }
 
 func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) error {

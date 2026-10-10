@@ -7,7 +7,6 @@ import type { SellerUsage, SellerUsageRecord, Upstream } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
 import PageHeader from '@/components/PageHeader.vue'
 import RefreshButton from '@/components/RefreshButton.vue'
-import StatCard from '@/components/StatCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import UsageChart from '@/components/UsageChart.vue'
@@ -72,7 +71,12 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
 
 <template>
   <div>
-    <PageHeader title="用量" description="你的账号经本平台被调用的情况。数据来自已入账的用量记录，约有 2 分钟延迟；不包含买家身份与请求内容。">
+    <PageHeader
+      title="用量"
+      description="你的账号经本平台被调用的情况。数据来自已入账的用量记录，约有 2 分钟延迟；不包含买家身份与请求内容。"
+      :back-to="upstreamID ? `/seller/upstreams/${upstreamID}?from=usage` : undefined"
+      :back-label="upstreamID ? `上游 #${upstreamID}` : undefined"
+    >
       <select v-model.number="upstreamID" class="input w-48" aria-label="上游">
         <option :value="0">全部上游</option>
         <option v-for="u in connected" :key="u.id" :value="u.id">#{{ u.id }} {{ label('platform', u.platform).text }}</option>
@@ -85,11 +89,27 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
       <RefreshButton :loading="usage.loading.value || loadingRecords" @click="reload" />
     </PageHeader>
 
-    <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-      <StatCard label="请求数" :value="t?.requests ?? '—'" :hint="t ? `买家 ${t.buyer_requests} · 平台检测 ${t.probe_requests} · 今日 ${today?.requests ?? 0}` : undefined" />
-      <StatCard label="Token" :value="tokens(allTokens(t))" :hint="t ? `输入 ${tokens(t.input_tokens)} · 输出 ${tokens(t.output_tokens)} · 缓存 ${tokens(t.cache_creation_tokens + t.cache_read_tokens)}` : undefined" />
-      <StatCard label="官方价费用" :value="usd(t?.total_cost)" hint="按官方价计算的这些请求的价值" />
-      <StatCard label="收益" :value="money(t?.payout)" :hint="`今日 ${money(today?.payout ?? 0)} · 结算后冻结期满可提现`" />
+    <div class="xm-stats">
+      <div class="xm-stat">
+        <b>请求数</b>
+        <strong>{{ t?.requests ?? '—' }}</strong>
+        <em v-if="t">买家 {{ t.buyer_requests }} · 检测 {{ t.probe_requests }} · 今日 {{ today?.requests ?? 0 }}</em>
+      </div>
+      <div class="xm-stat">
+        <b>Token</b>
+        <strong>{{ tokens(allTokens(t)) }}</strong>
+        <em v-if="t">入 {{ tokens(t.input_tokens) }} · 出 {{ tokens(t.output_tokens) }}</em>
+      </div>
+      <div class="xm-stat">
+        <b>官方价费用</b>
+        <strong>{{ usd(t?.total_cost) }}</strong>
+        <em>按官方价计</em>
+      </div>
+      <div class="xm-stat">
+        <b>收益</b>
+        <strong>{{ money(t?.payout) }}</strong>
+        <em>今日 {{ money(today?.payout ?? 0) }}</em>
+      </div>
     </div>
 
     <QuotaPanel v-if="upstreamID" :key="upstreamID" :upstream-id="upstreamID" class="mt-5" />
@@ -137,7 +157,8 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
           <template #cell-tokens="{ row }">{{ tokens(allTokens(row)) }}</template>
           <template #cell-payout="{ row }">{{ money(row.payout) }}</template>
           <template #cell-actions="{ row }">
-            <button class="btn-ghost btn-sm" @click="upstreamID = row.upstream_id">查看</button>
+            <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" @click="upstreamID = row.upstream_id">筛此上游</button>
+            <RouterLink :to="`/seller/upstreams/${row.upstream_id}?from=usage`" class="xm-btn xm-btn-ghost xm-btn-sm">上游详情 →</RouterLink>
           </template>
         </DataTable>
       </div>
@@ -172,7 +193,9 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
         row-key="id"
       >
         <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
-        <template #cell-upstream_id="{ row }">#{{ row.upstream_id }}</template>
+        <template #cell-upstream_id="{ row }">
+          <RouterLink :to="`/seller/upstreams/${row.upstream_id}?from=usage`" class="font-bold underline underline-offset-2">#{{ row.upstream_id }} →</RouterLink>
+        </template>
         <template #cell-channel="{ row }"><StatusBadge kind="channel" :value="row.channel" /></template>
         <template #cell-tokens="{ row }">
           {{ tokens(row.input_tokens) }} / {{ tokens(row.output_tokens) }} / {{ tokens(row.cache_creation_tokens + row.cache_read_tokens) }}

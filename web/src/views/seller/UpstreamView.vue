@@ -1,26 +1,27 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { seller } from '@/api'
-import type { Report, TrendPoint, UpstreamDetail, VendorView } from '@/api/types'
+import type { ListingCategoryOption, Report, TrendPoint, UpstreamDetail, VendorView } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { useConfig } from '@/stores/config'
 import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import RefreshButton from '@/components/RefreshButton.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import StatCard from '@/components/StatCard.vue'
 import DataTable from '@/components/DataTable.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import ReportDetail from '@/components/ReportDetail.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
+import OnboardingWizard from '@/components/OnboardingWizard.vue'
 import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
 import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
 
 const props = defineProps<{ id: string }>()
 const upstreamId = computed(() => Number(props.id))
+const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const cfg = useConfig()
@@ -35,6 +36,19 @@ const u = computed(() => detail.data.value)
 const isOAuth = computed(() => !!u.value && !isKeyAuthType(u.value.auth_type))
 // 已在 sub2api 创建账号（授权完成）后才有额度与用量
 const hasAccount = computed(() => !!u.value && !['draft', 'authorizing', 'failed', 'removing', 'removed'].includes(u.value.status))
+/** 接入未完成：不能挂单/改价，只能继续授权或删除 */
+const needsAuth = computed(() => !!u.value && ['draft', 'authorizing', 'failed'].includes(u.value.status))
+const showWizard = ref(false)
+const canCreateListing = computed(() => u.value?.status === 'ready' && (!u.value.listing || u.value.listing.status === 'closed'))
+
+/** 按来源返回上一级，避免钻进去出不来 */
+const backNav = computed(() => {
+  const from = typeof route.query.from === 'string' ? route.query.from : ''
+  if (from === 'listings') return { to: '/seller/listings', label: '挂单列表' }
+  if (from === 'usage') return { to: `/seller/usage?upstream=${upstreamId.value}`, label: '用量' }
+  if (from === 'publish') return { to: '/seller/publish', label: '发布供给' }
+  return { to: '/seller/upstreams', label: '我的上游' }
+})
 
 function reload() {
   detail.load()
@@ -46,7 +60,15 @@ let timer: ReturnType<typeof setInterval> | null = null
 onMounted(async () => {
   reload()
   cfg.ensure()
-  vendors.value = (await seller.vendors().catch(() => null)) ?? []
+  const [v, cats] = await Promise.all([
+    seller.vendors().catch(() => null),
+    seller.listingCategories().catch(() => null),
+  ])
+  vendors.value = v ?? []
+  categoryOpts.value = cats ?? []
+  if (categoryOpts.value.length && !categories.value.some((id) => categoryOpts.value.some((c) => c.id === id))) {
+    categories.value = categoryOpts.value[0] ? [categoryOpts.value[0].id] : []
+  }
   timer = setInterval(() => {
     if (u.value?.status === 'verifying') reload()
   }, 10000)
@@ -54,21 +76,100 @@ onMounted(async () => {
 onUnmounted(() => timer && clearInterval(timer))
 
 // ---- 挂单 ----
-const mode = ref<'consignment' | 'buyback'>('consignment')
+const mode = ref<'consignment' | 'pack' | 'buyback'>('consignment')
 const mult = ref('')
 const joinPool = ref(true)
+const faceValue = ref('100')
+const stock = ref('3')
+const minAmount = ref('0')
+const listTitle = ref('')
+const listDesc = ref('')
+const categories = ref<string[]>(['featured'])
+const categoryOpts = ref<ListingCategoryOption[]>([])
+const metaTitle = ref('')
+const metaDesc = ref('')
+const metaCategories = ref<string[]>([])
+const showMeta = ref(false)
 const buyerPrice = computed(() => {
   const m = Number(mult.value)
   return m > 0 ? m * (1 + cfg.config.commission_rate) : null
 })
 
+function toggleCategory(id: string, target: 'create' | 'meta' = 'create') {
+  const cur = target === 'meta' ? metaCategories : categories
+  const set = new Set(cur.value)
+  if (set.has(id)) set.delete(id)
+  else set.add(id)
+  cur.value = [...set]
+}
+
+function openMetaEdit() {
+  const l = u.value?.listing
+  if (!l) return
+  metaTitle.value = l.title ?? ''
+  metaDesc.value = l.description ?? ''
+  metaCategories.value = [...(l.categories ?? [])]
+  if (categoryOpts.value.length && !metaCategories.value.some((id) => categoryOpts.value.some((c) => c.id === id))) {
+    metaCategories.value = categoryOpts.value[0] ? [categoryOpts.value[0].id] : []
+  }
+  showMeta.value = true
+}
+
+async function saveMeta() {
+  const l = u.value?.listing
+  if (!l) return
+  if (!metaCategories.value.length) {
+    toast.error('请至少选择一个市场分类')
+    return
+  }
+  if (
+    await run(
+      () =>
+        seller.updateListingMeta(l.id, {
+          title: metaTitle.value.trim(),
+          description: metaDesc.value.trim(),
+          categories: [...metaCategories.value],
+        }),
+      '展示信息已更新',
+    )
+  ) {
+    showMeta.value = false
+    reload()
+  }
+}
+
 async function createListing() {
-  const body = mode.value === 'consignment' ? { mode: mode.value, multiplier: Number(mult.value), join_default_pool: joinPool.value } : { mode: mode.value }
-  if (mode.value === 'consignment' && !(Number(mult.value) > 0)) {
+  if ((mode.value === 'consignment' || mode.value === 'pack') && !(Number(mult.value) > 0)) {
     toast.error('请填写倍率')
     return
   }
-  if (await run(() => seller.createListing(upstreamId.value, body), mode.value === 'consignment' ? '挂单已生效' : '已生成回收报价，请确认')) reload()
+  if ((mode.value === 'consignment' || mode.value === 'pack') && !categories.value.length) {
+    toast.error('请至少选择一个市场分类')
+    return
+  }
+  if (mode.value === 'pack') {
+    if (!(Number(faceValue.value) >= 10)) {
+      toast.error('额度包面额至少 10 元')
+      return
+    }
+    if (!(Number(stock.value) >= 1)) {
+      toast.error('可售份数至少 1')
+      return
+    }
+  }
+  const meta = {
+    title: listTitle.value.trim() || undefined,
+    description: listDesc.value.trim() || undefined,
+    categories: mode.value === 'buyback' ? undefined : [...categories.value],
+  }
+  const body =
+    mode.value === 'consignment'
+      ? { mode: mode.value, multiplier: Number(mult.value), join_default_pool: joinPool.value, min_amount: Number(minAmount.value) || 0, ...meta }
+      : mode.value === 'pack'
+        ? { mode: mode.value, multiplier: Number(mult.value), face_value: Number(faceValue.value), stock: Number(stock.value), ...meta }
+        : { mode: mode.value, ...meta }
+  const okMsg = mode.value === 'buyback' ? '已生成回收报价，请确认' : mode.value === 'pack' ? '额度包已上架' : '挂单已生效'
+  if (await run(() => seller.createListing(upstreamId.value, body), okMsg)) reload()
 }
 
 async function listingAction(fn: () => Promise<unknown>, msg: string) {
@@ -143,9 +244,15 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
 
 <template>
   <div v-if="u">
-    <PageHeader :title="`上游 #${u.id}`" :description="`${label('platform', u.platform).text} · ${authTypeText(u.platform, u.auth_type)}`">
+    <PageHeader
+      :title="`上游 #${u.id}`"
+      :description="`${label('platform', u.platform).text} · ${authTypeText(u.platform, u.auth_type)}`"
+      :back-to="backNav.to"
+      :back-label="backNav.label"
+    >
       <RefreshButton :loading="detail.loading.value || reports.loading.value || trend.loading.value" @click="reload" />
-      <RouterLink v-if="hasAccount" :to="`/seller/usage?upstream=${u.id}`" class="btn-secondary">用量明细</RouterLink>
+      <RouterLink v-if="hasAccount" :to="`/seller/usage?upstream=${u.id}`" class="xm-btn xm-btn-ghost xm-btn-sm">用量明细 →</RouterLink>
+      <button v-if="needsAuth" type="button" class="xm-btn xm-btn-primary xm-btn-sm" @click="showWizard = true">继续授权</button>
       <button v-if="u.status === 'verify_failed'" class="btn-secondary" :disabled="busy" @click="listingAction(() => seller.retryVerification(u!.id), '已重新开始检测')">
         重新检测
       </button>
@@ -155,10 +262,17 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
       <button v-if="isOAuth && !['draft', 'authorizing', 'removing', 'removed'].includes(u.status)" class="btn-secondary" :disabled="busy" @click="startReauth">
         重新授权
       </button>
-      <button v-if="vendor?.self_reserve_supported" class="btn-secondary" @click="(reserve = u.self_reserve_percent), (showReserve = true)">自留比例</button>
+      <button v-if="vendor?.self_reserve_supported && hasAccount" class="btn-secondary" @click="(reserve = u.self_reserve_percent), (showReserve = true)">自留比例</button>
       <button v-if="!['removing', 'removed'].includes(u.status)" class="btn-ghost text-red-600" :disabled="busy" @click="remove">删除</button>
     </PageHeader>
 
+    <div v-if="needsAuth" class="mb-4 callout callout-warn">
+      这个上游还停在「{{ label('upstreamStatus', u.status).text }}」，授权没做完，所以不能挂单、也不能改价。
+      厂商 / 接入方式 / 已绑代理在创建后不可改——要换代理请先删除本上游再重新接入。
+      <div class="mt-2">
+        <button type="button" class="xm-btn xm-btn-primary xm-btn-sm" @click="showWizard = true">继续完成授权 →</button>
+      </div>
+    </div>
     <div v-if="u.status === 'verifying'" class="mb-4 callout callout-info">正在进行上架检测（平台探测之后可能还有第三方身份检测，通常几分钟），完成后页面会自动刷新。检测通过前不能挂单。</div>
     <div v-if="u.failure_reason && ['verify_failed', 'suspended', 'failed'].includes(u.status)" class="mb-4 callout callout-err">
       {{ u.failure_reason }}
@@ -167,18 +281,18 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
       账号当前不可用（{{ u.health_reason }}）。如果是授权失效，请点击"重新授权"。
     </div>
 
-    <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
-      <div class="stat">
-        <div class="stat-label">状态</div>
-        <div class="mt-2"><StatusBadge kind="upstreamStatus" :value="u.status" /></div>
+    <div class="xm-stats" style="grid-template-columns: repeat(5, 1fr)">
+      <div class="xm-stat"><b>状态</b><div class="mt-1"><StatusBadge kind="upstreamStatus" :value="u.status" /></div></div>
+      <div class="xm-stat"><b>健康</b><div class="mt-1"><StatusBadge kind="health" :value="u.health" /></div></div>
+      <div class="xm-stat"><b>质量等级</b><strong>{{ u.grade ?? '—' }}</strong><em v-if="u.tier">档位 {{ u.tier }}</em></div>
+      <div class="xm-stat">
+        <b>24h 买家请求</b><strong>{{ u.stats_24h.requests }}</strong>
+        <em>成功率 {{ percent(u.stats_24h.success_rate) }} · {{ ms(u.stats_24h.ttft_p50_ms) }}</em>
       </div>
-      <div class="stat">
-        <div class="stat-label">健康</div>
-        <div class="mt-2"><StatusBadge kind="health" :value="u.health" /></div>
+      <div class="xm-stat">
+        <b>24h 收益</b><strong>{{ money(u.stats_24h.payout) }}</strong>
+        <em>检测 {{ u.stats_24h.probe_requests }} 次</em>
       </div>
-      <StatCard label="质量等级" :value="u.grade ?? '—'" :hint="u.tier ? `档位 ${u.tier}` : undefined" />
-      <StatCard label="24h 买家请求" :value="u.stats_24h.requests" :hint="`成功率 ${percent(u.stats_24h.success_rate)} · 首字 ${ms(u.stats_24h.ttft_p50_ms)}`" />
-      <StatCard label="24h 收益" :value="money(u.stats_24h.payout)" :hint="`检测请求 ${u.stats_24h.probe_requests} 次`" />
     </div>
 
     <QuotaPanel v-if="hasAccount" :upstream-id="u.id" class="mt-5" />
@@ -189,7 +303,7 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
         <span>{{ u.proxy.name }}</span>
         <span class="break-all font-mono text-xs">{{ u.proxy.protocol }}://{{ u.proxy.host.includes(':') ? `[${u.proxy.host}]` : u.proxy.host }}:{{ u.proxy.port }}</span>
         <span class="text-ink-500">{{ u.proxy.seller_id ? '由你提供' : '由平台关联' }}{{ u.proxy.region ? ` · ${u.proxy.region}` : '' }}</span>
-        <RouterLink v-if="u.proxy.seller_id" to="/seller/proxies" class="link ml-auto">代理列表</RouterLink>
+        <RouterLink v-if="u.proxy.seller_id" to="/seller/proxies" class="xm-btn xm-btn-ghost xm-btn-sm ml-auto">代理列表 →</RouterLink>
       </div>
     </div>
 
@@ -200,9 +314,10 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
           <StatusBadge kind="mode" :value="u.listing.mode" />
           <StatusBadge kind="listingStatus" :value="u.listing.status" />
           <span v-if="u.listing.multiplier">你的倍率 <b>{{ multiplier(u.listing.multiplier) }}</b></span>
-          <span v-if="u.listing.mode === 'consignment' && u.listing.multiplier" class="text-slate-500">
+          <span v-if="(u.listing.mode === 'consignment' || u.listing.mode === 'pack') && u.listing.multiplier" class="text-slate-500">
             买家价 {{ multiplier(u.listing.multiplier * (1 + cfg.config.commission_rate)) }}
           </span>
+          <span v-if="u.listing.mode === 'pack' && u.listing.face_value" class="text-slate-500">面额 ¥{{ u.listing.face_value }} · 库存 {{ (u.listing.stock ?? 0) - (u.listing.stock_sold ?? 0) }}/{{ u.listing.stock }}</span>
           <span v-if="u.listing.mode === 'consignment'" class="text-slate-500">{{ u.listing.join_default_pool ? '已加入默认分组' : '未加入默认分组' }}</span>
           <RouterLink :to="`/seller/listings`" class="link ml-auto">价格历史</RouterLink>
         </div>
@@ -210,14 +325,24 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
           平台回收报价：<b>{{ multiplier(u.quote.multiplier) }}</b>（等级 {{ u.quote.grade }}，有效期至 {{ dateTime(u.quote.valid_until) }}）。
           接受后按实际用量 × 回收倍率结算。
           <div class="mt-2 flex gap-2">
-            <button class="btn-primary btn-sm" :disabled="busy" @click="listingAction(() => seller.acceptQuote(u!.listing!.id), '已接受报价')">接受</button>
-            <button class="btn-secondary btn-sm" :disabled="busy" @click="listingAction(() => seller.rejectQuote(u!.listing!.id), '已拒绝')">拒绝</button>
+            <button type="button" class="xm-btn xm-btn-primary xm-btn-sm" :disabled="busy" @click="listingAction(() => seller.acceptQuote(u!.listing!.id), '已接受报价')">接受</button>
+            <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="busy" @click="listingAction(() => seller.rejectQuote(u!.listing!.id), '已拒绝')">拒绝</button>
           </div>
         </div>
+        <p v-if="u.listing.categories?.length" class="mt-2 text-sm text-slate-500">
+          分类：{{ u.listing.categories.join(' · ') }}
+          <span v-if="u.listing.title"> · {{ u.listing.title }}</span>
+        </p>
         <div class="mt-3 flex flex-wrap gap-2">
-          <template v-if="u.listing.mode === 'consignment' && ['active', 'paused'].includes(u.listing.status)">
+          <template v-if="(u.listing.mode === 'consignment' || u.listing.mode === 'pack') && ['active', 'paused'].includes(u.listing.status)">
             <button class="btn-secondary btn-sm" @click="(newPrice = String(u.listing.multiplier ?? '')), (showPrice = true)">改价</button>
-            <button class="btn-secondary btn-sm" :disabled="busy" @click="listingAction(() => seller.setDefaultPool(u!.listing!.id, !u!.listing!.join_default_pool), '已更新')">
+            <button class="btn-secondary btn-sm" @click="openMetaEdit">改分类/标题</button>
+            <button
+              v-if="u.listing.mode === 'consignment'"
+              class="btn-secondary btn-sm"
+              :disabled="busy"
+              @click="listingAction(() => seller.setDefaultPool(u!.listing!.id, !u!.listing!.join_default_pool), '已更新')"
+            >
               {{ u.listing.join_default_pool ? '退出默认分组' : '加入默认分组' }}
             </button>
           </template>
@@ -226,10 +351,14 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
           <button class="btn-ghost btn-sm text-red-600" :disabled="busy" @click="listingAction(() => seller.close(u!.listing!.id), '挂单已关闭')">关闭挂单</button>
         </div>
       </template>
-      <template v-else-if="u.status === 'ready'">
-        <div class="flex gap-4 text-sm">
-          <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="consignment" /> 寄售（自己定价）</label>
-          <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="buyback" /> 平台回收（平台报价，省心）</label>
+      <template v-else-if="needsAuth">
+        <p class="text-sm text-slate-600">完成授权并通过检测后，才能在这里挂单。请点上方「继续授权」。</p>
+      </template>
+      <template v-else-if="canCreateListing">
+        <div class="flex flex-wrap gap-4 text-sm">
+          <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="consignment" /> 按量通道（寄售）</label>
+          <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="pack" /> 额度包</label>
+          <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="buyback" /> 平台回收</label>
         </div>
         <div v-if="mode === 'consignment'" class="mt-3 grid max-w-xl grid-cols-2 gap-3">
           <div>
@@ -237,10 +366,56 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
             <input id="mult" v-model="mult" class="input" inputmode="decimal" :placeholder="vendor ? `${vendor.consignment_min}–${vendor.consignment_max}` : ''" />
             <p class="hint">买家价 = 倍率 × (1 + {{ percent(cfg.config.commission_rate, 0) }} 平台抽佣){{ buyerPrice ? ` = ${multiplier(buyerPrice)}` : '' }}</p>
           </div>
-          <label class="mt-6 flex items-center gap-2 text-sm"><input v-model="joinPool" type="checkbox" /> 加入平台默认分组（推荐）</label>
+          <div>
+            <label class="label" for="min-m">起步金（元）</label>
+            <input id="min-m" v-model="minAmount" class="input" inputmode="decimal" />
+            <p class="hint">0 = 免费开通，之后按量扣余额</p>
+          </div>
+          <label class="col-span-2 flex items-center gap-2 text-sm"><input v-model="joinPool" type="checkbox" /> 加入平台默认分组 / 保障池（推荐）</label>
         </div>
-        <p v-else class="mt-3 text-sm text-slate-500">平台按质量等级和订阅档位报出回收倍率，你确认后生效，按实际用量结算。</p>
-        <button class="btn-primary mt-3" :disabled="busy" @click="createListing">{{ mode === 'consignment' ? '挂单' : '获取报价' }}</button>
+        <div v-else-if="mode === 'pack'" class="mt-3 grid max-w-xl grid-cols-2 gap-3">
+          <div>
+            <label class="label" for="face">包面额（元）</label>
+            <input id="face" v-model="faceValue" class="input" inputmode="decimal" />
+          </div>
+          <div>
+            <label class="label" for="stock">可售份数</label>
+            <input id="stock" v-model="stock" class="input" inputmode="numeric" />
+          </div>
+          <div class="col-span-2">
+            <label class="label" for="pack-mult">包内计费倍率</label>
+            <input id="pack-mult" v-model="mult" class="input" inputmode="decimal" :placeholder="vendor ? `${vendor.consignment_min}–${vendor.consignment_max}` : ''" />
+            <p class="hint">额度包不进保障池；买家整包购买，未用完可退货。{{ buyerPrice ? `买家看到的倍率约 ${multiplier(buyerPrice)}` : '' }}</p>
+          </div>
+        </div>
+        <p v-else class="mt-3 text-sm text-slate-500">平台按质量等级和订阅档位报出回收倍率，你确认后生效，按实际用量结算。不进市场目录，只进保障池。</p>
+        <div v-if="mode === 'consignment' || mode === 'pack'" class="mt-3">
+          <p class="label mb-1">市场分类（至少选一个）</p>
+          <div class="flex flex-wrap gap-3 text-sm">
+            <label v-for="c in categoryOpts" :key="c.id" class="flex items-center gap-1">
+              <input type="checkbox" :checked="categories.includes(c.id)" @change="toggleCategory(c.id)" />
+              {{ c.path || c.name }}
+            </label>
+            <span v-if="!categoryOpts.length" class="text-slate-400">暂无可选分类，请联系管理员在控制台配置</span>
+          </div>
+        </div>
+        <div class="mt-3 grid max-w-xl gap-3">
+          <div>
+            <label class="label" for="list-title">展示标题（可选）</label>
+            <input id="list-title" v-model="listTitle" class="input" placeholder="留空则自动生成" />
+          </div>
+          <div>
+            <label class="label" for="list-desc">短描述（可选）</label>
+            <textarea id="list-desc" v-model="listDesc" class="input" rows="2" placeholder="给买家看的说明" />
+          </div>
+        </div>
+        <button type="button" class="xm-btn xm-btn-primary mt-3" :disabled="busy" @click="createListing">
+          {{ mode === 'buyback' ? '获取报价' : mode === 'pack' ? '上架额度包' : '挂单' }}
+        </button>
+        <p class="mt-2 text-[12px] text-[#888]">
+          推荐走完整向导：
+          <RouterLink class="xm-btn xm-btn-primary xm-btn-sm" :to="`/seller/publish?upstream=${u.id}`">发布供给 →</RouterLink>
+        </p>
       </template>
       <p v-else class="text-sm text-slate-500">上游通过上架检测后才能挂单。</p>
     </div>
@@ -304,6 +479,32 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
       </template>
     </ModalDialog>
 
+    <ModalDialog v-model:open="showMeta" title="分类与展示">
+      <div class="space-y-3">
+        <div>
+          <label class="label" for="meta-title">展示标题</label>
+          <input id="meta-title" v-model="metaTitle" class="input" placeholder="留空则自动生成" />
+        </div>
+        <div>
+          <label class="label" for="meta-desc">短描述</label>
+          <textarea id="meta-desc" v-model="metaDesc" class="input" rows="2" placeholder="给买家看的说明" />
+        </div>
+        <div>
+          <p class="label mb-1">市场分类（至少选一个）</p>
+          <div class="flex flex-wrap gap-3 text-sm">
+            <label v-for="c in categoryOpts" :key="c.id" class="flex items-center gap-1">
+              <input type="checkbox" :checked="metaCategories.includes(c.id)" @change="toggleCategory(c.id, 'meta')" />
+              {{ c.path || c.name }}
+            </label>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn-secondary" @click="showMeta = false">取消</button>
+        <button class="btn-primary" :disabled="busy" @click="saveMeta">保存</button>
+      </template>
+    </ModalDialog>
+
     <ModalDialog v-model:open="showReauth" title="重新授权">
       <p class="text-sm text-ink-600">请用<b>同一个官方账号</b>登录授权，然后粘贴授权码或回调地址。</p>
       <div v-if="reauthWithProject">
@@ -335,5 +536,13 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
         <button class="btn-primary" :disabled="busy" @click="saveReserve">保存</button>
       </template>
     </ModalDialog>
+
+    <OnboardingWizard
+      v-if="u"
+      v-model:open="showWizard"
+      :vendors="vendors"
+      :resume="u"
+      @done="reload()"
+    />
   </div>
 </template>

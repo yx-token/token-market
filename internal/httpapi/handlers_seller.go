@@ -297,6 +297,16 @@ func (s *Server) changePrice(w http.ResponseWriter, r *http.Request) error {
 	})(w, r)
 }
 
+func (s *Server) updateListingMeta(w http.ResponseWriter, r *http.Request) error {
+	var in listing.UpdateListingMetaInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	return s.listingAction(func(r *http.Request, seller, id int64) (any, error) {
+		return s.Listings.UpdateListingMeta(r.Context(), seller, id, in)
+	})(w, r)
+}
+
 func (s *Server) setDefaultPool(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Join bool `json:"join"`

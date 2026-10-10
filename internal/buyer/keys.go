@@ -97,6 +97,8 @@ type KeyService struct {
 	Kicker   listing.Kicker
 	Settings func(ctx context.Context) (settings.Settings, error)
 	Log      *slog.Logger
+	// PackFunds 额度包账面预付/退款（由 billing.Funds 注入）
+	PackFunds PackFunds
 }
 
 type resolvedHop struct {
@@ -142,8 +144,8 @@ func (s *KeyService) validateRoute(ctx context.Context, r RouteInput) (string, [
 			if err != nil {
 				return "", nil, err
 			}
-			if l.Mode != listing.ModeConsignment || l.Status != listing.ListingActive {
-				return "", nil, httpx.BadRequest("LISTING_UNAVAILABLE", fmt.Sprintf("listing %d is not an active consignment listing", l.ID))
+			if (l.Mode != listing.ModeConsignment && l.Mode != listing.ModePack) || l.Status != listing.ListingActive {
+				return "", nil, httpx.BadRequest("LISTING_UNAVAILABLE", fmt.Sprintf("listing %d is not an active market listing", l.ID))
 			}
 			u, err := listing.GetUpstream(ctx, s.DB, l.UpstreamID)
 			if err != nil {
@@ -755,7 +757,7 @@ func (s *KeyService) PublishUserKeys(ctx context.Context, userID int64) error {
 // 或调度器判定不面向买家（例如开启检测的厂商下尚未检测的上游）。
 func (s *KeyService) PublishSkipList(ctx context.Context) error {
 	rows, err := s.DB.Query(ctx, `SELECT l.id FROM listings l JOIN upstreams u ON u.id = l.upstream_id
-		WHERE l.mode = 'consignment' AND (l.status <> 'active' OR u.status <> 'listed' OR u.health IN ('degraded', 'unavailable')
+		WHERE l.mode IN ('consignment', 'pack') AND (l.status <> 'active' OR u.status <> 'listed' OR u.health IN ('degraded', 'unavailable')
 			OR EXISTS (SELECT 1 FROM upstream_runtime_params rp WHERE rp.upstream_id = u.id AND NOT rp.buyer_facing))`)
 	if err != nil {
 		return err

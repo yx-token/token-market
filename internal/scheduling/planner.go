@@ -175,7 +175,7 @@ func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 				if !p.Accepts(u.Platform) || p.Sub2APIGroupID == nil {
 					continue
 				}
-				if l.Mode == listing.ModeConsignment && !l.JoinDefaultPool {
+				if l.Mode == listing.ModePack || (l.Mode == listing.ModeConsignment && !l.JoinDefaultPool) {
 					continue
 				}
 				if m > p.Cap()+1e-9 {
@@ -190,6 +190,9 @@ func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 			if l.Mode == listing.ModeBuyback {
 				d.Priority = clamp(strategy.BuybackPriority(u, grade), buybackBandStart, buybackBandEnd)
 				reasons = append(reasons, "buyback grade "+grade)
+			} else if l.Mode == listing.ModePack {
+				d.Priority = clamp(strategy.ConsignmentPriority(u, m), consignmentBandStart, consignmentBandEnd)
+				reasons = append(reasons, fmt.Sprintf("pack %.4f", m))
 			} else {
 				d.Priority = clamp(strategy.ConsignmentPriority(u, m), consignmentBandStart, consignmentBandEnd)
 				reasons = append(reasons, fmt.Sprintf("consignment %.4f", m))
@@ -199,7 +202,7 @@ func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 				reasons = append(reasons, "suspected: concurrency halved")
 			}
 		}
-		if l != nil && l.GroupID != nil && l.Mode == listing.ModeConsignment && l.Multiplier != nil {
+		if l != nil && l.GroupID != nil && (l.Mode == listing.ModeConsignment || l.Mode == listing.ModePack) && l.Multiplier != nil {
 			rate := listing.BuyerPrice(*l.Multiplier, pc.Commission)
 			d.ListingGroupID = l.GroupID
 			d.ListingGroupRate = &rate
