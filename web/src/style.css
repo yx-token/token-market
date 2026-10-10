@@ -307,6 +307,74 @@
   .page-enter > * > *:nth-child(n + 6) {
     animation-delay: 340ms;
   }
+
+  /* ---- Markdown 正文（发布说明等，配合 utils/markdown 的 v-html 使用） ---- */
+  .markdown-body {
+    @apply break-words text-sm leading-relaxed text-gray-700;
+  }
+  .markdown-body > :first-child {
+    @apply mt-0;
+  }
+  .markdown-body > :last-child {
+    @apply mb-0;
+  }
+  .markdown-body :is(h1, h2, h3, h4, h5, h6) {
+    @apply mb-2 mt-5 font-semibold leading-snug text-gray-900;
+  }
+  .markdown-body h1 {
+    @apply text-lg;
+  }
+  .markdown-body h2 {
+    @apply border-b border-gray-100 pb-1.5 text-base;
+  }
+  .markdown-body :is(h3, h4, h5, h6) {
+    @apply text-sm;
+  }
+  .markdown-body :is(p, ul, ol, pre, blockquote, table) {
+    @apply my-3;
+  }
+  .markdown-body ul {
+    @apply list-disc pl-5;
+  }
+  .markdown-body ol {
+    @apply list-decimal pl-5;
+  }
+  .markdown-body li + li {
+    @apply mt-1;
+  }
+  .markdown-body li > :is(ul, ol) {
+    @apply my-1;
+  }
+  .markdown-body a {
+    @apply text-primary-500 underline-offset-2 hover:underline;
+  }
+  .markdown-body code {
+    @apply rounded bg-gray-100 px-1 py-0.5 font-mono text-[0.85em] text-gray-800;
+  }
+  .markdown-body pre {
+    @apply overflow-x-auto rounded bg-gray-100 p-3 leading-normal;
+  }
+  .markdown-body pre code {
+    @apply bg-transparent p-0;
+  }
+  .markdown-body blockquote {
+    @apply border-l-2 border-gray-300 pl-3 text-gray-500;
+  }
+  .markdown-body hr {
+    @apply my-4 border-gray-100;
+  }
+  .markdown-body table {
+    @apply block overflow-x-auto border-collapse text-left;
+  }
+  .markdown-body :is(th, td) {
+    @apply border border-gray-200 px-2.5 py-1.5;
+  }
+  .markdown-body th {
+    @apply bg-gray-50 font-semibold;
+  }
+  .markdown-body img {
+    @apply max-w-full;
+  }
 }
 
 @layer utilities {
@@ -819,6 +887,10 @@ html.is-console :focus-visible {
   color: #0555ce;
   background: #e6eefa;
 }
+.console-home-btn {
+  text-decoration: none;
+  white-space: nowrap;
+}
 .console-body {
   padding: 12px 16px 16px;
   flex: 1;
@@ -843,7 +915,8 @@ html.is-console :focus-visible {
   .console-side {
     border-bottom: none;
   }
-  .console-email {
+  .console-email,
+  .console-home-label {
     display: none;
   }
   .console-body {

@@ -8,7 +8,7 @@ import type { SystemVersion } from '@/api/types'
 vi.mock('@/api', () => ({ admin: { systemVersion: vi.fn(), checkSystemUpdate: vi.fn(), startSystemUpdate: vi.fn() } }))
 let wrapper: VueWrapper | undefined
 const current: SystemVersion = { version: 'v1.0.0', commit: 'abcd1234', platform: 'linux/amd64', repository: 'yx-token/token-market', enabled: true }
-const latest = { update_available: true, release: { version: 'v1.1.0', name: '新版本', notes: '<script>unsafe()</script>', url: 'https://github.com/yx-token/token-market/releases/tag/v1.1.0', published_at: '2026-10-09T00:00:00Z', compatible: true } }
+const latest = { update_available: true, release: { version: 'v1.1.0', name: '新版本', notes: '## 新增\n\n- **站内更新** 详见 [文档](https://example.com/docs)\n\n<script>unsafe()</script>\n\n[坏链接](javascript:alert(1))', url: 'https://github.com/yx-token/token-market/releases/tag/v1.1.0', published_at: '2026-10-09T00:00:00Z', compatible: true } }
 
 async function render() {
   wrapper = mount(SystemUpdateView, { global: { stubs: { Teleport: true } } })
@@ -25,11 +25,18 @@ describe('system update', () => {
   })
   afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.clearAllMocks(); vi.useRealTimers() })
 
-  it('shows release notes as text and asks before submitting the checked version', async () => {
+  it('renders release notes as safe markdown and asks before submitting the checked version', async () => {
     const w = await render()
     expect(w.text()).toContain('v1.1.0')
-    expect(w.find('pre').text()).toContain('<script>unsafe()</script>')
+    const notes = w.find('[data-testid="release-notes"]')
+    expect(notes.find('h2').text()).toBe('新增')
+    expect(notes.find('li strong').text()).toBe('站内更新')
+    const link = notes.find('a[href="https://example.com/docs"]')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toBe('noopener noreferrer')
+    expect(notes.text()).toContain('<script>unsafe()</script>')
     expect(w.find('script').exists()).toBe(false)
+    expect(notes.find('a[href^="javascript:"]').exists()).toBe(false)
     await w.findAll('button').find((b) => b.text() === '更新系统')!.trigger('click')
     expect(admin.startSystemUpdate).not.toHaveBeenCalled()
     expect(w.find('[role="dialog"]').text()).toContain('进行中的模型请求可能中断')
