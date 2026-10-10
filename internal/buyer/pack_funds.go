@@ -13,11 +13,11 @@ type PackPaymentInfo struct {
 
 // PackPayOrder 额度包在线支付订单摘要。
 type PackPayOrder struct {
-	ID      int64             `json:"id"`
-	Amount  float64           `json:"amount"`
-	Channel string            `json:"channel"`
-	Status  string            `json:"status"`
-	Payment *PackPaymentInfo  `json:"payment,omitempty"`
+	ID      int64            `json:"id"`
+	Amount  float64          `json:"amount"`
+	Channel string           `json:"channel"`
+	Status  string           `json:"status"`
+	Payment *PackPaymentInfo `json:"payment,omitempty"`
 }
 
 // PackFunds 额度包资金钩子（由 billing.Funds 实现），避免 buyer ↔ billing 循环依赖。

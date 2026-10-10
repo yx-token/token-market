@@ -14,16 +14,16 @@ const (
 )
 
 type QuotaPack struct {
-	ID         int64    `json:"id"`
-	ListingID  int64    `json:"listing_id"`
-	BuyerID    int64    `json:"buyer_id"`
-	BuyerKeyID *int64   `json:"buyer_key_id,omitempty"`
-	FaceValue  float64  `json:"face_value"`
-	Remaining  float64  `json:"remaining"`
-	Status     string   `json:"status"`
-	PaidAmount float64  `json:"paid_amount"`
-	PayChannel *string  `json:"pay_channel,omitempty"`
-	RechargeID *int64   `json:"recharge_id,omitempty"`
+	ID         int64   `json:"id"`
+	ListingID  int64   `json:"listing_id"`
+	BuyerID    int64   `json:"buyer_id"`
+	BuyerKeyID *int64  `json:"buyer_key_id,omitempty"`
+	FaceValue  float64 `json:"face_value"`
+	Remaining  float64 `json:"remaining"`
+	Status     string  `json:"status"`
+	PaidAmount float64 `json:"paid_amount"`
+	PayChannel *string `json:"pay_channel,omitempty"`
+	RechargeID *int64  `json:"recharge_id,omitempty"`
 }
 
 func PackStockLeft(l *Listing) int {

@@ -56,21 +56,21 @@ type FactorDef struct {
 
 // RecommendProfile 推荐类型：一套因子权重 + 候选池规则。
 type RecommendProfile struct {
-	ID          string             `json:"id"`
-	Name        string             `json:"name"`
-	Desc        string             `json:"desc"`
-	Enabled     bool               `json:"enabled"`
-	FilterKind  string             `json:"filter_kind"` // tag|kind|pool
-	FilterVal   string             `json:"filter_val"`
-	ActionTag   string             `json:"action_tag,omitempty"`
-	ActionKind  string             `json:"action_kind,omitempty"`
-	ActionPlat  string             `json:"action_plat,omitempty"`
-	Weights     map[string]float64 `json:"weights"` // factor_id -> weight
-	LowRateMax  float64            `json:"low_rate_max_multiplier"`
-	PerTileSKU  int                `json:"per_tile_sku"`
-	FreshDays   int                `json:"fresh_days"`
-	Diversity   int                `json:"diversity_per_plat"`
-	MinSKU      int                `json:"min_sku_to_show_tile"`
+	ID         string             `json:"id"`
+	Name       string             `json:"name"`
+	Desc       string             `json:"desc"`
+	Enabled    bool               `json:"enabled"`
+	FilterKind string             `json:"filter_kind"` // tag|kind|pool
+	FilterVal  string             `json:"filter_val"`
+	ActionTag  string             `json:"action_tag,omitempty"`
+	ActionKind string             `json:"action_kind,omitempty"`
+	ActionPlat string             `json:"action_plat,omitempty"`
+	Weights    map[string]float64 `json:"weights"` // factor_id -> weight
+	LowRateMax float64            `json:"low_rate_max_multiplier"`
+	PerTileSKU int                `json:"per_tile_sku"`
+	FreshDays  int                `json:"fresh_days"`
+	Diversity  int                `json:"diversity_per_plat"`
+	MinSKU     int                `json:"min_sku_to_show_tile"`
 }
 
 // HomeTile 首页格子：展示信息 + 选用哪种推荐类型。
@@ -169,25 +169,25 @@ func DefaultRecommend() RecommendConfig {
 			{
 				ID: "algo_deal", Name: "低价优先", Desc: "偏便宜的按量通道", Enabled: true,
 				FilterKind: "tag", FilterVal: "low_rate", ActionTag: "low_rate",
-				Weights: copyW(map[string]float64{"price": 1.6, "grade": 0.8}),
+				Weights:    copyW(map[string]float64{"price": 1.6, "grade": 0.8}),
 				LowRateMax: 0.55, PerTileSKU: 3, FreshDays: 7, Diversity: 2, MinSKU: 1,
 			},
 			{
 				ID: "algo_code", Name: "写代码优选", Desc: "Coding 相关，偏稳偏快", Enabled: true,
 				FilterKind: "tag", FilterVal: "coding", ActionTag: "coding",
-				Weights: copyW(map[string]float64{"success": 1.3, "ttft": 1.0, "grade": 1.1}),
+				Weights:    copyW(map[string]float64{"success": 1.3, "ttft": 1.0, "grade": 1.1}),
 				LowRateMax: 0.55, PerTileSKU: 3, FreshDays: 7, Diversity: 2, MinSKU: 1,
 			},
 			{
 				ID: "algo_pool", Name: "保障池售价", Desc: "默认分组按售价从低到高", Enabled: true,
 				FilterKind: "pool", FilterVal: "pool", ActionPlat: "保障池",
-				Weights: copyW(nil),
+				Weights:    copyW(nil),
 				LowRateMax: 0.55, PerTileSKU: 3, FreshDays: 7, Diversity: 0, MinSKU: 1,
 			},
 			{
 				ID: "algo_pack", Name: "额度包推荐", Desc: "额度包库存与面额平衡", Enabled: true,
 				FilterKind: "kind", FilterVal: "pack", ActionKind: "pack",
-				Weights: copyW(map[string]float64{"stock": 1.2, "price": 1.0, "fresh": 0.6}),
+				Weights:    copyW(map[string]float64{"stock": 1.2, "price": 1.0, "fresh": 0.6}),
 				LowRateMax: 0.55, PerTileSKU: 3, FreshDays: 7, Diversity: 2, MinSKU: 1,
 			},
 		},
@@ -334,7 +334,7 @@ func migrateV1(old RecommendConfig) RecommendConfig {
 			ID: pid, Name: s.Title + "算法", Desc: s.Desc, Enabled: true,
 			FilterKind: s.Kind, FilterVal: s.KindVal,
 			ActionTag: s.ActionTag, ActionKind: s.ActionKind, ActionPlat: s.ActionPlat,
-			Weights: copyFloatMap(w),
+			Weights:    copyFloatMap(w),
 			LowRateMax: low, PerTileSKU: per, FreshDays: fresh, Diversity: div, MinSKU: minSKU,
 		})
 		tiles = append(tiles, HomeTile{
