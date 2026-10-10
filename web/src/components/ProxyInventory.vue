@@ -5,6 +5,7 @@ import type { Proxy } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { filterByKeyword, useClientPage, useListQuery } from '@/composables/useListQuery'
 import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
+import MarketListPage from '@/components/MarketListPage.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
@@ -31,17 +32,11 @@ const checking = ref<{ id: number; quality: boolean } | null>(null)
 const form = reactive({ name: '', protocol: 'socks5', host: '', port: '', username: '', password: '', region: '' })
 const valid = computed(() => !!form.name.trim() && !!form.host.trim() && Number.isInteger(Number(form.port)) && Number(form.port) > 0 && Number(form.port) <= 65535)
 const columns = computed(() => [
-  { key: 'id', label: 'ID' },
-  { key: 'name', label: '名称' },
+  { key: 'name', label: '代理' },
   ...(!isSeller.value ? [{ key: 'owner', label: '来源' }] : []),
-  { key: 'addr', label: '代理地址' },
-  { key: 'region', label: '地区' },
-  { key: 'connection', label: '连通性 / 延迟' },
-  { key: 'quality', label: '质量' },
-  { key: 'status', label: '状态' },
-  { key: 'assigned_upstream_id', label: '绑定账号' },
-  { key: 'ready', label: '连接配置' },
-  { key: 'created_at', label: '添加时间' },
+  { key: 'region', label: '出口地区' },
+  { key: 'diagnostics', label: '连接 / 质量' },
+  { key: 'status', label: '状态 / 绑定' },
   { key: 'actions', label: '操作' },
 ])
 onMounted(proxies.load)
@@ -100,7 +95,8 @@ async function check(p: Proxy, quality: boolean) {
 </script>
 
 <template>
-  <ConsoleListPage
+  <component
+    :is="isSeller ? MarketListPage : ConsoleListPage"
     :id="isSeller ? 'seller-proxies-page' : 'console-proxies-page'"
     :title="isSeller ? '我的代理 IP' : '代理 IP'"
     :description="isSeller ? '先配置代理列表，接入账号时选择一个空闲代理。每个账号独占一个代理，账号移除完成后释放。' : '管理平台库存与卖家提供的代理。由平台关联时仅分配平台的空闲代理，每个账号独占一个。'"
@@ -110,77 +106,82 @@ async function check(p: Proxy, quality: boolean) {
     </template>
 
     <template #filters>
-      <div class="filter-item">
-        <label class="filter-label">关键字</label>
-        <div class="relative w-full flex-1">
-          <input v-model="queryParams.keyword" class="filter-input w-full" placeholder="名称 / IP / 地区" @keyup.enter="search" />
-        </div>
+      <div :class="isSeller ? 'min-w-0' : 'filter-item'">
+        <label for="proxy-keyword" :class="isSeller ? 'label' : 'filter-label'">关键字</label>
+        <input id="proxy-keyword" v-model="queryParams.keyword" :class="isSeller ? 'input' : 'filter-input'" placeholder="名称 / IP / 地区" @keyup.enter="search" />
       </div>
-      <div class="filter-item">
-        <label class="filter-label">状态</label>
-        <select v-model="queryParams.status" class="filter-input flex-1">
+      <div :class="isSeller ? 'min-w-0' : 'filter-item'">
+        <label for="proxy-status" :class="isSeller ? 'label' : 'filter-label'">状态</label>
+        <select id="proxy-status" v-model="queryParams.status" :class="isSeller ? 'input' : 'filter-input'">
           <option value="">全部</option>
           <option v-for="o in options('proxyStatus')" :key="o.value" :value="o.value">{{ o.text }}</option>
         </select>
       </div>
-      <div v-show="!isSeller" class="filter-item">
-        <label class="filter-label">来源</label>
-        <select v-model="queryParams.owner" class="filter-input flex-1" :disabled="isSeller">
+      <div v-if="!isSeller" class="filter-item">
+        <label for="proxy-owner" class="filter-label">来源</label>
+        <select id="proxy-owner" v-model="queryParams.owner" class="filter-input">
           <option value="">全部</option>
           <option value="platform">平台</option>
           <option value="seller">卖家</option>
         </select>
       </div>
-      <div v-show="isSeller" class="filter-item" aria-hidden="true" />
-      <div class="filter-item" aria-hidden="true" />
-      <div class="filter-actions lg:col-span-4">
+      <div :class="isSeller ? 'flex items-center justify-end gap-2' : 'filter-actions'">
         <button type="button" class="btn btn-secondary" @click="onReset">重置</button>
         <button type="button" class="btn btn-primary" @click="search">查询</button>
       </div>
     </template>
 
-    <p v-if="isSeller" class="mb-4 text-sm text-ink-600">请使用固定出口 IP 的代理。已绑定的代理不能停用；需要更换时，先移除对应账号，再用新的代理重新接入。</p>
-    <p v-if="checking" class="mb-4 text-sm text-ink-600" role="status">正在{{ checking.quality ? '检测代理质量，逐项探测 AI 站点，可能需要 1–3 分钟' : '检测连通性和出口地区' }}…</p>
+    <p v-if="isSeller" class="mb-5 text-xs leading-relaxed text-ink-500">请使用固定出口 IP。已绑定的代理需先移除对应账号，再更换代理。</p>
+    <p v-if="checking" :class="isSeller ? 'callout mb-4' : 'console-notice'" role="status">正在{{ checking.quality ? '检测代理质量，逐项探测 AI 站点，可能需要 1–3 分钟' : '检测连通性和出口地区' }}…</p>
 
-    <DataTable :columns="columns" :rows="pageRows" :loading="proxies.loading.value" row-key="id" empty="还没有代理 IP，请先添加">
+    <DataTable class="proxy-table" :columns="columns" :rows="pageRows" :loading="proxies.loading.value" row-key="id" empty="还没有代理 IP，请先添加">
+      <template #cell-name="{ row }">
+        <div class="proxy-identity">
+          <div class="font-medium">{{ row.name }}</div>
+          <div class="mt-1 break-all font-mono text-xs text-ink-600">{{ row.protocol }}://{{ row.host.includes(':') ? `[${row.host}]` : row.host }}:{{ row.port }}</div>
+          <div class="mt-1 text-[11px] text-ink-500">#{{ row.id }} · {{ dateTime(row.created_at) }}</div>
+        </div>
+      </template>
       <template #cell-owner="{ row }">{{ row.seller_id ? `卖家 #${row.seller_id}` : '平台' }}</template>
-      <template #cell-addr="{ row }"><span class="font-mono text-xs">{{ row.protocol }}://{{ row.host.includes(':') ? `[${row.host}]` : row.host }}:{{ row.port }}</span></template>
       <template #cell-region="{ row }">
         <div>{{ row.region || '—' }}</div>
         <div class="font-mono text-xs text-ink-500">{{ row.quality_checked_at && (!row.connection_checked_at || row.quality_checked_at > row.connection_checked_at) ? row.quality_report?.exit_ip : row.connection_report?.ip_address }}</div>
       </template>
-      <template #cell-connection="{ row }">
-        <span v-if="row.connection_report" :class="row.connection_report.success ? 'text-green-700' : 'text-red-600'">{{ row.connection_report.success ? `${row.connection_report.latency_ms} ms` : '连接失败' }}</span>
-        <span v-else class="text-ink-500">未检测</span>
+      <template #cell-diagnostics="{ row }">
+        <div v-if="row.connection_report" :class="row.connection_report.success ? 'text-emerald-700' : 'text-red-600'">{{ row.connection_report.success ? `连接 ${row.connection_report.latency_ms} ms` : '连接失败' }}</div>
+        <div v-else class="text-xs text-ink-500">连接未检测</div>
+        <div class="mt-1 text-xs">
+          <button v-if="row.quality_report" class="link" @click="viewReport(row)">{{ row.quality_report.grade }} · {{ row.quality_report.score }} 分</button>
+          <span v-else class="text-ink-500">质量未检测</span>
+        </div>
       </template>
-      <template #cell-quality="{ row }">
-        <button v-if="row.quality_report" class="link" @click="viewReport(row)">{{ row.quality_report.grade }} · {{ row.quality_report.score }} 分</button>
-        <span v-else class="text-ink-500">未检测</span>
+      <template #cell-status="{ row }">
+        <StatusBadge kind="proxyStatus" :value="row.status" />
+        <div class="mt-1.5 text-xs">
+          <RouterLink v-if="row.assigned_upstream_id && isSeller" :to="`/seller/upstreams/${row.assigned_upstream_id}`" class="link">账号 #{{ row.assigned_upstream_id }}</RouterLink>
+          <span v-else class="text-ink-500">{{ row.assigned_upstream_id ? `账号 #${row.assigned_upstream_id}` : '未绑定账号' }}</span>
+        </div>
+        <div class="mt-1 text-[11px]" :class="row.sub2api_proxy_id ? 'text-ink-500' : 'text-amber-700'">{{ row.sub2api_proxy_id ? '连接已就绪' : '连接配置待重试' }}</div>
       </template>
-      <template #cell-status="{ row }"><StatusBadge kind="proxyStatus" :value="row.status" /></template>
-      <template #cell-assigned_upstream_id="{ row }">
-        <RouterLink v-if="row.assigned_upstream_id && isSeller" :to="`/seller/upstreams/${row.assigned_upstream_id}`" class="link">账号 #{{ row.assigned_upstream_id }}</RouterLink>
-        <span v-else>{{ row.assigned_upstream_id ? `账号 #${row.assigned_upstream_id}` : '—' }}</span>
-      </template>
-      <template #cell-ready="{ row }">{{ row.sub2api_proxy_id ? '已就绪' : '待重试' }}</template>
-      <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
       <template #cell-actions="{ row }">
-        <button class="btn-ghost btn-sm" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, false)">检测连接</button>
-        <button class="btn-ghost btn-sm" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, true)">质量检测</button>
-        <button v-if="row.connection_report || row.quality_report" class="btn-ghost btn-sm" @click="viewReport(row)">查看报告</button>
-        <button v-if="!row.sub2api_proxy_id" class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.syncProxy(row.id), '连接配置已就绪')">重试连接</button>
-        <button v-if="row.status !== 'disabled'" class="btn-ghost btn-sm" :disabled="busy || !!row.assigned_upstream_id" @click="act(() => api.setProxyDisabled(row.id, true), '已停用')">停用</button>
-        <button v-else class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.setProxyDisabled(row.id, false), '已启用')">启用</button>
+        <div class="grid grid-cols-2 gap-x-1 gap-y-1">
+          <button class="btn-ghost btn-sm" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, false)">检测连接</button>
+          <button class="btn-ghost btn-sm" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, true)">质量检测</button>
+          <button v-if="row.connection_report || row.quality_report" class="btn-ghost btn-sm" @click="viewReport(row)">查看报告</button>
+          <button v-if="!row.sub2api_proxy_id" class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.syncProxy(row.id), '连接配置已就绪')">重试连接</button>
+          <button v-if="row.status !== 'disabled'" class="btn-ghost btn-sm" :disabled="busy || !!row.assigned_upstream_id" @click="act(() => api.setProxyDisabled(row.id, true), '已停用')">停用</button>
+          <button v-else class="btn-ghost btn-sm" :disabled="busy" @click="act(() => api.setProxyDisabled(row.id, false), '已启用')">启用</button>
+        </div>
       </template>
     </DataTable>
 
     <template #footer>
-      <span class="mr-auto text-xs text-gray-500">共 {{ total }} 条</span>
+      <span class="mr-auto text-xs text-ink-500">共 {{ total }} 条</span>
       <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum <= 1" @click="pageNum--">上一页</button>
-      <span class="text-xs text-gray-500">{{ pageNum }} / {{ Math.max(1, Math.ceil(total / pageSize)) }}</span>
+      <span class="font-mono text-xs text-ink-500">{{ pageNum }} / {{ Math.max(1, Math.ceil(total / pageSize)) }}</span>
       <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum * pageSize >= total" @click="pageNum++">下一页</button>
     </template>
-  </ConsoleListPage>
+  </component>
 
   <ModalDialog v-model:open="show" title="添加代理 IP">
     <form id="proxy-form" class="grid grid-cols-1 gap-3 sm:grid-cols-2" @submit.prevent="create">
@@ -226,3 +227,18 @@ async function check(p: Proxy, quality: boolean) {
     <template #footer><button class="btn-secondary" @click="reportOpen = false">关闭</button></template>
   </ModalDialog>
 </template>
+
+<style scoped>
+.proxy-identity {
+  min-width: 11rem;
+  max-width: 18rem;
+  white-space: normal;
+}
+.proxy-table :deep(td) {
+  vertical-align: middle;
+}
+.console-notice {
+  margin: 1rem 1.25rem;
+  font-size: 0.8125rem;
+}
+</style>
