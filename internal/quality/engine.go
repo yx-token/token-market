@@ -600,29 +600,17 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, see
 		}
 	}
 
-	n := p.ItemsPerRun
-	if run.trigger == "appeal" {
-		n *= 3
-	}
 	scoring := containsAny(p.Suites, "iq", "reasoning", "long_context")
-	items, err := selectItems(ctx, e.DB, u.platform, p.Suites, n*2, seed)
+	items, err := selectItems(ctx, e.DB, u.platform, run.model, p.Suites)
 	if err != nil {
 		return err
 	}
 	if len(items) == 0 {
-		return errors.New("no active probe items for this platform; add items to the question bank")
+		return errors.New("no active probe items for this platform and model; add items to the question bank")
 	}
 	rng := rand.New(rand.NewPCG(uint64(seed), uint64(run.id))) //nolint:gosec // 生成干扰文本，无安全要求
 	var outcomes []Outcome
-	var assessment Assessment
-	for i, it := range items {
-		// 先跑完基础题量，之后只有在检验尚无结论时才追加（最多两倍题量）
-		if i >= n {
-			assessment = Assess(outcomes, p.Thresholds, scoring)
-			if assessment.Decided() {
-				break
-			}
-		}
+	for _, it := range items {
 		prompt, needle := expandPrompt(it.Prompt, rng)
 		effort := ""
 		if it.ReasoningEffort != nil {
@@ -654,7 +642,7 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, see
 			return ctx.Err()
 		}
 	}
-	assessment = Assess(outcomes, p.Thresholds, scoring)
+	assessment := Assess(outcomes, p.Thresholds, scoring)
 	if waiting, err := e.startThirdParty(ctx, run, u, p, assessment); err != nil || waiting {
 		return err
 	}

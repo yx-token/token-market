@@ -33,7 +33,7 @@ const refs = useLoader(() => admin.references(), [] as Upstream[] | null)
 const { busy, run } = useAction()
 const editing = ref<ProbeItem | null>(null)
 const show = ref(false)
-const form = reactive({ suite: 'iq', category: '', prompt: '', grader: '{"type": "exact", "answer": ""}', platforms: '', maxTokens: 1024, effort: '' })
+const form = reactive({ suite: 'iq', category: '', prompt: '', grader: '{"type": "exact", "answer": ""}', platforms: '', models: '', maxTokens: 1024, effort: '' })
 const newRef = reactive({ platform: 'anthropic', authType: 'oauth' })
 const wizard = ref(false)
 const resume = ref<Upstream | null>(null)
@@ -60,7 +60,7 @@ const filtered = computed(() => {
   if (queryParams.platform) {
     rows = rows.filter((it) => !it.platforms.length || it.platforms.includes(queryParams.platform))
   }
-  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'suite', 'category', 'prompt', 'status'] as (keyof ProbeItem)[])
+  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'suite', 'category', 'prompt', 'models', 'status'] as (keyof ProbeItem)[])
   return rows
 })
 const { pageNum, pageSize, total, pageRows, resetPage } = useClientPage(filtered)
@@ -78,7 +78,7 @@ function onReset() {
 
 function openNew() {
   editing.value = null
-  Object.assign(form, { suite: 'iq', category: '', prompt: '', grader: '{"type": "exact", "answer": ""}', platforms: '', maxTokens: 1024, effort: '' })
+  Object.assign(form, { suite: 'iq', category: '', prompt: '', grader: '{"type": "exact", "answer": ""}', platforms: '', models: '', maxTokens: 1024, effort: '' })
   show.value = true
 }
 function openEdit(it: ProbeItem) {
@@ -89,6 +89,7 @@ function openEdit(it: ProbeItem) {
     prompt: it.prompt,
     grader: JSON.stringify(it.grader),
     platforms: it.platforms.join(', '),
+    models: it.models.join(', '),
     maxTokens: it.max_tokens,
     effort: it.reasoning_effort ?? '',
   })
@@ -108,6 +109,7 @@ async function save() {
     prompt: form.prompt,
     grader,
     platforms: form.platforms.split(/[,\s]+/).filter(Boolean),
+    models: form.models.split(/[,\s]+/).filter(Boolean),
     max_tokens: Number(form.maxTokens),
     reasoning_effort: form.effort || undefined,
     status: editing.value?.status ?? 'active',
@@ -164,7 +166,7 @@ async function removeRef(u: Upstream) {
       <div class="filter-item">
         <label class="filter-label">关键字</label>
         <div class="relative w-full flex-1">
-          <input v-model="queryParams.keyword" class="filter-input w-full" placeholder="ID / 类别 / 题目" @keyup.enter="search" />
+          <input v-model="queryParams.keyword" class="filter-input w-full" placeholder="ID / 类别 / 题目 / 模型" @keyup.enter="search" />
         </div>
       </div>
       <div class="filter-item">
@@ -205,6 +207,7 @@ async function removeRef(u: Upstream) {
         { key: 'prompt', label: '题目' },
         { key: 'grader', label: '判分' },
         { key: 'platforms', label: '平台' },
+        { key: 'models', label: '模型' },
         { key: 'status', label: '状态' },
         { key: 'actions', label: '操作' },
       ]"
@@ -216,6 +219,7 @@ async function removeRef(u: Upstream) {
       <template #cell-prompt="{ row }"><span class="block max-w-md truncate" :title="row.prompt">{{ row.prompt }}</span></template>
       <template #cell-grader="{ row }">{{ row.grader.type }}</template>
       <template #cell-platforms="{ row }">{{ row.platforms.length ? row.platforms.join(', ') : '全部' }}</template>
+      <template #cell-models="{ row }">{{ row.models.length ? row.models.join(', ') : '全部' }}</template>
       <template #cell-status="{ row }">{{ ({ active: '使用中', draft: '草稿', retired: '已下线' } as Record<string, string>)[row.status] }}</template>
       <template #cell-actions="{ row }">
         <button class="btn-ghost btn-sm" @click="openEdit(row)">编辑</button>
@@ -293,10 +297,14 @@ async function removeRef(u: Upstream) {
       <input id="igrader" v-model="form.grader" class="input font-mono" />
       <p class="hint">type：exact / contains / regex / numeric / choice / json_keys，例如 {"type":"numeric","number":391}</p>
     </div>
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-3 gap-3">
       <div>
         <label class="label" for="iplat">适用平台（留空为全部）</label>
         <input id="iplat" v-model="form.platforms" class="input" placeholder="anthropic, openai" />
+      </div>
+      <div>
+        <label class="label" for="imodels">适用模型（留空为全部）</label>
+        <input id="imodels" v-model="form.models" class="input" placeholder="gpt-6-astra" />
       </div>
       <div>
         <label class="label" for="ieff">推理强度（可选）</label>

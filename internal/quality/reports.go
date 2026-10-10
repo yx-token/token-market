@@ -291,6 +291,17 @@ func SeedDefaultItems(ctx context.Context, db DB) (int, error) {
 	if n > 0 {
 		return 0, nil
 	}
+	items := defaultItems()
+	for _, it := range items {
+		if _, err := CreateItem(ctx, db, it); err != nil {
+			return 0, err
+		}
+	}
+	return len(items), nil
+}
+
+// defaultItems 是内置的基础题。
+func defaultItems() []Item {
 	num := func(v float64) *float64 { return &v }
 	high := "high"
 	items := []Item{
@@ -313,16 +324,16 @@ func SeedDefaultItems(ctx context.Context, db DB) (int, error) {
 		{Suite: "reasoning", Category: "modular", Prompt: "What is the remainder when 2^100 is divided by 7? Reply with only the number.", Grader: Grader{Type: "numeric", Number: num(2)}, ReasoningEffort: &high, MaxTokens: 4096},
 		{Suite: "reasoning", Category: "trap", Prompt: "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How many cents does the ball cost? Reply with only the number.", Grader: Grader{Type: "numeric", Number: num(5)}, ReasoningEffort: &high, MaxTokens: 4096},
 		{Suite: "reasoning", Category: "algebra", Prompt: "The sum of three consecutive even integers is 78. What is the largest of them? Reply with only the number.", Grader: Grader{Type: "numeric", Number: num(28)}, ReasoningEffort: &high, MaxTokens: 4096},
+		// gpt-6-astra 的测智题。最不利原则：形状可凭手感挑选，取 12 颗五角星 + 9 颗圆形即可，答案 21；当作随机摸取会得出 29。
+		// 不要求只回答数字，回答中出现独立的 21 即通过；结果仅代表这道题的表现，不代表模型整体能力。
+		{Suite: "reasoning", Category: "pigeonhole", Prompt: "在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）\n\n| | 苹果味 | 桃子味 | 西瓜味 |\n|---|---|---|---|\n| 圆形 | 7 | 9 | 8 |\n| 五角星 | 7 | 6 | 4 |", Grader: Grader{Type: "regex", Pattern: `(^|[^0-9.])21([^0-9.]|\.([^0-9]|$)|$)`}, Models: []string{"gpt-6-astra"}, ReasoningEffort: &high, MaxTokens: 8192},
 		{Suite: "long_context", Category: "needle", Prompt: "{{HAYSTACK:20000}}\n\nWhat is the secret code mentioned in the text above? Reply with only the code.", Grader: Grader{Type: "contains", Answer: "{{NEEDLE}}"}, MaxTokens: 64},
 		{Suite: "long_context", Category: "needle", Prompt: "{{HAYSTACK:80000}}\n\nWhat is the secret code mentioned in the text above? Reply with only the code.", Grader: Grader{Type: "contains", Answer: "{{NEEDLE}}"}, MaxTokens: 64},
 	}
-	for _, it := range items {
-		if it.MaxTokens == 0 {
-			it.MaxTokens = 512
-		}
-		if _, err := CreateItem(ctx, db, it); err != nil {
-			return 0, err
+	for i := range items {
+		if items[i].MaxTokens == 0 {
+			items[i].MaxTokens = 512
 		}
 	}
-	return len(items), nil
+	return items
 }

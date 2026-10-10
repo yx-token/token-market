@@ -221,7 +221,8 @@ probe_items (                            -- 私有题库，卖家不可见
   category             text not null,
   prompt               jsonb not null,   -- 请求体模板
   grader               jsonb not null,   -- 判分方式：exact / numeric / regex / unit_test / json_schema
-  platforms            text[] not null,
+  platforms            text[] not null,  -- 适用厂商，空表示全部
+  models               text[] not null,  -- 适用模型，空表示全部
   irt_difficulty       double precision,
   irt_discrimination   double precision,
   status               text not null,    -- draft / active / retired

@@ -43,6 +43,41 @@ func TestGraders(t *testing.T) {
 	}
 }
 
+func TestDefaultItems(t *testing.T) {
+	var pigeonhole *Item
+	for _, it := range defaultItems() {
+		if err := validateItem(it); err != nil {
+			t.Errorf("default item %q invalid: %v", it.Category, err)
+		}
+		if it.Category == "pigeonhole" {
+			pigeonhole = &it
+		}
+	}
+	if pigeonhole == nil || len(pigeonhole.Models) != 1 || pigeonhole.Models[0] != "gpt-6-astra" {
+		t.Fatalf("pigeonhole item should target gpt-6-astra: %+v", pigeonhole)
+	}
+	// 回答中出现独立的 21 即通过：前后不能紧挨数字或小数点（句末的句点除外）
+	cases := []struct {
+		text string
+		want bool
+	}{
+		{"最少需要取出 21 个糖果。", true},
+		{"答案：**21**", true},
+		{"21", true},
+		{"so the answer is 21.", true},
+		{"至少要取 29 个", false},
+		{"共 121 颗", false},
+		{"210", false},
+		{"21.5", false},
+		{"0.21", false},
+	}
+	for _, c := range cases {
+		if got, err := grade(pigeonhole.Grader, c.text, ""); err != nil || got != c.want {
+			t.Errorf("pigeonhole grade(%q) = %v, %v; want %v", c.text, got, err, c.want)
+		}
+	}
+}
+
 func TestExpandHaystack(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
 	prompt, needle := expandPrompt("{{HAYSTACK:5000}}\nWhat is the code?", rng)
@@ -74,7 +109,7 @@ func TestAssessVerdicts(t *testing.T) {
 	if a := Assess(outcomes(12, 4, true), th, true); a.Verdict != "degraded" || a.Grade != "D" {
 		t.Fatalf("4/12 vs baseline 12/12 should be degraded: %+v", a)
 	}
-	if a := Assess(outcomes(12, 9, true), th, true); a.Decided() {
+	if a := Assess(outcomes(12, 9, true), th, true); a.Verdict == "normal" || a.Verdict == "degraded" {
 		t.Fatalf("9/12 should be undecided (needs more samples): %+v", a)
 	}
 	failing := outcomes(4, 0, true)

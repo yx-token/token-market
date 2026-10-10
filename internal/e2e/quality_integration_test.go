@@ -30,9 +30,19 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 			"grader": map[string]any{"type": "contains", "answer": fmt.Sprintf("PONG%d", i)}, "max_tokens": 32, "status": "active",
 		}, nil)
 	}
+	// 限定模型的题：只考本次检测的模型（策略默认 claude-sonnet-4-5），其他模型的题不出
+	var sameModel, otherModel idOnly
+	admin.must("POST", "/api/admin/probe-items", map[string]any{
+		"suite": "iq", "category": "recall", "prompt": "Q13: reply with the code PONG13 and nothing else",
+		"grader": map[string]any{"type": "contains", "answer": "PONG13"}, "max_tokens": 32, "models": []string{"claude-sonnet-4-5"},
+	}, &sameModel)
+	admin.must("POST", "/api/admin/probe-items", map[string]any{
+		"suite": "iq", "category": "recall", "prompt": "Q99: reply with the code PONG99 and nothing else",
+		"grader": map[string]any{"type": "contains", "answer": "PONG99"}, "max_tokens": 32, "models": []string{"gpt-6-astra"},
+	}, &otherModel)
 	// 开启检测（含定时检测），未检测的上游不接买家流量
 	admin.must("PUT", "/api/admin/detection-policies/anthropic", map[string]any{
-		"enabled": true, "scheduled_enabled": true, "items_per_run": 12,
+		"enabled": true, "scheduled_enabled": true,
 	}, nil)
 
 	// 被测账号的回答由 degraded 控制：降智时答错
@@ -95,6 +105,15 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status, health, grade FROM upstreams WHERE id = $1", up.ID), &status, &health, &grade)
 	if status != "ready" || health != "healthy" || grade == nil || *grade != "S" {
 		t.Fatalf("after passing onboarding: status=%s health=%s grade=%v", status, health, grade)
+	}
+	// 每次检测测全部适用题目，不抽样：公共准备与本测试各 12 道通用题 + 1 道限定本模型的题，不含其他模型的题
+	var asked int
+	var askedSame, askedOther bool
+	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT count(*), bool_or(r.item_id = $2), bool_or(r.item_id = $3) FROM probe_results r
+		JOIN probe_runs pr ON pr.id = r.run_id WHERE pr.upstream_id = $1 AND pr.trigger = 'onboarding'`, up.ID, sameModel.ID, otherModel.ID),
+		&asked, &askedSame, &askedOther)
+	if asked != 25 || !askedSame || askedOther {
+		t.Fatalf("onboarding should ask all 25 applicable items and skip other models: asked=%d same=%v other=%v", asked, askedSame, askedOther)
 	}
 	var created struct {
 		Listing idOnly `json:"listing"`

@@ -46,7 +46,6 @@ const form = reactive({
   suites: '',
   models: '',
   budget: 1,
-  items: 12,
   h0: 0.9,
   h1: 0.7,
   alpha: 0.05,
@@ -93,7 +92,6 @@ function edit(p: Policy) {
     suites: p.suites.join(', '),
     models: p.models.join(', '),
     budget: p.daily_budget_usd,
-    items: p.items_per_run,
     h0: p.thresholds.h0,
     h1: p.thresholds.h1,
     alpha: p.thresholds.alpha,
@@ -131,7 +129,6 @@ async function save() {
     suites: split(form.suites),
     models: split(form.models),
     daily_budget_usd: Number(form.budget),
-    items_per_run: Number(form.items),
     thresholds: { h0: Number(form.h0), h1: Number(form.h1), alpha: Number(form.alpha), beta: Number(form.beta) },
     auto_pause: form.autoPause,
     default_grade: form.grade,
@@ -261,7 +258,6 @@ async function probe() {
         { key: 'scheduled_enabled', label: '是否定时检测' },
         { key: 'interval', label: '周期' },
         { key: 'models', label: '模型' },
-        { key: 'items_per_run', label: '每次题量', align: 'right' },
         { key: 'daily_budget_usd', label: '每日预算', align: 'right' },
         { key: 'third_party', label: '第三方检测' },
         { key: 'updated_at', label: '更新时间' },
@@ -369,7 +365,7 @@ async function probe() {
       <label class="flex items-center gap-2"><input v-model="form.scheduled" type="checkbox" :disabled="!form.enabled" /> 是否定时检测</label>
       <label class="flex items-center gap-2"><input v-model="form.autoPause" type="checkbox" /> 确认降智后自动停止调度</label>
     </div>
-    <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
       <div>
         <label class="label" for="pi">周期（分钟）</label>
         <input id="pi" v-model.number="form.interval" class="input" type="number" min="10" />
@@ -377,10 +373,6 @@ async function probe() {
       <div>
         <label class="label" for="pj">随机抖动（分钟）</label>
         <input id="pj" v-model.number="form.jitter" class="input" type="number" min="0" />
-      </div>
-      <div>
-        <label class="label" for="pn2">每次题量</label>
-        <input id="pn2" v-model.number="form.items" class="input" type="number" min="1" max="200" />
       </div>
       <div>
         <label class="label" for="pb">每日预算</label>

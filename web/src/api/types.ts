@@ -721,7 +721,6 @@ export interface Policy {
   suites: string[]
   models: string[]
   daily_budget_usd: number
-  items_per_run: number
   thresholds: Thresholds
   auto_pause: boolean
   default_grade: string
@@ -794,6 +793,7 @@ export interface ProbeItem {
   prompt: string
   grader: Grader
   platforms: string[]
+  models: string[]
   max_tokens: number
   reasoning_effort?: string
   status: string

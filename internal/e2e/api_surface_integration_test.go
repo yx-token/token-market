@@ -250,7 +250,7 @@ func TestAPISurface(t *testing.T) {
 	admin.must("POST", "/api/admin/proxies/6/sync", nil, nil)
 	admin.must("POST", "/api/admin/proxies/6/disable", nil, nil)
 	admin.must("POST", "/api/admin/proxies/6/enable", nil, nil)
-	admin.must("PUT", "/api/admin/detection-policies/kimi", map[string]any{"enabled": true, "items_per_run": 4}, nil)
+	admin.must("PUT", "/api/admin/detection-policies/kimi", map[string]any{"enabled": true}, nil)
 	admin.must("PUT", "/api/admin/detection-policies/kimi?auth_type=coding", map[string]any{"enabled": false}, nil)
 	admin.must("PUT", fmt.Sprintf("/api/admin/upstreams/%d/detection-override", upC.ID), map[string]any{"enabled": true, "reason": "spot check"}, nil)
 	admin.must("DELETE", fmt.Sprintf("/api/admin/upstreams/%d/detection-override", upC.ID), nil, nil)

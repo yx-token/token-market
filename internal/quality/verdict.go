@@ -163,11 +163,6 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 	return a
 }
 
-// Decided 判断检验是否已有结论（未达结论时可以追加题目）。
-func (a Assessment) Decided() bool {
-	return a.Verdict == "normal" || a.Verdict == "degraded" || a.Verdict == "unavailable"
-}
-
 func reasoningAmount(r ProbeResult) float64 {
 	if r.ReasoningTokens > 0 {
 		return float64(r.ReasoningTokens)

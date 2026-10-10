@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/DueGin/token-market/internal/listing"
@@ -48,7 +47,6 @@ type Policy struct {
 	Suites           []string   `json:"suites"`
 	Models           []string   `json:"models"`
 	DailyBudgetUSD   float64    `json:"daily_budget_usd"`
-	ItemsPerRun      int        `json:"items_per_run"`
 	Thresholds       Thresholds `json:"thresholds"`
 	AutoPause        bool       `json:"auto_pause"`
 	DefaultGrade     string     `json:"default_grade"`
@@ -137,13 +135,13 @@ func (c ThirdPartyCheck) VerdictFor(outcome string) string {
 }
 
 const policyColumns = `id, platform, auth_type, enabled, scheduled_enabled, interval_minutes, jitter_minutes, suites, models,
-	daily_budget_usd::float8, items_per_run, thresholds, auto_pause, default_grade, third_party, version, updated_at`
+	daily_budget_usd::float8, thresholds, auto_pause, default_grade, third_party, version, updated_at`
 
 func scanPolicy(row pgx.Row) (*Policy, error) {
 	var p Policy
 	var th, tp []byte
 	if err := row.Scan(&p.ID, &p.Platform, &p.AuthType, &p.Enabled, &p.ScheduledEnabled, &p.IntervalMinutes, &p.JitterMinutes,
-		&p.Suites, &p.Models, &p.DailyBudgetUSD, &p.ItemsPerRun, &th, &p.AutoPause, &p.DefaultGrade, &tp,
+		&p.Suites, &p.Models, &p.DailyBudgetUSD, &th, &p.AutoPause, &p.DefaultGrade, &tp,
 		&p.Version, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -218,7 +216,6 @@ type PolicyInput struct {
 	Suites           *[]string          `json:"suites"`
 	Models           *[]string          `json:"models"`
 	DailyBudgetUSD   *float64           `json:"daily_budget_usd"`
-	ItemsPerRun      *int               `json:"items_per_run"`
 	Thresholds       *Thresholds        `json:"thresholds"`
 	AutoPause        *bool              `json:"auto_pause"`
 	DefaultGrade     *string            `json:"default_grade"`
@@ -236,7 +233,7 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 		p, err = scanPolicy(db.QueryRow(ctx, "SELECT "+policyColumns+" FROM detection_policies WHERE platform = $1 AND auth_type = ''", platform))
 		if errors.Is(err, pgx.ErrNoRows) {
 			p = &Policy{Platform: platform, IntervalMinutes: 360, JitterMinutes: 30, Suites: []string{"availability", "latency", "iq"},
-				DailyBudgetUSD: 1, ItemsPerRun: 12, Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1}, AutoPause: true, DefaultGrade: "B"}
+				DailyBudgetUSD: 1, Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1}, AutoPause: true, DefaultGrade: "B"}
 		} else if err != nil {
 			return nil, err
 		}
@@ -268,9 +265,6 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	if in.DailyBudgetUSD != nil {
 		p.DailyBudgetUSD = *in.DailyBudgetUSD
 	}
-	if in.ItemsPerRun != nil {
-		p.ItemsPerRun = *in.ItemsPerRun
-	}
 	if in.Thresholds != nil {
 		p.Thresholds = *in.Thresholds
 	}
@@ -301,8 +295,6 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 		return nil, httpx.BadRequest("INVALID_POLICY", "scheduled detection requires detection to be enabled")
 	case p.IntervalMinutes < 10 || p.JitterMinutes < 0 || p.JitterMinutes >= p.IntervalMinutes:
 		return nil, httpx.BadRequest("INVALID_INTERVAL", "interval must be >= 10 minutes and jitter smaller than interval")
-	case p.ItemsPerRun <= 0 || p.ItemsPerRun > 200:
-		return nil, httpx.BadRequest("INVALID_ITEMS", "items_per_run must be between 1 and 200")
 	case p.DailyBudgetUSD < 0:
 		return nil, httpx.BadRequest("INVALID_BUDGET", "daily_budget_usd must be >= 0")
 	case p.Enabled && len(p.Models) == 0:
@@ -324,17 +316,17 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	th, _ := json.Marshal(p.Thresholds)
 	tp, _ := json.Marshal(p.ThirdParty)
 	return scanPolicy(db.QueryRow(ctx, `INSERT INTO detection_policies (platform, auth_type, enabled, scheduled_enabled, interval_minutes,
-			jitter_minutes, suites, models, daily_budget_usd, items_per_run, thresholds, auto_pause, default_grade, third_party, updated_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $15, $14)
+			jitter_minutes, suites, models, daily_budget_usd, thresholds, auto_pause, default_grade, third_party, updated_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $14, $13)
 		ON CONFLICT (platform, auth_type) DO UPDATE SET enabled = EXCLUDED.enabled, scheduled_enabled = EXCLUDED.scheduled_enabled,
 			interval_minutes = EXCLUDED.interval_minutes, jitter_minutes = EXCLUDED.jitter_minutes, suites = EXCLUDED.suites,
-			models = EXCLUDED.models, daily_budget_usd = EXCLUDED.daily_budget_usd, items_per_run = EXCLUDED.items_per_run,
+			models = EXCLUDED.models, daily_budget_usd = EXCLUDED.daily_budget_usd,
 			thresholds = EXCLUDED.thresholds, auto_pause = EXCLUDED.auto_pause,
 			default_grade = EXCLUDED.default_grade, third_party = EXCLUDED.third_party, updated_by = EXCLUDED.updated_by,
 			version = detection_policies.version + 1, updated_at = now()
 		RETURNING `+policyColumns,
 		platform, authType, p.Enabled, p.ScheduledEnabled, p.IntervalMinutes, p.JitterMinutes, p.Suites, p.Models, p.DailyBudgetUSD,
-		p.ItemsPerRun, th, p.AutoPause, p.DefaultGrade, adminID, tp))
+		th, p.AutoPause, p.DefaultGrade, adminID, tp))
 }
 
 type OverrideInput struct {
@@ -378,6 +370,7 @@ type Item struct {
 	Prompt            string   `json:"prompt"`
 	Grader            Grader   `json:"grader"`
 	Platforms         []string `json:"platforms"`
+	Models            []string `json:"models"` // 适用模型，空表示全部
 	MaxTokens         int      `json:"max_tokens"`
 	ReasoningEffort   *string  `json:"reasoning_effort,omitempty"`
 	IRTDifficulty     *float64 `json:"irt_difficulty,omitempty"`
@@ -386,12 +379,12 @@ type Item struct {
 	Version           int      `json:"version"`
 }
 
-const itemColumns = `id, suite, category, prompt, grader, platforms, max_tokens, reasoning_effort, irt_difficulty, irt_discrimination, status, version`
+const itemColumns = `id, suite, category, prompt, grader, platforms, models, max_tokens, reasoning_effort, irt_difficulty, irt_discrimination, status, version`
 
 func scanItem(row pgx.Row) (*Item, error) {
 	var it Item
 	var g []byte
-	if err := row.Scan(&it.ID, &it.Suite, &it.Category, &it.Prompt, &g, &it.Platforms, &it.MaxTokens, &it.ReasoningEffort,
+	if err := row.Scan(&it.ID, &it.Suite, &it.Category, &it.Prompt, &g, &it.Platforms, &it.Models, &it.MaxTokens, &it.ReasoningEffort,
 		&it.IRTDifficulty, &it.IRTDiscrimination, &it.Status, &it.Version); err != nil {
 		return nil, err
 	}
@@ -430,9 +423,12 @@ func CreateItem(ctx context.Context, db DB, it Item) (*Item, error) {
 	if it.Platforms == nil {
 		it.Platforms = []string{}
 	}
-	return scanItem(db.QueryRow(ctx, `INSERT INTO probe_items (suite, category, prompt, grader, platforms, max_tokens, reasoning_effort,
-			irt_difficulty, irt_discrimination, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING `+itemColumns,
-		it.Suite, it.Category, it.Prompt, g, it.Platforms, it.MaxTokens, it.ReasoningEffort, it.IRTDifficulty, it.IRTDiscrimination, it.Status))
+	if it.Models == nil {
+		it.Models = []string{}
+	}
+	return scanItem(db.QueryRow(ctx, `INSERT INTO probe_items (suite, category, prompt, grader, platforms, models, max_tokens, reasoning_effort,
+			irt_difficulty, irt_discrimination, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING `+itemColumns,
+		it.Suite, it.Category, it.Prompt, g, it.Platforms, it.Models, it.MaxTokens, it.ReasoningEffort, it.IRTDifficulty, it.IRTDiscrimination, it.Status))
 }
 
 func UpdateItem(ctx context.Context, db DB, id int64, it Item) (*Item, error) {
@@ -443,10 +439,13 @@ func UpdateItem(ctx context.Context, db DB, id int64, it Item) (*Item, error) {
 	if it.Platforms == nil {
 		it.Platforms = []string{}
 	}
+	if it.Models == nil {
+		it.Models = []string{}
+	}
 	out, err := scanItem(db.QueryRow(ctx, `UPDATE probe_items SET suite = $2, category = $3, prompt = $4, grader = $5, platforms = $6,
-			max_tokens = $7, reasoning_effort = $8, irt_difficulty = $9, irt_discrimination = $10, status = $11,
+			models = $7, max_tokens = $8, reasoning_effort = $9, irt_difficulty = $10, irt_discrimination = $11, status = $12,
 			version = version + 1, updated_at = now() WHERE id = $1 RETURNING `+itemColumns,
-		id, it.Suite, it.Category, it.Prompt, g, it.Platforms, it.MaxTokens, it.ReasoningEffort, it.IRTDifficulty, it.IRTDiscrimination, it.Status))
+		id, it.Suite, it.Category, it.Prompt, g, it.Platforms, it.Models, it.MaxTokens, it.ReasoningEffort, it.IRTDifficulty, it.IRTDiscrimination, it.Status))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, httpx.NotFound("ITEM_NOT_FOUND", "probe item not found")
 	}
@@ -470,8 +469,9 @@ func ListItems(ctx context.Context, db DB, status string) ([]Item, error) {
 	return out, rows.Err()
 }
 
-// selectItems 按套件为某平台抽题：优先区分度高的题（IRT），其余随机，保证每个启用的套件都有题。
-func selectItems(ctx context.Context, db DB, platform string, suites []string, n int, seed int64) ([]Item, error) {
+// selectItems 返回一次检测要测的全部题目，不抽样：启用套件下所有使用中的题，
+// 且题目的适用平台、适用模型包含本次检测的平台和模型（为空表示不限）。
+func selectItems(ctx context.Context, db DB, platform, model string, suites []string) ([]Item, error) {
 	var wanted []string
 	for _, s := range suites {
 		if s == "iq" || s == "reasoning" || s == "long_context" {
@@ -484,40 +484,19 @@ func selectItems(ctx context.Context, db DB, platform string, suites []string, n
 	}
 	rows, err := db.Query(ctx, "SELECT "+itemColumns+` FROM probe_items
 		WHERE status = 'active' AND suite = ANY($1) AND (cardinality(platforms) = 0 OR $2 = ANY(platforms))
-		ORDER BY COALESCE(irt_discrimination, 0) DESC, md5(id::text || $3::text)`, wanted, platform, fmt.Sprint(seed))
+			AND (cardinality(models) = 0 OR $3 = ANY(models))
+		ORDER BY id`, wanted, platform, model)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var all []Item
+	var out []Item
 	for rows.Next() {
 		it, err := scanItem(rows)
 		if err != nil {
 			return nil, err
 		}
-		all = append(all, *it)
+		out = append(out, *it)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	// 轮流从每个套件取题
-	bySuite := map[string][]Item{}
-	for _, it := range all {
-		bySuite[it.Suite] = append(bySuite[it.Suite], it)
-	}
-	var out []Item
-	for len(out) < n {
-		progressed := false
-		for _, s := range wanted {
-			if len(bySuite[s]) > 0 && len(out) < n {
-				out = append(out, bySuite[s][0])
-				bySuite[s] = bySuite[s][1:]
-				progressed = true
-			}
-		}
-		if !progressed {
-			break
-		}
-	}
-	return out, nil
+	return out, rows.Err()
 }
