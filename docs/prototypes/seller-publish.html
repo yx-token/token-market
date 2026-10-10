@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>闲猫 · 发布供给</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="_center-shell.css" />
+  <style>
+    .wrap { max-width: 720px; }
+    .steps {
+      display: flex;
+      gap: 6px;
+      margin: 0 0 28px;
+      flex-wrap: wrap;
+    }
+    .step-pill {
+      flex: 1;
+      min-width: 88px;
+      text-align: center;
+      padding: 10px 8px;
+      border-radius: 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      font-size: 12px;
+      font-weight: 700;
+      color: #999;
+    }
+    .step-pill .n {
+      display: block;
+      font-size: 11px;
+      margin-bottom: 2px;
+      font-family: ui-monospace, Menlo, monospace;
+    }
+    .step-pill.on {
+      background: var(--yellow);
+      border-color: transparent;
+      color: #1f1f1f;
+    }
+    .step-pill.done { color: #1f1f1f; background: #fff8c5; }
+    .panel {
+      display: none;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 24px 22px;
+    }
+    .panel.on { display: block; }
+    .panel h2 {
+      margin: 0 0 6px;
+      font-size: 20px;
+      font-weight: 800;
+    }
+    .panel .sub {
+      margin: 0 0 20px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: #666;
+      margin-bottom: 6px;
+    }
+    .field input, .field select, .field textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1.5px solid rgba(0,0,0,.1);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: inherit;
+      font-size: 14px;
+      background: #fafafa;
+    }
+    .field textarea { min-height: 72px; resize: vertical; }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      outline: none;
+      border-color: #1f1f1f;
+      background: #fff;
+    }
+    .row2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 560px) { .row2 { grid-template-columns: 1fr; } }
+    .choice {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .choice label {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px;
+      border: 1.5px solid rgba(0,0,0,.1);
+      border-radius: 14px;
+      cursor: pointer;
+      background: #fafafa;
+    }
+    .choice label.on {
+      border-color: #1f1f1f;
+      background: rgba(255, 230, 15, 0.28);
+    }
+    .choice input { margin-top: 3px; accent-color: #1f1f1f; }
+    .choice strong { display: block; font-size: 14px; margin-bottom: 2px; }
+    .choice span { font-size: 12px; color: #777; line-height: 1.45; font-weight: 500; }
+    .actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+    .btn {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 20px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .btn-ghost { background: #f0f0f0; color: #333; }
+    .btn-primary { background: var(--yellow); color: #1f1f1f; }
+    .btn-primary:hover { filter: brightness(0.97); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .probe {
+      padding: 16px;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      margin-bottom: 16px;
+    }
+    .probe .bar {
+      height: 8px;
+      background: #e2e8f0;
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .probe .bar i {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: #22c55e;
+      border-radius: 999px;
+      transition: width 0.3s;
+    }
+    .probe.ok { background: #f0fdf4; border-color: #86efac; border-style: solid; }
+    .probe.fail { background: #fef2f2; border-color: #fecaca; border-style: solid; }
+    .hint {
+      font-size: 12px;
+      color: #888;
+      line-height: 1.5;
+      margin-top: 6px;
+    }
+    .summary {
+      background: #fafafa;
+      border-radius: 14px;
+      padding: 16px;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    .summary b { font-weight: 800; }
+    .done-box {
+      text-align: center;
+      padding: 12px 0 8px;
+    }
+    .done-box h2 { margin-bottom: 10px; }
+    .links { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-row">
+      <a class="logo" href="market-home.html">
+        <img src="assets/xianmao-pet.svg" alt="" width="36" height="36" />
+        闲猫
+      </a>
+      <span class="role-tag">发布供给</span>
+      <div class="spacer"></div>
+      <a class="nav-link" href="seller-center.html">卖家中心</a>
+      <a class="nav-link" href="market-home.html">回市场</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <span class="route">/seller/upstreams → 挂单</span>
+    <h1>发布闲置供给</h1>
+    <p class="lead">授权订阅账号 → 上架检测 → 挂「按量通道」或「额度包」。不是上架实物，是开放可调度额度。</p>
+
+    <div class="steps" id="steps" aria-label="发布步骤">
+      <div class="step-pill on" data-step="0"><span class="n">01</span>代理</div>
+      <div class="step-pill" data-step="1"><span class="n">02</span>接入</div>
+      <div class="step-pill" data-step="2"><span class="n">03</span>检测</div>
+      <div class="step-pill" data-step="3"><span class="n">04</span>商品</div>
+      <div class="step-pill" data-step="4"><span class="n">05</span>定价</div>
+      <div class="step-pill" data-step="5"><span class="n">06</span>完成</div>
+    </div>
+
+    <!-- 0 代理 -->
+    <section class="panel on" data-panel="0">
+      <h2>配置出口代理</h2>
+      <p class="sub">授权与调用走同一固定代理；每个代理同时只能绑一个账号。</p>
+      <div class="choice" id="proxy-choice">
+        <label class="on"><input type="radio" name="proxy" value="mine" checked /><div><strong>使用我的代理</strong><span>HTTP / SOCKS5，需已在代理列表登记</span></div></label>
+        <label><input type="radio" name="proxy" value="platform" /><div><strong>使用平台代理</strong><span>由平台库存分配（需管理员允许）</span></div></label>
+      </div>
+      <div class="field" id="proxy-select-wrap">
+        <label for="proxy-id">选择代理</label>
+        <select id="proxy-id">
+          <option value="p1">家宽 · 上海 · socks5://1.2.3.4:1080</option>
+          <option value="p2">VPS · 新加坡 · http://proxy.example:8080</option>
+        </select>
+      </div>
+      <div class="actions">
+        <a class="btn btn-ghost" href="seller-center.html">取消</a>
+        <button class="btn btn-primary" type="button" data-next>下一步</button>
+      </div>
+    </section>
+
+    <!-- 1 接入 -->
+    <section class="panel" data-panel="1">
+      <h2>接入上游账号</h2>
+      <p class="sub">只做授权，不交密码。OAuth 跳转官方页；Coding Plan 粘贴订阅 Key。</p>
+      <div class="row2">
+        <div class="field">
+          <label for="platform">厂商</label>
+          <select id="platform">
+            <option value="Claude">Claude</option>
+            <option value="ChatGPT">ChatGPT / Codex</option>
+            <option value="Kimi">Kimi</option>
+            <option value="Gemini">Gemini</option>
+            <option value="智谱">智谱 GLM</option>
+            <option value="MiniMax">MiniMax</option>
+            <option value="Grok">Grok</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="auth-type">接入方式</label>
+          <select id="auth-type">
+            <option value="oauth">OAuth 授权</option>
+            <option value="setup-token">Setup Token</option>
+            <option value="coding">Coding Plan Key</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" id="oauth-block">
+        <label>授权</label>
+        <button class="btn btn-ghost" type="button" id="btn-oauth" style="width:100%">打开官方授权页（原型模拟）</button>
+        <p class="hint" id="oauth-hint">授权完成后回填授权码，平台换取 token 并创建上游。</p>
+      </div>
+      <div class="field" id="key-block" style="display:none">
+        <label for="plan-key">Coding Plan Key</label>
+        <input id="plan-key" type="password" placeholder="粘贴订阅 Key（不会展示给买家）" />
+        <p class="hint">国内站用官方默认地址；国际站用平台内置地址，不允许自定义 base_url。</p>
+      </div>
+      <div class="field">
+        <label for="reserve">自留比例（%）</label>
+        <input id="reserve" type="number" min="0" max="80" value="20" />
+        <p class="hint">窗口用量达到阈值即暂停调度，只卖掉你用不完的部分。Gemini / Antigravity 等可能不支持自留。</p>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" type="button" data-prev>上一步</button>
+        <button class="btn btn-primary" type="button" data-next id="btn-connect">创建上游并检测</button>
+      </div>
+    </section>
+
+    <!-- 2 检测 -->
+    <section class="panel" data-panel="2">
+      <h2>上架检测</h2>
+      <p class="sub">首次接入必做：可用性、性能、降智对照。通过前不能挂单。</p>
+      <div class="probe" id="probe">
+        <div style="font-size:13px;font-weight:700" id="probe-text">准备开始检测…</div>
+        <div class="bar"><i id="probe-bar"></i></div>
+        <div style="font-size:12px;color:#888" id="probe-detail">平台探测 → 可选第三方身份检测</div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>识别档位</label>
+          <input id="tier-view" readonly value="—" />
+        </div>
+        <div class="field">
+          <label>质量等级</label>
+          <input id="grade-view" readonly value="—" />
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" type="button" data-prev>上一步</button>
+        <button class="btn btn-primary" type="button" data-next id="btn-after-probe" disabled>检测通过，继续</button>
+      </div>
+    </section>
+
+    <!-- 3 商品形态 -->
+    <section class="panel" data-panel="3">
+      <h2>选择商品形态</h2>
+      <p class="sub">同一上游同时只能有一条有效挂单；形态决定买家怎么下单。</p>
+      <div class="choice" id="sku-choice">
+        <label class="on" data-sku="channel">
+          <input type="radio" name="sku" value="channel" checked />
+          <div>
+            <strong>A. 按量通道（寄售）</strong>
+            <span>买家选用后付最低额度 M（可为 0），调用按官方价 × 你的倍率从平台余额扣。可进市场被指定，也可进保障池。</span>
+          </div>
+        </label>
+        <label data-sku="pack">
+          <input type="radio" name="sku" value="pack" />
+          <div>
+            <strong>B. 额度包</strong>
+            <span>发布固定面额商品（如 ¥100），买家整包购买后调用；未用完可退货释放库存。有可售份数。</span>
+          </div>
+        </label>
+        <label data-sku="buyback">
+          <input type="radio" name="sku" value="buyback" />
+          <div>
+            <strong>C. 平台回收（按量）</strong>
+            <span>接受平台报价，不进市场目录，只进保障池优先消化。省心，倍率由平台定。</span>
+          </div>
+        </label>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" type="button" data-prev>上一步</button>
+        <button class="btn btn-primary" type="button" data-next>下一步</button>
+      </div>
+    </section>
+
+    <!-- 4 定价 -->
+    <section class="panel" data-panel="4">
+      <h2>定价与上架内容</h2>
+      <p class="sub" id="price-sub">设置买家看到的价格与标题。</p>
+
+      <div id="fields-channel">
+        <div class="row2">
+          <div class="field">
+            <label for="mult">卖家倍率 m_s</label>
+            <input id="mult" type="number" step="0.01" min="0.3" max="0.95" value="0.55" />
+            <p class="hint">买家价 ≈ m_s × (1 + 抽佣)。需在平台允许区间内。</p>
+          </div>
+          <div class="field">
+            <label for="min-m">最低额度 M（元）</label>
+            <input id="min-m" type="number" step="1" min="0" value="0" />
+            <p class="hint">下单应付；0 = 免费开通，之后按量扣余额。</p>
+          </div>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="join-pool" checked /> 同时加入保障池（倍率需足够低）</label>
+        </div>
+      </div>
+
+      <div id="fields-pack" style="display:none">
+        <div class="row2">
+          <div class="field">
+            <label for="face">包面额（元）</label>
+            <input id="face" type="number" min="10" step="10" value="100" />
+          </div>
+          <div class="field">
+            <label for="stock">可售份数</label>
+            <input id="stock" type="number" min="1" value="3" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="pack-mult">包内计费倍率</label>
+          <input id="pack-mult" type="number" step="0.01" min="0.3" max="0.95" value="0.55" />
+        </div>
+      </div>
+
+      <div id="fields-buyback" style="display:none">
+        <div class="summary">
+          平台回收报价：<b>0.72×</b>（按检测等级 A）<br />
+          有效期 24 小时。接受后按实际用量 × 0.72 结算，不进市场。
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:16px">
+        <label for="title">展示标题（可选）</label>
+        <input id="title" placeholder="留空则自动生成：厂商 · 档位 · 形态" />
+      </div>
+      <div class="field">
+        <label for="desc">短描述（可选）</label>
+        <textarea id="desc" placeholder="给买家看的说明，不要写外链或账号信息"></textarea>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-ghost" type="button" data-prev>上一步</button>
+        <button class="btn btn-primary" type="button" data-next id="btn-publish">确认上架</button>
+      </div>
+    </section>
+
+    <!-- 5 完成 -->
+    <section class="panel" data-panel="5">
+      <div class="done-box">
+        <h2>已发布</h2>
+        <p class="sub" id="done-text" style="margin-bottom:16px"></p>
+        <div class="summary" id="done-summary" style="text-align:left"></div>
+        <div class="links">
+          <a class="btn btn-primary" href="market-home.html#feed">去市场看看</a>
+          <a class="btn btn-ghost" href="seller-center.html">回卖家中心</a>
+          <button class="btn btn-ghost" type="button" id="btn-again">再发一条</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let step = 0;
+    const max = 5;
+    const state = {
+      proxy: "mine",
+      platform: "Claude",
+      auth: "oauth",
+      sku: "channel",
+      tier: "Max 5x",
+      grade: "A",
+    };
+
+    const pills = [...document.querySelectorAll(".step-pill")];
+    const panels = [...document.querySelectorAll(".panel")];
+
+    function show(n) {
+      step = n;
+      pills.forEach((p, i) => {
+        p.classList.toggle("on", i === n);
+        p.classList.toggle("done", i < n);
+      });
+      panels.forEach((p) => p.classList.toggle("on", Number(p.dataset.panel) === n));
+      if (n === 2) startProbe();
+      if (n === 4) syncPriceFields();
+    }
+
+    document.querySelectorAll("[data-next]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (step === 1) {
+          state.platform = document.getElementById("platform").value;
+          state.auth = document.getElementById("auth-type").value;
+        }
+        if (step === 3) {
+          state.sku = document.querySelector("input[name=sku]:checked")?.value || "channel";
+        }
+        if (step === 4) {
+          finishPublish();
+          show(5);
+          return;
+        }
+        if (step < max) show(step + 1);
+      });
+    });
+    document.querySelectorAll("[data-prev]").forEach((btn) => {
+      btn.addEventListener("click", () => { if (step > 0) show(step - 1); });
+    });
+
+    document.getElementById("proxy-choice").addEventListener("click", (e) => {
+      const lab = e.target.closest("label");
+      if (!lab) return;
+      document.querySelectorAll("#proxy-choice label").forEach((x) => x.classList.remove("on"));
+      lab.classList.add("on");
+      lab.querySelector("input").checked = true;
+      state.proxy = lab.querySelector("input").value;
+      document.getElementById("proxy-select-wrap").style.display = state.proxy === "mine" ? "" : "none";
+    });
+
+    document.getElementById("auth-type").addEventListener("change", () => {
+      const v = document.getElementById("auth-type").value;
+      document.getElementById("oauth-block").style.display = v === "coding" ? "none" : "";
+      document.getElementById("key-block").style.display = v === "coding" ? "" : "none";
+    });
+
+    document.getElementById("btn-oauth").addEventListener("click", () => {
+      document.getElementById("oauth-hint").textContent = "已模拟授权成功，可点「创建上游并检测」。";
+    });
+
+    document.getElementById("sku-choice").addEventListener("click", (e) => {
+      const lab = e.target.closest("label");
+      if (!lab) return;
+      document.querySelectorAll("#sku-choice label").forEach((x) => x.classList.remove("on"));
+      lab.classList.add("on");
+      lab.querySelector("input").checked = true;
+    });
+
+    function syncPriceFields() {
+      const sku = state.sku;
+      document.getElementById("fields-channel").style.display = sku === "channel" ? "" : "none";
+      document.getElementById("fields-pack").style.display = sku === "pack" ? "" : "none";
+      document.getElementById("fields-buyback").style.display = sku === "buyback" ? "" : "none";
+      const map = {
+        channel: "寄售按量：自定倍率 + 最低额度 M。",
+        pack: "额度包：面额、库存、包内倍率。买家未用完可退货。",
+        buyback: "平台回收：确认报价即可，无需自定倍率。",
+      };
+      document.getElementById("price-sub").textContent = map[sku] || "";
+      const auto = state.platform + " · " + state.tier + " · " +
+        (sku === "pack" ? "额度包" : sku === "buyback" ? "回收通道" : "按量通道");
+      const title = document.getElementById("title");
+      if (!title.value) title.placeholder = auto;
+    }
+
+    let probing = false;
+    function startProbe() {
+      if (probing) return;
+      probing = true;
+      const box = document.getElementById("probe");
+      const bar = document.getElementById("probe-bar");
+      const text = document.getElementById("probe-text");
+      const detail = document.getElementById("probe-detail");
+      const next = document.getElementById("btn-after-probe");
+      box.classList.remove("ok", "fail");
+      next.disabled = true;
+      let p = 0;
+      const stages = [
+        [20, "创建上游账号…", "写入探测分组"],
+        [45, "探测可用性…", "发送测试请求"],
+        [70, "性能与降智对照…", "对照基线账号"],
+        [90, "第三方身份检测（可选）…", "BazaarLink"],
+        [100, "检测通过", "档位已识别，可以挂单"],
+      ];
+      let i = 0;
+      const tick = () => {
+        if (i >= stages.length) {
+          probing = false;
+          box.classList.add("ok");
+          state.tier = state.platform === "Kimi" ? "Coding" : state.platform === "Claude" ? "Max 5x" : "Pro";
+          state.grade = "A";
+          document.getElementById("tier-view").value = state.tier;
+          document.getElementById("grade-view").value = state.grade + " 级";
+          next.disabled = false;
+          return;
+        }
+        const [w, t, d] = stages[i++];
+        p = w;
+        bar.style.width = p + "%";
+        text.textContent = t;
+        detail.textContent = d;
+        setTimeout(tick, 450);
+      };
+      tick();
+    }
+
+    function finishPublish() {
+      const sku = state.sku;
+      const title = document.getElementById("title").value.trim() ||
+        (state.platform + " · " + state.tier + " · " +
+          (sku === "pack" ? "额度包" : sku === "buyback" ? "回收通道" : "按量通道"));
+      let lines = [];
+      if (sku === "channel") {
+        const m = document.getElementById("mult").value;
+        const min = document.getElementById("min-m").value;
+        const pool = document.getElementById("join-pool").checked;
+        lines = [
+          "<b>形态</b> 按量通道（寄售）",
+          "<b>标题</b> " + title,
+          "<b>倍率</b> " + m + "× · <b>起步 M</b> ¥" + min,
+          "<b>保障池</b> " + (pool ? "加入" : "不加入"),
+          "<b>市场</b> 买家可「选用并开通」",
+        ];
+        document.getElementById("done-text").textContent = "按量通道已上架。买家下单付 M 后得 Key；调用扣平台余额。";
+      } else if (sku === "pack") {
+        const face = document.getElementById("face").value;
+        const stock = document.getElementById("stock").value;
+        const pm = document.getElementById("pack-mult").value;
+        lines = [
+          "<b>形态</b> 额度包",
+          "<b>标题</b> " + title,
+          "<b>面额</b> ¥" + face + " · <b>库存</b> " + stock + " 份",
+          "<b>包内倍率</b> " + pm + "×",
+          "<b>退货</b> 未用量可退，释放库存",
+        ];
+        document.getElementById("done-text").textContent = "额度包已上架。买家整包付款后调用；支持按未用量退货。";
+      } else {
+        lines = [
+          "<b>形态</b> 平台回收",
+          "<b>标题</b> " + title,
+          "<b>回收倍率</b> 0.72×",
+          "<b>市场</b> 不展示，只进保障池",
+        ];
+        document.getElementById("done-text").textContent = "已接受回收报价，供给进入保障池调度。";
+      }
+      document.getElementById("done-summary").innerHTML = lines.join("<br />");
+    }
+
+    document.getElementById("btn-again").addEventListener("click", () => {
+      probing = false;
+      document.getElementById("probe-bar").style.width = "0";
+      document.getElementById("title").value = "";
+      document.getElementById("desc").value = "";
+      show(0);
+    });
+  </script>
+</body>
+</html>

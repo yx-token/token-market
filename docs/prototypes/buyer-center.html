@@ -8,6 +8,273 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="_center-shell.css" />
+  <style>
+    .wrap { max-width: 960px; }
+    .hero-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .hero-row .lead { margin: 0; max-width: 540px; }
+    .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 18px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+    }
+    .btn-primary { background: var(--yellow); color: #1f1f1f; }
+    .btn-dark { background: #1f1f1f; color: #ffe60f; }
+    .btn-ghost { background: #fff; border: 1px solid var(--line); }
+    .btn-sm { padding: 7px 12px; font-size: 12px; border-radius: 9px; }
+    .btn:hover { filter: brightness(0.97); }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    @media (max-width: 720px) { .stats { grid-template-columns: 1fr 1fr; } }
+    .stat {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .stat b { display: block; font-size: 12px; color: #888; margin-bottom: 6px; font-weight: 700; }
+    .stat strong { font-size: 22px; font-weight: 800; }
+    .stat em { display: block; margin-top: 4px; font-style: normal; font-size: 11px; color: #999; }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+    }
+    .tab {
+      border: none;
+      background: transparent;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      color: #888;
+      padding: 8px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .tab.on { background: var(--yellow); color: #1f1f1f; }
+
+    .panel { display: none; }
+    .panel.on { display: block; }
+
+    .callout {
+      background: rgba(255, 230, 15, 0.35);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 13px;
+      color: #444;
+      line-height: 1.55;
+      margin-bottom: 16px;
+    }
+    .edge-box {
+      background: #1f1f1f;
+      color: #eee;
+      border-radius: 14px;
+      padding: 16px 18px;
+      margin-bottom: 16px;
+    }
+    .edge-box .lab {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #999;
+    }
+    .edge-box code {
+      display: block;
+      margin-top: 6px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #ffe60f;
+      word-break: break-all;
+    }
+    .edge-box p {
+      margin: 10px 0 0;
+      font-size: 12px;
+      color: #aaa;
+      line-height: 1.5;
+    }
+
+    .card-list { display: flex; flex-direction: column; gap: 12px; }
+    .key-card, .bill-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .key-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 12px;
+    }
+    .key-top .name { font-weight: 800; font-size: 15px; }
+    .key-top .prefix {
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 12px;
+      color: #888;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: #f3f3f3;
+    }
+    .tag.on { background: #dcfce7; color: #166534; }
+    .tag.off { background: #f3f4f6; color: #6b7280; }
+    .tag.pack { background: #ffedd5; color: #9a3412; }
+    .key-actions { margin-left: auto; display: flex; gap: 8px; }
+    .hops {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+      align-items: center;
+      font-size: 13px;
+    }
+    .hop {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fafafa;
+    }
+    .hop .pos {
+      padding: 4px 8px;
+      background: #fff;
+      border-right: 1px solid var(--line);
+      font-family: ui-monospace, Menlo, monospace;
+      font-size: 11px;
+      color: #888;
+    }
+    .hop .txt { padding: 4px 10px; font-weight: 600; }
+    .arrow { color: #bbb; font-family: ui-monospace, Menlo, monospace; }
+    .meta {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #888;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      font-size: 13px;
+    }
+    .table th, .table td {
+      padding: 11px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+    }
+    .table th {
+      background: #fafafa;
+      font-size: 11px;
+      font-weight: 800;
+      color: #888;
+    }
+    .table tr:last-child td { border-bottom: none; }
+    .table td.num { font-variant-numeric: tabular-nums; font-weight: 700; }
+    .table td.neg { color: #dc2626; }
+
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: rgba(0,0,0,.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .modal-mask.on { display: flex; }
+    .modal {
+      width: min(420px, 100%);
+      background: #fff;
+      border-radius: 18px;
+      padding: 22px 20px;
+    }
+    .modal h3 { margin: 0 0 8px; font-size: 18px; }
+    .modal p { margin: 0 0 16px; font-size: 13px; color: #666; line-height: 1.5; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 12px; font-weight: 700; color: #666; margin-bottom: 6px; }
+    .field input, .field select {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1.5px solid rgba(0,0,0,.1);
+      border-radius: 12px;
+      padding: 11px 12px;
+      font: inherit;
+      font-size: 14px;
+      background: #fafafa;
+    }
+    .pay-ways { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .pay-way {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
+      border: 1.5px solid rgba(0,0,0,.1);
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .pay-way.on { border-color: #1f1f1f; background: rgba(255,230,15,.28); }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .toast {
+      display: none;
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: #f0fdf4;
+      color: #166534;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .toast.on { display: block; }
+    .empty {
+      text-align: center;
+      padding: 36px 16px;
+      color: #999;
+      font-size: 14px;
+      background: #fff;
+      border-radius: 14px;
+      border: 1px dashed var(--line);
+    }
+  </style>
 </head>
 <body>
   <header class="header">
@@ -18,24 +285,319 @@
       </a>
       <span class="role-tag">买家中心</span>
       <div class="spacer"></div>
+      <a class="nav-link" href="market-home.html">逛市场</a>
       <a class="nav-link" href="seller-center.html">卖家中心</a>
-      <a class="nav-link" href="market-home.html">回市场</a>
     </div>
   </header>
 
   <main class="wrap">
-    <span class="route">/buyer → /buyer/wallet</span>
-    <h1>买家中心</h1>
-    <p class="lead">点击顶栏头像或昵称进入。对应正式路由：钱包、API Key、用量与账单。</p>
-
-    <div class="grid">
-      <div class="card"><strong>钱包</strong><span>/buyer/wallet</span></div>
-      <div class="card"><strong>API Keys</strong><span>/buyer/keys</span></div>
-      <div class="card"><strong>用量</strong><span>/buyer/usage</span></div>
-      <div class="card"><strong>账单</strong><span>/buyer/bills</span></div>
+    <span class="route">/buyer</span>
+    <div class="hero-row">
+      <div>
+        <h1>买家中心</h1>
+        <p class="lead">这里是 Key、钱包与账单——不是结账页。调用只扣平台余额；余额不足会提示充值。</p>
+      </div>
+      <div class="hero-actions">
+        <button class="btn btn-primary" type="button" id="btn-recharge">充值</button>
+        <a class="btn btn-dark" href="market-home.html#feed">去选用供给</a>
+      </div>
     </div>
 
-    <p class="note">原型占位页。正式实现见 <code>web/src/views/buyer/*</code>，需登录（meta.auth）。</p>
+    <div class="stats">
+      <div class="stat"><b>可用余额</b><strong id="bal">¥86.40</strong><em>调用实时扣费</em></div>
+      <div class="stat"><b>活跃 Key</b><strong>2</strong><em>共 3 把</em></div>
+      <div class="stat"><b>本月消耗</b><strong>¥42.16</strong><em>已入账</em></div>
+      <div class="stat"><b>额度包剩余</b><strong>¥37.00</strong><em>可退货</em></div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab on" type="button" data-tab="keys">API Key</button>
+      <button class="tab" type="button" data-tab="wallet">钱包 / 充值</button>
+      <button class="tab" type="button" data-tab="usage">用量</button>
+      <button class="tab" type="button" data-tab="bills">账单 / 退货</button>
+    </div>
+
+    <!-- Keys -->
+    <section class="panel on" id="tab-keys">
+      <div class="edge-box">
+        <div class="lab">调用地址 · Base URL</div>
+        <code id="edge-url">https://edge.xianmao.example</code>
+        <p>兼容官方协议。把 SDK Base URL 换成上面地址，Key 换成下方创建的 Key。失败不计费；余额不足时请求会被拒绝并提示充值。</p>
+      </div>
+      <div class="callout">点市场「选用并开通 / 购买额度包」下单后，Key 会出现在这里。按量通道超额只扣钱包；额度包从包内扣，未用完可退货。</div>
+      <div class="card-list">
+        <div class="key-card">
+          <div class="key-top">
+            <span class="name">指定卖家 #1001</span>
+            <span class="prefix">tm-ab12…</span>
+            <span class="tag on">使用中</span>
+            <span class="tag">按量通道</span>
+            <div class="key-actions">
+              <button class="btn btn-ghost btn-sm" type="button">编辑路由</button>
+              <button class="btn btn-ghost btn-sm" type="button">停用</button>
+            </div>
+          </div>
+          <div class="hops">
+            <span class="hop"><span class="pos">01</span><span class="txt">Claude 挂单 #1001 · 0.55×</span></span>
+            <span class="arrow">→</span>
+            <span class="hop"><span class="pos">02</span><span class="txt">保障池 Claude</span></span>
+          </div>
+          <div class="meta">
+            <span>起步 M 已用完 · 继续扣余额</span>
+            <span>创建于 2026-10-08</span>
+          </div>
+        </div>
+        <div class="key-card">
+          <div class="key-top">
+            <span class="name">Kimi 50 元包</span>
+            <span class="prefix">tm-k9f3…</span>
+            <span class="tag on">使用中</span>
+            <span class="tag pack">额度包</span>
+            <div class="key-actions">
+              <button class="btn btn-ghost btn-sm" type="button" data-refund>申请退货</button>
+              <button class="btn btn-ghost btn-sm" type="button">停用</button>
+            </div>
+          </div>
+          <div class="hops">
+            <span class="hop"><span class="pos">01</span><span class="txt">额度包 #2002 · 剩余 ¥37</span></span>
+          </div>
+          <div class="meta">
+            <span>已用 ¥13 / 面额 ¥50</span>
+            <span>未用完可退货释放卖家库存</span>
+          </div>
+        </div>
+        <div class="key-card">
+          <div class="key-top">
+            <span class="name">默认保障 · Claude</span>
+            <span class="prefix">tm-d0e1…</span>
+            <span class="tag off">已停用</span>
+            <span class="tag">按量通道</span>
+            <div class="key-actions">
+              <button class="btn btn-ghost btn-sm" type="button">启用</button>
+              <button class="btn btn-ghost btn-sm" type="button">删除</button>
+            </div>
+          </div>
+          <div class="hops">
+            <span class="hop"><span class="pos">01</span><span class="txt">默认分组 tm-pool-claude</span></span>
+          </div>
+          <div class="meta"><span>创建于 2026-10-01</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Wallet -->
+    <section class="panel" id="tab-wallet">
+      <div class="callout">充值进平台余额，供调用扣费。下单开通通道 / 买额度包时，也可直接用支付宝、微信付本单，不必先充。</div>
+      <div class="hero-actions" style="margin-bottom:16px">
+        <button class="btn btn-primary" type="button" id="btn-recharge-2">充值到余额</button>
+        <button class="btn btn-ghost" type="button" id="btn-refund-bal">申请退余额</button>
+      </div>
+      <table class="table">
+        <thead>
+          <tr><th>时间</th><th>类型</th><th>渠道</th><th>金额</th><th>状态</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>10-09 14:22</td><td>充值</td><td>支付宝</td><td class="num">+¥100.00</td><td><span class="tag on">已到账</span></td></tr>
+          <tr><td>10-08 21:05</td><td>开通通道</td><td>余额</td><td class="num neg">-¥0.00</td><td><span class="tag on">成功</span></td></tr>
+          <tr><td>10-08 21:06</td><td>购买额度包</td><td>微信</td><td class="num neg">-¥50.00</td><td><span class="tag on">成功</span></td></tr>
+          <tr><td>10-07 11:18</td><td>充值</td><td>余额转入</td><td class="num">+¥50.00</td><td><span class="tag on">已到账</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Usage -->
+    <section class="panel" id="tab-usage">
+      <div class="callout">用量按成功请求入账：官方价 × 倍率。失败不计费。入账可能有几分钟延迟。</div>
+      <table class="table">
+        <thead>
+          <tr><th>时间</th><th>Key</th><th>模型</th><th>供给</th><th>费用</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>10-09 19:41</td><td>tm-ab12…</td><td>claude-sonnet</td><td>挂单 #1001</td><td class="num">¥0.82</td></tr>
+          <tr><td>10-09 18:02</td><td>tm-k9f3…</td><td>kimi-coding</td><td>额度包 #2002</td><td class="num">¥1.20</td></tr>
+          <tr><td>10-09 16:55</td><td>tm-ab12…</td><td>claude-sonnet</td><td>保障池</td><td class="num">¥0.45</td></tr>
+          <tr><td>10-09 12:10</td><td>tm-ab12…</td><td>claude-sonnet</td><td>挂单 #1001</td><td class="num">¥1.08</td></tr>
+          <tr><td>10-08 22:33</td><td>tm-k9f3…</td><td>kimi-coding</td><td>额度包 #2002</td><td class="num">¥2.40</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Bills -->
+    <section class="panel" id="tab-bills">
+      <div class="callout">额度包未用完可退货：退未用量并释放卖家库存。按量通道无「退货」，未用预付/余额走退款。</div>
+      <div class="card-list">
+        <div class="bill-card">
+          <div class="key-top">
+            <span class="name">订单 #ORD-8821</span>
+            <span class="tag pack">额度包</span>
+            <span class="tag on">可退货</span>
+          </div>
+          <div class="meta">
+            <span>Kimi Coding · ¥50 包</span>
+            <span>已用 ¥13 · 可退约 ¥37</span>
+            <span>支付：微信</span>
+          </div>
+          <div style="margin-top:12px">
+            <button class="btn btn-primary btn-sm" type="button" data-refund>申请退货退款</button>
+          </div>
+        </div>
+        <div class="bill-card">
+          <div class="key-top">
+            <span class="name">订单 #ORD-8703</span>
+            <span class="tag">按量通道</span>
+            <span class="tag on">已开通</span>
+          </div>
+          <div class="meta">
+            <span>Claude Max · M=¥0</span>
+            <span>无预付可退 · 余额在钱包</span>
+            <span>支付：余额</span>
+          </div>
+        </div>
+        <div class="bill-card">
+          <div class="key-top">
+            <span class="name">订单 #ORD-8510</span>
+            <span class="tag pack">额度包</span>
+            <span class="tag off">已退货</span>
+          </div>
+          <div class="meta">
+            <span>智谱 · ¥80 包</span>
+            <span>退回 ¥52.00 · 原路微信</span>
+            <span>2026-10-05</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <p class="note" style="margin-top:28px">
+      原型对应 <code>/buyer/keys</code> · <code>/buyer/wallet</code> · <code>/buyer/usage</code> · <code>/buyer/bills</code>。
+      正式实现见 <code>web/src/views/buyer/*</code>。
+    </p>
   </main>
+
+  <!-- 充值弹窗 -->
+  <div class="modal-mask" id="recharge-mask" aria-hidden="true">
+    <div class="modal">
+      <h3>充值到平台余额</h3>
+      <p>充值后用于按量调用扣费。下单买包 / 付起步金也可直接走支付宝微信。</p>
+      <div class="field">
+        <label for="amt">金额（元）</label>
+        <input id="amt" type="number" min="1" step="1" value="50" />
+      </div>
+      <div class="pay-ways">
+        <label class="pay-way on"><input type="radio" name="pay" value="alipay" checked /> 支付宝</label>
+        <label class="pay-way"><input type="radio" name="pay" value="wechat" /> 微信支付</label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close-recharge>取消</button>
+        <button class="btn btn-primary" type="button" id="btn-do-recharge">去支付</button>
+      </div>
+      <div class="toast" id="recharge-toast"></div>
+    </div>
+  </div>
+
+  <!-- 退货弹窗 -->
+  <div class="modal-mask" id="refund-mask" aria-hidden="true">
+    <div class="modal">
+      <h3>额度包退货</h3>
+      <p>按未用量退款（示例可退 ¥37），Key 失效，卖家库存恢复。退款优先原路退回。</p>
+      <div class="pay-ways">
+        <label class="pay-way on"><input type="radio" name="refund-to" value="original" checked /> 原路退回微信</label>
+        <label class="pay-way"><input type="radio" name="refund-to" value="balance" /> 退到平台余额</label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" type="button" data-close-refund>取消</button>
+        <button class="btn btn-primary" type="button" id="btn-do-refund">确认退货</button>
+      </div>
+      <div class="toast" id="refund-toast"></div>
+    </div>
+  </div>
+
+  <script>
+    // Tabs
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((t) => t.classList.remove("on"));
+        document.querySelectorAll(".panel").forEach((p) => p.classList.remove("on"));
+        tab.classList.add("on");
+        document.getElementById("tab-" + tab.dataset.tab).classList.add("on");
+      });
+    });
+
+    // Hash deep link: #keys #wallet #usage #bills
+    const hash = (location.hash || "").replace("#", "");
+    if (["keys", "wallet", "usage", "bills"].includes(hash)) {
+      document.querySelector('.tab[data-tab="' + hash + '"]')?.click();
+    }
+
+    // Prefill from market
+    const q = new URLSearchParams(location.search);
+    if (q.get("listing") || q.get("plat")) {
+      const tip = document.createElement("div");
+      tip.className = "callout";
+      tip.style.marginTop = "0";
+      tip.textContent = q.get("listing")
+        ? ("从市场带来挂单 #" + q.get("listing") + " — 正式流程会打开「创建 Key」并预填路由。原型请回市场走下单页。")
+        : ("已选择 " + q.get("plat") + " — 请回市场选用具体供给。");
+      document.querySelector(".wrap").insertBefore(tip, document.querySelector(".stats"));
+    }
+
+    // Recharge modal
+    const rMask = document.getElementById("recharge-mask");
+    const openR = () => { rMask.classList.add("on"); rMask.setAttribute("aria-hidden", "false"); };
+    const closeR = () => { rMask.classList.remove("on"); rMask.setAttribute("aria-hidden", "true"); };
+    document.getElementById("btn-recharge").addEventListener("click", openR);
+    document.getElementById("btn-recharge-2").addEventListener("click", openR);
+    document.querySelectorAll("[data-close-recharge]").forEach((b) => b.addEventListener("click", closeR));
+    rMask.addEventListener("click", (e) => { if (e.target === rMask) closeR(); });
+
+    document.querySelectorAll("#recharge-mask .pay-way").forEach((el) => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll("#recharge-mask .pay-way").forEach((x) => x.classList.remove("on"));
+        el.classList.add("on");
+        el.querySelector("input").checked = true;
+      });
+    });
+
+    document.getElementById("btn-do-recharge").addEventListener("click", () => {
+      const amt = Number(document.getElementById("amt").value) || 0;
+      const way = document.querySelector("#recharge-mask input[name=pay]:checked")?.value || "alipay";
+      const toast = document.getElementById("recharge-toast");
+      if (amt <= 0) { toast.textContent = "请输入有效金额"; toast.classList.add("on"); return; }
+      const bal = document.getElementById("bal");
+      const cur = Number(String(bal.textContent).replace(/[^\d.]/g, "")) || 0;
+      bal.textContent = "¥" + (cur + amt).toFixed(2);
+      toast.textContent = "已模拟「" + (way === "wechat" ? "微信" : "支付宝") + "」支付 ¥" + amt.toFixed(2) + "，余额已到账。";
+      toast.classList.add("on");
+      setTimeout(closeR, 900);
+    });
+
+    document.getElementById("btn-refund-bal").addEventListener("click", () => {
+      alert("原型：申请退余额 → 原路退回近期充值，不足部分人工打款。退款处理中时所有 Key 暂停。");
+    });
+
+    // Refund pack modal
+    const fMask = document.getElementById("refund-mask");
+    const openF = () => { fMask.classList.add("on"); fMask.setAttribute("aria-hidden", "false"); document.getElementById("refund-toast").classList.remove("on"); };
+    const closeF = () => { fMask.classList.remove("on"); fMask.setAttribute("aria-hidden", "true"); };
+    document.querySelectorAll("[data-refund]").forEach((b) => b.addEventListener("click", openF));
+    document.querySelectorAll("[data-close-refund]").forEach((b) => b.addEventListener("click", closeF));
+    fMask.addEventListener("click", (e) => { if (e.target === fMask) closeF(); });
+    document.querySelectorAll("#refund-mask .pay-way").forEach((el) => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll("#refund-mask .pay-way").forEach((x) => x.classList.remove("on"));
+        el.classList.add("on");
+        el.querySelector("input").checked = true;
+      });
+    });
+    document.getElementById("btn-do-refund").addEventListener("click", () => {
+      const to = document.querySelector("#refund-mask input[name=refund-to]:checked")?.value;
+      const toast = document.getElementById("refund-toast");
+      toast.textContent = to === "balance"
+        ? "已模拟退货：¥37 退到平台余额，Key 已失效，卖家库存 +1。"
+        : "已模拟退货：¥37 原路退回微信，Key 已失效，卖家库存 +1。";
+      toast.classList.add("on");
+      setTimeout(closeF, 1000);
+    });
+  </script>
 </body>
 </html>

@@ -222,55 +222,135 @@
       width: 100%;
       height: var(--stage-h);
       border-radius: 16px;
-      overflow: hidden;
+      overflow: visible;
       display: grid;
-      grid-template-columns: 220px 240px 1fr;
+      grid-template-columns: 232px 240px 1fr;
       background: #f6f6f6;
       box-sizing: border-box;
+      position: relative;
+      z-index: 2;
     }
     @media (max-width: 1100px) {
       .stage {
         height: auto;
-        grid-template-columns: 200px 1fr;
+        grid-template-columns: 210px 1fr;
       }
       .promo-grid { grid-column: 1 / -1; height: auto; }
       .promo-banner { min-height: 280px; }
     }
     @media (max-width: 720px) {
-      .stage { grid-template-columns: 1fr; }
+      .stage { grid-template-columns: 1fr; overflow: hidden; }
       .side-cats { display: none; }
     }
 
+    /* 闲鱼式类目：图标 + A / B / C，悬停展开飞层 */
     .side-cats {
+      position: relative;
       height: 100%;
       background: #f0f0f0;
-      padding: 8px 0;
-      overflow: hidden;
+      border-radius: 16px 0 0 16px;
+      padding: 10px 0;
+      overflow: visible;
       display: flex;
       flex-direction: column;
       justify-content: space-evenly;
+      z-index: 6;
     }
-    .side-cats a {
+    .cat-row {
+      /* position:static → 飞层相对 .side-cats 绝对定位，铺满侧栏高度 */
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 0 16px;
-      height: 36px;
+      gap: 8px;
+      padding: 0 14px;
+      min-height: 34px;
       font-size: 13px;
       font-weight: 500;
       color: #1f1f1f;
-      transition: color 0.1s;
+      cursor: default;
     }
-    .side-cats a:hover { color: #f58300; }
-    .side-cats .ico {
+    .cat-row:hover,
+    .cat-row.is-open {
+      background: #fff;
+      color: #f58300;
+    }
+    .cat-row .ico {
       width: 20px;
       height: 20px;
       flex-shrink: 0;
       display: grid;
       place-items: center;
-      color: #333;
     }
-    .side-cats .ico svg { width: 18px; height: 18px; }
+    .cat-row .ico svg { width: 18px; height: 18px; }
+    .cat-labels {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0;
+      line-height: 1.35;
+      min-width: 0;
+    }
+    .cat-labels a {
+      color: inherit;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .cat-labels a:hover,
+    .cat-labels a.is-on { color: #f58300; font-weight: 700; }
+    .cat-labels .sep {
+      margin: 0 5px;
+      color: #bbb;
+      font-weight: 400;
+      pointer-events: none;
+    }
+    .cat-flyout {
+      display: none;
+      position: absolute;
+      left: 100%;
+      top: 0;
+      height: 100%;
+      width: min(520px, 52vw);
+      background: #fff;
+      border-radius: 0 16px 16px 0;
+      box-shadow: 8px 4px 28px rgba(0, 0, 0, 0.08);
+      padding: 18px 22px 20px;
+      overflow: auto;
+      z-index: 8;
+      box-sizing: border-box;
+    }
+    .cat-row:hover .cat-flyout,
+    .cat-row.is-open .cat-flyout { display: block; }
+    .cat-flyout .sec {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .cat-flyout .sec:last-child { margin-bottom: 0; }
+    .cat-flyout .sec-title {
+      flex: 0 0 88px;
+      font-weight: 700;
+      color: #1f1f1f;
+      white-space: nowrap;
+    }
+    .cat-flyout .sec-title::after {
+      content: " ›";
+      color: #ccc;
+      font-weight: 400;
+    }
+    .cat-flyout .sec-items {
+      flex: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 16px;
+      min-width: 0;
+    }
+    .cat-flyout .sec-items a {
+      color: #555;
+      white-space: nowrap;
+    }
+    .cat-flyout .sec-items a:hover { color: #f58300; }
 
     .promo-banner {
       position: relative;
@@ -527,17 +607,19 @@
 
     .section-head {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      margin: 32px 0 18px;
+      gap: 12px;
+      margin: 32px 0 14px;
     }
     .section-head h2 {
       margin: 0;
       font-size: 22px;
       font-weight: 800;
     }
-    .tabs { display: flex; gap: 8px; }
-    .tab {
+    .kind-tabs, .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tab, .kind-tab {
       padding: 8px 16px;
       border-radius: 999px;
       font-size: 14px;
@@ -548,16 +630,60 @@
       border: 1px solid rgba(255,255,255,.5);
       color: #666;
     }
-    .tab.on {
+    .tab.on, .kind-tab.on {
       background: var(--yellow);
       border-color: transparent;
       color: #222;
     }
+    .facet-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 18px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,.65);
+      border: 1px solid rgba(0,0,0,.06);
+      border-radius: 14px;
+    }
+    .facet-bar label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #888;
+      margin-right: 2px;
+    }
+    .facet-bar select {
+      appearance: none;
+      background: #fff;
+      border: 1px solid rgba(0,0,0,.1);
+      border-radius: 999px;
+      padding: 7px 28px 7px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M3 4.5L6 8l3-3.5'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+    }
+    .facet-hint {
+      margin-left: auto;
+      font-size: 12px;
+      color: #999;
+    }
+    .cat-labels a.is-on { color: #f58300; font-weight: 800; }
+    .kw-inner a.is-on { text-decoration: underline; text-underline-offset: 4px; }
 
     .feed {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
       gap: 18px;
+    }
+    .feed-empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 48px 16px;
+      color: #888;
+      font-size: 14px;
     }
 
     /* 货架卡片：液态玻璃 */
@@ -576,9 +702,11 @@
       box-shadow: 0 18px 40px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.85);
     }
     .card-cover {
-      aspect-ratio: 4/3;
+      display: block;
+      aspect-ratio: 16/10;
       position: relative;
       overflow: hidden;
+      background: #e8e8e8;
     }
     .card-cover img {
       width: 100%;
@@ -619,35 +747,76 @@
       border: 1px solid rgba(255,255,255,.5);
     }
     .card-body {
-      padding: 16px;
-      background: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,.55));
+      padding: 14px 14px 14px;
+      background: #fff;
+      border-top: 1px solid rgba(0,0,0,.04);
     }
+    .card-kind {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 800;
+      color: #555;
+      background: #f3f3f3;
+      padding: 3px 8px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+    .card-kind.is-pack { color: #9a3412; background: #ffedd5; }
+    .card-kind.is-pool { color: #166534; background: #dcfce7; }
     .card-title {
-      margin: 0 0 12px;
+      margin: 0 0 8px;
       font-size: 15px;
+      font-weight: 700;
+      line-height: 1.35;
+      min-height: 2.7em;
+      color: #1f1f1f;
+    }
+    .card-title a { color: inherit; }
+    .card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: #666;
       font-weight: 600;
-      line-height: 1.4;
-      height: 2.8em;
-      overflow: hidden;
+    }
+    .card-meta .grade {
+      color: #1f1f1f;
+      background: #f5f5f5;
+      padding: 1px 6px;
+      border-radius: 4px;
     }
     .card-foot {
       display: flex;
-      align-items: center;
+      align-items: flex-end;
       justify-content: space-between;
-      gap: 12px;
+      gap: 10px;
     }
-    .price { color: var(--price); font-weight: 800; font-size: 24px; }
-    .price small { font-size: 14px; }
+    .price-block { min-width: 0; flex: 1; }
+    .price { color: var(--price); font-weight: 800; font-size: 22px; line-height: 1.1; }
+    .price small { font-size: 13px; }
+    .price-sub {
+      margin-top: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #888;
+      line-height: 1.35;
+    }
     .buy {
-      background: rgba(255, 230, 15, 0.95);
-      backdrop-filter: blur(8px);
-      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--yellow);
+      color: #1f1f1f;
+      font-size: 13px;
       font-weight: 800;
-      padding: 9px 16px;
+      padding: 10px 12px;
       border-radius: 12px;
-      border: 1px solid rgba(255,255,255,.5);
-      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      white-space: nowrap;
+      flex-shrink: 0;
     }
+    .buy:hover { filter: brightness(0.97); }
 
     .note {
       margin-top: 40px;
@@ -868,7 +1037,7 @@
   </style>
 </head>
 <body>
-  <div class="login-mask is-open" id="login-mask" role="dialog" aria-modal="true" aria-labelledby="login-title" aria-hidden="false">
+  <div class="login-mask" id="login-mask" role="dialog" aria-modal="true" aria-labelledby="login-title" aria-hidden="true">
     <div class="login-wrap">
       <div class="login-card">
         <!-- 慵懒趴姿：慢爬上弹窗，半眯眼 -->
@@ -973,8 +1142,8 @@
           </svg>
           <span>我要卖闲置<span class="sell-extra"> TOKEN</span></span>
         </a>
-        <!-- 独立路由 → /admin -->
-        <a class="header-link admin" href="admin.html" title="管理后台">管理后台</a>
+        <!-- 独立路由 → /console -->
+        <a class="header-link admin" href="console.html" title="运营控制台">控制台</a>
         <div class="guest-actions" id="guest-actions">
           <button class="header-link" type="button" data-open-login>
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -990,195 +1159,370 @@
         </a>
       </div>
     </div>
-    <nav class="kw-bar" aria-label="热门搜索">
-      <div class="kw-inner">
-        <a href="#">Claude Max</a>
-        <a href="#">ChatGPT Plus</a>
-        <a href="#">Kimi Coding</a>
-        <a href="#">Gemini Ultra</a>
-        <a href="#">智谱 GLM</a>
-        <a href="#">保障池</a>
-        <a href="#">限时捡漏</a>
-        <a href="#">求购广场</a>
-      </div>
+    <nav class="kw-bar" aria-label="快捷筛选">
+      <div class="kw-inner" id="kw-bar"><!-- market-config --></div>
     </nav>
   </header>
 
   <main class="page">
     <section class="stage" aria-label="市场运营区">
-      <aside class="side-cats">
-        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span>Claude / Max / Pro</a>
-        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><path d="M8 12h8M12 8v8"/></svg></span>ChatGPT / Codex</a>
-        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l7 4v5c0 4-3 7-7 9-4-2-7-5-7-9V7l7-4z"/></svg></span>Gemini / Google</a>
-        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16l4-8 4 8 4-8 4 8"/></svg></span>Kimi / 月之暗面</a>
-        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h4M7 14h10"/></svg></span>智谱 / MiniMax</a>
-        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg></span>Grok / 其他</a>
-        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l8 4v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg></span>平台保障池</a>
-        <a href="#"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>求购 / 时段包</a>
-        <a href="seller-center.html"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16v10H4z"/><path d="M8 7V5h8v2"/></svg></span>卖家 / 挂出变现</a>
-      </aside>
-
-      <a class="promo-banner" href="#feed">
+      <aside class="side-cats" id="side-cats" aria-label="市场类目"><!-- market-config category_groups --></aside>
+      <a class="promo-banner" href="#feed" id="promo-banner">
         <div class="bg" aria-hidden="true"></div>
         <div class="content">
-          <h1>闲猫抄底<br />好物算力</h1>
-          <p class="desc">超绝性价比 · 省到底</p>
+          <h1 id="banner-title">按量通道<br />选用即开通</h1>
+          <p class="desc" id="banner-desc">起步金可 0 · 用多少扣多少</p>
           <div class="mascot-spot" aria-hidden="true">
             <img src="assets/xianmao-pet.svg" alt="闲猫" />
           </div>
           <span class="promo-cta">去看看 ›</span>
         </div>
       </a>
-
-      <div class="promo-grid">
-        <a class="tile tile--deal" href="#feed">
-          <div class="tile-eng" aria-hidden="true">DEAL</div>
-          <img class="tile-flower" src="assets/tile-flower.png" alt="" aria-hidden="true" />
-          <div class="tile-copy">
-            <h3>倍率捡漏 <span class="arrow">›</span></h3>
-            <p>急出 · 重置前清仓</p>
-          </div>
-          <div class="tile-mascot"><img src="assets/tile-icon-deal.png" alt="" /></div>
-          <div class="tile-tray">
-            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb1.jpg" alt="" /></div><div class="thumb-price">0.55×</div></div>
-            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb2.jpg" alt="" /></div><div class="thumb-price">0.48×</div></div>
-            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb3.jpg" alt="" /></div><div class="thumb-price">0.60×</div></div>
-          </div>
-        </a>
-        <a class="tile tile--code" href="#feed">
-          <div class="tile-eng" aria-hidden="true">CODE</div>
-          <img class="tile-flower" src="assets/tile-flower.png" alt="" aria-hidden="true" />
-          <div class="tile-copy">
-            <h3>写代码专场 <span class="arrow">›</span></h3>
-            <p>Coding Plan 热挂</p>
-          </div>
-          <div class="tile-mascot"><img src="assets/tile-icon-code.png" alt="" /></div>
-          <div class="tile-tray">
-            <div class="thumb is-skel"><div class="thumb-pic"></div></div>
-            <div class="thumb is-skel"><div class="thumb-pic"></div></div>
-            <div class="thumb is-skel"><div class="thumb-pic"></div></div>
-          </div>
-        </a>
-        <a class="tile tile--pool" href="#feed">
-          <div class="tile-eng" aria-hidden="true">POOL</div>
-          <img class="tile-flower" src="assets/tile-flower.png" alt="" aria-hidden="true" />
-          <div class="tile-copy">
-            <h3>保障池 <span class="arrow">›</span></h3>
-            <p>不挑卖家 · 自动派</p>
-          </div>
-          <div class="tile-mascot"><img src="assets/tile-icon-pool.png" alt="" /></div>
-          <div class="tile-tray">
-            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb7.jpg" alt="" /></div><div class="thumb-price">0.80×</div></div>
-            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb8.jpg" alt="" /></div><div class="thumb-price">0.70×</div></div>
-            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb9.jpg" alt="" /></div><div class="thumb-price">0.90×</div></div>
-          </div>
-        </a>
-        <a class="tile tile--buyer" href="buyer-center.html">
-          <div class="tile-eng" aria-hidden="true">BUY</div>
-          <img class="tile-flower" src="assets/tile-flower.png" alt="" aria-hidden="true" />
-          <div class="tile-copy">
-            <h3>买家入口 <span class="arrow">›</span></h3>
-            <p>充值 · 建 Key · 调用</p>
-          </div>
-          <div class="tile-mascot"><img src="assets/tile-icon-buyer.png" alt="" /></div>
-          <div class="tile-tray">
-            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb4.jpg" alt="" /></div><div class="thumb-price">充值</div></div>
-            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb5.jpg" alt="" /></div><div class="thumb-price">Key</div></div>
-            <div class="thumb"><div class="thumb-pic"><img src="assets/thumb6.jpg" alt="" /></div><div class="thumb-price">挂出</div></div>
-          </div>
-        </a>
-      </div>
+      <div class="promo-grid" id="promo-grid"><!-- market-config --></div>
     </section>
 
     <div class="section-head" id="feed">
-      <h2>猜你喜欢</h2>
-      <div class="tabs">
-        <button class="tab on" type="button">综合</button>
-        <button class="tab" type="button">价格</button>
-        <button class="tab" type="button">靠谱</button>
-        <button class="tab" type="button">更快</button>
+      <h2 id="feed-title">在售供给</h2>
+      <div class="kind-tabs" role="tablist" aria-label="商品形态">
+        <button class="kind-tab on" type="button" data-kind="all">全部</button>
+        <button class="kind-tab" type="button" data-kind="channel">按量通道</button>
+        <button class="kind-tab" type="button" data-kind="pack">额度包</button>
       </div>
     </div>
 
-    <div class="feed" id="case-feed">
-      <!-- 由脚本铺案例，方便加量 -->
+    <div class="facet-bar" aria-label="筛选">
+      <label for="f-grade">等级</label>
+      <select id="f-grade">
+        <option value="">全部</option>
+        <option value="S">S</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="C">C</option>
+      </select>
+      <label for="f-sort">排序</label>
+      <select id="f-sort">
+        <option value="default">综合</option>
+        <option value="price">倍率/价格</option>
+        <option value="success">成功率</option>
+        <option value="ttft">更快</option>
+      </select>
+      <span class="facet-hint" id="feed-count">—</span>
     </div>
+
+    <div class="feed" id="case-feed"></div>
 
     <p class="note-wrap">
       <span class="note">
-        闲猫 · HTML 原型 · 液态玻璃卡片 · 参考
+        类目/标签/运营位可在
+        <a href="console.html#market">控制台 · 市场配置</a>
+        修改（localStorage）· 参考
         <a href="https://www.goofish.com/" target="_blank" rel="noopener">闲鱼</a>
       </span>
     </p>
   </main>
 
+  <script src="market-config.js"></script>
   <script>
-    document.querySelectorAll(".tabs .tab").forEach((el) => {
+    const cfg = window.MarketConfigStore.load();
+    const skus = [
+      { id: "c-1001", kind: "channel", plat: "Claude", tier: "Max 5x", title: "Claude · Max 5x · 按量通道", img: "card1.jpg", mult: 0.55, min: 0, grade: "S", success: 0.98, ttft: 420, tags: ["低倍率", "寄售"], badge: "低倍率" },
+      { id: "c-1002", kind: "channel", plat: "ChatGPT", tier: "Plus", title: "ChatGPT · Plus · Codex 可用", img: "card2.jpg", mult: 0.62, min: 10, grade: "A", success: 0.96, ttft: 380, tags: ["寄售"] },
+      { id: "c-1003", kind: "channel", plat: "Kimi", tier: "Coding", title: "Kimi · Coding Plan · 按量", img: "card3.jpg", mult: 0.48, min: 0, grade: "A", success: 0.97, ttft: 510, tags: ["写代码", "低倍率"], badge: "写代码" },
+      { id: "c-1004", kind: "channel", plat: "Gemini", tier: "Ultra", title: "Gemini · Google One Ultra", img: "card4.jpg", mult: 0.70, min: 20, grade: "B", success: 0.94, ttft: 450, tags: ["寄售"] },
+      { id: "c-1005", kind: "channel", plat: "智谱", tier: "Coding", title: "智谱 · GLM Coding · 国内站", img: "card5.jpg", mult: 0.50, min: 0, grade: "A", success: 0.95, ttft: 480, tags: ["写代码"] },
+      { id: "c-1006", kind: "channel", plat: "Grok", tier: "Super", title: "Grok · SuperGrok · 刚过检", img: "card6.jpg", mult: 0.68, min: 5, grade: "A", success: 0.93, ttft: 390, tags: ["寄售"] },
+      { id: "c-1007", kind: "channel", plat: "MiniMax", tier: "Coding", title: "MiniMax · Coding · 国际站", img: "card7.jpg", mult: 0.54, min: 0, grade: "B", success: 0.92, ttft: 560, tags: ["写代码"] },
+      { id: "c-1008", kind: "channel", plat: "Claude", tier: "Pro", title: "Claude · Pro · 按量通道", img: "card8.jpg", mult: 0.58, min: 0, grade: "A", success: 0.97, ttft: 440, tags: ["低倍率"], badge: "低倍率" },
+      { id: "c-1009", kind: "channel", plat: "ChatGPT", tier: "Team", title: "ChatGPT · Team · 可做备用跳", img: "card9.jpg", mult: 0.66, min: 10, grade: "B", success: 0.95, ttft: 410, tags: ["寄售"] },
+      { id: "c-1010", kind: "channel", plat: "Claude", tier: "Max 20x", title: "Claude · Max 20x · S 级", img: "card13.jpg", mult: 0.57, min: 0, grade: "S", success: 0.99, ttft: 360, tags: ["低倍率"], badge: "S级" },
+      { id: "c-1011", kind: "channel", plat: "保障池", tier: "Claude", title: "Claude 保障池 · 自动派号", img: "card15.jpg", mult: 0.80, min: 0, grade: "A", success: 0.99, ttft: 400, tags: ["保障"], badge: "保障", pool: true },
+      { id: "c-1012", kind: "channel", plat: "保障池", tier: "ChatGPT", title: "ChatGPT 保障池 · 自动派", img: "hero2.jpg", mult: 0.70, min: 0, grade: "A", success: 0.98, ttft: 390, tags: ["保障"], badge: "保障", pool: true },
+      { id: "c-1013", kind: "channel", plat: "Kimi", tier: "Coding", title: "Kimi · 高成功率卖家", img: "card10.jpg", mult: 0.51, min: 0, grade: "S", success: 0.99, ttft: 490, tags: ["写代码", "低倍率"] },
+      { id: "c-1014", kind: "channel", plat: "Antigravity", tier: "OAuth", title: "Antigravity · OAuth 按量", img: "thumb7.jpg", mult: 0.61, min: 10, grade: "B", success: 0.91, ttft: 520, tags: ["寄售"] },
+      { id: "c-1015", kind: "channel", plat: "智谱", tier: "团队版", title: "智谱 · 团队版 · 组织已配", img: "card11.jpg", mult: 0.53, min: 0, grade: "A", success: 0.94, ttft: 500, tags: ["写代码"] },
+      { id: "p-2001", kind: "pack", plat: "Claude", tier: "Max", title: "Claude · Max · 100 元额度包", img: "card14.jpg", mult: 0.55, face: 100, stock: 3, grade: "S", success: 0.98, ttft: 420, tags: ["额度包"], badge: "可退货" },
+      { id: "p-2002", kind: "pack", plat: "Kimi", tier: "Coding", title: "Kimi Coding · 50 元额度包", img: "thumb5.jpg", mult: 0.48, face: 50, stock: 8, grade: "A", success: 0.97, ttft: 510, tags: ["写代码", "额度包"], badge: "写代码" },
+      { id: "p-2003", kind: "pack", plat: "ChatGPT", tier: "Plus", title: "ChatGPT · 200 元额度包", img: "thumb11.jpg", mult: 0.62, face: 200, stock: 2, grade: "A", success: 0.96, ttft: 380, tags: ["额度包"], badge: "可退货" },
+      { id: "p-2004", kind: "pack", plat: "智谱", tier: "Coding", title: "智谱 · 80 元额度包", img: "thumb10.jpg", mult: 0.52, face: 80, stock: 5, grade: "B", success: 0.93, ttft: 530, tags: ["写代码", "额度包"] },
+      { id: "p-2005", kind: "pack", plat: "MiniMax", tier: "Coding", title: "MiniMax · 60 元额度包", img: "card7.jpg", mult: 0.54, face: 60, stock: 1, grade: "A", success: 0.94, ttft: 550, tags: ["写代码", "额度包"], badge: "仅剩1" },
+      { id: "p-2006", kind: "pack", plat: "Gemini", tier: "Pro", title: "Gemini · 150 元额度包", img: "card12.jpg", mult: 0.69, face: 150, stock: 4, grade: "B", success: 0.92, ttft: 460, tags: ["额度包"] },
+    ];
+
+    const state = { kind: "all", plat: "", grade: "", sort: "default", q: "", tag: "" };
+    const feed = document.getElementById("case-feed");
+    const feedCount = document.getElementById("feed-count");
+    const feedTitle = document.getElementById("feed-title");
+
+    function detailHref(s) {
+      return "sku-detail.html?id=" + encodeURIComponent(s.id);
+    }
+
+    function priceBlock(s) {
+      if (s.kind === "pack") {
+        return '<div class="price">¥' + s.face + '</div><div class="price-sub">包内 ' + s.mult.toFixed(2) + '× · 库存 ' + s.stock + '</div>';
+      }
+      const minText = s.min === 0 ? "起步免费开通" : ("起步 ¥" + s.min);
+      return '<div class="price"><small>×</small>' + s.mult.toFixed(2) + '</div><div class="price-sub">' + minText + ' · 超额扣余额</div>';
+    }
+
+    function kindLabel(s) {
+      if (s.pool) return '<span class="card-kind is-pool">保障池 · 按量</span>';
+      if (s.kind === "pack") return '<span class="card-kind is-pack">额度包</span>';
+      return '<span class="card-kind">按量通道</span>';
+    }
+
+    function cta(s) {
+      return s.kind === "pack" ? "购买额度包" : "选用并开通";
+    }
+
+    function cardBadge(s) {
+      const hits = window.MarketConfigStore.resolveTags(s, cfg).filter((t) => t.show_on_card);
+      if (!hits.length) return "";
+      return '<span class="badge">' + hits[0].name + '</span>';
+    }
+
+    function renderCard(s) {
+      const href = detailHref(s);
+      return (
+        '<article class="card" data-id="' + s.id + '">' +
+          '<a class="card-cover" href="' + href + '">' +
+            '<img src="assets/' + s.img + '" alt="' + s.title + '" loading="lazy" />' +
+            '<div class="shade"></div>' +
+            cardBadge(s) +
+            '<span class="plat">' + s.plat + '</span>' +
+          '</a>' +
+          '<div class="card-body">' +
+            kindLabel(s) +
+            '<h3 class="card-title"><a href="' + href + '">' + s.title + '</a></h3>' +
+            '<div class="card-meta">' +
+              '<span class="grade">' + s.grade + ' 级</span>' +
+              '<span>成功率 ' + (s.success * 100).toFixed(0) + '%</span>' +
+              '<span>' + s.ttft + 'ms</span>' +
+            '</div>' +
+            '<div class="card-foot">' +
+              '<div class="price-block">' + priceBlock(s) + '</div>' +
+              '<a class="buy" href="' + href + '">' + cta(s) + '</a>' +
+            '</div>' +
+          '</div>' +
+        '</article>'
+      );
+    }
+
+    function skuHasTag(s, tagId) {
+      return window.MarketConfigStore.resolveTags(s, cfg).some((t) => t.id === tagId);
+    }
+
+    function filtered() {
+      let list = skus.slice();
+      if (state.kind !== "all") list = list.filter((s) => s.kind === state.kind);
+      if (state.plat === "保障池") list = list.filter((s) => s.pool || s.plat === "保障池");
+      else if (state.plat) list = list.filter((s) => s.plat === state.plat);
+      if (state.grade) list = list.filter((s) => s.grade === state.grade);
+      if (state.tag) list = list.filter((s) => skuHasTag(s, state.tag));
+      if (state.q) {
+        const q = state.q.toLowerCase();
+        list = list.filter((s) => (s.plat + " " + s.tier + " " + s.title).toLowerCase().includes(q));
+      }
+      if (state.sort === "price") {
+        list.sort((a, b) => (a.kind === "pack" ? a.face : a.mult) - (b.kind === "pack" ? b.face : b.mult));
+      } else if (state.sort === "success") {
+        list.sort((a, b) => b.success - a.success);
+      } else if (state.sort === "ttft") {
+        list.sort((a, b) => a.ttft - b.ttft);
+      } else if (cfg.feed && cfg.feed.pin_pool_first) {
+        list.sort((a, b) => Number(!!b.pool) - Number(!!a.pool));
+      }
+      return list;
+    }
+
+    function render() {
+      if (!feed) return;
+      const list = filtered();
+      if (feedCount) feedCount.textContent = list.length + " 个供给";
+      const kindText = state.kind === "pack" ? "额度包" : state.kind === "channel" ? "按量通道" : "在售供给";
+      if (feedTitle) feedTitle.textContent = state.plat ? (state.plat + " · " + kindText) : kindText;
+      feed.innerHTML = list.length
+        ? list.map(renderCard).join("")
+        : '<div class="feed-empty">没有符合条件的供给，试试放宽筛选</div>';
+    }
+
+    function syncKindTabs() {
+      document.querySelectorAll(".kind-tab").forEach((t) => t.classList.toggle("on", t.dataset.kind === state.kind));
+    }
+
+    function syncCatActive() {
+      document.querySelectorAll("#side-cats .cat-labels a, #side-cats .cat-flyout a").forEach((x) => {
+        if (x.dataset.href === "1") return;
+        let on = false;
+        if (x.hasAttribute("data-plat") && !x.dataset.tag && !x.dataset.q && !x.dataset.kind) {
+          on = (x.dataset.plat || "") === (state.plat || "") && !state.tag && !state.q;
+        } else if (x.dataset.tag && !x.hasAttribute("data-plat") && !x.dataset.q) {
+          on = state.tag === x.dataset.tag;
+        }
+        x.classList.toggle("is-on", on);
+      });
+    }
+
+    /** 类目/热搜跳转查询：先清冲突条件再套用 action */
+    function applyAction(action, opts) {
+      if (!action) return;
+      if (action.href) {
+        location.href = action.href;
+        return;
+      }
+      const reset = !opts || opts.reset !== false;
+      if (reset) {
+        state.plat = "";
+        state.tag = "";
+        state.q = "";
+        state.kind = "all";
+        const input = document.querySelector("form.search input");
+        if (input) input.value = "";
+      }
+      if (action.kindTab) state.kind = action.kindTab;
+      if (action.plat !== undefined) state.plat = action.plat;
+      if (action.tag) state.tag = action.tag;
+      if (action.q) {
+        state.q = action.q;
+        const input = document.querySelector("form.search input");
+        if (input) input.value = action.q;
+      }
+      syncKindTabs();
+      syncCatActive();
+      render();
+      document.getElementById("feed").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function mountConfigUI() {
+      // 顶栏快捷标签
+      const kw = document.getElementById("kw-bar");
+      const kwNav = document.querySelector(".kw-bar");
+      if (cfg.hot_bar && cfg.hot_bar.enabled === false) {
+        if (kwNav) kwNav.style.display = "none";
+      } else {
+        if (kwNav) kwNav.style.display = "";
+        const hot = window.MarketConfigStore.enabledSorted(cfg.hot_searches);
+        kw.innerHTML = hot.map((h) => {
+          return "<a " + window.MarketConfigStore.actionToAttrs(h.action) + ">" + h.label + "</a>";
+        }).join("");
+      }
+
+      // 侧栏类目组（闲鱼式）
+      const groups = window.MarketConfigStore.enabledSorted(cfg.category_groups);
+      const side = document.getElementById("side-cats");
+      side.innerHTML = groups.map((g) => {
+        const labels = (g.labels || []).map((lab, i) => {
+          const sep = i ? '<span class="sep">/</span>' : "";
+          return sep + "<a " + window.MarketConfigStore.actionToAttrs(lab.action) + ">" + lab.text + "</a>";
+        }).join("");
+        const sections = (g.sections || []).map((sec) => {
+          const items = (sec.items || []).map((it) =>
+            "<a " + window.MarketConfigStore.actionToAttrs(it.action) + ">" + it.text + "</a>"
+          ).join("");
+          return '<div class="sec"><div class="sec-title">' + sec.title + '</div><div class="sec-items">' + items + "</div></div>";
+        }).join("");
+        return (
+          '<div class="cat-row" data-gid="' + g.id + '">' +
+            '<span class="ico" aria-hidden="true">' + window.MarketConfigStore.catIconSvg(g.icon) + '</span>' +
+            '<div class="cat-labels">' + labels + '</div>' +
+            (sections ? '<div class="cat-flyout" role="region" aria-label="' + (g.labels || []).map((l) => l.text).join(" / ") + '">' + sections + '</div>' : "") +
+          "</div>"
+        );
+      }).join("");
+      syncCatActive();
+
+      // 主横幅
+      const banner = (cfg.slots || []).find((s) => s.id === "banner");
+      if (banner && banner.enabled !== false) {
+        document.getElementById("banner-title").innerHTML = (banner.title || "").replace(/\n/g, "<br />");
+        document.getElementById("banner-desc").textContent = banner.desc || "";
+        const pb = document.getElementById("promo-banner");
+        pb.style.display = "";
+        pb.onclick = (e) => { e.preventDefault(); applyAction(banner.action); };
+      } else {
+        document.getElementById("promo-banner").style.display = "none";
+      }
+
+      // 四宫格
+      const grid = document.getElementById("promo-grid");
+      const tiles = window.MarketConfigStore.enabledSorted(
+        (cfg.slots || []).filter((s) => s.id !== "banner" && String(s.id).indexOf("tile_") === 0)
+      ).slice(0, 4);
+      const themeIcon = { deal: "tile-icon-deal.png", code: "tile-icon-code.png", pool: "tile-icon-pool.png", buyer: "tile-icon-buyer.png" };
+      grid.innerHTML = tiles.map((t) => {
+        const theme = t.theme || "deal";
+        const icon = themeIcon[theme] || "tile-icon-deal.png";
+        return (
+          '<a class="tile tile--' + theme + '" href="#feed" data-slot="' + t.id + '">' +
+            '<div class="tile-eng" aria-hidden="true">' + (t.eng || "") + '</div>' +
+            '<img class="tile-flower" src="assets/tile-flower.png" alt="" aria-hidden="true" />' +
+            '<div class="tile-copy"><h3>' + t.title + ' <span class="arrow">›</span></h3><p>' + (t.desc || "") + '</p></div>' +
+            '<div class="tile-mascot"><img src="assets/' + icon + '" alt="" /></div>' +
+            '<div class="tile-tray">' +
+              '<div class="thumb"><div class="thumb-pic"><img src="assets/thumb1.jpg" alt="" /></div><div class="thumb-price">·</div></div>' +
+              '<div class="thumb"><div class="thumb-pic"><img src="assets/thumb2.jpg" alt="" /></div><div class="thumb-price">·</div></div>' +
+              '<div class="thumb"><div class="thumb-pic"><img src="assets/thumb3.jpg" alt="" /></div><div class="thumb-price">·</div></div>' +
+            '</div>' +
+          '</a>'
+        );
+      }).join("");
+      grid.querySelectorAll("[data-slot]").forEach((el) => {
+        el.addEventListener("click", (e) => {
+          e.preventDefault();
+          const slot = (cfg.slots || []).find((s) => s.id === el.dataset.slot);
+          if (slot) applyAction(slot.action);
+        });
+      });
+    }
+
+    mountConfigUI();
+    render();
+
+    document.querySelectorAll(".kind-tab").forEach((el) => {
       el.addEventListener("click", () => {
-        document.querySelectorAll(".tabs .tab").forEach((t) => t.classList.remove("on"));
+        document.querySelectorAll(".kind-tab").forEach((t) => t.classList.remove("on"));
         el.classList.add("on");
+        state.kind = el.dataset.kind || "all";
+        render();
       });
     });
 
-    // 下方多铺挂单案例（真实本地图）
-    const cases = [
-      { img: "card1.jpg", plat: "Claude", title: "Max · 寄售 · 可故障转移", price: "0.55", badge: "捡漏" },
-      { img: "card2.jpg", plat: "ChatGPT", title: "Plus · Codex 可用", price: "0.62" },
-      { img: "card3.jpg", plat: "Kimi", title: "Coding Plan · 额度充足", price: "0.48", badge: "新上架" },
-      { img: "card4.jpg", plat: "Gemini", title: "Google One · Ultra", price: "0.70" },
-      { img: "card5.jpg", plat: "智谱", title: "GLM Coding · 国内站", price: "0.50" },
-      { img: "card6.jpg", plat: "Grok", title: "SuperGrok · 刚过检", price: "0.68" },
-      { img: "card7.jpg", plat: "MiniMax", title: "Coding Plan · 国际站", price: "0.54" },
-      { img: "card8.jpg", plat: "Claude", title: "Pro · 窗口将重置", price: "0.58", badge: "清仓" },
-      { img: "card9.jpg", plat: "ChatGPT", title: "Team · 可做备用跳", price: "0.66" },
-      { img: "card10.jpg", plat: "Kimi", title: "Coding · 高成功率卖家", price: "0.51" },
-      { img: "card11.jpg", plat: "智谱", title: "团队版 · 组织项目已配", price: "0.53" },
-      { img: "card12.jpg", plat: "Gemini", title: "Code Assist · 填项目 ID", price: "0.72" },
-      { img: "card13.jpg", plat: "Claude", title: "Max 20x · S 级过检", price: "0.57", badge: "优品" },
-      { img: "card14.jpg", plat: "OpenCode", title: "Go 订阅 · 日周额度可控", price: "0.49" },
-      { img: "card15.jpg", plat: "保障池", title: "Claude 保障池 · 自动派号", price: "0.80", badge: "保障" },
-      { img: "hero2.jpg", plat: "混合池", title: "全模型混合 · 按请求路由", price: "0.90" },
-      { img: "thumb1.jpg", plat: "Claude", title: "Setup Token · 寄售", price: "0.59" },
-      { img: "thumb2.jpg", plat: "ChatGPT", title: "Codex PAT · 近 24h 活跃", price: "0.64" },
-      { img: "thumb5.jpg", plat: "Kimi", title: "急出捡漏 · 今晚有效", price: "0.45", badge: "捡漏" },
-      { img: "thumb6.jpg", plat: "MiniMax", title: "国内站 Coding · B 级", price: "0.56" },
-      { img: "thumb7.jpg", plat: "Antigravity", title: "OAuth · 并发可控", price: "0.61" },
-      { img: "thumb8.jpg", plat: "Grok", title: "配额窗口充裕", price: "0.67" },
-      { img: "thumb10.jpg", plat: "智谱", title: "国际站 z.ai · 寄售", price: "0.52" },
-      { img: "thumb11.jpg", plat: "ChatGPT", title: "Plus · 首字延迟优秀", price: "0.63" },
-      { img: "card8.jpg", plat: "Claude", title: "Max · 卖家店铺精选", price: "0.56" },
-      { img: "card9.jpg", plat: "Kimi", title: "响应求购 · ≤0.50×", price: "0.47", badge: "求购" },
-      { img: "card12.jpg", plat: "Gemini", title: "Google One · Pro 档", price: "0.69" },
-      { img: "card14.jpg", plat: "时段包", title: "今晚 3 小时 Claude 畅用", price: "0.60", badge: "时段" },
-      { img: "card15.jpg", plat: "保障池", title: "ChatGPT 保障池 · 自动派", price: "0.70", badge: "保障" },
-      { img: "card7.jpg", plat: "MiniMax", title: "国内站 · 周额度充足", price: "0.51" },
-      { img: "card3.jpg", plat: "Claude", title: "Setup Token · A 级", price: "0.54" },
-      { img: "card11.jpg", plat: "智谱", title: "团队版 · 组织已填", price: "0.55" },
-    ];
+    document.getElementById("side-cats").addEventListener("click", (e) => {
+      const a = e.target.closest("a");
+      if (!a || !e.currentTarget.contains(a)) return;
+      if (a.dataset.href === "1") return; // 外链正常跳转
+      e.preventDefault();
+      applyAction(window.MarketConfigStore.attrsToAction(a));
+    });
 
-    const feed = document.getElementById("case-feed");
-    feed.innerHTML = cases.map((c) => `
-      <article class="card">
-        <div class="card-cover">
-          <img src="assets/${c.img}" alt="${c.plat} 挂单封面" loading="lazy" />
-          <div class="shade"></div>
-          ${c.badge ? `<span class="badge">${c.badge}</span>` : ""}
-          <span class="plat">${c.plat}</span>
-        </div>
-        <div class="card-body">
-          <h3 class="card-title">${c.title}</h3>
-          <div class="card-foot">
-            <div class="price"><small>×</small>${c.price}</div>
-            <button class="buy" type="button">要了</button>
-          </div>
-        </div>
-      </article>
-    `).join("");
+    document.getElementById("kw-bar").addEventListener("click", (e) => {
+      const a = e.target.closest("a");
+      if (!a) return;
+      e.preventDefault();
+      document.querySelectorAll("#kw-bar a").forEach((x) => x.classList.remove("is-on"));
+      a.classList.add("is-on");
+      applyAction(window.MarketConfigStore.attrsToAction(a));
+    });
+
+    document.getElementById("f-grade").addEventListener("change", (e) => {
+      state.grade = e.target.value;
+      render();
+    });
+    document.getElementById("f-sort").addEventListener("change", (e) => {
+      state.sort = e.target.value;
+      render();
+    });
+
+    document.querySelector("form.search")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const input = e.target.querySelector("input");
+      applyAction({ q: (input?.value || "").trim() });
+    });
 
     // 进站登录弹窗（猫从右跑上 + JS 驱动眼珠左右看）
     const loginMask = document.getElementById("login-mask");
     const loginCat = document.getElementById("login-cat");
-    const pupils = [...loginCat.querySelectorAll(".pupil")];
+    const pupils = loginCat ? [...loginCat.querySelectorAll(".pupil")] : [];
     let eyeTimer = null;
     let eyeHold = null;
 
@@ -1214,19 +1558,22 @@
     };
 
     const openLogin = () => {
-      loginCat.classList.remove("is-run");
+      if (!loginMask) return;
+      if (loginCat) {
+        loginCat.classList.remove("is-run");
+        void loginCat.offsetWidth;
+      }
       stopEyes();
-      void loginCat.offsetWidth;
       loginMask.classList.add("is-open");
       loginMask.setAttribute("aria-hidden", "false");
       document.body.style.overflow = "hidden";
-      requestAnimationFrame(() => loginCat.classList.add("is-run"));
-      // 跑完再开始转眼珠（不自动 focus，避免打断）
+      if (loginCat) requestAnimationFrame(() => loginCat.classList.add("is-run"));
       setTimeout(startEyes, 800);
     };
     const closeLogin = () => {
+      if (!loginMask) return;
       loginMask.classList.remove("is-open");
-      loginCat.classList.remove("is-run");
+      if (loginCat) loginCat.classList.remove("is-run");
       loginMask.setAttribute("aria-hidden", "true");
       document.body.style.overflow = "";
       eyeHold = null;
@@ -1277,7 +1624,7 @@
       document.getElementById(id).addEventListener("blur", () => { eyeHold = null; });
     });
 
-    openLogin();
+    // 进站不再自动弹登录，便于浏览双 SKU 市场；点「登录」再开
   </script>
 </body>
 </html>
