@@ -695,15 +695,13 @@ func scoreItemWithProfile(cfg RecommendConfig, tile HomeTile, prof RecommendProf
 	} else {
 		score += wTTFT * 0.5
 	}
-	stockLeft := 1.0
+	stockLeft := 0.8
 	if it.Stock != nil {
 		left := float64(*it.Stock - it.StockSold)
 		if left < 0 {
 			left = 0
 		}
 		stockLeft = clamp01(left / 10.0)
-	} else {
-		stockLeft = 0.8
 	}
 	score += wStock * stockLeft
 	ageDays := now.Sub(it.ListedSince).Hours() / 24

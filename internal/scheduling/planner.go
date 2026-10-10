@@ -187,13 +187,14 @@ func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 			if l.GroupID != nil {
 				d.GroupIDs = append(d.GroupIDs, *l.GroupID)
 			}
-			if l.Mode == listing.ModeBuyback {
+			switch l.Mode {
+			case listing.ModeBuyback:
 				d.Priority = clamp(strategy.BuybackPriority(u, grade), buybackBandStart, buybackBandEnd)
 				reasons = append(reasons, "buyback grade "+grade)
-			} else if l.Mode == listing.ModePack {
+			case listing.ModePack:
 				d.Priority = clamp(strategy.ConsignmentPriority(u, m), consignmentBandStart, consignmentBandEnd)
 				reasons = append(reasons, fmt.Sprintf("pack %.4f", m))
-			} else {
+			default:
 				d.Priority = clamp(strategy.ConsignmentPriority(u, m), consignmentBandStart, consignmentBandEnd)
 				reasons = append(reasons, fmt.Sprintf("consignment %.4f", m))
 			}
