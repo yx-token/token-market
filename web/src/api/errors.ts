@@ -65,6 +65,7 @@ const messages: Record<string, string> = {
   POOL_UNAVAILABLE: '该默认分组不可用',
   INVALID_LIMIT: '限额必须大于 0',
   KEY_NOT_FOUND: 'Key 不存在',
+  KEY_NOT_RECOVERABLE: '这个 Key 创建较早，平台没有保存明文，无法再次查看',
   NOTHING_TO_REFUND: '没有可退的余额',
   REFUND_IN_PROGRESS: '已有退款在处理中',
   ORDER_NOT_PENDING: '订单不是待支付状态',

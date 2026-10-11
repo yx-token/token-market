@@ -276,7 +276,7 @@ async function cancelPay() {
           <template v-if="isPack"><br />· 额度包支持按未用量退货</template>
         </div>
         <div v-if="issuedKey" class="done is-on">
-          已签发 Key，请立即保存。
+          已签发 Key，之后也可以在买家中心再次复制。
           <code>{{ issuedKey }}</code>
           <RouterLink to="/buyer/keys">去买家中心 →</RouterLink>
         </div>

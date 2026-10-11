@@ -501,6 +501,32 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 	if !strings.HasPrefix(key.Key, "tm-") || key.Detail.Status != "active" {
 		t.Fatalf("key: %+v", key)
 	}
+	// 买家可以随时再看一次明文（刷新浏览器后也能复制），列表里带上首跳平台与可否查看
+	var secret struct {
+		Key string `json:"key"`
+	}
+	buyer.must("GET", fmt.Sprintf("/api/buyer/keys/%d/secret", key.Detail.ID), nil, &secret)
+	if secret.Key != key.Key {
+		t.Fatalf("buyer should be able to view the key again: %q != %q", secret.Key, key.Key)
+	}
+	var listed []struct {
+		ID          int64  `json:"id"`
+		Platform    string `json:"platform"`
+		Recoverable bool   `json:"recoverable"`
+	}
+	buyer.must("GET", "/api/buyer/keys", nil, &listed)
+	var mine bool
+	for _, it := range listed {
+		if it.ID == key.Detail.ID {
+			mine = true
+			if !it.Recoverable || it.Platform != "anthropic" {
+				t.Fatalf("listed key should be recoverable and carry its platform: %+v", it)
+			}
+		}
+	}
+	if !mine {
+		t.Fatalf("created key missing from the list: %+v", listed)
+	}
 	// 挂单专属分组创建后，调度器把卖家 1 的账号加入该分组
 	e.schedule()
 	var listingGroup int64

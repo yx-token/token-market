@@ -95,7 +95,7 @@ func (s *KeyService) purchasePackBalance(ctx context.Context, userID int64, l *l
 			return nil, err
 		}
 	}
-	return &PurchasePackResult{Pack: p, Key: plain, Note: "store this key now; it will not be shown again"}, nil
+	return &PurchasePackResult{Pack: p, Key: plain}, nil
 }
 
 func (s *KeyService) purchasePackOnline(ctx context.Context, userID int64, l *listing.Listing, face float64, name, channel, ip string) (*PurchasePackResult, error) {

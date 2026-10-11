@@ -45,8 +45,9 @@
 | POST | `/api/buyer/packs` | 购买额度包：`listing_id`，可选 `channel`（第一期仅 `balance`）、`name`。校验可调用余额 ≥ 面额后账面预付、占库存并签发 Key（明文只返回一次）；调用抵包内 remaining，未用量可退回账面 |
 | GET | `/api/buyer/packs` | 我的额度包：面额、剩余、状态 |
 | POST | `/api/buyer/packs/:id/refund` | 按未用量退货：停用 Key、释放卖家库存。可选 `dest`（`balance` / `original`，第一期记状态） |
-| POST | `/api/buyer/keys` | 创建 Key，明文只返回一次 |
-| GET | `/api/buyer/keys` | Key 列表 |
+| POST | `/api/buyer/keys` | 创建 Key，返回明文 |
+| GET | `/api/buyer/keys` | Key 列表；`recoverable` 表示能否再次查看明文（加密保存明文之前创建的 Key 不能） |
+| GET | `/api/buyer/keys/:id/secret` | 再次查看 Key 明文（`no-store`）；不能查看时返回 409 `KEY_NOT_RECOVERABLE` |
 | GET | `/api/buyer/keys/:id` | Key 详情，含各跳状态：`ready` / `provisioning`（内部资源开通中）/ `skipped`（挂单当前不接流量）；限额封禁原因 `limit_block_reason` |
 | PUT | `/api/buyer/keys/:id` | 修改 `name`、`route`、`limits`（修改限额会立即解除限额封禁） |
 | POST | `/api/buyer/keys/:id/disable`、`/enable` | 停用 / 启用 |

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -85,7 +86,11 @@ type BuyerKey struct {
 	LimitBlockedUntil *time.Time `json:"limit_blocked_until,omitempty"`
 	LimitBlockReason  *string    `json:"limit_block_reason,omitempty"`
 	Hops              []HopView  `json:"hops"`
-	CreatedAt         time.Time  `json:"created_at"`
+	// Platform 是首跳的平台，前端据此给出对应的调用示例。
+	Platform string `json:"platform,omitempty"`
+	// Recoverable 表示能否再次查看明文；加密保存明文之前创建的 Key 只有哈希。
+	Recoverable bool      `json:"recoverable"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type KeyService struct {
@@ -178,7 +183,7 @@ func (s *KeyService) validateRoute(ctx context.Context, r RouteInput) (string, [
 	return "chain", hops, nil
 }
 
-// Create 创建买家 Key。明文只在这里返回一次，数据库只存哈希。
+// Create 创建买家 Key。Edge 按哈希鉴权；明文用密钥环加密保存，买家之后可以通过 Secret 再次查看。
 func (s *KeyService) Create(ctx context.Context, userID int64, in KeyInput) (string, *BuyerKey, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" || len(in.Name) > 100 {
@@ -203,6 +208,13 @@ func (s *KeyService) Create(ctx context.Context, userID int64, in KeyInput) (str
 	var id int64
 	if err := tx.QueryRow(ctx, `INSERT INTO buyer_keys (user_id, name, key_hash, key_prefix, route_type, limits)
 		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, userID, in.Name, hash[:], plain[:10], routeType, limits).Scan(&id); err != nil {
+		return "", nil, err
+	}
+	enc, err := s.Keyring.SealString(plain, BuyerKeyAAD(id))
+	if err != nil {
+		return "", nil, err
+	}
+	if _, err := tx.Exec(ctx, "UPDATE buyer_keys SET key_enc = $2 WHERE id = $1", id, enc); err != nil {
 		return "", nil, err
 	}
 	if err := insertHops(ctx, tx, id, hops); err != nil {
@@ -484,23 +496,25 @@ func (s *KeyService) Publish(ctx context.Context, keyID int64) error {
 	return s.Edge.Put(ctx, hashHex, cfg)
 }
 
-const keyColumns = `id, name, key_prefix, route_type, status, disabled_reason, limits, limit_blocked_until, limit_block_reason, created_at`
+const keyColumns = `id, name, key_prefix, route_type, status, disabled_reason, limits, limit_blocked_until, limit_block_reason,
+	key_enc IS NOT NULL, created_at`
 
 func (s *KeyService) scanKey(ctx context.Context, row pgx.Row) (*BuyerKey, error) {
 	var k BuyerKey
 	var limits []byte
 	if err := row.Scan(&k.ID, &k.Name, &k.KeyPrefix, &k.RouteType, &k.Status, &k.DisabledReason, &limits, &k.LimitBlockedUntil,
-		&k.LimitBlockReason, &k.CreatedAt); err != nil {
+		&k.LimitBlockReason, &k.Recoverable, &k.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(limits, &k.Limits); err != nil {
 		return nil, err
 	}
 	skip, _ := s.Edge.SkipList(ctx)
-	rows, err := s.DB.Query(ctx, `SELECT h.position, h.listing_id, p.name,
+	rows, err := s.DB.Query(ctx, `SELECT h.position, h.listing_id, p.name, COALESCE(p.platform, u.platform),
 			EXISTS (SELECT 1 FROM internal_keys ik WHERE ik.buyer_key_id = h.key_id AND ik.status = 'active'
 				AND ik.sub2api_group_id = COALESCE(p.sub2api_group_id, l.listing_group_id))
 		FROM buyer_key_hops h LEFT JOIN pools p ON p.id = h.pool_id LEFT JOIN listings l ON l.id = h.listing_id
+		LEFT JOIN upstreams u ON u.id = l.upstream_id
 		WHERE h.key_id = $1 ORDER BY h.position`, k.ID)
 	if err != nil {
 		return nil, err
@@ -509,10 +523,13 @@ func (s *KeyService) scanKey(ctx context.Context, row pgx.Row) (*BuyerKey, error
 	for rows.Next() {
 		var hv HopView
 		var lid *int64
-		var pname *string
+		var pname, platform *string
 		var ready bool
-		if err := rows.Scan(&hv.Position, &lid, &pname, &ready); err != nil {
+		if err := rows.Scan(&hv.Position, &lid, &pname, &platform, &ready); err != nil {
 			return nil, err
+		}
+		if k.Platform == "" && platform != nil {
+			k.Platform = *platform
 		}
 		if lid != nil {
 			hv.ListingID = *lid
@@ -541,6 +558,25 @@ func (s *KeyService) Get(ctx context.Context, userID, keyID int64) (*BuyerKey, e
 		return nil, ErrKeyNotFound
 	}
 	return k, err
+}
+
+// BuyerKeyAAD 是买家 Key 明文密文的附加认证数据。
+func BuyerKeyAAD(id int64) string { return "buyer-key:" + strconv.FormatInt(id, 10) }
+
+// Secret 解密返回买家 Key 的明文。
+func (s *KeyService) Secret(ctx context.Context, userID, keyID int64) (string, error) {
+	var enc []byte
+	err := s.DB.QueryRow(ctx, "SELECT key_enc FROM buyer_keys WHERE id = $1 AND user_id = $2 AND status <> 'deleted'", keyID, userID).Scan(&enc)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrKeyNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if enc == nil {
+		return "", httpx.Conflict("KEY_NOT_RECOVERABLE", "this key was created before keys could be viewed again")
+	}
+	return s.Keyring.OpenString(enc, BuyerKeyAAD(keyID))
 }
 
 func (s *KeyService) List(ctx context.Context, userID int64) ([]BuyerKey, error) {

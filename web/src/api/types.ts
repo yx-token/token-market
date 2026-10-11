@@ -26,6 +26,8 @@ export interface MarketConfig {
   payment_channels: string[]
   recharge_min: number
   recharge_max: number
+  /** 市场展示官方价格的模型，用于按平台挑调用示例里的模型名 */
+  price_models: string[]
 }
 
 export interface MarketItem {
@@ -228,12 +230,15 @@ export interface BuyerKey {
   limit_blocked_until?: string
   limit_block_reason?: string
   hops: HopView[] | null
+  /** 首跳平台，用于给出对应协议的调用示例 */
+  platform?: string
+  /** 能否再次查看明文；加密保存明文之前创建的 Key 不能 */
+  recoverable: boolean
   created_at: string
 }
 
 export interface CreatedKey {
   key: string
-  note: string
   detail: BuyerKey
 }
 

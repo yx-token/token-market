@@ -12,6 +12,8 @@ import DateField from '@/components/common/DateField.vue'
 import RouteEditor from '@/components/RouteEditor.vue'
 import { dateTime, money } from '@/utils/format'
 import { toRoute, validateChain, type HopChoice } from '@/utils/route'
+import { copyText } from '@/utils/clipboard'
+import { sampleRequest } from '@/utils/keySample'
 
 const route = useRoute()
 const toast = useToast()
@@ -37,7 +39,12 @@ const form = reactive({
   ips: '',
   expires: '',
 })
-const created = ref<{ key: string; name: string } | null>(null)
+const created = ref<{ key: string; platform: string } | null>(null)
+// 已取回的明文（点「查看」后按 Key id 缓存），刷新浏览器后再点一次即可重新取回
+const revealed = reactive<Record<number, { key: string; platform: string }>>({})
+const revealing = ref(0)
+
+const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
 
 async function refundPack(p: QuotaPack) {
   if (!confirm(`按未用量退货 ¥${p.remaining.toFixed(2)}？Key 将停用，卖家库存加回。`)) return
@@ -137,7 +144,7 @@ async function save() {
   const res = await run(() => buyer.createKey({ name: form.name, route: routeInput, limits: limits.value }))
   if (res) {
     showForm.value = false
-    created.value = { key: res.key, name: res.detail.name }
+    created.value = { key: res.key, platform: res.detail.platform ?? '' }
     keys.load()
   }
 }
@@ -160,15 +167,50 @@ function packForKey(keyId: number): QuotaPack | undefined {
 }
 
 async function copy(text: string) {
+  if (await copyText(text)) toast.success('已复制')
+  else toast.error('复制失败，请手动选择后按 Ctrl/⌘+C')
+}
+
+function keyPlain(k: BuyerKey): string {
+  return revealed[k.id]?.key ?? ''
+}
+
+/** 取回明文：优先用缓存，没有就向控制面要一次（接口返回 no-store，明文只留在内存里）。 */
+async function plainOf(k: BuyerKey): Promise<string> {
+  const cached = revealed[k.id]
+  if (cached) return cached.key
+  if (revealing.value) return ''
+  revealing.value = k.id
   try {
-    await navigator.clipboard.writeText(text)
-    toast.success('已复制')
-  } catch {
-    toast.error('复制失败，请手动选择复制')
+    const res = await buyer.keySecret(k.id)
+    revealed[k.id] = { key: res.key, platform: k.platform ?? '' }
+    return res.key
+  } catch (e) {
+    toast.error(e)
+    return ''
+  } finally {
+    revealing.value = 0
   }
 }
 
-const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
+function hide(k: BuyerKey) {
+  delete revealed[k.id]
+}
+
+async function copyKey(k: BuyerKey) {
+  const text = await plainOf(k)
+  if (text) await copy(text)
+}
+
+/** 该 Key 的调用示例：按首跳平台取协议与模型名。 */
+function sample(platform: string, key: string) {
+  return sampleRequest(platform, baseURL.value, key, cfg.config.price_models ?? [])
+}
+
+const createdSample = computed(() =>
+  created.value ? sample(created.value.platform, created.value.key) : null,
+)
+
 </script>
 
 <template>
@@ -218,6 +260,10 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
           <span v-if="packForKey(k.id)" class="xm-tag pack">额度包</span>
           <span v-if="k.limit_blocked_until" class="xm-tag warn">已限额</span>
           <div class="xm-key-actions">
+            <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="revealing === k.id" @click="copyKey(k)">
+              {{ keyPlain(k) ? '复制 Key' : '查看并复制' }}
+            </button>
+            <button v-if="keyPlain(k)" type="button" class="xm-btn xm-btn-ghost xm-btn-sm" @click="hide(k)">隐藏</button>
             <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" @click="openEdit(k)">编辑</button>
             <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="busy || k.status === 'provisioning'" @click="toggle(k)">
               {{ k.status === 'active' ? '停用' : '启用' }}
@@ -233,6 +279,18 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
               <span class="txt">{{ hopText(h) }}<template v-if="packForKey(k.id) && i === 0"> · 剩余 ¥{{ packForKey(k.id)!.remaining.toFixed(2) }}</template></span>
             </span>
           </template>
+        </div>
+        <div v-if="keyPlain(k)" class="xm-key-plain">
+          <code>{{ keyPlain(k) }}</code>
+        </div>
+        <div v-if="keyPlain(k)" class="xm-key-sample">
+          <div class="lab">调用示例 · {{ sample(k.platform ?? '', keyPlain(k)).label }}</div>
+          <pre class="codeblock">{{ sample(k.platform ?? '', keyPlain(k)).code }}</pre>
+          <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" @click="copy(sample(k.platform ?? '', keyPlain(k)).code)">复制示例</button>
+          <p class="hint">{{ sample(k.platform ?? '', keyPlain(k)).note }}</p>
+        </div>
+        <div v-else-if="k.recoverable === false" class="xm-meta">
+          <span>这个 Key 创建较早，平台没有保存明文，无法再次查看；需要明文请新建一个 Key。</span>
         </div>
         <div class="xm-meta">
           <span v-if="packForKey(k.id)">
@@ -293,18 +351,19 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
     </ModalDialog>
 
     <ModalDialog :open="!!created" title="Key 已创建" @update:open="(v: boolean) => !v && (created = null)">
-      <p class="text-sm text-amber-700">请立即保存，Key 只显示这一次。</p>
+      <p class="text-sm text-amber-700">稍后也可以在买家中心再次查看和复制这个 Key。</p>
       <div class="flex items-center gap-2">
         <code class="flex-1 break-all rounded-xl border border-black/10 !bg-[#fafafa] !px-3 !py-2 text-sm">{{ created?.key }}</code>
         <button class="btn-secondary btn-sm" @click="copy(created!.key)">复制</button>
       </div>
-      <pre class="codeblock">curl {{ baseURL }}/v1/messages \
-  -H "x-api-key: {{ created?.key }}" \
-  -H "anthropic-version: 2023-06-01" \
-  -H "content-type: application/json" \
-  -d '{"model":"claude-sonnet-4-5","max_tokens":256,"messages":[{"role":"user","content":"你好"}]}'</pre>
+      <div v-if="createdSample">
+        <div class="label">调用示例 · {{ createdSample.label }}</div>
+        <pre class="codeblock">{{ createdSample.code }}</pre>
+        <button class="btn-secondary btn-sm" @click="copy(createdSample.code)">复制示例</button>
+        <p class="hint">{{ createdSample.note }}</p>
+      </div>
       <template #footer>
-        <button class="btn-primary" @click="created = null">我已保存</button>
+        <button class="btn-primary" @click="created = null">关闭</button>
       </template>
     </ModalDialog>
   </div>
