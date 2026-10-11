@@ -1,4 +1,5 @@
 # 发布：推送 v 开头的标签（例如 v0.3.0、v0.3.0-rc.1）时，先跑完整 CI，再构建并推送多架构镜像，最后创建 GitHub Release。
+# Release 说明依次为：附注标签的说明（git tag -a）、镜像与升级方法、自动生成的 PR 列表。
 #
 # 镜像推送到 ghcr.io/<仓库>，标签：v0.3.0、0.3.0、0.3，正式版另加 latest（带 - 的预发布版本只打完整版本号）。
 # 国内服务器拉 GHCR 慢时，可以同时推送到一个镜像仓库副本（例如阿里云容器镜像服务）：
@@ -144,7 +145,26 @@ jobs:
           DIGEST: ${{ needs.image.outputs.digest }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME}"
+          # 附注标签的说明放在最前面（直接推到 main 的改动不会出现在自动生成的 PR 列表里）。
+          # 从 API 读取：actions/checkout 会把附注标签覆盖成轻量标签。首行开头的版本号去掉，轻量标签没有说明。
+          ref=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${GITHUB_REF_NAME}" || true)
+          message=""
+          if [ "$(jq -r '.object.type // empty' <<<"$ref")" = "tag" ]; then
+            message=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r .object.sha <<<"$ref")" --jq .message \
+              | sed '/^-----BEGIN .*SIGNATURE-----$/,$d' || true)
+          fi
+          subject=$(head -n 1 <<<"$message")
+          if [[ "$subject" == "$GITHUB_REF_NAME"* ]]; then
+            subject=$(sed -E 's/^[[:space:]]*(—|–|-|:|：)?[[:space:]]*//' <<<"${subject#"$GITHUB_REF_NAME"}")
+          fi
+          body=$(tail -n +2 <<<"$message" | sed '/./,$!d')
           {
+            if [ -n "$subject$body" ]; then
+              echo "## 更新内容"
+              echo
+              if [ -n "$subject" ]; then echo "$subject"; echo; fi
+              if [ -n "$body" ]; then echo "$body"; echo; fi
+            fi
             echo "## 镜像"
             echo
             echo '```'

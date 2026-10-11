@@ -60,11 +60,14 @@ make dev-down
 
 ### 发布
 
-推送 `v` 开头的标签即发布（`.github/workflows/release.yml`）：先跑完整 CI（Go 检查与单元、集成测试，前端检查与构建），通过后构建多架构镜像（linux/amd64、linux/arm64）推送到 GHCR，最后创建 GitHub Release（自动生成更新说明，附部署文件、两个架构的完整更新包和 SHA-256 校验文件）。
+推送 `v` 开头的标签即发布（`.github/workflows/release.yml`）：先跑完整 CI（Go 检查与单元、集成测试，前端检查与构建），通过后构建多架构镜像（linux/amd64、linux/arm64）推送到 GHCR，最后创建 GitHub Release（附部署文件、两个架构的完整更新包和 SHA-256 校验文件）。
+
+Release 说明最前面是附注标签（`git tag -a`）的说明，首行开头的版本号会去掉；其后是镜像与升级方法，以及自动生成的 PR 列表。直接推到 main、没有走 PR 的改动不会出现在 PR 列表里，要写进标签说明。管理后台「系统更新」展示的就是这份说明，支持 Markdown。
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0     # 正式版：镜像标签 v0.1.0、0.1.0、0.1、latest
-git tag v0.2.0-rc.1 && git push origin v0.2.0-rc.1   # 带 - 的是预发布：只打完整版本号，不更新 latest
+git tag -a v0.1.0 -m "v0.1.0 — 本次更新的标题" -m "- 要点一
+- 要点二" && git push origin v0.1.0     # 正式版：镜像标签 v0.1.0、0.1.0、0.1、latest
+git tag -a v0.2.0-rc.1 -m "v0.2.0-rc.1" && git push origin v0.2.0-rc.1   # 带 - 的是预发布：只打完整版本号，不更新 latest
 ```
 
 镜像地址 `ghcr.io/yx-token/token-market`。镜像内程序的版本可以在 `GET /healthz` 的 `version` 字段和启动日志中看到。推送到 main 与提交 PR 时会运行同样的 CI（`.github/workflows/ci.yml`，另外检查镜像能否构建）。
