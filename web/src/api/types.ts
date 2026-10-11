@@ -811,7 +811,7 @@ export interface ProbeRun {
   trigger: string
   model: string
   status: string
-  summary?: { verdict?: string; error?: string } & Record<string, unknown>
+  summary?: Partial<ReportSummary> & { error?: string }
   items: number
   passed: number
   queued_at: string
@@ -841,6 +841,55 @@ export interface ProbeRunDetail {
   results: ProbeRunResult[]
   reference?: ProbeRun
   reference_results?: ProbeRunResult[]
+}
+
+/** 全局检测记录：检测本身、上游信息与各套件的题数和通过数 */
+export interface ProbeRunRecord extends ProbeRun {
+  platform: string
+  auth_type: string
+  seller_id: number
+  account_email?: string
+  is_reference: boolean
+  suites: Record<string, { items: number; passed: number }>
+}
+
+/** 一道题在筛选范围内的答题统计，被测上游与基线账号分开统计 */
+export interface ProbeItemStat {
+  item_id: number
+  suite: string
+  category: string
+  prompt: string
+  models: string[]
+  status: string
+  asked: number
+  passed: number
+  errors: number
+  avg_duration_ms: number
+  avg_output_tokens: number
+  avg_reasoning_tokens: number
+  last_asked_at?: string
+  ref_asked: number
+  ref_passed: number
+}
+
+/** 一道题在某次检测中的结果 */
+export interface ProbeItemResult {
+  run_id: number
+  upstream_id: number
+  platform: string
+  account_email?: string
+  model: string
+  trigger: string
+  passed: boolean | null
+  http_status?: number
+  error_class?: string
+  ttft_ms: number
+  duration_ms: number
+  output_tokens: number
+  reasoning_tokens: number
+  response_model?: string
+  excerpt?: string
+  created_at: string
 }
 
 export interface ProbeItem {

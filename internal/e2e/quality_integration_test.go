@@ -162,6 +162,89 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 		}
 	}
 	seller.expect(403, "GET", fmt.Sprintf("/api/admin/probe-runs/%d", runs[onboarding].ID), nil)
+
+	// 全局检测记录：默认不含基线对照检测，带各套件的题数与通过数；可按结论、触发原因与日期筛选
+	type record struct {
+		ID          int64                                  `json:"id"`
+		UpstreamID  int64                                  `json:"upstream_id"`
+		Trigger     string                                 `json:"trigger"`
+		Platform    string                                 `json:"platform"`
+		IsReference bool                                   `json:"is_reference"`
+		Suites      map[string]struct{ Items, Passed int } `json:"suites"`
+	}
+	findRun := func(recs []record, id int64) *record {
+		for i := range recs {
+			if recs[i].ID == id {
+				return &recs[i]
+			}
+		}
+		return nil
+	}
+	var recs []record
+	admin.must("GET", "/api/admin/probe-runs?platform=anthropic&verdict=normal", nil, &recs)
+	if r := findRun(recs, runs[onboarding].ID); r == nil || r.UpstreamID != up.ID || r.Platform != "anthropic" || r.Suites["iq"].Items != 25 || r.Suites["iq"].Passed != 25 {
+		t.Fatalf("global probe records should include the onboarding run with suite counts: %+v", recs)
+	}
+	for _, r := range recs {
+		if r.Trigger == "reference" {
+			t.Fatalf("baseline comparison runs must be excluded by default: %+v", r)
+		}
+	}
+	admin.must("GET", "/api/admin/probe-runs?trigger=reference", nil, &recs)
+	if len(recs) == 0 || !recs[0].IsReference || recs[0].UpstreamID != ref.Upstream.ID {
+		t.Fatalf("trigger=reference should list baseline runs: %+v", recs)
+	}
+	admin.must("GET", "/api/admin/probe-runs?verdict=degraded", nil, &recs)
+	if len(recs) != 0 {
+		t.Fatalf("no degraded runs yet: %+v", recs)
+	}
+	today := time.Now().Format("2006-01-02")
+	admin.must("GET", "/api/admin/probe-runs?from="+today+"&to="+today, nil, &recs)
+	if findRun(recs, runs[onboarding].ID) == nil {
+		t.Fatalf("date range including today should list the onboarding run: %+v", recs)
+	}
+	admin.must("GET", "/api/admin/probe-runs?from="+time.Now().AddDate(0, 0, 1).Format("2006-01-02"), nil, &recs)
+	if len(recs) != 0 {
+		t.Fatalf("future date range should be empty: %+v", recs)
+	}
+	admin.expect(400, "GET", "/api/admin/probe-runs?from=2026/10/11", nil)
+	seller.expect(403, "GET", "/api/admin/probe-runs", nil)
+
+	// 按题统计：被测上游与基线账号分开统计，限定其他模型的题没有答题记录
+	var stats []struct {
+		ItemID    int64 `json:"item_id"`
+		Asked     int   `json:"asked"`
+		Passed    int   `json:"passed"`
+		RefAsked  int   `json:"ref_asked"`
+		RefPassed int   `json:"ref_passed"`
+	}
+	admin.must("GET", "/api/admin/probe-item-stats?platform=anthropic", nil, &stats)
+	var sameStat bool
+	for _, s := range stats {
+		if s.ItemID == otherModel.ID {
+			t.Fatalf("other-model item must have no results: %+v", s)
+		}
+		if s.ItemID == sameModel.ID {
+			sameStat = s.Asked >= 1 && s.Passed == s.Asked && s.RefAsked >= 1 && s.RefPassed == s.RefAsked
+		}
+	}
+	if !sameStat {
+		t.Fatalf("item stats for the model-specific item: %+v", stats)
+	}
+	var itemResults []struct {
+		UpstreamID int64  `json:"upstream_id"`
+		Trigger    string `json:"trigger"`
+		Excerpt    string `json:"excerpt"`
+	}
+	admin.must("GET", fmt.Sprintf("/api/admin/probe-items/%d/results", sameModel.ID), nil, &itemResults)
+	var targetSeen, refSeen bool
+	for _, r := range itemResults {
+		targetSeen = targetSeen || (r.UpstreamID == up.ID && strings.Contains(r.Excerpt, "PONG13"))
+		refSeen = refSeen || (r.Trigger == "reference" && r.UpstreamID == ref.Upstream.ID)
+	}
+	if !targetSeen || !refSeen {
+		t.Fatalf("item results should include the target and the baseline: %+v", itemResults)
+	}
 	var created struct {
 		Listing idOnly `json:"listing"`
 	}

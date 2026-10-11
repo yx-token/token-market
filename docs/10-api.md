@@ -181,6 +181,7 @@
 | 单上游检测覆盖 | `PUT /api/admin/upstreams/:id/detection-override`、`DELETE …` |
 | 手动检测 | `POST /api/admin/upstreams/:id/probe`（对关闭检测的厂商也可执行） |
 | 检测明细 | `GET /api/admin/upstreams/:id/probe-runs`（最近的检测记录，不含基线对照检测，`limit` 默认 20）、`GET /api/admin/probe-runs/:id`（逐题结果：题目、是否通过、耗时、token、回答片段前 500 字符，附同批次基线账号的结果） |
+| 检测记录 | `GET /api/admin/probe-runs`（全部上游的检测记录，带各套件题数与通过数；筛选 `platform`、`upstream_id`、`model`、`trigger`（为空时不含基线对照，`reference` 只看基线对照）、`status`、`verdict`、`from` / `to`（本地日期 YYYY-MM-DD，含当天）、`limit` / `offset`）、`GET /api/admin/probe-item-stats`（按题统计，被测上游与基线账号分开统计，筛选同上）、`GET /api/admin/probe-items/:id/results`（一道题最近的答题结果，含基线对照，`limit` 默认 50） |
 | 题库 | `GET/POST /api/admin/probe-items`、`PUT /api/admin/probe-items/:id`、`POST /api/admin/probe-items/:id/retire` |
 | 基线账号 | `GET/POST /api/admin/reference-accounts`、`DELETE /api/admin/reference-accounts/:id`（授权复用卖家的授权接口） |
 | 质量看板 | `GET /api/admin/quality/overview`（各厂商健康与等级分布、官方全局事件、降智上游列表） |
