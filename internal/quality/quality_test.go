@@ -168,7 +168,8 @@ func TestProtocolsParseStreams(t *testing.T) {
 			"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"model\":\"claude-x\"}}\n\n" +
 				"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"15\"}}\n\n" +
 				"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"91\"}}\n\n" +
-				"event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":7}}\n\n",
+				"event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":7}}\n\n" +
+				"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
 			"1591", 7, 0, "claude-x"},
 		{"openai", "text/event-stream",
 			"data: {\"type\":\"response.output_text.delta\",\"delta\":\"1591\"}\n\n" +

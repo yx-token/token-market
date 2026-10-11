@@ -124,6 +124,7 @@ func (r *Reader) UsageLogsAfter(ctx context.Context, afterID int64, before time.
 }
 
 type Account struct {
+	SessionWindowEnd        *time.Time
 	ID                      int64
 	Name                    string
 	Platform                string
@@ -169,7 +170,7 @@ func scanAccount(row pgx.CollectableRow) (Account, error) {
 	var extra []byte
 	err := row.Scan(&a.ID, &a.Name, &a.Platform, &a.Type, &a.Status, &a.ErrorMessage, &a.Schedulable, &a.Priority,
 		&a.Concurrency, &a.LoadFactor, &a.RateMultiplier, &a.RateLimitResetAt, &a.OverloadUntil,
-		&a.TempUnschedulableUntil, &a.TempUnschedulableReason, &extra, &a.DeletedAt)
+		&a.TempUnschedulableUntil, &a.TempUnschedulableReason, &extra, &a.DeletedAt, &a.SessionWindowEnd)
 	if err != nil {
 		return a, err
 	}

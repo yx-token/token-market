@@ -26,7 +26,7 @@ tables:
     used_by: [scheduling, quality]
     columns: [id, name, platform, type, status, error_message, schedulable, priority, concurrency,
               load_factor, rate_multiplier, rate_limit_reset_at, overload_until,
-              temp_unschedulable_until, temp_unschedulable_reason, extra, deleted_at]
+              temp_unschedulable_until, temp_unschedulable_reason, extra, deleted_at, session_window_end]
   account_groups:
     used_by: [scheduling]
     columns: [account_id, group_id]
@@ -52,7 +52,9 @@ jsonb_keys:
     read: [quota_used, quota_daily_used, quota_weekly_used, session_window_utilization,
            codex_reset_credit_snapshot, codex_auto_reset_credit_state, auto_reset_credit_enabled,
            auto_reset_credit_5h_threshold, auto_reset_credit_7d_threshold,
-           email_address, email]   # 官方账号邮箱，补齐 0019 之前接入的上游
+           email_address, email, passive_usage_7d_utilization, passive_usage_7d_reset,
+           passive_usage_7d_oi_utilization, passive_usage_7d_oi_reset,
+           codex_5h_used_percent, codex_7d_used_percent, codex_5h_reset_at, codex_7d_reset_at]   # 官方账号邮箱，补齐 0019 之前接入的上游
     write: [window_cost_limit, base_rpm, max_sessions, quota_daily_limit, quota_weekly_limit,
             auto_reset_credit_enabled, auto_reset_credit_5h_threshold, auto_reset_credit_7d_threshold]
   audit_logs.extra:

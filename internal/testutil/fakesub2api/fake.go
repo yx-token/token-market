@@ -25,7 +25,8 @@ import (
 )
 
 const (
-	// 网关每次请求固定的用量，价格按 Claude Sonnet 的官方价（输入 $3 / 输出 $15 每百万 token）
+	// 账单测试固定的用量，价格按 Claude Sonnet 的官方价（输入 $3 / 输出 $15 每百万 token）。
+	// 网关响应另按实际请求估算用量，不改变既有账单断言。
 	InputTokens  = 100000
 	OutputTokens = 20000
 	TotalCost    = (InputTokens*3.0 + OutputTokens*15.0) / 1e6
@@ -41,17 +42,20 @@ type Server struct {
 	HTTP    *httptest.Server
 	handler http.Handler
 
-	mu       sync.Mutex
-	idem     map[string]cached
-	tokens   map[string]int64 // access token → user id
-	refresh  map[string]int64
-	sessions map[string]oauthSession
-	failing  map[int64]int // account id → 网关对该账号返回的状态码
-	requests []string      // 网关收到的请求的 X-Client-Request-ID
-	answer   func(accountID int64, prompt string) string
-	credits  map[int64]int // account id → 可用的重置卡张数
-	resets   map[int64]int // account id → 实际消耗的重置卡张数
-	recovers map[int64]int // account id → 恢复账号状态的次数
+	mu            sync.Mutex
+	idem          map[string]cached
+	tokens        map[string]int64 // access token → user id
+	refresh       map[string]int64
+	sessions      map[string]oauthSession
+	failing       map[int64]int // account id → 网关对该账号返回的状态码
+	requests      []string      // 网关收到的请求的 X-Client-Request-ID
+	answer        func(accountID int64, prompt string) string
+	credits       map[int64]int // account id → 可用的重置卡张数
+	resets        map[int64]int // account id → 实际消耗的重置卡张数
+	recovers      map[int64]int // account id → 恢复账号状态的次数
+	active        map[int64]int // account id → 正在转发的请求数
+	gatewayConfig map[int64]GatewayConfig
+	gatewayAnswer func(accountID int64, request GatewayRequest) GatewayResponse
 }
 
 type cached struct {
@@ -73,6 +77,7 @@ func NewUnstarted(db *pgxpool.Pool, adminKey string) *Server {
 		idem: map[string]cached{}, tokens: map[string]int64{}, refresh: map[string]int64{},
 		sessions: map[string]oauthSession{}, failing: map[int64]int{},
 		credits: map[int64]int{}, resets: map[int64]int{}, recovers: map[int64]int{},
+		active: map[int64]int{}, gatewayConfig: map[int64]GatewayConfig{},
 	}
 	s.handler = s.routes()
 	return s
@@ -1075,38 +1080,18 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 403, map[string]any{"type": "error", "error": map[string]string{"type": "INSUFFICIENT_BALANCE", "message": "insufficient balance"}})
 		return
 	}
-	var body struct {
-		Model    string `json:"model"`
-		Input    any    `json:"input"`
-		Messages []struct {
-			Content any `json:"content"`
-		} `json:"messages"`
-		Contents []struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		} `json:"contents"`
+	var body map[string]any
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 40<<20)).Decode(&body); err != nil {
+		gatewayError(w, 400, "invalid_request_error", "invalid request body")
+		return
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	prompt, _ := body.Input.(string)
-	if len(body.Messages) > 0 {
-		prompt, _ = body.Messages[len(body.Messages)-1].Content.(string)
-	}
-	if action := r.PathValue("action"); action != "" {
-		body.Model, _, _ = strings.Cut(action, ":")
-		if n := len(body.Contents); n > 0 && len(body.Contents[n-1].Parts) > 0 {
-			prompt = body.Contents[n-1].Parts[0].Text
-		}
-	}
-	if body.Model == "" {
-		body.Model = "claude-sonnet-4-5"
-	}
+	request := parseGatewayRequest(body, r.PathValue("action"))
 	var groupRate float64
 	if err := s.DB.QueryRow(ctx, "SELECT rate_multiplier::float8 FROM groups WHERE id = $1", *groupID).Scan(&groupRate); err != nil {
 		gatewayError(w, 500, "api_error", err.Error())
 		return
 	}
-	rows, err := s.DB.Query(ctx, `SELECT a.id, a.rate_multiplier::float8 FROM accounts a JOIN account_groups ag ON ag.account_id = a.id
+	rows, err := s.DB.Query(ctx, `SELECT a.id, a.rate_multiplier::float8, a.concurrency FROM accounts a JOIN account_groups ag ON ag.account_id = a.id
 		WHERE ag.group_id = $1 AND a.deleted_at IS NULL AND a.status = 'active' AND a.schedulable
 		ORDER BY a.priority, a.id`, *groupID)
 	if err != nil {
@@ -1114,13 +1099,14 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type cand struct {
-		id   int64
-		rate float64
+		id          int64
+		rate        float64
+		concurrency int
 	}
 	var cands []cand
 	for rows.Next() {
 		var c cand
-		if err := rows.Scan(&c.id, &c.rate); err != nil {
+		if err := rows.Scan(&c.id, &c.rate, &c.concurrency); err != nil {
 			rows.Close()
 			gatewayError(w, 500, "api_error", err.Error())
 			return
@@ -1129,6 +1115,7 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 	}
 	rows.Close()
 	lastStatus := 503
+	concurrencyLimited := false
 	for _, c := range cands {
 		s.mu.Lock()
 		failStatus := s.failing[c.id]
@@ -1136,6 +1123,15 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 		if failStatus != 0 {
 			lastStatus = failStatus
 			continue
+		}
+		if !s.acquireAccount(c.id, c.concurrency) {
+			concurrencyLimited = true
+			continue
+		}
+		defer s.releaseAccount(c.id)
+		response, ok := s.gatewayResponse(ctx, c.id, request)
+		if !ok {
+			return
 		}
 		actual := math.Round(TotalCost*groupRate*1e10) / 1e10
 		tx, err := s.DB.Begin(ctx)
@@ -1146,7 +1142,7 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 		_, err = tx.Exec(ctx, `INSERT INTO usage_logs (user_id, api_key_id, account_id, group_id, model, request_id,
 				input_tokens, output_tokens, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, first_token_ms, duration_ms)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 300, 1200)`,
-			userID, keyID, c.id, *groupID, body.Model, "client:"+rid, InputTokens, OutputTokens, TotalCost, actual, groupRate, c.rate)
+			userID, keyID, c.id, *groupID, request.Model, "client:"+rid, InputTokens, OutputTokens, TotalCost, actual, groupRate, c.rate)
 		if err == nil {
 			_, err = tx.Exec(ctx, "UPDATE users SET balance = balance - $2 WHERE id = $1", userID, actual)
 		}
@@ -1159,46 +1155,12 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 			gatewayError(w, 500, "api_error", err.Error())
 			return
 		}
-		text := "ok"
-		s.mu.Lock()
-		answer := s.answer
-		s.mu.Unlock()
-		if answer != nil {
-			text = answer(c.id, prompt)
-		}
-		writeJSON(w, 200, responseBody(r.URL.Path, rid, body.Model, text))
+		writeJSON(w, 200, responseBody(r.URL.Path, rid, request.Model, response))
+		return
+	}
+	if concurrencyLimited {
+		gatewayConcurrencyError(w)
 		return
 	}
 	gatewayError(w, lastStatus, "overloaded_error", fmt.Sprintf("no available accounts in group %d", *groupID))
-}
-
-// responseBody 按接口协议构造非流式响应（探测在拿不到 SSE 时按 JSON 解析）。
-func responseBody(path, rid, model, text string) map[string]any {
-	if strings.HasPrefix(path, "/v1beta/") {
-		return map[string]any{
-			"modelVersion":  model,
-			"candidates":    []map[string]any{{"content": map[string]any{"role": "model", "parts": []map[string]string{{"text": text}}}, "finishReason": "STOP"}},
-			"usageMetadata": map[string]int{"promptTokenCount": InputTokens, "candidatesTokenCount": OutputTokens},
-		}
-	}
-	switch path {
-	case "/v1/chat/completions":
-		return map[string]any{
-			"id": "chatcmpl-" + rid, "object": "chat.completion", "model": model,
-			"choices": []map[string]any{{"index": 0, "message": map[string]string{"role": "assistant", "content": text}, "finish_reason": "stop"}},
-			"usage":   map[string]int{"prompt_tokens": InputTokens, "completion_tokens": OutputTokens},
-		}
-	case "/v1/responses":
-		return map[string]any{
-			"id": "resp_" + rid, "object": "response", "model": model, "status": "completed",
-			"output": []map[string]any{{"type": "message", "content": []map[string]string{{"type": "output_text", "text": text}}}},
-			"usage":  map[string]any{"input_tokens": InputTokens, "output_tokens": OutputTokens},
-		}
-	default:
-		return map[string]any{
-			"id": "msg_" + rid, "type": "message", "role": "assistant", "model": model,
-			"content": []map[string]string{{"type": "text", "text": text}},
-			"usage":   map[string]int{"input_tokens": InputTokens, "output_tokens": OutputTokens},
-		}
-	}
 }

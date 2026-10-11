@@ -1,0 +1,57 @@
+{
+  "body": {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "只输出最终答案。"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "generationConfig": {
+      "maxOutputTokens": 1024,
+      "thinkingConfig": {
+        "includeThoughts": false,
+        "thinkingLevel": "high"
+      }
+    },
+    "systemInstruction": {
+      "parts": [
+        {
+          "text": "只返回题目指定格式。"
+        }
+      ]
+    },
+    "toolConfig": {
+      "functionCallingConfig": {
+        "mode": "AUTO"
+      }
+    },
+    "tools": [
+      {
+        "functionDeclarations": [
+          {
+            "description": "查询本地日程",
+            "name": "lookup_schedule",
+            "parameters": {
+              "additionalProperties": false,
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "type": "object"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "path": "/v1beta/models/gemini-3.8-flash:generateContent",
+  "stream": false
+}

@@ -4,7 +4,7 @@
 //
 // 用法：
 //
-//	fake-sub2api --dsn postgres://.../fake_sub2api --sub2api-repo ../sub2api [--ref v0.2.14] [--listen 127.0.0.1:18081] [--admin-key dev-admin-key] [--reset-credits 2]
+//	fake-sub2api --dsn postgres://.../fake_sub2api --sub2api-repo ../github-fork/sub2api [--ref v0.2.14] [--listen 127.0.0.1:18081] [--admin-key dev-admin-key] [--reset-credits 2]
 //
 // 数据库为空时先执行 sub2api 的全部迁移；本系统的 sub2api.replica_dsn 指向同一个库。
 package main

@@ -19,20 +19,23 @@ type Outcome struct {
 
 // Assessment 是一次检测的评估结果。
 type Assessment struct {
-	Verdict        string   `json:"verdict"` // normal / suspected / degraded / unavailable / inconclusive
-	LLR            float64  `json:"llr"`
-	Samples        int      `json:"samples"`
-	TargetPassRate *float64 `json:"target_pass_rate,omitempty"`
-	RelativeScore  *float64 `json:"relative_score,omitempty"`
-	ReasoningRatio *float64 `json:"reasoning_ratio,omitempty"`
-	Confidence     *float64 `json:"confidence,omitempty"`
-	Baseline       bool     `json:"baseline"`
-	AvailableOK    int      `json:"available_ok"`
-	AvailableTotal int      `json:"available_total"`
-	TTFTp50Ms      *float64 `json:"ttft_p50_ms,omitempty"`
-	TTFTp95Ms      *float64 `json:"ttft_p95_ms,omitempty"`
-	OutputTPS      *float64 `json:"output_tps,omitempty"`
-	Grade          string   `json:"grade,omitempty"`
+	ErrorCounts          map[string]int `json:"error_counts,omitempty"`
+	ReferenceErrorCounts map[string]int `json:"reference_error_counts,omitempty"`
+	Warnings             []string       `json:"warnings,omitempty"`
+	Verdict              string         `json:"verdict"` // normal / suspected / degraded / unavailable / inconclusive
+	LLR                  float64        `json:"llr"`
+	Samples              int            `json:"samples"`
+	TargetPassRate       *float64       `json:"target_pass_rate,omitempty"`
+	RelativeScore        *float64       `json:"relative_score,omitempty"`
+	ReasoningRatio       *float64       `json:"reasoning_ratio,omitempty"`
+	Confidence           *float64       `json:"confidence,omitempty"`
+	Baseline             bool           `json:"baseline"`
+	AvailableOK          int            `json:"available_ok"`
+	AvailableTotal       int            `json:"available_total"`
+	TTFTp50Ms            *float64       `json:"ttft_p50_ms,omitempty"`
+	TTFTp95Ms            *float64       `json:"ttft_p95_ms,omitempty"`
+	OutputTPS            *float64       `json:"output_tps,omitempty"`
+	Grade                string         `json:"grade,omitempty"`
 }
 
 func scoringSuite(s string) bool { return s == "iq" || s == "reasoning" || s == "long_context" }
@@ -51,6 +54,13 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 	var targetPass, refPass, both, targetScored int
 	var tReason, rReason []float64
 	for _, o := range outcomes {
+		countProbeError(&a.ErrorCounts, o.Target.ErrorClass)
+		if o.Ref != nil {
+			countProbeError(&a.ReferenceErrorCounts, o.Ref.ErrorClass)
+		}
+		if o.Target.ErrorClass == "platform" || o.Target.ErrorClass == "rate_limited" || o.Target.ErrorClass == "expected_reject" || o.Target.ErrorClass == "configuration" {
+			continue
+		}
 		a.AvailableTotal++
 		if !o.Target.OK() {
 			continue
@@ -62,7 +72,7 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 		if v := o.Target.OutputTPS(); v > 0 {
 			tps = append(tps, v)
 		}
-		if !scoring || !scoringSuite(o.Suite) {
+		if !scoring || !scoringSuite(o.Suite) || !o.Target.EligibleForIntelligence() || (o.Ref != nil && !o.Ref.EligibleForIntelligence()) {
 			continue
 		}
 		var pRef float64
@@ -100,7 +110,7 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 		}
 		if o.Suite == "reasoning" && refOK {
 			t, r := reasoningAmount(o.Target), reasoningAmount(*o.Ref)
-			if r > 0 {
+			if r > 0 && (o.Target.ReasoningObserved || o.Target.ReasoningTokens > 0) {
 				tReason = append(tReason, t)
 				rReason = append(rReason, r)
 			}
@@ -142,6 +152,8 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 	switch {
 	case a.AvailableTotal >= 2 && float64(a.AvailableOK)/float64(a.AvailableTotal) < 0.5:
 		a.Verdict = "unavailable"
+	case a.AvailableTotal == 0:
+		a.Verdict = "inconclusive"
 	case !scoring || a.Samples == 0:
 		a.Verdict = "normal"
 		if a.AvailableOK == 0 {
@@ -163,12 +175,23 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 	return a
 }
 
+func countProbeError(counts *map[string]int, class string) {
+	// 预期的参数拒绝是有效指纹证据，不是待排查的探测故障。
+	if class == "" || class == "expected_reject" {
+		return
+	}
+	if *counts == nil {
+		*counts = map[string]int{}
+	}
+	(*counts)[class]++
+}
+
 func reasoningAmount(r ProbeResult) float64 {
 	if r.ReasoningTokens > 0 {
 		return float64(r.ReasoningTokens)
 	}
-	// 没有推理 token 统计的协议（如 Claude）按思考内容长度估算，约 4 字符 1 token
-	return float64(r.ThinkingChars) / 4
+	// 估算在协议层使用输出 usage 完成，不能用被隐藏的 thinking 字符数。
+	return 0
 }
 
 func gradeFor(rel float64) string {
