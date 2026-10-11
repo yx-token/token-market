@@ -1,6 +1,6 @@
 # sub2api 探测请求改写：当前 HEAD 与 v0.2.14 对照
 
-核实日期：2026-10-12。只读源码位置固定为 `/Users/duegin/project/github-fork/sub2api`。先读取当前 HEAD `3a6fd1c9d`（`v0.2.15-1-g3a6fd1c9d`），再用 `git diff v0.2.14..HEAD` 与 `git show v0.2.14:<路径>` 对照。没有编译、执行、修改源码、切分支或更改其工作区。token-market 的契约和集成测试迁移基线仍为 **v0.2.14**，本次对照不构成新版本兼容认证。
+核实日期：2026-10-12。只读源码位置固定为 本地 sub2api 仓库（Makefile 的 `SUB2API_REPO`，默认 `../github-fork/sub2api`，以该仓库为准）。先读取当前 HEAD `3a6fd1c9d`（`v0.2.15-1-g3a6fd1c9d`），再用 `git diff v0.2.14..HEAD` 与 `git show v0.2.14:<路径>` 对照。没有编译、执行、修改源码、切分支或更改其工作区。token-market 的契约和集成测试迁移基线仍为 **v0.2.14**，本次对照不构成新版本兼容认证。
 
 第 1–7 节保留原 v0.2.14 核实结果及该标签行号；当前 HEAD 的差异集中在第 8 节。路径缩写：`S/` = `backend/internal/service/`，`I/` = `backend/internal/`。[模型资料第 6 章](model-landscape.md#第-6-章-sub2api-v0214模型目录定价表与网关改写)属于标签快照，不代替当前差异说明。
 
@@ -105,6 +105,6 @@ tools、tool_choice、usage 明细、reasoning_content 都原样。如果账号�
 - A02 优先读取现有 usage_records 的 upstream_response_model，自己归一化与应用官方路由白名单；不能直接将 sub2api 的严格 mismatch 布尔值当作违规。响应回显已改回请求名时，不能冒充原始上游证据。
 - `OpenAI-Model` 头仍不由现有网关透传/记录。缺少它的回退证据记“依赖 sub2api，后续处理”，不得通过修改网关补取。
 - Claude 订阅档位仍没有可用的现有核档字段。只展示令牌可读声明，缺失标“未核验”；不能由利用率猜测 Max 5x/20x。官方核档须等待现有接口提供，平台不持厂商凭据直连官方。
-- Admin usage 的 source=active 会由 sub2api 访问官方。本次实现和离线测试不调用它；开跑优先读取 source=passive 或只读 extra，未知余量应保守顺延。
+- Admin usage 的 source=active 会由 sub2api 访问官方。本次实现和离线测试不调用它；开跑优先读取 source=passive 或只读 extra，只有快照明确显示余量不足才顺延并记录原因；未知时照常执行，结果/报告标“窗口余量未知”，仍受 token 硬预算、单请求超时及 run 截止时间限制，上架、申诉与管理员检测不因未知被阻塞。
 - Antigravity 协议转换可能生成 Claude 风格 id/model；只有现有原始 modelVersion/只读用量记录足够时才判定，否则无法判定。
 - 本期扩展只读查询须登记在 token-market 的 contract/queries 并核对 v0.2.14 表结构；不会新增、修改 sub2api 迁移、源码、测试或脚本。新 HEAD 的兼容登记不随文档自动变化。

@@ -4,7 +4,7 @@
 
 所有与 sub2api 的交互集中在 `internal/sub2api`，业务代码不直接拼 sub2api 的 URL 或 SQL。
 
-质检升级的全部业务、迁移、测试与脚本均只在 token-market 一侧实现，严禁修改 sub2api 的任何代码。功能通过现有 Admin API、用户 API、网关、只读数据库与配置驱动；现有接口无法提供的能力记为“依赖 sub2api，后续处理”。源码分析只读 `/Users/duegin/project/github-fork/sub2api`，先看当前 HEAD，再核对契约标签 v0.2.14；本次 HEAD `3a6fd1c9d` 的相关差异见[质检网关对照](research/inspection/sub2api-rewrites.md)。源码观察不自动改变已验证版本列表，集成测试仍按 v0.2.14 迁移。
+质检升级的全部业务、迁移、测试与脚本均只在 token-market 一侧实现，严禁修改 sub2api 的任何代码。功能通过现有 Admin API、用户 API、网关、只读数据库与配置驱动；现有接口无法提供的能力记为“依赖 sub2api，后续处理”。源码分析只读 本地 sub2api 仓库（Makefile 的 `SUB2API_REPO`，默认 `../github-fork/sub2api`，以该仓库为准），先看当前 HEAD，再核对契约标签 v0.2.14；本次 HEAD `3a6fd1c9d` 的相关差异见[质检网关对照](research/inspection/sub2api-rewrites.md)。源码观察不自动改变已验证版本列表，集成测试仍按 v0.2.14 迁移。
 
 | 模块 | 职责 |
 |---|---|

@@ -204,7 +204,7 @@ SPRT 仅决定严重降智门槛，配对 McNemar 仅决定智力扣价，两者
 
 检测失败（超时或出错）时不改变上游的健康状态，但依赖这次检测的流程要能继续：上架检测记为不通过（卖家可以重新检测），申诉回到待处理，恢复复测按退避重新安排。worker 停止时进行中的批次放回队列，重启后从头执行；进程异常退出遗留的"执行中"记录，超过总时限 5 分钟后记为失败。
 
-**升级规划**：`probe_runs.mode/deadline_at` 保存每次 full/quick 的独立截止，开始时固化，不受执行中修改设置影响；`legacy` 仍兼容旧时限。中断保留完成实例与版本，只补未完成结果。题目单元并行、账号内多步有序，账号信号量与全局上限在 token-market 持主锁的 worker 中控制。429/529 归 `rate_limited` 退避，不作主动探针可用失败；预期 400 归 `expected_reject`；拒答独立；网关并发、探测余额不足与 `claude_code_version_too_old` 归 `platform`，不归因卖家。
+**升级规划**：`probe_runs.mode/deadline_at` 保存每次 full/quick 的独立截止，开始时固化，不受执行中修改设置影响；`legacy` 仍兼容旧时限。中断保留完成实例与版本，只补未完成结果。题目单元并行、账号内多步有序，账号信号量容量取 min(策略 item_parallelism、设置账号上限默认 2、账号当前下发到 sub2api 的实际并发)，基线同理；全局上限在 token-market 持主锁的 worker 中控制。429/529 归 `rate_limited` 退避，不作主动探针可用失败；预期 400 归 `expected_reject`；拒答独立；网关并发、探测余额不足与 `claude_code_version_too_old` 归 `platform`，不归因卖家。
 
 协议按型号注册表转换参数：Claude 新型号 adaptive + output_config.effort、旧 Sonnet/Haiku 4.5 用 budget_tokens，Gemini 3 用 thinkingLevel、2.5 用 thinkingBudget，OpenAI 用 reasoning.effort。型号例外须明确，不能笼统认为全部 Claude 5.x 都不支持 disabled。Claude 推理量优先读输出明细，缺失才用总输出减可见文本 token 并标“估算”，不再按 thinking 字符；OpenAI reasoning 为 output 子集，Gemini thoughts 单列，Grok reasoning 不包含在 output 中，预算不得重复相加。没有可靠观测标未知。
 
@@ -284,12 +284,12 @@ SPRT 仅决定严重降智门槛，配对 McNemar 仅决定智力扣价，两者
 
 | 模式 | 每侧请求 | 每侧预计输入 / 输出（含推理） | 每侧输入 / 输出硬上限 | 预计时长 / 独立截止 |
 |---|---:|---|---|---|
-| 快检 | 约 25 | 30–50K / 80–100K tokens | 80K / 160K tokens | 约 3–7 分钟 / 20 分钟 |
-| 完整 | 约 90 | 1.0–1.1M / 300–450K tokens | 1.3M / 640K tokens | 约 15–25 分钟 / 45 分钟 |
+| 快检 | 约 25 | 30–50K / 80–100K tokens | 80K / 160K tokens | 约 6–14 分钟 / 20 分钟 |
+| 完整 | 约 90 | 1.0–1.1M / 300–450K tokens | 1.3M / 640K tokens | 约 30–50 分钟 / 75 分钟 |
 
 组成与假设见[数据契约 §7](research/inspection/data-contract.md#7-请求token-与时长预算)。普通高档题复用型号、计数、推理量与性能证据；完整包含 8K/32K/128K 多子类与独立上下文边界探针，不能靠有限长度检索认证全部 1M。多型号权限、扩样与恢复追加必须重新预留预算，不暗算在 90 次内。
 
-开跑前读取只读窗口快照或现有 Admin API 的 passive 用量；不足或未知则保守顺延，不调用 active 查询访问真实厂商。派发前预留输入与最大输出，按 usage 修正，到预算停止新派发。Codex OAuth 删除输出上限，现有网关不能可靠限制单请求时，只能停止后续请求，在途请求可能超出预留，记“依赖 sub2api，后续处理”，不承诺精确费用封顶。
+开跑前读取只读窗口快照或现有 Admin API 的 passive 用量；仅在快照明确显示余量不足时顺延并记录原因；未知时照常执行并在结果/报告标“窗口余量未知”，上架、申诉与管理员检测不因未知阻塞，仍受 token 硬预算、单请求超时及 run 截止时间约束，不调用 active 查询访问真实厂商。派发前预留输入与最大输出，按 usage 修正，到预算停止新派发。Codex OAuth 删除输出上限，现有网关不能可靠限制单请求时，只能停止后续请求，在途请求可能超出预留，记“依赖 sub2api，后续处理”，不承诺精确费用封顶。
 
 试运行还须另计用于旧判定的 22 道旧题请求（依当前适用配置），旧 availability/latency 复用旧题结果，不重复计费；第三方最多 86 项属于单独预算阶段，纳入探测成本，不属于自有 90/25 次。美元日预算豁免不能绕过窗口、token 与超时约束。真实完整质检 p95 < 截止时间 70% 是阶段三目标，当前待运营校准；替身不能证明真实成本或时长。
 

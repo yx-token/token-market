@@ -771,4 +771,4 @@ Q = 0.93 × 0.97 × 1.00 × 0.97 ≈ 0.875 → B 级。
 | S55 | 本仓库：docs/04-listing.md、docs/05-quality.md、docs/06-scheduling.md、docs/08-billing.md、internal/settings/settings.go | 项目内部 | 本仓库（研究时的定位路径，不依赖主目录） |
 | S56 | 本仓库已有调研：docs/research/model-degradation-gpt-claude-2026-10-10.md（降智检测方法与统计） | 项目内部 | ../model-degradation-gpt-claude-2026-10-10.md |
 
-> 原始抓取文本存放在 /tmp/tm-research/raw/web/，便于核对引文。
+> 原始抓取文本存放在 调研期间的临时网页抓取材料（未入库），便于核对引文。

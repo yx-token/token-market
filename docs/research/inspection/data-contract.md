@@ -22,27 +22,27 @@
 | probe_items | `check_key text NOT NULL DEFAULT ''` | 质检目录键；旧题为空，不参与新质检 |
 | probe_items | `request jsonb NOT NULL DEFAULT '{}'` | 下文请求模板；空对象沿用旧 prompt/effort |
 | probe_items | `generator jsonb NOT NULL DEFAULT '{}'` | 空对象表示静态题；生成器定义见 §3 |
-| probe_items | `modes jsonb NOT NULL DEFAULT '[]'` | 字符串数组；旧题空数组走旧选择器，新题明确 full/quick |
+| probe_items | `modes text[] NOT NULL DEFAULT '{}'` | 字符串数组；旧题空数组走旧选择器，新题明确 full/quick |
 | probe_items | `builtin_key text NULL DEFAULT NULL` | 唯一约束允许多个 NULL；新内置题稳定键，不能以题面哈希代替 |
 | probe_items | `weight double precision NOT NULL DEFAULT 1` | 非负，仅用于题族预算分配/展示，不直接加权 SPRT 的似然项 |
 | probe_results | `check_key text NOT NULL DEFAULT ''`、`instance_idx integer NOT NULL DEFAULT 0`、`step integer NOT NULL DEFAULT 0` | 序号从 0 开始；配对键为 item_id + instance_idx + step，另由 batch/model/目标角色限定范围 |
 | probe_results | `instance_hash text NOT NULL DEFAULT ''`、`generator_version text NOT NULL DEFAULT ''` | 预生成实例 SHA-256 与生成器版本；旧记录为空，不与新实例混合统计 |
 | probe_results | `input_tokens bigint NULL DEFAULT NULL`、`cache_read_tokens bigint NULL DEFAULT NULL`、`cache_creation_tokens bigint NULL DEFAULT NULL` | 非负观测；NULL 为不可取得，0 为确实返回零；保留已有 output/reasoning 列与旧含义 |
 | probe_results | `stop_reason text NOT NULL DEFAULT ''`、`effort text NOT NULL DEFAULT ''` | stop_reason 原始值；旧空值为未知，归一化结束原因放 flags；effort 为显式请求档位 |
-| probe_results | `flags jsonb NOT NULL DEFAULT '[]'` | 去重字符串数组，分类见 §4，不是任意用户文本 |
+| probe_results | `flags text[] NOT NULL DEFAULT '{}'` | 去重字符串数组，分类见 §4，不是任意用户文本 |
 | probe_results | `step_state jsonb NOT NULL DEFAULT '{}'` | 多步续跑所需的协议无关 text/tool_calls，限 32KiB；无后续依赖不保存，不能用截断 raw_excerpt 恢复 |
 | probe_results | `error_body text NOT NULL DEFAULT ''` | 脱敏后最多 4096 字节 UTF-8，保留错误类型/业务码；不保存凭据、IP、请求题面或完整响应头 |
 | probe_runs | `mode text NOT NULL DEFAULT 'legacy'` | legacy/full/quick；旧程序创建的记录继续使用旧批次时限 |
-| probe_runs | `execution_snapshot jsonb NOT NULL DEFAULT '{}'` | 本批实际请求计划、参数/派生 seed、生成器/策略版本与开始时的模式/预算快照，详见 §3；仅内部读取 |
+| probe_runs | `execution_snapshot jsonb NOT NULL DEFAULT '{}'` | 每批仅在被测 run 保存实际请求计划、参数/派生 seed、生成器/策略版本与模式/预算快照；基线 run 保持 {}，通过 batch_id 读取被测 run 的同一份，详见 §3 |
 | probe_runs | `deadline_at timestamptz NULL DEFAULT NULL` | 新 full/quick 开始时写入独立截止时间；旧 NULL 按旧全局时限，不回填当前时间 |
 | quality_verdicts | `quality_factor double precision NULL DEFAULT NULL` | 本次可评估的展示 Q；[0.5,1.05]；门槛或无有效观测为 NULL |
 | quality_verdicts | `checks jsonb NOT NULL DEFAULT '{}'`、`gates jsonb NOT NULL DEFAULT '[]'` | §5 同构逐项结果与门槛事件，不另建逐项表 |
 | upstreams | `quality_factor double precision NOT NULL DEFAULT 1`、`appraised_at timestamptz NULL DEFAULT NULL` | 最近有效 Q 与检测时间；默认 1 是旧排序兼容值，不能据此显示“已通过质检”；门槛时保留上一有效 Q，按健康状态排除 |
 | upstream_quality_state | `pending_grade text NULL DEFAULT NULL`、`pending_grade_count integer NOT NULL DEFAULT 0` | 候选等级与连续有效检测次数；非门槛降级两次确认；不确定/反向结果清空连续计数 |
-| upstream_quality_state | `last_failed_checks jsonb NOT NULL DEFAULT '[]'` | 上次未通过/门槛项键；用于恢复必测清单，缺测不能清除 |
+| upstream_quality_state | `last_failed_checks text[] NOT NULL DEFAULT '{}'` | 上次未通过/门槛项键；用于恢复必测清单，缺测不能清除 |
 | vendor_configs | `appraisal_base jsonb NOT NULL DEFAULT '{}'` | tier → 正数倍率与 default 兜底；空配置展示“未配置”，不能回退到 buyback_base |
 | detection_policies | `item_parallelism integer NOT NULL DEFAULT 4` | 题目单元并发，范围 1–8；账号和全局上限另行限制 |
-| detection_policies | `full_triggers jsonb NOT NULL DEFAULT '["onboarding","appeal","admin"]'` | 沿用现有 trigger 编码，决定完整质检；scheduled 默认快检，恢复必测可升级 full |
+| detection_policies | `full_triggers text[] NOT NULL DEFAULT '{onboarding,appeal,admin}'` | 沿用现有 trigger 编码，决定完整质检；scheduled 默认快检，恢复必测可升级 full |
 | detection_policies | `token_budgets jsonb NOT NULL DEFAULT '{}'` | 按 full/quick 存每侧输入/输出上限；空对象读取 §7 默认值，不影响旧程序 |
 
 已核对 migrations/0006_quality.sql，probe_results 只有主键与 run_id 索引，不存在 run/item 唯一约束。断点续跑可对新实例（instance_hash 非空）增加 run_id/item_id/instance_idx/step 的部分唯一索引，旧结果不受约束；被测与基线各自 run_id，跨 run 的配对由 batch/model/角色限定。断点续跑只补未完成实例，已完成结果保持原样；历史表、旧状态值（包括 third_party）不删除。
@@ -86,11 +86,13 @@
 }
 ```
 
-派发前按稳定 item_id、实例序号、步骤顺序生成所有实例；seed 使用 HMAC(平台密钥, batch_id | item_id | instance_idx | generator_version)，分隔与序列化须无歧义，密钥不入库。每批保存版本、哈希与 execution_snapshot，包含实际参数、派生 seed、静态请求计划和期望答案（不保存平台 HMAC 密钥）；后台改题/参数、密钥轮换或版本升级后，禁止重算已开始批次。快照最多 32MiB，超限视为题目配置错误，派发前拒绝，不归因卖家。Go 同 seed 同哈希；不承诺与 Python 的随机数序列相同。
+派发前按稳定 item_id、实例序号、步骤顺序生成所有实例；seed 使用 HMAC(平台密钥, batch_id | item_id | instance_idx | generator_version)，分隔与序列化须无歧义，密钥不入库。每批仅在被测 run 保存一份版本、哈希与 execution_snapshot，基线 run 不复制草堆，包含实际参数、派生 seed、静态请求计划和期望答案（不保存平台 HMAC 密钥）；后台改题/参数、密钥轮换或版本升级后，禁止重算已开始批次。快照最多 32MiB，超限视为题目配置错误，派发前拒绝，不归因卖家。Go 同 seed 同哈希；不承诺与 Python 的随机数序列相同。
 
 双侧使用相同的初始题面、参数与静态步骤；instance_hash 是预生成请求计划/题面/期望答案的规范序列化哈希，不包含账号凭据。多步后续请求使用各自真实上轮响应，字节可能不同；这些动态步骤不能直接做 A03“输入计数必须相等”。A03 只对双侧有效输入内容一致、接入配置一致的请求比较。模板升级、难度改变、入口/网关配置改变均切分历史，不能混入近 7 天旧通过率。execution_snapshot 只保存内部探针计划，不复制真实买家对话。多步的 step_state 仅保存下一步所需 text/tool_calls 与完整性标记；超限/不完整则不消费截断状态，保留已完成单元，以该多步单元为边界重跑并计入重试预算。旧 raw_excerpt 仅用于管理员展示，不能替代续跑状态。这两列是为落实确认方案的断点续跑而补充的存储细节，不扩大外部功能范围。
 
 ### 3.1 续跑状态结构
+
+读取时按 batch_id 找 trigger != reference 的被测 run；被测和基线均使用它的 execution_snapshot。基线 run 只引用既有 batch_id，不复制长上下文草堆；被测 run 有快照则无需重新生成。旧批次无快照按 legacy 初始化，一旦持久化不得覆盖。
 
 execution_snapshot 顶层含 schema_version（整数）、policy_version（既有策略版本）、inspection_mode（trial/formal）、mode（full/quick）、token_budget（本次每侧输入/输出上限）、instances（实例计划数组）。每个实例保存 item_id/instance_idx/check_key/generator_version/instance_hash、seed（派生值，字符串）、parameters（实际参数对象）与 steps；step 含 step 序号、request（§3 模板/已生成题面）与 expected（判分期望对象）。型号、接入配置与参与角色绑定使用既有 batch/run 信息；内部对象不返回给卖家或市场。旧 {} 走 legacy，不能当作新计划续跑。
 
@@ -121,7 +123,7 @@ ProbeRequest 增加 System/Messages/Tools/Attachments/Effort/Extra；ProbeResult
 
 既有 error_class 列承载本次主错误分类（含 platform/rate_limited/expected_reject），flags 是可并存的补充状态，不能取代主错误原因。flags 允许 stop_normal/truncated/refusal/stop_error/lazy_placeholder/format_error/rate_limited/platform/expected_reject/reasoning_estimated/unknown_stop_reason；其中 stop_normal/truncated/refusal/stop_error 分别保存归一化的 normal/truncated/refusal/error，原 stop_reason 仍原样记录。拒答、截断、限流、平台错误从智力统计剔除，仍保留对应功能/输出/可用项证据。成对样本只要任一侧不合格，两侧一并剔除，SPRT 与 McNemar 使用同一数据清单。无同批基线且无合格历史时，新题不可用默认 0.95 代替基线；记录“无法判定”，不进入降智或扣价。
 
-被测与基线同时发送，题目单元并行，多步账号内有序；每账号信号量与全局上限独立于策略 item_parallelism。只有持 worker 主锁的进程执行检测，不新增 sub2api 并发控制代码。
+被测与基线同时发送，题目单元并行，多步账号内有序；每账号信号量的实际容量取 min(策略 item_parallelism、inspection 设置的账号上限、该账号当前下发到 sub2api 的实际并发)，基线同理；item_parallelism 仅为上界，全局上限仍独立。只有持 worker 主锁的进程执行检测，不新增 sub2api 并发控制代码。
 
 ## 5. checks、gates 与 summary
 
@@ -200,8 +202,8 @@ settings.value 存以下对象；这是字段契约，不是本轮迁移。新�
   "downgrade_confirmations": 2,
   "s_requirements": {"gate_free_days": 30, "availability_days": 7, "min_availability": 0.995},
   "scheduling": {"enabled": false, "minimum_grade": "B", "strategy": "quality_adjusted"},
-  "timeouts": {"full_minutes": 45, "quick_minutes": 20},
-  "limits": {"account_parallelism": 4, "global_parallelism": 32},
+  "timeouts": {"full_minutes": 75, "quick_minutes": 20},
+  "limits": {"account_parallelism": 2, "global_parallelism": 32},
   "token_budgets": {
     "full": {"input_tokens_per_side": 1300000, "output_tokens_per_side": 640000},
     "quick": {"input_tokens_per_side": 80000, "output_tokens_per_side": 160000}
@@ -215,7 +217,7 @@ settings.value 存以下对象；这是字段契约，不是本轮迁移。新�
 - s_requirements：天数与比例；无足够历史不授予 S。试运行历史只作校准证据，不自动补造正式无门槛历史。
 - scheduling：enabled 默认 false；minimum_grade 默认 B；strategy 为新策略名称。即使 enabled=true，trial 下仍不得改变规划器输出。
 - timeouts：单位分钟，不能短于单请求时限；新 run 将开始时计算的 deadline 固化，修改设置不影响执行中的截止时间。
-- limits：正整数，账号并发不能大于全局；全局上限约束的是实际 HTTP 请求，两侧各占一个槽。多步在账号上顺序执行。
+- limits：正整数，account_parallelism 默认 2；实际生效值取 min(策略 item_parallelism、设置的账号上限、该账号当前下发的实际并发)，基线同理，suspected 减半后的值必须生效。账号并发不能大于全局；全局上限约束的是实际 HTTP 请求，两侧各占一个槽。多步在账号上顺序执行。
 - token_budgets：每侧每次 run 硬上限，detection_policies 中非空模式覆盖优先于此；不能用卖家美元日预算豁免绕过这些上限。
 
 质检目录与初始系数见[汇总 §4](../quality-inspection-2026-10-12.md#4-质量系数等级与价格)。方案未规定的“重扣”具体值、显著智力分档边界、参数指纹行为白名单要在运营校准后登记；本轮不把研究中互相冲突的候选值默认为已批准参数。
@@ -241,14 +243,14 @@ high 的 54/22 道中选 10–20 道作为 D06 锚；同请求复用 A02/A03、�
 
 | 模式 | 单侧预计输入 | 单侧预计输出（含推理，合并口径） | 单侧硬上限（输入 / 输出） | 时长估算 / run 截止 |
 |---|---:|---:|---:|---|
-| 快检 | 30–50K | 80–100K | 80K / 160K | 约 3–7 分钟 / 20 分钟 |
-| 完整 | 约 1.0–1.1M（含上下文边界） | 约 300–450K | 1.3M / 640K | 约 15–25 分钟 / 45 分钟 |
+| 快检 | 30–50K | 80–100K | 80K / 160K | 约 6–14 分钟 / 20 分钟 |
+| 完整 | 约 1.0–1.1M（含上下文边界） | 约 300–450K | 1.3M / 640K | 约 30–50 分钟 / 75 分钟 |
 
 估算依据：原调研 40 题快检每侧输入约 53K、可见输出 4K、推理 130K；缩至 25 次请求后仅是成本量级参考。完整输入的十个长上下文合计 647,168 tokens，再加约 257K 的边界题及普通题/网关注入预留；输出沿研究 150 题 500K 推理量与 14K 可见量按题量/档位粗估。原研究 150 题双侧约 1.3M 输入/1.0M 输出、串行 106 分钟，不等于当前 90 次方案。实际 tokenizer、响应推理量、缓存写入、网关注入与限流会改变费用；上表不得作为运营 SLA。
 
-时长假设两侧同步、题目并发 4、全局与账号槽可用，普通题几十秒、长题最高单次 180 秒。阶段三要求真实完整质检 p95 < deadline 的 70%（默认 31.5 分钟），目前**待运营校准**；替身测试只验证调度和时限，不证明真实 p95。
+时长按双侧同步、每账号实际并发 2、策略上界 4、全局槽可用估算；相比原并发 4 的估算约翻倍，suspected 或实际并发 1 时还会变长。普通题几十秒、长题最高单次 180 秒。完整默认截止调整为 75 分钟；阶段三要求真实完整质检 p95 < deadline 的 70%（默认 52.5 分钟），目前**待运营校准**；替身测试只验证调度和时限，不证明真实 p95。
 
-开跑前读只读 extra 或现有 Admin API 被动用量，窗口不足顺延并记录原因；快照未知不能假设窗口全满，应排队等待运营配置的安全额度。active 用量查询会访问官方，本次任务不用。提交请求前预留最大输出/输入预算，完成后按厂商 usage 修正；对 Codex 删除 max_output_tokens 的通道预留保守上限，并在到达预算后停止新请求。网关无法提供可靠单请求硬输出限制时，只能停止后续派发，已在途请求可能超出预留量，记“依赖 sub2api，后续处理”，不能宣称精确费用封顶。
+开跑前读只读 extra 或现有 Admin API 被动用量，只有快照明确显示余量不足时才顺延并记录原因；快照未知时照常执行，在结果和报告中标“窗口余量未知”，仍受 token 硬预算、单请求超时与 run 截止时间限制。上架、申诉和管理员检测不得因快照未知而阻塞。active 用量查询会访问官方，本次任务不用。提交请求前预留最大输出/输入预算，完成后按厂商 usage 修正；对 Codex 删除 max_output_tokens 的通道预留保守上限，并在到达预算后停止新请求。网关无法提供可靠单请求硬输出限制时，只能停止后续派发，已在途请求可能超出预留量，记“依赖 sub2api，后续处理”，不能宣称精确费用封顶。
 
 完整/快检硬预算覆盖本期新题；试运行驱动旧判定的 22 道旧题按当前适用配置另计，availability/latency 复用这些结果、不额外重复计数；开跑预留新旧题合计，而不是吞进 90/25。第三方 BazaarLink 最多 86 项属于另一个预算阶段，计入平台探测成本，但不纳入自有请求数；没有 token 配额接口时保留现有频率/超时约束与单独成本展示，不宣称它受自有 token 预算精确约束。
 

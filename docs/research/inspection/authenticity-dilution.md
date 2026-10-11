@@ -8,7 +8,7 @@
 
 
 - 检索与访问日期：**2026-10-11**（下文所有 URL 均为该日访问）。
-- 本文是**资料调研 + 质检项设计**，没有对任何真实账号发起探测，也没有运行任何下载来的代码；克隆的仓库只在 `/tmp/tm-research/src/<名字>/` 下只读查看。
+- 本文是**资料调研 + 质检项设计**，没有对任何真实账号发起探测，也没有运行任何下载来的代码；克隆的仓库只在 调研期间的只读克隆（临时材料，未入库） 下只读查看。
 - 与前一份调研 [2026-10-10 降智调研](../model-degradation-gpt-claude-2026-10-10.md)（下称"前文"）的分工：前文已经覆盖统计判定（配对差异、聚类标准误、序贯检验、A/A 与阳性对照）、官方事故复盘、LiveNerf / Marginlab、B3IT、Logprob Tracking、Behavioral Fingerprints、能力题库（IFEval/RULER/LiveBench 等）。**本文不重复这些内容**，只在需要时引用"见前文 §x"。本文聚焦：**API 背后到底是不是那个模型 / 那个档位（真伪）**，以及**是不是给足了（掺水）**。
 - 证据等级标注：**【一手】**= 本次读过论文全文/方法节、官方原文或源码；**【二手】**= 只看到摘要、转述、社区帖子或无法复核的说法。
 
@@ -239,7 +239,7 @@ BazaarLink、api-relay-audit 这类工具面对的是"买家 → 不可信中转
 
 ### 3.3 OpenAI：Codex 的网络安全改路由是**按账号**生效的【一手：官方开源 Codex 源码】
 
-- openai/codex（commit a07c8eb，2026-10-11，克隆于 `/tmp/tm-research/src/codex/`）里的提示文案原文（`codex-rs/core/src/compact_tests.rs:444`）："Warning: **Your account was flagged** for potentially high-risk cyber activity and this request was routed to gpt-5.2 as a fallback. To regain access to gpt-5.3-codex, apply for trusted access: https://chatgpt.com/cyber"。
+- openai/codex（commit a07c8eb，2026-10-11，克隆于 调研期间的只读 Codex 克隆（临时材料，未入库））里的提示文案原文（`codex-rs/core/src/compact_tests.rs:444`）："Warning: **Your account was flagged** for potentially high-risk cyber activity and this request was routed to gpt-5.2 as a fallback. To regain access to gpt-5.3-codex, apply for trusted access: https://chatgpt.com/cyber"。
 - 判别方式：官方客户端比较响应头 **`OpenAI-Model`** 与请求型号，不一致时发出 `ModelReroute{from_model, to_model, reason:"high_risk_cyber_activity"}` 事件（测试 `codex-rs/core/tests/suite/safety_check_downgrade.rs` 用 `OpenAI-Model: gpt-5.2` 对请求 `gpt-5.3-codex` 模拟改路由）；源码注释："This can differ from the requested model when backend safety routing applies"。服务端还会在 `response.metadata` 事件推送 `openai_verification_recommendation:["trusted_access_for_cyber"]`（建议该账号去做可信访问认证）。
 - 其它相关机制（子调研读源码）：安全缓冲（响应头 `x-codex-safety-buffering-*`、事件字段 `retry_model`，客户端提示"Giving this request a little extra thought… retry with a faster model. It may be less capable"）；策略拦截 400 `cyber_policy` / `bio_policy` / `misalignment_policy_violation`；达到限额返回 429 `usage_limit_reached`（体内含 `plan_type`、`resets_at`），**服务端报错而不是换模型**；用量 90% 时客户端建议切到 gpt-6-luna、实验性的 "Luna Reserve"（`gpt-reserve`）在普通额度被封后由**客户端**改请求里的型号——网关看到的是请求型号变了，不是服务端偷换。
 - 社区报告大量正常开发请求也被改路由（openai/codex#11189、#12132）【二手/社区】；官方帮助文章称即使通过可信访问认证仍可能被 "block, slow, or reroute"【二手转引】。Codex 负责人 2026-04 称 "we don't fiddle with the models or thinking budgets after release"【二手】。
@@ -259,7 +259,7 @@ BazaarLink、api-relay-audit 这类工具面对的是"买家 → 不可信中转
 
 ### 4.1 BazaarLink Probe 的实际题目与判定流程【一手：页面 SSR 文本 + 同期抓取的 86 项详情】
 
-- 页面：https://bazaarlink.ai/zh-CN/probe （本次直接抓取 SSR 文本核对："84 项标准探针 + 2 项扩展检测（最多 86 项）"、致谢 LLMmap / api-relay-audit / relayAPI、参考文献含 arXiv 2604.08407、2407.15847、2604.24827、OWASP LLM Top 10）。86 项逐项题目与样例响应来自同一研究批次在 `/tmp/tm-research/bl-items.json` 的抓取（页面 `tab=learn` / 报告详情）。
+- 页面：https://bazaarlink.ai/zh-CN/probe （本次直接抓取 SSR 文本核对："84 项标准探针 + 2 项扩展检测（最多 86 项）"、致谢 LLMmap / api-relay-audit / relayAPI、参考文献含 arXiv 2604.08407、2407.15847、2604.24827、OWASP LLM Top 10）。86 项逐项题目与样例响应来自同一研究批次在 调研期间的 86 项详情抓取（临时材料，未入库） 的抓取（页面 `tab=learn` / 报告详情）。
 - **判定五站**：①出题实测（缺题即停，避免抽样偏差）→ ②认出哪一家（看行为不看自称）→ ③认出哪一款（家族内与跨家族比对互查）→ ④双胞胎复核（对近亲型号用另一组题重采样，看整体分布；**证据不足且与宣称一致时不推翻**）→ ⑤对答案（结论：完全相符 / 只有家族相符 / 款式不符 / 换模 / 自称被伪造 / 行为被诱导 / 数据不足 / 模棱两可）。
 - **它自己写明的能力边界**（页面原文要点）：只看得见这一次调用，中转可以只对部分流量偷换；"当冒充者刻意模仿到一半以上的行为时，证据会有大约一半天然指向它宣称的身份……实测过加题，成本大幅上升而分辨能力几乎不动"；不能证明"绝对没换"。
 - **几个规则项的具体判法**（来自报告样例）：
@@ -899,7 +899,7 @@ BazaarLink、api-relay-audit 这类工具面对的是"买家 → 不可信中转
 
 | 编号 | 来源 | 核对情况 |
 |---|---|---|
-| T01 | BazaarLink Probe https://bazaarlink.ai/zh-CN/probe （含 `tab=learn`、`tab=troubleshoot`） | 本文抓取 SSR 文本核对；86 项详情来自同批次抓取 `/tmp/tm-research/bl-items.json`、`bl-method.json` |
+| T01 | BazaarLink Probe https://bazaarlink.ai/zh-CN/probe （含 `tab=learn`、`tab=troubleshoot`） | 本文抓取 SSR 文本核对；86 项详情来自同批次抓取 调研期间的 86 项详情及判定方法页抓取（临时材料，未入库） |
 | T02 | Bazaarlinkorg/LLMprobe-engine v0.11.0 https://github.com/Bazaarlinkorg/LLMprobe-engine | 子调研读源码；本文核对 README v0.10.1 关于有害探针导致停权的原文 |
 | T03 | toby-bridges/api-relay-audit v2.5.0 https://github.com/toby-bridges/api-relay-audit | 子调研读源码 |
 | T04 | zzsting88/relayAPI（含已删除检测器的历史版本） https://github.com/zzsting88/relayAPI | 子调研 |
