@@ -16,6 +16,7 @@ import (
 //
 // 余额退款扣减 sub2api 余额并记账后进入 paying：按充值单从新到旧，把退款金额原路退回到可退款期限内的在线充值单
 // （每单最多退其未退部分），剩余部分（人工充值、超过退款期限、渠道未配置）生成一条人工打款明细。
+// 按单退款、额度包原路退款在发起时就生成打款明细，等扣减余额成功、退款进入 paying 后才打款。
 // 原路退回由 worker 调用渠道退款接口完成；全部明细成功后退款完成。
 
 type RefundPayout struct {
@@ -146,8 +147,8 @@ var payoutBackoff = []time.Duration{10 * time.Second, 30 * time.Second, time.Min
 // AdvanceRefundPayouts 由 worker 周期调用：发起或查询原路退款，全部成功的退款标记完成。
 func (f *Funds) AdvanceRefundPayouts(ctx context.Context) error {
 	rows, err := f.DB.Query(ctx, `SELECT p.id, p.channel, p.amount::text, p.out_refund_no, p.status, p.attempts, o.out_trade_no, o.amount::text
-		FROM refund_payouts p JOIN recharge_orders o ON o.id = p.recharge_order_id
-		WHERE p.status IN ('pending', 'processing') AND p.next_attempt_at <= now() ORDER BY p.id LIMIT 100`)
+		FROM refund_payouts p JOIN recharge_orders o ON o.id = p.recharge_order_id JOIN refunds r ON r.id = p.refund_id
+		WHERE p.status IN ('pending', 'processing') AND r.status = 'paying' AND p.next_attempt_at <= now() ORDER BY p.id LIMIT 100`)
 	if err != nil {
 		return err
 	}
@@ -229,6 +230,28 @@ func (f *Funds) setPayout(ctx context.Context, id int64, status string, ref *str
 	return err
 }
 
+// abortRefund 结束扣减余额失败的按单退款、额度包原路退款：预先生成的打款明细作废，释放充值单的可退金额。
+func (f *Funds) abortRefund(ctx context.Context, refundID int64) error {
+	tx, err := f.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	tag, err := tx.Exec(ctx, "UPDATE refunds SET status = 'failed', finished_at = now() WHERE id = $1 AND status = 'subtracting'", refundID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE recharge_orders o SET refunded_amount = o.refunded_amount - p.amount FROM refund_payouts p
+		WHERE p.refund_id = $1 AND p.recharge_order_id = o.id AND p.status IN ('pending', 'manual')`, refundID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE refund_payouts SET status = 'cancelled', error = 'balance subtraction failed', finished_at = now()
+		WHERE refund_id = $1 AND status IN ('pending', 'manual')`, refundID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // finishRefunds 把全部打款明细都已成功的退款标记完成。
 func (f *Funds) finishRefunds(ctx context.Context) error {
 	_, err := f.DB.Exec(ctx, `UPDATE refunds r SET status = 'done', finished_at = now(),
@@ -241,7 +264,7 @@ func (f *Funds) finishRefunds(ctx context.Context) error {
 // RetryPayout 管理员重试失败的原路退款。
 func (f *Funds) RetryPayout(ctx context.Context, payoutID int64) (*RefundPayout, error) {
 	tag, err := f.DB.Exec(ctx, `UPDATE refund_payouts SET status = 'pending', attempts = 0, error = NULL, next_attempt_at = now(), finished_at = NULL
-		WHERE id = $1 AND status = 'failed' AND recharge_order_id IS NOT NULL`, payoutID)
+		WHERE id = $1 AND status = 'failed' AND recharge_order_id IS NOT NULL AND channel <> 'manual'`, payoutID)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +274,8 @@ func (f *Funds) RetryPayout(ctx context.Context, payoutID int64) (*RefundPayout,
 	return f.getPayout(ctx, payoutID)
 }
 
-// PayoutToManual 管理员把失败的原路退款改为人工打款，并释放原充值单的可退金额。
+// PayoutToManual 管理员把失败的原路退款改为人工打款，并释放原充值单的可退金额；
+// 按单退款改人工后仍是退这笔订单，不释放。
 func (f *Funds) PayoutToManual(ctx context.Context, payoutID int64) (*RefundPayout, error) {
 	tx, err := f.DB.Begin(ctx)
 	if err != nil {
@@ -259,16 +283,17 @@ func (f *Funds) PayoutToManual(ctx context.Context, payoutID int64) (*RefundPayo
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var orderID *int64
-	var amount string
-	err = tx.QueryRow(ctx, `UPDATE refund_payouts SET status = 'manual', channel = 'manual', finished_at = NULL
-		WHERE id = $1 AND status = 'failed' RETURNING recharge_order_id, amount::text`, payoutID).Scan(&orderID, &amount)
+	var amount, kind string
+	err = tx.QueryRow(ctx, `UPDATE refund_payouts p SET status = 'manual', channel = 'manual', finished_at = NULL FROM refunds r
+		WHERE p.id = $1 AND p.status = 'failed' AND r.id = p.refund_id RETURNING p.recharge_order_id, p.amount::text, r.kind`,
+		payoutID).Scan(&orderID, &amount, &kind)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, httpx.Conflict("PAYOUT_NOT_FAILED", "only failed payouts can be switched to manual payout")
 	}
 	if err != nil {
 		return nil, err
 	}
-	if orderID != nil {
+	if orderID != nil && kind != RefundOrder {
 		if _, err := tx.Exec(ctx, "UPDATE recharge_orders SET refunded_amount = refunded_amount - $2::numeric WHERE id = $1", *orderID, amount); err != nil {
 			return nil, err
 		}

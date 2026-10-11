@@ -10,7 +10,6 @@ import (
 	"github.com/DueGin/token-market/internal/platform/httpx"
 	"github.com/DueGin/token-market/internal/sub2api/ops"
 	"github.com/DueGin/token-market/internal/sub2api/opshandlers"
-	"github.com/jackc/pgx/v5"
 )
 
 // RequirePackBalance 购买额度包前校验可调用余额 ≥ 面额。
@@ -134,8 +133,8 @@ func (f *Funds) PostPackRefundOriginal(ctx context.Context, userID, packID int64
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var refundID int64
-	err = tx.QueryRow(ctx, `INSERT INTO refunds (user_id, status, amount, lock_until, note)
-		VALUES ($1, 'subtracting', $2::numeric, now(), $3) RETURNING id`,
+	err = tx.QueryRow(ctx, `INSERT INTO refunds (user_id, kind, status, amount, lock_until, note)
+		VALUES ($1, 'pack', 'subtracting', $2::numeric, now(), $3) RETURNING id`,
 		userID, amt, fmt.Sprintf("pack_original:%d", packID)).Scan(&refundID)
 	if err != nil {
 		if isUnique(err) {
@@ -178,10 +177,4 @@ func (f *Funds) PostPackRefundOriginal(ctx context.Context, userID, packID int64
 		return err
 	}
 	return tx.Commit(ctx)
-}
-
-func payoutsExist(ctx context.Context, tx pgx.Tx, refundID int64) (bool, error) {
-	var n int
-	err := tx.QueryRow(ctx, `SELECT count(*) FROM refund_payouts WHERE refund_id = $1`, refundID).Scan(&n)
-	return n > 0, err
 }

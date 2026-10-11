@@ -243,6 +243,27 @@ func (s *Server) requestRefund(w http.ResponseWriter, r *http.Request) error {
 	return created(w, ref)
 }
 
+func (s *Server) refundRecharge(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in refundRechargeInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	ref, err := s.Funds.RefundRechargeOrder(r.Context(), httpx.MustUser(r).UserID, id, in.Amount, in.Note)
+	if err != nil {
+		return err
+	}
+	return created(w, ref)
+}
+
+type refundRechargeInput struct {
+	Amount float64 `json:"amount"`
+	Note   string  `json:"note"`
+}
+
 func (s *Server) listRefunds(w http.ResponseWriter, r *http.Request) error {
 	limit, offset := page(r)
 	rs, err := s.Funds.ListRefunds(r.Context(), httpx.MustUser(r).UserID, "", limit, offset)

@@ -104,6 +104,7 @@ const table: Record<string, Record<string, Label>> = {
     success: { text: '已退回', tone: 'green' },
     failed: { text: '失败', tone: 'red' },
     manual: { text: '待人工打款', tone: 'yellow' },
+    cancelled: { text: '已作废', tone: 'gray' },
   },
   notifyResult: {
     credited: { text: '已入账', tone: 'green' },
@@ -134,6 +135,11 @@ const table: Record<string, Record<string, Label>> = {
     degraded: { text: '判为降智', tone: 'red' },
     suspected: { text: '判为疑似', tone: 'yellow' },
     ignore: { text: '仅记录', tone: 'gray' },
+  },
+  refundKind: {
+    balance: { text: '全部余额', tone: 'gray' },
+    order: { text: '按充值单', tone: 'blue' },
+    pack: { text: '额度包', tone: 'purple' },
   },
   refundStatus: {
     locking: { text: '暂停 Key 中', tone: 'blue' },

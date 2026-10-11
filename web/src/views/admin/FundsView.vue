@@ -7,6 +7,7 @@ import { filterByDateField, filterByKeyword, useClientPage, useListQuery } from 
 import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import DataTable from '@/components/DataTable.vue'
+import RechargeRefundDialog from '@/components/RechargeRefundDialog.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import TabBar from '@/components/TabBar.vue'
 import { label } from '@/utils/labels'
@@ -25,7 +26,7 @@ const pageMeta: Record<string, { title: string; description: string }> = {
   },
   refunds: {
     title: '退款',
-    description: '余额退款优先原路退回，其余部分由管理员线下打款后登记。',
+    description: '买家退全部余额或按充值单退款，优先原路退回，其余部分由管理员线下打款后登记。按单退款可在「充值」中代买家发起。',
   },
   withdrawals: {
     title: '提现',
@@ -71,7 +72,7 @@ const filteredRecharges = computed(() => {
 })
 const filteredRefunds = computed(() => {
   let rows = refunds.data.value ?? []
-  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'user_id', 'note', 'status'] as (keyof Refund)[])
+  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'user_id', 'recharge_order_id', 'note', 'status'] as (keyof Refund)[])
   rows = filterByDateField(rows, 'created_at', queryParams.startDate, queryParams.endDate)
   return rows
 })
@@ -153,6 +154,13 @@ async function confirmRecharge(o: RechargeOrder) {
 async function syncRecharge(o: RechargeOrder) {
   if (await run(() => admin.syncRecharge(o.id))) recharges.load()
 }
+const showOrderRefund = ref(false)
+const refundOrder = ref<RechargeOrder | null>(null)
+const orderRefundable = (o: RechargeOrder) => o.status === 'credited' && o.amount - o.refunded_amount >= 0.01
+function openOrderRefund(o: RechargeOrder) {
+  refundOrder.value = o
+  showOrderRefund.value = true
+}
 const manualPart = (r: Refund) => (r.payouts ?? []).filter((p) => p.status === 'manual').reduce((s, p) => s + p.amount, 0)
 const needsManual = (r: Refund) => r.status === 'paying' && (!(r.payouts ?? []).length || manualPart(r) > 0)
 async function refundPaid(r: Refund) {
@@ -232,6 +240,7 @@ async function paid(w: Withdrawal, failed: boolean) {
             <option value="locking">暂停 Key 中</option>
             <option value="subtracting">扣减余额中</option>
             <option value="done">已完成</option>
+            <option value="failed">失败</option>
             <option value="">全部</option>
           </template>
           <template v-else>
@@ -297,6 +306,7 @@ async function paid(w: Withdrawal, failed: boolean) {
         <button v-if="row.status === 'pending' && row.channel !== 'manual'" class="btn-secondary btn-sm" :disabled="busy" @click="syncRecharge(row)">
           向渠道查单
         </button>
+        <button v-if="orderRefundable(row)" class="btn-ghost btn-sm" :disabled="busy" @click="openOrderRefund(row)">退款</button>
       </template>
     </DataTable>
 
@@ -305,6 +315,7 @@ async function paid(w: Withdrawal, failed: boolean) {
       :columns="[
         { key: 'id', label: '编号' },
         { key: 'user_id', label: '用户' },
+        { key: 'kind', label: '类型' },
         { key: 'amount', label: '金额', align: 'right' },
         { key: 'status', label: '状态' },
         { key: 'payouts', label: '打款明细' },
@@ -319,6 +330,10 @@ async function paid(w: Withdrawal, failed: boolean) {
     >
       <template #cell-id="{ row }">#{{ row.id }}</template>
       <template #cell-user_id="{ row }">#{{ row.user_id }}</template>
+      <template #cell-kind="{ row }">
+        {{ label('refundKind', row.kind).text }}
+        <span v-if="row.recharge_order_id" class="block text-xs text-slate-400">订单 #{{ row.recharge_order_id }}</span>
+      </template>
       <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
       <template #cell-status="{ row }"><StatusBadge kind="refundStatus" :value="row.status" /></template>
       <template #cell-payouts="{ row }">
@@ -385,4 +400,6 @@ async function paid(w: Withdrawal, failed: boolean) {
       <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum * pageSize >= total" @click="pageNum++">下一页</button>
     </template>
   </ConsoleListPage>
+
+  <RechargeRefundDialog v-model:open="showOrderRefund" :order="refundOrder" as-admin @done="recharges.load()" />
 </template>

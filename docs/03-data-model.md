@@ -460,7 +460,7 @@ recharge_orders (                        -- 充值单
   expires_at     timestamptz,            -- 支付时限
   close_reason   text,
   last_synced_at timestamptz,            -- 最近一次主动查单
-  refunded_amount numeric(20,10) not null default 0,   -- 已原路退回
+  refunded_amount numeric(20,10) not null default 0,   -- 已原路退回，以及按单退款中人工打款的部分
   op_id          bigint,                 -- 给影子用户加余额的出站操作
   created_at, paid_at, credited_at
 );
@@ -482,11 +482,11 @@ payment_notifications (                  -- 渠道异步通知的处理记录
 refund_payouts (                         -- 余额退款的打款明细
   id                bigserial primary key,
   refund_id         bigint not null references refunds,
-  recharge_order_id bigint references recharge_orders,  -- 原路退回的充值单；人工打款为空
+  recharge_order_id bigint references recharge_orders,  -- 原路退回的充值单；退全部余额的人工打款为空，按单退款始终关联该订单
   channel           text not null,       -- 原充值单的支付方式 / manual
   amount            numeric(20,10) not null,
   out_refund_no     text unique,         -- 渠道退款单号（幂等）
-  status            text not null,       -- pending / processing / success / failed / manual
+  status            text not null,       -- pending / processing / success / failed / manual / cancelled（扣减余额失败，作废）
   provider_ref      text, error text, attempts int, next_attempt_at timestamptz, finished_at timestamptz
 );
 

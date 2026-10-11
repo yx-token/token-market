@@ -30,6 +30,7 @@ export const buyer = {
     http.post<{ order: T.RechargeOrder; payment?: T.PaymentInfo }>('/api/buyer/recharge', { amount, channel }),
   getRecharge: (id: number) => http.get<T.RechargeOrder>(`/api/buyer/recharge/${id}`),
   cancelRecharge: (id: number) => http.post<Ok>(`/api/buyer/recharge/${id}/cancel`),
+  refundRecharge: (id: number, amount: number, note: string) => http.post<T.Refund>(`/api/buyer/recharge/${id}/refund`, { amount, note }),
   requestRefund: (note: string) => http.post<T.Refund>('/api/buyer/refunds', { note }),
   refunds: () => http.get<T.Refund[] | null>('/api/buyer/refunds'),
   purchasePack: (listing_id: number, channel = 'balance', name = '') =>
@@ -183,6 +184,7 @@ export const admin = {
   recharges: (status?: string) => http.get<T.RechargeOrder[] | null>('/api/admin/recharges', { status }),
   confirmRecharge: (id: number, provider_ref: string) => http.post<T.RechargeOrder>(`/api/admin/recharges/${id}/confirm`, { provider_ref }),
   syncRecharge: (id: number) => http.post<T.RechargeOrder>(`/api/admin/recharges/${id}/sync`),
+  refundRecharge: (id: number, amount: number, note: string) => http.post<T.Refund>(`/api/admin/recharges/${id}/refund`, { amount, note }),
   paymentStatus: () => http.get<T.PaymentStatus>('/api/admin/payments/status'),
   merchants: () => http.get<Record<string, T.MerchantView>>('/api/admin/payments/merchants'),
   updateMerchant: (provider: string, body: Record<string, unknown>) => http.put<T.MerchantView>(`/api/admin/payments/merchants/${provider}`, body),

@@ -68,6 +68,8 @@ const messages: Record<string, string> = {
   KEY_NOT_RECOVERABLE: '这个 Key 创建较早，平台没有保存明文，无法再次查看',
   NOTHING_TO_REFUND: '没有可退的余额',
   REFUND_IN_PROGRESS: '已有退款在处理中',
+  ORDER_NOT_FOUND: '充值订单不存在',
+  ORDER_NOT_CREDITED: '只有已到账的充值单可以退款',
   ORDER_NOT_PENDING: '订单不是待支付状态',
   INVALID_AMOUNT: '金额格式不正确（最多两位小数）',
   BELOW_MINIMUM: '低于最低提现金额',
