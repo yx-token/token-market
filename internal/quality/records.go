@@ -122,29 +122,41 @@ func ListItemStats(ctx context.Context, db DB, f RecordFilter) ([]ItemStat, erro
 
 // ItemResult 是一道题在某次检测中的结果，用于查看这道题在各上游上的表现。
 type ItemResult struct {
-	RunID           int64     `json:"run_id"`
-	UpstreamID      int64     `json:"upstream_id"`
-	Platform        string    `json:"platform"`
-	AccountEmail    *string   `json:"account_email,omitempty"`
-	Model           string    `json:"model"`
-	Trigger         string    `json:"trigger"`
-	Passed          *bool     `json:"passed"`
-	HTTPStatus      *int      `json:"http_status,omitempty"`
-	ErrorClass      *string   `json:"error_class,omitempty"`
-	TTFTMs          int       `json:"ttft_ms"`
-	DurationMs      int       `json:"duration_ms"`
-	OutputTokens    int       `json:"output_tokens"`
-	ReasoningTokens int       `json:"reasoning_tokens"`
-	ResponseModel   *string   `json:"response_model,omitempty"`
-	Excerpt         *string   `json:"excerpt,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	CheckKey            string    `json:"check_key"`
+	InstanceIdx         int       `json:"instance_idx"`
+	Step                int       `json:"step"`
+	InstanceHash        string    `json:"instance_hash"`
+	GeneratorVersion    string    `json:"generator_version"`
+	InputTokens         *int64    `json:"input_tokens"`
+	CacheReadTokens     *int64    `json:"cache_read_tokens"`
+	CacheCreationTokens *int64    `json:"cache_creation_tokens"`
+	StopReason          string    `json:"stop_reason"`
+	Effort              string    `json:"effort"`
+	Flags               []string  `json:"flags"`
+	ErrorBody           string    `json:"error_body"`
+	RunID               int64     `json:"run_id"`
+	UpstreamID          int64     `json:"upstream_id"`
+	Platform            string    `json:"platform"`
+	AccountEmail        *string   `json:"account_email,omitempty"`
+	Model               string    `json:"model"`
+	Trigger             string    `json:"trigger"`
+	Passed              *bool     `json:"passed"`
+	HTTPStatus          *int      `json:"http_status,omitempty"`
+	ErrorClass          *string   `json:"error_class,omitempty"`
+	TTFTMs              int       `json:"ttft_ms"`
+	DurationMs          int       `json:"duration_ms"`
+	OutputTokens        int       `json:"output_tokens"`
+	ReasoningTokens     int       `json:"reasoning_tokens"`
+	ResponseModel       *string   `json:"response_model,omitempty"`
+	Excerpt             *string   `json:"excerpt,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 // ListItemResults 返回一道题最近的答题结果（新的在前），含基线对照检测。
 func ListItemResults(ctx context.Context, db DB, itemID int64, f RecordFilter, limit int) ([]ItemResult, error) {
 	rows, err := db.Query(ctx, `SELECT r.id, r.upstream_id, u.platform, u.account_email, r.model, r.trigger, pr.passed, pr.http_status, pr.error_class,
 			COALESCE(pr.ttft_ms, 0), COALESCE(pr.duration_ms, 0), COALESCE(pr.output_tokens, 0), COALESCE(pr.reasoning_tokens, 0),
-			pr.response_model, pr.raw_excerpt, pr.created_at
+			pr.response_model, pr.raw_excerpt, pr.created_at, pr.check_key, pr.instance_idx, pr.step, pr.instance_hash, pr.generator_version, pr.input_tokens, pr.cache_read_tokens, pr.cache_creation_tokens, pr.stop_reason, pr.effort, pr.flags, pr.error_body
 		FROM probe_results pr JOIN probe_runs r ON r.id = pr.run_id JOIN upstreams u ON u.id = r.upstream_id
 		WHERE pr.item_id = $1 AND ($2 = '' OR u.platform = $2) AND ($3 = 0 OR r.upstream_id = $3) AND ($4 = '' OR r.model = $4)
 			AND ($5::timestamptz IS NULL OR r.queued_at >= $5) AND ($6::timestamptz IS NULL OR r.queued_at < $6)
@@ -155,7 +167,7 @@ func ListItemResults(ctx context.Context, db DB, itemID int64, f RecordFilter, l
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (ItemResult, error) {
 		var r ItemResult
 		err := row.Scan(&r.RunID, &r.UpstreamID, &r.Platform, &r.AccountEmail, &r.Model, &r.Trigger, &r.Passed, &r.HTTPStatus, &r.ErrorClass,
-			&r.TTFTMs, &r.DurationMs, &r.OutputTokens, &r.ReasoningTokens, &r.ResponseModel, &r.Excerpt, &r.CreatedAt)
+			&r.TTFTMs, &r.DurationMs, &r.OutputTokens, &r.ReasoningTokens, &r.ResponseModel, &r.Excerpt, &r.CreatedAt, &r.CheckKey, &r.InstanceIdx, &r.Step, &r.InstanceHash, &r.GeneratorVersion, &r.InputTokens, &r.CacheReadTokens, &r.CacheCreationTokens, &r.StopReason, &r.Effort, &r.Flags, &r.ErrorBody)
 		return r, err
 	})
 }

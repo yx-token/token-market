@@ -2,8 +2,6 @@ package quality
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,10 +46,13 @@ type Engine struct {
 	EdgePublicURL  string
 	ThirdPartyHTTP *http.Client
 
-	batches sync.WaitGroup      // 后台执行中的批次
-	mu      sync.Mutex          // 保护 running、wake
-	running map[string]struct{} // 本进程正在执行的批次
-	wake    chan struct{}       // 批次结束时通知 RunBatches 立即补位
+	batches        sync.WaitGroup      // 后台执行中的批次
+	mu             sync.Mutex          // 保护 running、wake
+	running        map[string]struct{} // 本进程正在执行的批次
+	requestRunning map[int64]int
+	requestTotal   int
+	requestWake    chan struct{}
+	wake           chan struct{} // 批次结束时通知 RunBatches 立即补位
 }
 
 func (e *Engine) now() time.Time {
@@ -74,6 +75,7 @@ func (e *Engine) StartOnboardingCheck(ctx context.Context, upstreamID int64, _, 
 }
 
 type upstreamRow struct {
+	accountID    *int64
 	id           int64
 	platform     string
 	authType     string
@@ -90,9 +92,9 @@ type upstreamRow struct {
 func (e *Engine) loadUpstream(ctx context.Context, id int64) (*upstreamRow, error) {
 	var u upstreamRow
 	var reason *string
-	err := e.DB.QueryRow(ctx, `SELECT id, platform, auth_type, status, health, health_reason, is_reference, probe_group_id, proxy_id, tier, privacy_ok
+	err := e.DB.QueryRow(ctx, `SELECT id, platform, auth_type, status, health, health_reason, is_reference, probe_group_id, proxy_id, tier, privacy_ok, sub2api_account_id
 		FROM upstreams WHERE id = $1`, id).Scan(&u.id, &u.platform, &u.authType, &u.status, &u.health, &reason, &u.isReference,
-		&u.probeGroupID, &u.proxyID, &u.tier, &u.privacyOK)
+		&u.probeGroupID, &u.proxyID, &u.tier, &u.privacyOK, &u.accountID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, listing.ErrUpstreamNotFound
 	}
@@ -128,19 +130,43 @@ func (e *Engine) QueueRun(ctx context.Context, upstreamID int64, trigger string)
 		return 0, err
 	}
 	model := p.Models[runs%len(p.Models)]
+	_, err = loadInspectionSettings(ctx, e.DB)
+	if err != nil {
+		return 0, err
+	}
+	mode := "legacy"
+	for _, suite := range p.Suites {
+		if strings.HasPrefix(suite, "inspection_") {
+			mode = "quick"
+			break
+		}
+	}
+	// 新套件启用后使用完整/快检；旧题继续按既有超时和取消行为运行。
+	for _, fullTrigger := range p.FullTriggers {
+		if mode != "legacy" && fullTrigger == trigger {
+			mode = "full"
+			break
+		}
+	}
+	if mode != "legacy" && (trigger == "onboarding" || trigger == "appeal" || trigger == "admin") {
+		mode = "full"
+	}
 	batch := fmt.Sprintf("b%d-%d", u.id, e.now().UnixNano())
 	var id int64
-	if err := e.DB.QueryRow(ctx, `INSERT INTO probe_runs (upstream_id, batch_id, trigger, policy_version, model) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		u.id, batch, trigger, p.Version, model).Scan(&id); err != nil {
+	if err := e.DB.QueryRow(ctx, `INSERT INTO probe_runs (upstream_id, batch_id, trigger, policy_version, model, mode) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		u.id, batch, trigger, p.Version, model, mode).Scan(&id); err != nil {
 		return 0, err
 	}
 	if !u.isReference {
 		var refID int64
-		err := e.DB.QueryRow(ctx, `SELECT id FROM upstreams WHERE is_reference AND platform = $1 AND status IN ('ready', 'listed')
-			AND health NOT IN ('unavailable') AND sub2api_account_id IS NOT NULL ORDER BY random() LIMIT 1`, u.platform).Scan(&refID)
+		err := e.DB.QueryRow(ctx, `SELECT u.id FROM upstreams u WHERE is_reference AND platform=$1 AND status IN ('ready','listed')
+ AND health <> 'unavailable' AND sub2api_account_id IS NOT NULL
+ AND ($2='legacy' OR (health='healthy' AND auth_type=$3 AND tier IS NOT DISTINCT FROM $4::text))
+ ORDER BY (SELECT count(*) FROM probe_runs r WHERE r.upstream_id=u.id AND r.status IN ('queued','running')),
+ (SELECT max(queued_at) FROM probe_runs r WHERE r.upstream_id=u.id) NULLS FIRST, u.id LIMIT 1`, u.platform, mode, u.authType, u.tier).Scan(&refID)
 		if err == nil {
-			if _, err := e.DB.Exec(ctx, `INSERT INTO probe_runs (upstream_id, batch_id, trigger, policy_version, model) VALUES ($1, $2, 'reference', $3, $4)`,
-				refID, batch, p.Version, model); err != nil {
+			if _, err := e.DB.Exec(ctx, `INSERT INTO probe_runs (upstream_id, batch_id, trigger, policy_version, model, mode) VALUES ($1, $2, 'reference', $3, $4, $5)`,
+				refID, batch, p.Version, model, mode); err != nil {
 				return 0, err
 			}
 		} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -372,8 +398,8 @@ func (e *Engine) wakeup() chan struct{} {
 // failOrphaned 把超过总时限仍处于执行中、且不在本进程执行的检测记为失败。只有持主锁的 worker 执行检测，
 // 这类记录来自已经退出的进程（例如崩溃）；不处理会一直算作"检测中"，挡住该上游之后的检测。
 func (e *Engine) failOrphaned(ctx context.Context, lim probeLimits) error {
-	rows, err := e.DB.Query(ctx, `SELECT id, upstream_id, trigger, model, batch_id FROM probe_runs
-		WHERE status = 'running' AND started_at < now() - make_interval(secs => $1)`, (lim.batch + orphanGrace).Seconds())
+	rows, err := e.DB.Query(ctx, `SELECT id, upstream_id, trigger, model, batch_id, mode, deadline_at FROM probe_runs
+		WHERE status = 'running' AND ((mode <> 'legacy' AND execution_snapshot <> '{}' AND started_at < now() - interval '5 minutes') OR (deadline_at IS NOT NULL AND deadline_at < now() - interval '5 minutes') OR (deadline_at IS NULL AND started_at < now() - make_interval(secs => $1)))`, (lim.batch + orphanGrace).Seconds())
 	if err != nil {
 		return err
 	}
@@ -383,7 +409,7 @@ func (e *Engine) failOrphaned(ctx context.Context, lim probeLimits) error {
 	}
 	orphans, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (orphan, error) {
 		var o orphan
-		err := row.Scan(&o.run.id, &o.run.upstreamID, &o.run.trigger, &o.run.model, &o.batch)
+		err := row.Scan(&o.run.id, &o.run.upstreamID, &o.run.trigger, &o.run.model, &o.batch, &o.run.mode, &o.run.deadline)
 		return o, err
 	})
 	if err != nil {
@@ -394,6 +420,12 @@ func (e *Engine) failOrphaned(ctx context.Context, lim probeLimits) error {
 		_, mine := e.running[o.batch]
 		e.mu.Unlock()
 		if mine {
+			continue
+		}
+		if o.run.mode != "legacy" && o.run.deadline != nil && e.now().Before(*o.run.deadline) {
+			if err := e.requeueBatch(ctx, o.batch); err != nil {
+				return err
+			}
 			continue
 		}
 		e.Log.Warn("probe run orphaned, marking failed", "run_id", o.run.id, "batch", o.batch)
@@ -409,6 +441,9 @@ type runRow struct {
 	upstreamID int64
 	trigger    string
 	model      string
+	mode       string
+	deadline   *time.Time
+	batch      string
 }
 
 // ExecuteBatch 按当前系统设置的超时执行一个批次，见 executeBatch。
@@ -420,17 +455,17 @@ func (e *Engine) ExecuteBatch(ctx context.Context, batch string) error {
 	return e.executeBatch(ctx, batch, limitsOf(st))
 }
 
-// executeBatch 执行一个批次：先跑基线账号，再用同一批题跑被测上游，最后判定与处置。
-// 整批不超过 lim.batch；超时或出错时记为检测失败。ctx 被取消（worker 停止）时整批重新排队，下次从头执行。
+// executeBatch 用预生成的同一批实例并行探测被测与基线，最后沿用既有判定与处置。
+// 整批不超过 lim.batch；超时或出错时记为检测失败。ctx 被取消时重新排队；legacy 保持旧重跑行为，full/quick 保留已完成单元。
 func (e *Engine) executeBatch(ctx context.Context, batch string, lim probeLimits) error {
-	rows, err := e.DB.Query(ctx, `UPDATE probe_runs SET status = 'running', started_at = now()
-		WHERE batch_id = $1 AND status = 'queued' RETURNING id, upstream_id, trigger, model`, batch)
+	rows, err := e.DB.Query(ctx, `UPDATE probe_runs SET status = 'running', started_at = COALESCE(started_at, now())
+		WHERE batch_id = $1 AND status = 'queued' RETURNING id, upstream_id, trigger, model, mode, deadline_at, batch_id`, batch)
 	if err != nil {
 		return err
 	}
 	runs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (runRow, error) {
 		var r runRow
-		err := row.Scan(&r.id, &r.upstreamID, &r.trigger, &r.model)
+		err := row.Scan(&r.id, &r.upstreamID, &r.trigger, &r.model, &r.mode, &r.deadline, &r.batch)
 		return r, err
 	})
 	if err != nil || len(runs) == 0 {
@@ -449,7 +484,36 @@ func (e *Engine) executeBatch(ctx context.Context, batch string, lim probeLimits
 		_, err := e.DB.Exec(ctx, `UPDATE probe_runs SET status = 'done', finished_at = now() WHERE batch_id = $1`, batch)
 		return err
 	}
-	bctx, cancel := context.WithTimeout(ctx, lim.batch)
+	deadline := e.now().Add(lim.batch)
+	if targets[0].mode != "legacy" {
+		if targets[0].deadline != nil {
+			deadline = *targets[0].deadline
+		} else {
+			st, err := loadInspectionSettings(ctx, e.DB)
+			if err != nil {
+				return err
+			}
+			minutes := st.Timeouts.Quick
+			if targets[0].mode == "full" {
+				minutes = st.Timeouts.Full
+			}
+			deadline = e.now().Add(time.Duration(minutes) * time.Minute)
+			if time.Duration(minutes)*time.Minute < lim.request {
+				return errors.New("质检截止时间不能短于单请求时限")
+			}
+			if _, err := e.DB.Exec(ctx, `UPDATE probe_runs SET deadline_at = $2 WHERE batch_id = $1 AND deadline_at IS NULL`, batch, deadline); err != nil {
+				return err
+			}
+		}
+	}
+	if targets[0].mode == "legacy" {
+		if targets[0].deadline != nil {
+			deadline = *targets[0].deadline
+		} else if _, err := e.DB.Exec(ctx, `UPDATE probe_runs SET deadline_at=$2 WHERE batch_id=$1 AND deadline_at IS NULL`, batch, deadline); err != nil {
+			return err
+		}
+	}
+	bctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	// 超时或中断后 ctx 已失效，收尾的写入改用独立的短时 ctx，否则记录会一直停在"执行中"
 	cleanup := func(fn func(ctx context.Context) error) error {
@@ -457,11 +521,13 @@ func (e *Engine) executeBatch(ctx context.Context, batch string, lim probeLimits
 		defer cancel()
 		return fn(cctx)
 	}
-	seed := seedOf(batch)
 	for _, t := range targets {
-		err := e.executeTarget(bctx, t, ref, seed, lim.request)
+		err := e.executeTarget(bctx, t, ref, lim.request)
 		if err == nil {
 			continue
+		}
+		if errors.Is(err, errWindowInsufficient) {
+			return cleanup(func(ctx context.Context) error { return e.deferWindow(ctx, batch) })
 		}
 		if errors.Is(ctx.Err(), context.Canceled) {
 			e.Log.Info("probe batch interrupted, requeued", "batch", batch)
@@ -485,14 +551,19 @@ func (e *Engine) executeBatch(ctx context.Context, batch string, lim probeLimits
 	return nil
 }
 
-// requeueBatch 把被中断的批次放回队列，丢弃已有的部分结果。
+// requeueBatch 保留新模式的已完成结果，旧模式继续清空结果以兼容既有流程。
 func (e *Engine) requeueBatch(ctx context.Context, batch string) error {
 	tx, err := e.DB.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `DELETE FROM probe_results WHERE run_id IN (SELECT id FROM probe_runs WHERE batch_id = $1 AND status = 'running')`, batch); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE probe_runs r SET summary = COALESCE(summary,'{}') || jsonb_build_object('resume_budget',jsonb_build_object(
+ 'input_tokens_per_side',COALESCE((summary->'resume_budget'->>'input_tokens_per_side')::bigint,0)+(SELECT COALESCE(sum((step_state->>'input_charged')::bigint),0) FROM probe_results WHERE run_id=r.id),
+ 'output_tokens_per_side',COALESCE((summary->'resume_budget'->>'output_tokens_per_side')::bigint,0)+(SELECT COALESCE(sum((step_state->>'output_charged')::bigint),0) FROM probe_results WHERE run_id=r.id))) WHERE batch_id=$1 AND status='running' AND mode='legacy'`, batch); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM probe_results WHERE run_id IN (SELECT id FROM probe_runs WHERE batch_id = $1 AND status = 'running' AND mode = 'legacy')`, batch); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE probe_runs SET status = 'queued', started_at = NULL WHERE batch_id = $1 AND status = 'running'`, batch); err != nil {
@@ -549,17 +620,12 @@ func (e *Engine) failRun(ctx context.Context, run runRow, msg string) error {
 	return tx.Commit(ctx)
 }
 
-func seedOf(s string) int64 {
-	sum := sha256.Sum256([]byte(s))
-	return int64(binary.BigEndian.Uint64(sum[:8]) >> 1)
-}
-
 func mustJSON(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
 }
 
-func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, seed int64, timeout time.Duration) error {
+func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, timeout time.Duration) error {
 	u, err := e.loadUpstream(ctx, run.upstreamID)
 	if err != nil {
 		return err
@@ -568,8 +634,19 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, see
 	if err != nil {
 		return err
 	}
-	// 上架检测是挂单的前提，不受检测开关与每日预算限制；管理员检测与申诉复测同样强制执行
-	override := run.trigger == "onboarding" || run.trigger == "admin" || run.trigger == "appeal"
+	var frozenRaw []byte
+	if err := e.DB.QueryRow(ctx, `SELECT execution_snapshot FROM probe_runs WHERE id=$1`, run.id).Scan(&frozenRaw); err != nil {
+		return err
+	}
+	var frozen executionSnapshot
+	if err := decodeInspectionJSON(frozenRaw, &frozen); err != nil {
+		return err
+	}
+	if frozen.Policy != nil {
+		p = frozen.Policy
+	}
+	// 已开始的批次沿用策略快照；硬预算独立于美元预算，上架、管理员与申诉仍强制执行。
+	override := frozen.SchemaVersion == 1 || run.trigger == "onboarding" || run.trigger == "admin" || run.trigger == "appeal"
 	if !p.Enabled && !override {
 		_, err := e.DB.Exec(ctx, `UPDATE probe_runs SET status = 'skipped_disabled', finished_at = now() WHERE id = $1`, run.id)
 		return err
@@ -600,49 +677,28 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, see
 		}
 	}
 
-	scoring := containsAny(p.Suites, "iq", "reasoning", "long_context")
 	items, err := selectItems(ctx, e.DB, u.platform, run.model, p.Suites)
 	if err != nil {
 		return err
 	}
-	if len(items) == 0 {
-		return errors.New("no active probe items for this platform and model; add items to the question bank")
+	st, err := loadInspectionSettings(ctx, e.DB)
+	if err != nil {
+		return err
 	}
-	rng := rand.New(rand.NewPCG(uint64(seed), uint64(run.id))) //nolint:gosec // 生成干扰文本，无安全要求
-	var outcomes []Outcome
-	for _, it := range items {
-		prompt, needle := expandPrompt(it.Prompt, rng)
-		effort := ""
-		if it.ReasoningEffort != nil {
-			effort = *it.ReasoningEffort
-		}
-		req := ProbeRequest{Model: run.model, Prompt: prompt, MaxTokens: it.MaxTokens, ReasoningEffort: effort}
-		o := Outcome{ItemID: it.ID, Suite: it.Suite}
-		if refKey != "" {
-			r := e.probe(ctx, refUp.platform, refKey, req, timeout)
-			pass, _ := grade(it.Grader, r.Text, needle)
-			o.Ref, o.RefPass = &r, pass && r.OK()
-			if err := e.saveResult(ctx, ref.id, it, r, o.RefPass); err != nil {
-				return err
-			}
-		}
-		t := e.probe(ctx, u.platform, targetKey, req, timeout)
-		pass, _ := grade(it.Grader, t.Text, needle)
-		o.Target, o.TargetPass = t, pass && t.OK()
-		if hist, ok, err := e.refHistory(ctx, u.platform, it.ID); err != nil {
-			return err
-		} else if ok {
-			o.RefHistRate = &hist
-		}
-		if err := e.saveResult(ctx, run.id, it, t, o.TargetPass); err != nil {
-			return err
-		}
-		outcomes = append(outcomes, o)
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
+	plan, err := e.executionPlan(ctx, run, p, items, st, timeout)
+	if err != nil {
+		return err
 	}
-	assessment := Assess(outcomes, p.Thresholds, scoring)
+	if plan.RequestTimeoutSeconds > 0 {
+		timeout = time.Duration(plan.RequestTimeoutSeconds) * time.Second
+	}
+	outcomes, warnings, err := e.executePlan(ctx, run, ref, u, refUp, targetKey, refKey, plan, p, st, timeout)
+	if err != nil {
+		return err
+	}
+
+	assessment := Assess(outcomes, plan.Thresholds, plan.Scoring)
+	assessment.Warnings = warnings
 	if waiting, err := e.startThirdParty(ctx, run, u, p, assessment); err != nil || waiting {
 		return err
 	}
@@ -664,25 +720,6 @@ func (e *Engine) probe(ctx context.Context, platform, key string, req ProbeReque
 	pctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return e.Prober.Probe(pctx, platform, key, req)
-}
-
-func (e *Engine) saveResult(ctx context.Context, runID int64, it Item, r ProbeResult, passed bool) error {
-	excerpt := truncateStr(r.Text, 500)
-	var status *int
-	if r.HTTPStatus > 0 {
-		status = &r.HTTPStatus
-	}
-	var errClass *string
-	if r.ErrorClass != "" {
-		errClass = &r.ErrorClass
-	}
-	tps := r.OutputTPS()
-	_, err := e.DB.Exec(ctx, `INSERT INTO probe_results (run_id, item_id, suite, passed, http_status, error_class, ttft_ms, duration_ms,
-			output_tokens, reasoning_tokens, output_tps, response_model, sub2api_request_id, raw_excerpt)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NULLIF($12, ''), NULLIF($13, ''), $14)`,
-		runID, it.ID, it.Suite, passed, status, errClass, int(r.TTFT/time.Millisecond), int(r.Duration/time.Millisecond),
-		r.OutputTokens, r.ReasoningTokens, tps, r.ResponseModel, r.Sub2APIRequestID, excerpt)
-	return err
 }
 
 // refHistory 返回该题近 7 天在同平台基线账号上的通过率（至少 5 个样本）。
@@ -963,6 +1000,10 @@ func (e *Engine) buildSummary(run runRow, u *upstreamRow, a Assessment, attribut
 		"checked_at": e.now(),
 		"suites":     suites,
 		"baseline":   a.Baseline,
+		"mode":       run.mode,
+	}
+	if len(a.Warnings) > 0 {
+		out["warnings"] = a.Warnings
 	}
 	if attribution != "" {
 		out["attribution"] = attribution

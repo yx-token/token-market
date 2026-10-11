@@ -87,6 +87,10 @@ func grade(g Grader, text, needle string) (bool, error) {
 		}
 		return true, nil
 	default:
+		if inspectionGraderTypes[g.Type] {
+			res, err := gradeInspection(g, ProbeResult{HTTPStatus: 200, Text: text}, needle, text == "")
+			return res.Pass, err
+		}
 		return false, fmt.Errorf("unknown grader type %q", g.Type)
 	}
 }

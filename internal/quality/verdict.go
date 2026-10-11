@@ -19,6 +19,7 @@ type Outcome struct {
 
 // Assessment 是一次检测的评估结果。
 type Assessment struct {
+	Warnings       []string `json:"warnings,omitempty"`
 	Verdict        string   `json:"verdict"` // normal / suspected / degraded / unavailable / inconclusive
 	LLR            float64  `json:"llr"`
 	Samples        int      `json:"samples"`
@@ -51,6 +52,9 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 	var targetPass, refPass, both, targetScored int
 	var tReason, rReason []float64
 	for _, o := range outcomes {
+		if o.Target.ErrorClass == "platform" || o.Target.ErrorClass == "rate_limited" || o.Target.ErrorClass == "expected_reject" || o.Target.ErrorClass == "configuration" {
+			continue
+		}
 		a.AvailableTotal++
 		if !o.Target.OK() {
 			continue
@@ -62,7 +66,7 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 		if v := o.Target.OutputTPS(); v > 0 {
 			tps = append(tps, v)
 		}
-		if !scoring || !scoringSuite(o.Suite) {
+		if !scoring || !scoringSuite(o.Suite) || !o.Target.EligibleForIntelligence() || (o.Ref != nil && !o.Ref.EligibleForIntelligence()) {
 			continue
 		}
 		var pRef float64
@@ -100,7 +104,7 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 		}
 		if o.Suite == "reasoning" && refOK {
 			t, r := reasoningAmount(o.Target), reasoningAmount(*o.Ref)
-			if r > 0 {
+			if r > 0 && (o.Target.ReasoningObserved || o.Target.ReasoningTokens > 0) {
 				tReason = append(tReason, t)
 				rReason = append(rReason, r)
 			}
@@ -142,6 +146,8 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 	switch {
 	case a.AvailableTotal >= 2 && float64(a.AvailableOK)/float64(a.AvailableTotal) < 0.5:
 		a.Verdict = "unavailable"
+	case a.AvailableTotal == 0:
+		a.Verdict = "inconclusive"
 	case !scoring || a.Samples == 0:
 		a.Verdict = "normal"
 		if a.AvailableOK == 0 {
@@ -167,8 +173,8 @@ func reasoningAmount(r ProbeResult) float64 {
 	if r.ReasoningTokens > 0 {
 		return float64(r.ReasoningTokens)
 	}
-	// 没有推理 token 统计的协议（如 Claude）按思考内容长度估算，约 4 字符 1 token
-	return float64(r.ThinkingChars) / 4
+	// 估算在协议层使用输出 usage 完成，不能用被隐藏的 thinking 字符数。
+	return 0
 }
 
 func gradeFor(rel float64) string {

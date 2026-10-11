@@ -37,19 +37,22 @@ func (t Thresholds) validate() error {
 
 // Policy 是一个厂商（可细化到接入方式）的检测策略。
 type Policy struct {
-	ID               int64      `json:"id"`
-	Platform         string     `json:"platform"`
-	AuthType         string     `json:"auth_type"`
-	Enabled          bool       `json:"enabled"`
-	ScheduledEnabled bool       `json:"scheduled_enabled"`
-	IntervalMinutes  int        `json:"interval_minutes"`
-	JitterMinutes    int        `json:"jitter_minutes"`
-	Suites           []string   `json:"suites"`
-	Models           []string   `json:"models"`
-	DailyBudgetUSD   float64    `json:"daily_budget_usd"`
-	Thresholds       Thresholds `json:"thresholds"`
-	AutoPause        bool       `json:"auto_pause"`
-	DefaultGrade     string     `json:"default_grade"`
+	ItemParallelism  int                    `json:"item_parallelism"`
+	FullTriggers     []string               `json:"full_triggers"`
+	TokenBudgets     map[string]TokenBudget `json:"token_budgets"`
+	ID               int64                  `json:"id"`
+	Platform         string                 `json:"platform"`
+	AuthType         string                 `json:"auth_type"`
+	Enabled          bool                   `json:"enabled"`
+	ScheduledEnabled bool                   `json:"scheduled_enabled"`
+	IntervalMinutes  int                    `json:"interval_minutes"`
+	JitterMinutes    int                    `json:"jitter_minutes"`
+	Suites           []string               `json:"suites"`
+	Models           []string               `json:"models"`
+	DailyBudgetUSD   float64                `json:"daily_budget_usd"`
+	Thresholds       Thresholds             `json:"thresholds"`
+	AutoPause        bool                   `json:"auto_pause"`
+	DefaultGrade     string                 `json:"default_grade"`
 	// ThirdParty 是在内部探测之后追加的第三方检测
 	ThirdParty []ThirdPartyCheck `json:"third_party"`
 	Version    int64             `json:"version"`
@@ -135,20 +138,23 @@ func (c ThirdPartyCheck) VerdictFor(outcome string) string {
 }
 
 const policyColumns = `id, platform, auth_type, enabled, scheduled_enabled, interval_minutes, jitter_minutes, suites, models,
-	daily_budget_usd::float8, thresholds, auto_pause, default_grade, third_party, version, updated_at`
+	daily_budget_usd::float8, thresholds, auto_pause, default_grade, third_party, version, updated_at, item_parallelism, full_triggers, token_budgets`
 
 func scanPolicy(row pgx.Row) (*Policy, error) {
 	var p Policy
-	var th, tp []byte
+	var th, tp, budgets []byte
 	if err := row.Scan(&p.ID, &p.Platform, &p.AuthType, &p.Enabled, &p.ScheduledEnabled, &p.IntervalMinutes, &p.JitterMinutes,
 		&p.Suites, &p.Models, &p.DailyBudgetUSD, &th, &p.AutoPause, &p.DefaultGrade, &tp,
-		&p.Version, &p.UpdatedAt); err != nil {
+		&p.Version, &p.UpdatedAt, &p.ItemParallelism, &p.FullTriggers, &budgets); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(th, &p.Thresholds); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(tp, &p.ThirdParty); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(budgets, &p.TokenBudgets); err != nil {
 		return nil, err
 	}
 	if p.ThirdParty == nil {
@@ -206,20 +212,23 @@ func EffectivePolicy(ctx context.Context, db DB, upstreamID int64, platform, aut
 	return p, nil
 }
 
-var validSuites = map[string]bool{"availability": true, "latency": true, "iq": true, "reasoning": true, "long_context": true}
+var validSuites = map[string]bool{"availability": true, "latency": true, "iq": true, "reasoning": true, "long_context": true, "inspection_authenticity": true, "inspection_capability": true, "inspection_function": true, "inspection_output": true, "inspection_performance": true}
 
 type PolicyInput struct {
-	Enabled          *bool              `json:"enabled"`
-	ScheduledEnabled *bool              `json:"scheduled_enabled"`
-	IntervalMinutes  *int               `json:"interval_minutes"`
-	JitterMinutes    *int               `json:"jitter_minutes"`
-	Suites           *[]string          `json:"suites"`
-	Models           *[]string          `json:"models"`
-	DailyBudgetUSD   *float64           `json:"daily_budget_usd"`
-	Thresholds       *Thresholds        `json:"thresholds"`
-	AutoPause        *bool              `json:"auto_pause"`
-	DefaultGrade     *string            `json:"default_grade"`
-	ThirdParty       *[]ThirdPartyCheck `json:"third_party"`
+	ItemParallelism  *int                    `json:"item_parallelism"`
+	FullTriggers     *[]string               `json:"full_triggers"`
+	TokenBudgets     *map[string]TokenBudget `json:"token_budgets"`
+	Enabled          *bool                   `json:"enabled"`
+	ScheduledEnabled *bool                   `json:"scheduled_enabled"`
+	IntervalMinutes  *int                    `json:"interval_minutes"`
+	JitterMinutes    *int                    `json:"jitter_minutes"`
+	Suites           *[]string               `json:"suites"`
+	Models           *[]string               `json:"models"`
+	DailyBudgetUSD   *float64                `json:"daily_budget_usd"`
+	Thresholds       *Thresholds             `json:"thresholds"`
+	AutoPause        *bool                   `json:"auto_pause"`
+	DefaultGrade     *string                 `json:"default_grade"`
+	ThirdParty       *[]ThirdPartyCheck      `json:"third_party"`
 }
 
 // UpsertPolicy 创建或修改策略，修改后版本号加一，worker 在下一轮读取新策略（约 1 分钟内生效）。
@@ -277,6 +286,38 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	if in.ThirdParty != nil {
 		p.ThirdParty = *in.ThirdParty
 	}
+
+	if p.ItemParallelism == 0 {
+		p.ItemParallelism = 4
+	}
+	if p.FullTriggers == nil {
+		p.FullTriggers = []string{"onboarding", "appeal", "admin"}
+	}
+	if p.TokenBudgets == nil {
+		p.TokenBudgets = map[string]TokenBudget{}
+	}
+	if in.ItemParallelism != nil {
+		p.ItemParallelism = *in.ItemParallelism
+	}
+	if in.FullTriggers != nil {
+		p.FullTriggers = *in.FullTriggers
+	}
+	if in.TokenBudgets != nil {
+		p.TokenBudgets = *in.TokenBudgets
+	}
+	if p.ItemParallelism < 1 || p.ItemParallelism > 8 {
+		return nil, httpx.BadRequest("INVALID_PARALLELISM", "题目并发上限须为 1–8")
+	}
+	for _, t := range p.FullTriggers {
+		if !validTriggers[t] {
+			return nil, httpx.BadRequest("INVALID_TRIGGER", "未知完整质检触发类型")
+		}
+	}
+	for mode, b := range p.TokenBudgets {
+		if (mode != "full" && mode != "quick") || b.Input <= 0 || b.Output <= 0 {
+			return nil, httpx.BadRequest("INVALID_BUDGET", "质检模式及 token 预算无效")
+		}
+	}
 	if p.ThirdParty == nil {
 		p.ThirdParty = []ThirdPartyCheck{}
 	}
@@ -316,17 +357,18 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	th, _ := json.Marshal(p.Thresholds)
 	tp, _ := json.Marshal(p.ThirdParty)
 	return scanPolicy(db.QueryRow(ctx, `INSERT INTO detection_policies (platform, auth_type, enabled, scheduled_enabled, interval_minutes,
-			jitter_minutes, suites, models, daily_budget_usd, thresholds, auto_pause, default_grade, third_party, updated_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $14, $13)
+			jitter_minutes, suites, models, daily_budget_usd, thresholds, auto_pause, default_grade, third_party, updated_by, item_parallelism, full_triggers, token_budgets)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $14, $13, $15, $16, $17)
 		ON CONFLICT (platform, auth_type) DO UPDATE SET enabled = EXCLUDED.enabled, scheduled_enabled = EXCLUDED.scheduled_enabled,
 			interval_minutes = EXCLUDED.interval_minutes, jitter_minutes = EXCLUDED.jitter_minutes, suites = EXCLUDED.suites,
 			models = EXCLUDED.models, daily_budget_usd = EXCLUDED.daily_budget_usd,
 			thresholds = EXCLUDED.thresholds, auto_pause = EXCLUDED.auto_pause,
 			default_grade = EXCLUDED.default_grade, third_party = EXCLUDED.third_party, updated_by = EXCLUDED.updated_by,
+			item_parallelism = EXCLUDED.item_parallelism, full_triggers = EXCLUDED.full_triggers, token_budgets = EXCLUDED.token_budgets,
 			version = detection_policies.version + 1, updated_at = now()
 		RETURNING `+policyColumns,
 		platform, authType, p.Enabled, p.ScheduledEnabled, p.IntervalMinutes, p.JitterMinutes, p.Suites, p.Models, p.DailyBudgetUSD,
-		th, p.AutoPause, p.DefaultGrade, adminID, tp))
+		th, p.AutoPause, p.DefaultGrade, adminID, tp, p.ItemParallelism, p.FullTriggers, mustJSON(p.TokenBudgets)))
 }
 
 type OverrideInput struct {
@@ -354,6 +396,7 @@ func DeleteOverride(ctx context.Context, db DB, upstreamID int64) error {
 // ---- 题库 ----
 
 type Grader struct {
+	GraderOptions
 	Type            string   `json:"type"` // exact / contains / regex / numeric / choice / json_keys
 	Answer          string   `json:"answer,omitempty"`
 	Number          *float64 `json:"number,omitempty"`
@@ -364,31 +407,40 @@ type Grader struct {
 }
 
 type Item struct {
-	ID                int64    `json:"id"`
-	Suite             string   `json:"suite"`
-	Category          string   `json:"category"`
-	Prompt            string   `json:"prompt"`
-	Grader            Grader   `json:"grader"`
-	Platforms         []string `json:"platforms"`
-	Models            []string `json:"models"` // 适用模型，空表示全部
-	MaxTokens         int      `json:"max_tokens"`
-	ReasoningEffort   *string  `json:"reasoning_effort,omitempty"`
-	IRTDifficulty     *float64 `json:"irt_difficulty,omitempty"`
-	IRTDiscrimination *float64 `json:"irt_discrimination,omitempty"`
-	Status            string   `json:"status"`
-	Version           int      `json:"version"`
+	CheckKey          string          `json:"check_key"`
+	Request           ProbeRequest    `json:"request"`
+	Generator         json.RawMessage `json:"generator"`
+	Modes             []string        `json:"modes"`
+	BuiltinKey        *string         `json:"builtin_key,omitempty"`
+	Weight            float64         `json:"weight"`
+	ID                int64           `json:"id"`
+	Suite             string          `json:"suite"`
+	Category          string          `json:"category"`
+	Prompt            string          `json:"prompt"`
+	Grader            Grader          `json:"grader"`
+	Platforms         []string        `json:"platforms"`
+	Models            []string        `json:"models"` // 适用模型，空表示全部
+	MaxTokens         int             `json:"max_tokens"`
+	ReasoningEffort   *string         `json:"reasoning_effort,omitempty"`
+	IRTDifficulty     *float64        `json:"irt_difficulty,omitempty"`
+	IRTDiscrimination *float64        `json:"irt_discrimination,omitempty"`
+	Status            string          `json:"status"`
+	Version           int             `json:"version"`
 }
 
-const itemColumns = `id, suite, category, prompt, grader, platforms, models, max_tokens, reasoning_effort, irt_difficulty, irt_discrimination, status, version`
+const itemColumns = `id, suite, category, prompt, grader, platforms, models, max_tokens, reasoning_effort, irt_difficulty, irt_discrimination, status, version, check_key, request, generator, modes, builtin_key, weight`
 
 func scanItem(row pgx.Row) (*Item, error) {
 	var it Item
-	var g []byte
+	var g, request []byte
 	if err := row.Scan(&it.ID, &it.Suite, &it.Category, &it.Prompt, &g, &it.Platforms, &it.Models, &it.MaxTokens, &it.ReasoningEffort,
-		&it.IRTDifficulty, &it.IRTDiscrimination, &it.Status, &it.Version); err != nil {
+		&it.IRTDifficulty, &it.IRTDiscrimination, &it.Status, &it.Version, &it.CheckKey, &request, &it.Generator, &it.Modes, &it.BuiltinKey, &it.Weight); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(g, &it.Grader); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(request, &it.Request); err != nil {
 		return nil, err
 	}
 	return &it, nil
@@ -396,15 +448,21 @@ func scanItem(row pgx.Row) (*Item, error) {
 
 func validateItem(it Item) error {
 	switch it.Suite {
-	case "iq", "reasoning", "long_context":
+	case "iq", "reasoning", "long_context", "inspection_authenticity", "inspection_capability", "inspection_function", "inspection_output", "inspection_performance":
 	default:
 		return httpx.BadRequest("INVALID_SUITE", "item suite must be iq, reasoning or long_context")
 	}
-	if it.Prompt == "" || it.MaxTokens <= 0 {
+	if (it.Prompt == "" && len(it.Request.Messages) == 0) || it.MaxTokens <= 0 {
 		return httpx.BadRequest("INVALID_ITEM", "prompt and max_tokens are required")
 	}
-	if _, err := grade(it.Grader, "", ""); err != nil {
-		return httpx.BadRequest("INVALID_GRADER", err.Error())
+	var gradeErr error
+	if inspectionGraderTypes[it.Grader.Type] {
+		gradeErr = validateInspectionGrader(it.Grader)
+	} else {
+		_, gradeErr = grade(it.Grader, "", "")
+	}
+	if gradeErr != nil {
+		return httpx.BadRequest("INVALID_GRADER", gradeErr.Error())
 	}
 	return nil
 }
@@ -419,6 +477,15 @@ func CreateItem(ctx context.Context, db DB, it Item) (*Item, error) {
 	if err := validateItem(it); err != nil {
 		return nil, err
 	}
+	if it.Modes == nil {
+		it.Modes = []string{}
+	}
+	if len(it.Generator) == 0 {
+		it.Generator = json.RawMessage(`{}`)
+	}
+	if it.Weight == 0 {
+		it.Weight = 1
+	}
 	g, _ := json.Marshal(it.Grader)
 	if it.Platforms == nil {
 		it.Platforms = []string{}
@@ -427,13 +494,22 @@ func CreateItem(ctx context.Context, db DB, it Item) (*Item, error) {
 		it.Models = []string{}
 	}
 	return scanItem(db.QueryRow(ctx, `INSERT INTO probe_items (suite, category, prompt, grader, platforms, models, max_tokens, reasoning_effort,
-			irt_difficulty, irt_discrimination, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING `+itemColumns,
-		it.Suite, it.Category, it.Prompt, g, it.Platforms, it.Models, it.MaxTokens, it.ReasoningEffort, it.IRTDifficulty, it.IRTDiscrimination, it.Status))
+			irt_difficulty, irt_discrimination, status, check_key, request, generator, modes, builtin_key, weight) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING `+itemColumns,
+		it.Suite, it.Category, it.Prompt, g, it.Platforms, it.Models, it.MaxTokens, it.ReasoningEffort, it.IRTDifficulty, it.IRTDiscrimination, it.Status, it.CheckKey, mustJSON(it.Request), it.Generator, it.Modes, it.BuiltinKey, it.Weight))
 }
 
 func UpdateItem(ctx context.Context, db DB, id int64, it Item) (*Item, error) {
 	if err := validateItem(it); err != nil {
 		return nil, err
+	}
+	if it.Modes == nil {
+		it.Modes = []string{}
+	}
+	if len(it.Generator) == 0 {
+		it.Generator = json.RawMessage(`{}`)
+	}
+	if it.Weight == 0 {
+		it.Weight = 1
 	}
 	g, _ := json.Marshal(it.Grader)
 	if it.Platforms == nil {
@@ -444,8 +520,9 @@ func UpdateItem(ctx context.Context, db DB, id int64, it Item) (*Item, error) {
 	}
 	out, err := scanItem(db.QueryRow(ctx, `UPDATE probe_items SET suite = $2, category = $3, prompt = $4, grader = $5, platforms = $6,
 			models = $7, max_tokens = $8, reasoning_effort = $9, irt_difficulty = $10, irt_discrimination = $11, status = $12,
+			check_key = $13, request = $14, generator = $15, modes = $16, builtin_key = $17, weight = $18,
 			version = version + 1, updated_at = now() WHERE id = $1 RETURNING `+itemColumns,
-		id, it.Suite, it.Category, it.Prompt, g, it.Platforms, it.Models, it.MaxTokens, it.ReasoningEffort, it.IRTDifficulty, it.IRTDiscrimination, it.Status))
+		id, it.Suite, it.Category, it.Prompt, g, it.Platforms, it.Models, it.MaxTokens, it.ReasoningEffort, it.IRTDifficulty, it.IRTDiscrimination, it.Status, it.CheckKey, mustJSON(it.Request), it.Generator, it.Modes, it.BuiltinKey, it.Weight))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, httpx.NotFound("ITEM_NOT_FOUND", "probe item not found")
 	}
