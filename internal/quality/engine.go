@@ -44,18 +44,21 @@ type Engine struct {
 	// Gate 返回 false 时 RunBatches 不派发新批次（兼容自检未通过的安全模式）
 	Gate func(ctx context.Context) (bool, string)
 	Now  func() time.Time
+	// Wait 供离线测试替换等待；生产默认使用支持取消的真实计时器。
+	Wait func(context.Context, time.Duration) error
 	// 第三方检测：Edge 配置存储（发布临时令牌）、Edge 对外地址（交给检测站）、访问检测站的 HTTP 客户端
 	Edge           edgecfg.Store
 	EdgePublicURL  string
 	ThirdPartyHTTP *http.Client
 
-	batches        sync.WaitGroup      // 后台执行中的批次
-	mu             sync.Mutex          // 保护 running、wake
-	running        map[string]struct{} // 本进程正在执行的批次
-	requestRunning map[int64]int
-	requestTotal   int
-	requestWake    chan struct{}
-	wake           chan struct{} // 批次结束时通知 RunBatches 立即补位
+	batches         sync.WaitGroup      // 后台执行中的批次
+	mu              sync.Mutex          // 保护 running、wake
+	running         map[string]struct{} // 本进程正在执行的批次
+	requestRunning  map[int64]int
+	requestTotal    int
+	requestWake     chan struct{}
+	recoveryRunning map[int64]bool
+	wake            chan struct{} // 批次结束时通知 RunBatches 立即补位
 }
 
 func (e *Engine) now() time.Time {
@@ -63,6 +66,23 @@ func (e *Engine) now() time.Time {
 		return e.Now()
 	}
 	return time.Now()
+}
+
+func (e *Engine) wait(ctx context.Context, delay time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if e.Wait != nil {
+		return e.Wait(ctx, delay)
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (e *Engine) kick(ctx context.Context) {

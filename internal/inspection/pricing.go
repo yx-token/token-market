@@ -236,7 +236,7 @@ func PublicChecks(checks map[string]Check) map[string]Check {
 		check.Evidence.GeneratorVersion = nil
 		check.Evidence.Code = ""
 		switch check.Evidence.Source {
-		case "paired_probe", "production", "account_snapshot", "third_party", "history":
+		case "paired_probe", "recovery_probe", "production", "account_snapshot", "third_party", "history":
 		default:
 			check.Evidence.Source = ""
 		}

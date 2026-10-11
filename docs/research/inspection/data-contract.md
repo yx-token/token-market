@@ -99,7 +99,7 @@ Chat 协议纯文本消息使用字符串，多个文本块顺序拼接；只有
 
 读取时按 batch_id 找 trigger != reference 的被测 run；被测和基线均使用它的 execution_snapshot。基线 run 只引用既有 batch_id，不复制长上下文草堆；被测 run 有快照则无需重新生成。旧批次无快照按 legacy 初始化，一旦持久化不得覆盖。
 
-execution_snapshot 保存开始时的 policy（完整检测策略）、inspection_settings（完整 §6 设置对象，含模式、校准覆盖、等级及调度设置）、limits、request_timeout_seconds、scoring 与 thresholds；旧快照缺新增设置对象时沿用兼容读取路径，不能用正在修改的设置覆写已有快照。顶层含 schema_version（整数）、policy_version（既有策略版本）、inspection_mode（trial/formal）、mode（legacy/full/quick）、token_budget（本次每侧输入/输出上限）、instances（实例计划数组）及可选 warnings（简体中文字符串数组，计划生成告警）。每个实例保存 item_id/instance_idx/check_key/generator_version/instance_hash、seed（派生值，字符串）、parameters（实际参数对象）与 steps；step 含 step 序号、request（§3 模板/已生成题面）、expected（判分期望对象）及可选 answer（测试替身的标准响应，真实请求不带此字段）。型号、接入配置与参与角色绑定使用既有 batch/run 信息；内部对象不返回给卖家或市场。旧 {} 初始化后只能读取同一份计划，不能借重启重置题面或预算。
+execution_snapshot 保存开始时的 policy（完整检测策略）、inspection_settings（完整 §6 设置对象，含模式、校准覆盖、等级及调度设置）、limits、request_timeout_seconds、scoring 与 thresholds；旧快照缺新增设置对象时沿用兼容读取路径，不能用正在修改的设置覆写已有快照。顶层含 schema_version（整数）、policy_version（既有策略版本）、inspection_mode（trial/formal）、mode（legacy/full/quick）、token_budget（本次每侧输入/输出上限）、instances（实例计划数组）及可选 warnings（简体中文字符串数组，计划生成告警）。每个实例保存 item_id/instance_idx/check_key/generator_version/instance_hash、target_only（可省略 boolean，默认 false；true 表示仅被测侧的串行恢复采样）、seed（派生值，字符串）、parameters（实际参数对象）与 steps；step 含 step 序号、request（§3 模板/已生成题面）、expected（判分期望对象）及可选 answer（测试替身的标准响应，真实请求不带此字段）。型号、接入配置与参与角色绑定使用既有 batch/run 信息；内部对象不返回给卖家或市场。旧 {} 初始化后只能读取同一份计划，不能借重启重置题面或预算。
 
 step_state 为 `{complete:boolean, text:string, tool_calls:array, input_charged:integer, output_charged:integer}`；工具调用为 `{id:string, name:string, arguments:object, local_id?:boolean, thought_signature?:string}`，另可含 retry_after_ms（毫秒）。text/tool_calls 仅在下一步确实依赖时保存；预算累计字段保存当前步骤包括重试的消耗，恢复时与本 run 其他步骤合计，缺 usage 或中断保留预留值，可靠 usage 到达后按实际计数修正。完整响应/工具结果超过上限则 complete=false，不把截断片段设为 complete=true。无中间依赖时只保存 complete 和预算累计字段，不保存 text/tool_calls；旧记录仍允许 {}。写入状态与完成结果在同一事务，恢复前校验实例哈希；不保存推理正文、凭据、真实买家历史或无关响应元数据。thought_signature 只保留不透明签名，不能视为推理正文或推理量。
 
@@ -129,7 +129,7 @@ ProbeRequest 增加 System/Messages/Tools/Attachments/Effort/Extra；ProbeResult
 
 既有 probe_results.error_class 承载主错误分类（含 platform/rate_limited/expected_reject），flags 是可并存的补充状态，不能取代主错误原因。flags 允许 stop_normal/truncated/refusal/stop_error/lazy_placeholder/format_error/rate_limited/platform/expected_reject/reasoning_estimated/unknown_stop_reason/window_unknown/window_available/abnormal_rate_limited/configuration；其中 stop_normal/truncated/refusal/stop_error 分别保存归一化的 normal/truncated/refusal/error，原 stop_reason 仍原样记录。Anthropic model_context_window_exceeded 归 truncated。window_available 是发题前已知有余量，abnormal_rate_limited 还要求限流后复查仍有余量；仅这类有证据的异常限流参加 D04。拒答、截断、限流、平台错误从智力统计剔除，仍保留对应功能/输出/可用项证据。成对样本只要任一侧不合格，两侧一并剔除，SPRT 与 McNemar 使用同一数据清单；正式新题只采用同期有效配对，不使用旧 0.95 默认基线。
 
-生产 edge_attempts.error_class 记录 platform/rate_limited/configuration/network/timeout/http_5xx/unknown 等来源，成功仍为空；保守分类未知 4xx，不凭状态码推定账号错误。D13 只纳入有归属、可计费且有效完成的生产成功，以及来源明确的网络、超时、上游 HTTP 错误，排除平台、配置、限流、未知失败、跳过和买家取消。正文仅透传时暂存最多 64KiB 前缀供分类，随后丢弃，不入库，不改变用量入账与结算口径。
+生产 edge_attempts.error_class 记录 platform/rate_limited/configuration/network/timeout/http_5xx/unknown 等来源，成功仍为空；保守分类未知 4xx，不凭状态码推定账号错误。D13 只纳入有归属、可计费且有效完成的生产成功，以及来源明确的网络、超时、上游 HTTP 错误，排除平台、配置、限流、未知失败、跳过和买家取消。platform 仅识别 sub2api 的 gateway_concurrency_limit/gateway_queue_full/claude_code_version_too_old，或 HTTP 403 且 code 字段精确为 INSUFFICIENT_BALANCE；普通上游余额/额度文案不能据此排除。正文仅透传时暂存最多 64KiB 前缀供分类，随后丢弃，不入库，不改变用量入账与结算口径。
 
 被测与基线同时发送，题目单元并行，多步账号内有序；每账号信号量的实际容量取 min(策略 item_parallelism、inspection 设置的账号上限、该账号当前下发到 sub2api 的实际并发)，基线同理；item_parallelism 仅为上界，全局上限仍独立。只有持 worker 主锁的进程执行检测，不新增 sub2api 并发控制代码。
 
@@ -148,7 +148,7 @@ ProbeRequest 增加 System/Messages/Tools/Attachments/Effort/Extra；ProbeResult
 | applied | boolean | 是否实际影响本次正式定级；试运行恒 false，健康处置仍由旧逻辑决定 |
 | metrics | object | 指标名 → `{value:number|null, unit:string, ci:[number,number]|null, confidence:number|null}`；ratio/fraction、tokens、ms、tokens_per_second、count 等明确单位 |
 | samples | object | observed/paired/excluded 整数，单位请求或题目单元须在 evidence 中标明；不可把多步算成多道独立智力题 |
-| evidence | object | source 为 paired_probe/production/account_snapshot/third_party/history；window_start/end 为 RFC3339 UTC 或 null，generator_version 为 string/null；sample_unit 为 request/item_unit；code 为机器原因码 |
+| evidence | object | source 为 paired_probe/recovery_probe/production/account_snapshot/third_party/history；window_start/end 为 RFC3339 UTC 或 null，generator_version 为 string/null；sample_unit 为 request/item_unit；code 为机器原因码 |
 | reason / advice / impact | string | 简体中文原因、建议、对价格/调度的影响；卖家版本移除阈值、题面与内部定位信息 |
 | checked_at | string | RFC3339 UTC |
 
@@ -158,7 +158,7 @@ ProbeRequest 增加 System/Messages/Tools/Attachments/Effort/Extra；ProbeResult
 
 新增 summary 字段：inspection_mode（trial/formal）、mode（legacy/full/quick）、checks、quality_factor（number/null）、appraisal、gates、group_factors（四组名称 → number）、proposed_grade/repaired_grade（string）。appraisal 为 `{base:number|null, factor:number|null, multiplier:number|null, tier:string, checked_at:string|null, configured:boolean, provisional:boolean}`；multiplier 是寄售卖家侧倍率，不含抽佣。checked_at 为质检时间，展示读取 appraised_at，改基准不伪造新检测时间；provisional 表示试运行、覆盖不足或证据来自试运行。缺基准时 configured=false、base/multiplier=null。repaired_grade 用 Q=1 和当前历史计算，不能保证 S 或自动恢复，需复测确认。
 
-error_counts 与 reference_error_counts（可省略对象，主错误分类 → 请求数）记录被测与基线的错误来源，供管理员排查。trial 另保留 shadow，结构见 §10；shadow.checks 只是影子样本计数，不是本节正式的 summary.checks。checks/quality_factor/appraisal/gates 已在阶段四计算；示例值仅说明格式，不是实测或已经校准的参数。
+error_counts 与 reference_error_counts（可省略对象，主错误分类 → 请求数）记录被测与基线的错误来源，供管理员排查；卖家报告不返回 reference_error_counts。warnings 仅映射已登记的安全固定文案，底层错误、题面、阈值、账号定位和未知告警不对外返回。trial 另保留 shadow，结构见 §10；shadow.checks 只是影子样本计数，不是本节正式的 summary.checks。checks/quality_factor/appraisal/gates 已在阶段四计算；示例值仅说明格式，不是实测或已经校准的参数。
 
 完整兼容示例（仅为格式示例，不是真实测量；试运行 grade 仍来自旧逻辑）：
 
@@ -214,6 +214,7 @@ settings.value 的独立 inspection 键存以下对象，由后台设置接口�
   "scheduling": {"enabled": false, "minimum_grade": "B", "strategy": "quality_adjusted"},
   "timeouts": {"full_minutes": 75, "quick_minutes": 20},
   "limits": {"account_parallelism": 2, "global_parallelism": 32},
+  "recovery": {"availability_samples": 20, "request_interval_seconds": 3},
   "token_budgets": {
     "full": {"input_tokens_per_side": 1300000, "output_tokens_per_side": 640000},
     "quick": {"input_tokens_per_side": 80000, "output_tokens_per_side": 160000}
@@ -228,6 +229,7 @@ settings.value 的独立 inspection 键存以下对象，由后台设置接口�
 - scheduling：enabled 默认 false；minimum_grade 默认 B；strategy 为新策略名称。即使 enabled=true，trial 下仍不得改变规划器输出。
 - timeouts：单位分钟，不能短于单请求时限；新 run 将开始时计算的 deadline 固化，修改设置不影响执行中的截止时间。
 - limits：正整数，account_parallelism 默认 2；实际生效值取 min(策略 item_parallelism、设置的账号上限、该账号当前下发的实际并发)，基线同理，suspected 减半后的值必须生效。账号并发不能大于全局；全局上限约束的是实际 HTTP 请求，两侧各占一个槽。多步在账号上顺序执行。
+- recovery：availability_samples 为每轮额外恢复样本数，默认 20，范围 1–100；request_interval_seconds 为每次发送前间隔，默认 3 秒，范围 1–60。额外样本只发被测侧，期间独占账号、单并发，重试同样等待；基线不发送、不计额外预算。D13/D04 的 recovery_min_samples 默认 20，独立于生产 min_samples/gate_min_samples=100，可在质检项覆盖值里编辑。最多累计最近两轮同型号同冻结配置、门槛后七天内的已完成新样本，样本不足不恢复。
 - token_budgets：每侧每次 run 硬上限，detection_policies 中非空模式覆盖优先于此；不能用卖家美元日预算豁免绕过这些上限。
 
 质检目录与初始候选系数见[汇总 §4](../quality-inspection-2026-10-12.md#4-质量系数等级与价格)。后台“质检项”页分别编辑启用、校准记录、系数、阈值；系统设置页单独编辑完整 inspection JSON 及常用开关。代码候选规则不代表真实厂商验收，方案未规定的“重扣”值不默认启用。A15 不增加自由脚本或独立规则列：管理员在题库登记 check_key=A15、限定 models、request.extra 白名单参数、request.expected 接受/拒绝条件与 accept_reject 判分器，再登记对应校准覆盖；至少两个有效同期规则配对才给提示，网关本地拦截不作为厂商指纹。
@@ -249,7 +251,7 @@ settings.value 的独立 inspection 键存以下对象，由后台设置接口�
 
 当前 31 条新增内置定义由题库基础 25 条（每侧 full 73 / quick 25 次）与补充探针 6 条（缓存两步，其余一步，共 7 次）组成，完整另加 10 道 low 锚定重测，合计 90 次。high 的 54/22 道中取最多 20 道用于 D06 推理量，完整选择 10 道加测 low；同请求复用 A02/A03、延迟与 usage，不重复派发。A08 暂不放事实题，弃权归 D07.honesty。A15 默认关闭、没有预置指纹题，管理员登记后另计预算。Codex OAuth 不出完整输出题，PDF 只用于 anthropic/openai/gemini/antigravity，其他平台按适用范围跳过；基线不支持功能记不适用，跳过不补题。因此 90 是全部适用单型号计数，不是每个平台固定题量。每个上架型号 A04 各发一次，多型号、申诉扩样与厂商不同档位均显式预留，不暗中计作 90。
 
-正式恢复若上次失败清单含 D13/D04，完整计划额外加入 100 个短连通性新请求；默认全部适用时每侧共 190 次，仍受同一 token 预算、200 个实例、32MiB 快照和 run 截止约束，不自动加额度。配置的样本下限超出可容纳范围时明确失败并退避重排，不能以小样本恢复。恢复只消费门槛之后的新样本；D13 的足够本次有效样本不被暂停前的生产失败窗口覆盖，D04 按门槛后且已核实窗口的新样本汇总。成本和真实可完成性均待运营校准。
+正式恢复若上次失败清单含 D13/D04，默认增加 20 个输入不同的安全短题，只发被测侧；全部适用时被测约 110 次，基线仍约 90 次。采样账号单并发、默认每次发送前等待 3 秒，可累计当前及上一轮门槛后的同配置新样本，仍须连续两次有效正常才恢复。恢复专用样本下限默认 20，不更改生产可用率的 100 样本门槛；D04 仍只用已核实窗口的新样本。仍受同一 token 预算、200 个实例、32MiB 快照和 run 截止约束，不自动加额度；不足样本不能恢复。暂停前的旧生产失败不覆盖恢复新证据，旧门槛前样本不能证明修复；成本和真实可完成性待运营校准。
 
 上下文边界题使用略超下一低档上限的输入，例如宣称 1M 的账号先检查略超 256K；通过该点不能认证完整 1M，报告写实际测到的长度。需要验证更大上限时增加独立预算，经运营配置后执行；不能在 128K 多针通过后显示“1M 已核验”。不足窗口时不执行这类请求。
 
@@ -369,13 +371,13 @@ Engine.RegisterInstance 是可选测试回调，在派发前登记协议请求�
 
 quick 的 not_run 项可继承最近 formal/full、同型号且 execution_snapshot.inspection_settings 完全相等、checked_at 七天内、已实际 applied 的逐项结果；保留原时间、source=history。本次已有观测的 inconclusive/warning/fail 不被旧 pass 覆盖。历史是覆盖说明，不是本次派发，也不能作为恢复证据。
 
-暂停期间 last_failed_checks 并集保留。恢复必须本次覆盖并 pass；D13/D04 加测门槛后的新样本，仍受原预算/时限，未完成就退避重排。第一次有效恢复尚未解除健康暂停时仍“暂不估价”，第二次满足恢复条件才清除失败项。旧生产失败窗口不能盖掉足够的本次 D13 有效通过，也不能用门槛之前的 D04 样本确认恢复。
+暂停期间 last_failed_checks 并集保留。恢复必须本次覆盖并 pass；D13/D04 默认每轮加测 20 个被测侧新样本、单并发和 3 秒间隔，可累计最近两轮同配置门槛后证据，仍受原预算/时限，未完成就退避重排。第一次有效恢复尚未解除健康暂停时仍“暂不估价”，第二次满足恢复条件才清除失败项。旧生产失败窗口不能盖掉足够的本次 D13 有效通过，也不能用门槛之前的 D04 样本确认恢复。
 
 估价读取当前 vendor_configs.appraisal_base 与最近 quality_verdicts.quality_factor，相乘得到卖家侧参考倍率，不含抽佣；档位缺失可用 default，缺配置为“未配置”，无有效 Q、确认门槛或仍暂停则“暂不估价”。不回退 buyback_base、旧有效 Q 或兼容默认 1。trial 或覆盖不足标 provisional；切正式不会把 trial 历史变为正式结果。正式 Q 定级后仍由原 QuoteFor 按 buyback_base × GradeCoefficients 与毛利上限报价，不修改默认等级系数、寄售区间或 validateConsignment。
 
 ### 11.3 调度、页面与校准
 
-保障池新增最低等级（默认 B）与无确认门槛条件，以及 quality_adjusted 的 m_s/Q 每 0.05 一档，只在 formal 且 scheduling.enabled=true 时启用。正式保障池只认已保存 upstreams.grade，不用 default_grade 冒充检测等级；专属寄售组仍用原健康约束。trial 和新调度关闭时，相同输入的规划输出与原策略逐字段一致。
+保障池新增最低等级（默认 B）与无确认门槛条件，以及 quality_adjusted 的 m_s/Q 每 0.05 一档，只在 formal 且 scheduling.enabled=true 时启用。正式保障池与回收排序使用同一个有效等级：upstreams.grade 为空时采用策略 default_grade；此兜底仅用于准入与排序，不能将缺测展示成已检测或有效 Q；专属寄售组仍用原健康约束。trial 和新调度关闭时，相同输入的规划输出与原策略逐字段一致。
 
 报告按目录分组，展示 Q/组系数、等级、影响、安全建议与修复预期；旧 summary.suites 回退保留。卖家发布与详情显示估价/偏离度，市场显示等级徽章、关键项、上次检测和抽样局限声明；实际应用的扣价项可申诉。后台维护目录校准覆盖、独立 inspection 设置、appraisal_base、策略并发/完整触发/token 预算，逐题明细按三元键配对。
 

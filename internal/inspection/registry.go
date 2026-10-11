@@ -68,9 +68,9 @@ func init() {
 	add("D12", "缓存功能", "function", "factor", "function", "检查缓存支持与长前缀复用，排除计数缺失后复检。",
 		map[string]float64{"failure": 0.85}, map[string]float64{"min_pairs": 1})
 	add("D13", "可用率", "availability", "factor", "availability", "检查账号权限、额度与连接稳定性，排除平台侧错误后复检。",
-		map[string]float64{"tier_995": 1, "tier_99": 0.97, "tier_98": 0.93, "tier_95": 0.85, "tier_90": 0.7}, map[string]float64{"min_samples": 100, "gate_min_samples": 100, "gate_rate": 0.9})
+		map[string]float64{"tier_995": 1, "tier_99": 0.97, "tier_98": 0.93, "tier_95": 0.85, "tier_90": 0.7}, map[string]float64{"min_samples": 100, "gate_min_samples": 100, "recovery_min_samples": 20, "gate_rate": 0.9})
 	add("D04", "异常限流", "availability", "factor", "availability", "核对额度窗口与限流来源，排除网关本地限制后复检。",
-		map[string]float64{"warning": 0.95, "severe": 0.85}, map[string]float64{"min_samples": 100, "warning_rate": 0.02, "severe_rate": 0.1})
+		map[string]float64{"warning": 0.95, "severe": 0.85}, map[string]float64{"min_samples": 100, "recovery_min_samples": 20, "warning_rate": 0.02, "severe_rate": 0.1})
 	add("D10", "响应性能", "performance", "factor", "performance", "检查延迟与吞吐，结合同行或同期基线完成复检。",
 		map[string]float64{"warning": 0.97, "severe": 0.93, "worst": 0.85, "bonus": 1.05}, map[string]float64{"min_pairs": 4, "warning_ratio": 1.5, "severe_ratio": 2})
 }

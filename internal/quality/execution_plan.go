@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DueGin/token-market/internal/inspection"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -38,6 +37,7 @@ type plannedInstance struct {
 	CheckKey         string         `json:"check_key"`
 	GeneratorVersion string         `json:"generator_version"`
 	Hash             string         `json:"instance_hash"`
+	TargetOnly       bool           `json:"target_only,omitempty"`
 	Seed             string         `json:"seed"`
 	Parameters       map[string]any `json:"parameters"`
 	Needle           string         `json:"needle,omitempty"`
@@ -248,13 +248,7 @@ itemsLoop:
 			return plan, err
 		}
 		if containsAny(failed, "D13", "D04") {
-			d, _ := inspection.Effective("D13", st)
-			limits, _ := inspection.Effective("D04", st)
-			n := max(int(d.Thresholds["min_samples"]), int(d.Thresholds["gate_min_samples"]))
-			if containsAny(failed, "D04") {
-				n = max(n, int(limits.Thresholds["min_samples"]))
-			}
-			if err := e.addAvailabilityRecoveryProbes(&plan, run.batch, n); err != nil {
+			if err := e.addAvailabilityRecoveryProbes(&plan, run.batch, st.Recovery.AvailabilitySamples); err != nil {
 				return plan, err
 			}
 		}

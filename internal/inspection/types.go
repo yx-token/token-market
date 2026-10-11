@@ -45,6 +45,10 @@ type Settings struct {
 		Account int `json:"account_parallelism"`
 		Global  int `json:"global_parallelism"`
 	} `json:"limits"`
+	Recovery struct {
+		AvailabilitySamples int `json:"availability_samples"`
+		IntervalSeconds     int `json:"request_interval_seconds"`
+	} `json:"recovery"`
 	TokenBudgets map[string]TokenBudget `json:"token_budgets"`
 }
 

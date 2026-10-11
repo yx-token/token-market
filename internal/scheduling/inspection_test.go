@@ -68,10 +68,38 @@ func TestFormalInspectionPoolEligibilityAndQualityPriority(t *testing.T) {
 	if d := Plan(pc, ups[1:2])[0]; !equalIDs(d.GroupIDs, []int64{1002, 5002}) {
 		t.Fatalf("最低等级设置没有生效：%+v", d)
 	}
-	unknown := ups[0]
-	unknown.Grade, unknown.DefaultGrade = "", "A"
-	if d := Plan(pc, []UpstreamInput{unknown})[0]; !equalIDs(d.GroupIDs, []int64{1001, 5001}) {
-		t.Fatalf("未检测等级不能用默认等级进入保障池：%+v", d)
+}
+
+func TestFormalInspectionPoolUsesEffectiveGrade(t *testing.T) {
+	pc := planCtx()
+	pc.Inspection = inspectionScheduling(inspection.ModeFormal, true, "B")
+	for _, row := range []struct {
+		name         string
+		grade        string
+		defaultGrade string
+		gate         bool
+		admitted     bool
+		priority     int
+	}{
+		{"默认等级达到要求", "", "B", false, true, 10},
+		{"默认等级低于要求", "", "C", false, false, 15},
+		{"已有等级优先于较低默认值", "A", "C", false, true, 5},
+		{"已有等级不被较高默认值覆盖", "C", "A", false, false, 15},
+		{"没有任何可用等级", "", "", false, false, 19},
+		{"默认等级不能绕过确认门槛", "", "A", true, false, 5},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			u := UpstreamInput{ID: 1, Platform: "anthropic", Status: "listed", Health: "healthy", AccountID: 11, ProbeGroupID: i64(1001), Grade: row.grade, DefaultGrade: row.defaultGrade, QualityFactor: 1, ConfirmedGate: row.gate,
+				Listing: &ListingInput{ID: 1, Mode: "buyback", Status: "active", Multiplier: f64(0.15), GroupID: i64(5001)}}
+			d := Plan(pc, []UpstreamInput{u})[0]
+			wantGroups := []int64{1001, 5001}
+			if row.admitted {
+				wantGroups = []int64{100, 200, 1001, 5001}
+			}
+			if !d.BuyerFacing || !equalIDs(d.GroupIDs, wantGroups) || d.Priority != row.priority {
+				t.Fatalf("保障池准入与回收排序应使用同一有效等级：%+v", d)
+			}
+		})
 	}
 }
 

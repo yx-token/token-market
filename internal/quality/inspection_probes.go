@@ -128,7 +128,7 @@ func addInspectionProbes(plan *executionSnapshot, p *Policy, st InspectionSettin
 	}
 }
 
-// 暂停后的可用率复检补足本次新鲜样本，不能等待已经停止的生产流量恢复。
+// 恢复额外样本只发被测侧；生产统计与恢复样本下限分别配置。
 func (e *Engine) addAvailabilityRecoveryProbes(plan *executionSnapshot, batch string, count int) error {
 	if count < 1 || count+len(plan.Instances) > 200 {
 		return fmt.Errorf("可用率恢复所需 %d 个样本超出本批次实例上限，请调整检测策略", count)
@@ -140,10 +140,16 @@ func (e *Engine) addAvailabilityRecoveryProbes(plan *executionSnapshot, batch st
 		for i := 0; i < count; i++ {
 			copyInstance := it
 			copyInstance.InstanceIdx, copyInstance.CheckKey = 2000+i, "D13"
-			copyInstance.GeneratorVersion = "availability_recovery/1"
+			copyInstance.GeneratorVersion = "availability_recovery/2"
+			copyInstance.TargetOnly = true
 			copyInstance.Seed = e.instanceSeed(batch, it.ItemID, 2000+i, copyInstance.GeneratorVersion)
 			copyInstance.Steps = append([]plannedStep(nil), it.Steps...)
-			copyInstance.Steps[0].Request.Prompt = "只输出 READY。检测编号：" + copyInstance.Seed[:16]
+			a := int(copyInstance.Seed[0]) + i*100
+			b := int(copyInstance.Seed[1]) + 1
+			answer := fmt.Sprint(a + b)
+			copyInstance.Steps[0].Request.Prompt = fmt.Sprintf("计算 %d + %d，只输出整数。", a, b)
+			copyInstance.Steps[0].Expected = Grader{Type: "exact", Answer: answer}
+			copyInstance.Steps[0].Answer = answer
 			copyInstance.Steps[0].Request.Messages = nil
 			copyInstance.Hash = ""
 			sum := sha256.Sum256(mustJSON(copyInstance))

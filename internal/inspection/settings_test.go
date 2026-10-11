@@ -34,7 +34,7 @@ func (db *memoryDB) Exec(_ context.Context, _ string, args ...any) (pgconn.Comma
 func TestSettingsLoadDefaultsAndPartialBudget(t *testing.T) {
 	db := &memoryDB{}
 	s, err := Load(context.Background(), db)
-	if err != nil || s.Mode != ModeTrial || s.Limits.Account != 2 || s.Scheduling.Enabled {
+	if err != nil || s.Mode != ModeTrial || s.Limits.Account != 2 || s.Scheduling.Enabled || s.Recovery.AvailabilitySamples != 20 || s.Recovery.IntervalSeconds != 3 {
 		t.Fatalf("默认值错误：%+v %v", s, err)
 	}
 	db.raw = []byte(`{"token_budgets":{"full":{"input_tokens_per_side":42}},"limits":{"account_parallelism":1}}`)
@@ -90,7 +90,7 @@ func TestSettingsCalibrationRegistration(t *testing.T) {
 func TestSettingsValidation(t *testing.T) {
 	for _, patch := range []string{
 		`{"mode":"shadow"}`, `{"grade_thresholds":{"B":0.99}}`, `{"grade_hysteresis":0.5}`, `{"downgrade_confirmations":1}`,
-		`{"limits":{"account_parallelism":33}}`, `{"token_budgets":{"full":{"input_tokens_per_side":0}}}`,
+		`{"recovery":{"availability_samples":0}}`, `{"recovery":{"availability_samples":101}}`, `{"recovery":{"request_interval_seconds":0}}`, `{"limits":{"account_parallelism":33}}`, `{"token_budgets":{"full":{"input_tokens_per_side":0}}}`,
 		`{"check_overrides":{"D06":{"coefficients":{"warning":0}}}}`, `{"check_overrides":{"D07":{"thresholds":{"min_pairs":1.5}}}}`,
 		`{"check_overrides":{"D04":{"thresholds":{"warning_rate":1.2}}}}`,
 	} {

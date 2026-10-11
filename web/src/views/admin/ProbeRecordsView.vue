@@ -299,7 +299,7 @@ async function openItem(s: ProbeItemStat) {
               <th class="p-2">触发</th>
               <th class="p-2">结果</th>
               <th class="p-2">首字 / 总时长</th>
-              <th class="p-2">输入 / 输出 / 推理词元</th>
+              <th class="p-2">输入 / 输出 / 推理 token</th>
               <th class="p-2">回答片段</th>
               <th class="p-2"></th>
             </tr>

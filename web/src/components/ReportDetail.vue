@@ -14,7 +14,7 @@ const groups = computed(() => {
   return [...new Set(checks.map((check) => check.category))].map((category) => ({ category, checks: checks.filter((check) => check.category === category) }))
 })
 const trial = computed(() => props.report.summary.inspection_mode === 'trial')
-const metricUnits: Record<string, string> = { ms: '毫秒', tokens: '词元', tokens_per_second: '词元/秒', count: '个', ratio: '比例', fraction: '比例' }
+const metricUnits: Record<string, string> = { ms: '毫秒', tokens: 'token', tokens_per_second: 'token/s', count: '个', ratio: '比例', fraction: '比例' }
 const metricNames: Record<string, string> = { ttft_ratio: '首字延迟相对值', output_tps_ratio: '输出速度相对值', mismatches: '不一致观测', mismatch_rate: '不一致比例', success_rate: '成功率', relative_score: '智力相对分', mcnemar_p: '配对显著性', target_pass_rate: '通过率', reasoning_ratio: '推理量相对值', high_low_ratio: '高低档推理量之比' }
 
 const suggestionText: Record<string, string> = {

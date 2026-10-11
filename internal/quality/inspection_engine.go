@@ -55,6 +55,9 @@ func (e *Engine) inspectionAssessment(ctx context.Context, run runRow, ref *runR
 	if err := e.inspectCache(ctx, run, ref, plan, st, checks); err != nil {
 		return a, err
 	}
+	if err := e.inspectRecoveryAvailability(ctx, run, u, st, checks, &gates); err != nil {
+		return a, err
+	}
 	if err := e.inspectProduction(ctx, u, run.model, st, checks, &gates); err != nil {
 		return a, err
 	}
@@ -201,7 +204,7 @@ func (e *Engine) inspectProduction(ctx context.Context, u *upstreamRow, model st
 	}
 	d, _ := inspection.Effective("D13", st)
 	probe := checks["D13"]
-	recovering := (u.health == "degraded" || u.health == "unavailable") && probe.Status == "pass" && probe.Evidence.Source == "paired_probe" && probe.Samples.Paired >= int(d.Thresholds["min_samples"])
+	recovering := (u.health == "degraded" || u.health == "unavailable") && probe.Evidence.Source == "recovery_probe"
 	if d.Enabled && !recovering && n >= int(d.Thresholds["min_samples"]) && n > 0 {
 		c := checks["D13"]
 		c.Samples = inspection.Samples{Observed: n + excluded, Paired: n, Excluded: excluded}
@@ -403,6 +406,9 @@ func hasAppliedDiscount(checks map[string]inspection.Check) bool {
 func (e *Engine) inspectAbnormalLimits(ctx context.Context, u *upstreamRow, st InspectionSettings, checks map[string]inspection.Check) error {
 	d, _ := inspection.Effective("D04", st)
 	if !d.Enabled {
+		return nil
+	}
+	if checks["D04"].Evidence.Source == "recovery_probe" {
 		return nil
 	}
 	var total, limited, fresh, freshLimited int

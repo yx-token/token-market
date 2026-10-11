@@ -99,7 +99,7 @@ func (tr *inspectionPricingTransport) RoundTrip(req *http.Request) (*http.Respon
 	return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(bytes.NewReader(encoded)), Request: req}, nil
 }
 
-func newInspectionPricingFixture(t *testing.T) *inspectionPricingFixture {
+func newInspectionPricingFixture(t *testing.T, compact ...bool) *inspectionPricingFixture {
 	t.Helper()
 	e := setup(t)
 	admin := e.login("admin@market.test", "admin-password-1")
@@ -140,6 +140,17 @@ func newInspectionPricingFixture(t *testing.T) *inspectionPricingFixture {
 	if legacy != 22 {
 		t.Fatalf("旧内置题夹具应保留 22 道，得到 %d", legacy)
 	}
+	// 生命周期测试保留题量和判定断言，使用轻量难度与 8K 草堆；全规格由专门场景覆盖。
+	if len(compact) > 0 && compact[0] {
+		if _, err := e.app.DB.Exec(e.ctx, `UPDATE probe_items SET generator=jsonb_set(generator,'{parameters}','{"houses":4,"attributes":3}'::jsonb) WHERE generator->>'template_id'='zebra'`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.app.DB.Exec(e.ctx, `UPDATE probe_items SET generator=jsonb_set(generator,'{parameters,target_tokens}','8192'::jsonb) WHERE generator->>'template_id'='long_context'`); err != nil {
+			t.Fatal(err)
+		}
+		admin.must("PUT", "/api/admin/inspection/checks/A05", map[string]any{"thresholds": map[string]float64{"probe_tokens": 8192}}, nil)
+	}
+	e.app.Quality.Wait = func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
 	var before, after []byte
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT value FROM settings WHERE key='platform'`), &before)
 	admin.must("PUT", "/api/admin/inspection/settings", map[string]any{"mode": "formal", "scheduling": map[string]any{"enabled": true}}, nil)
@@ -330,7 +341,7 @@ func TestInspectionPricingFormalOnboardingQuickAndAppraisal(t *testing.T) {
 }
 
 func TestInspectionPricingPermissionGateAndEffectiveRecovery(t *testing.T) {
-	f := newInspectionPricingFixture(t)
+	f := newInspectionPricingFixture(t, true)
 	f.transport.setBad("A04")
 	_, failed := f.run(t, "admin")
 	confirmed := false
@@ -383,7 +394,7 @@ func TestInspectionPricingPermissionGateAndEffectiveRecovery(t *testing.T) {
 }
 
 func TestInspectionPricingDiscountAppealAndQuickHistory(t *testing.T) {
-	f := newInspectionPricingFixture(t)
+	f := newInspectionPricingFixture(t, true)
 	f.transport.setBad("D08")
 	_, uncalibrated := f.run(t, "admin")
 	if uncalibrated.Checks["D08"].Status != "fail" || uncalibrated.Checks["D08"].Applied || uncalibrated.QualityFactor == nil || !approx(*uncalibrated.QualityFactor, 1) {
@@ -664,7 +675,7 @@ func inspectionPricingLegacySuites(a quality.Assessment) map[string]any {
 }
 
 func TestInspectionPricingProductionAvailabilityGateAndRecovery(t *testing.T) {
-	f := newInspectionPricingFixture(t)
+	f := newInspectionPricingFixture(t, true)
 	calibrateInspectionPricingCheck(t, f.admin, "D13")
 	st, err := inspection.Load(f.e.ctx, f.e.app.DB)
 	if err != nil {
@@ -692,14 +703,29 @@ func TestInspectionPricingProductionAvailabilityGateAndRecovery(t *testing.T) {
 	if f.marketItem(t) != nil {
 		t.Fatal("生产可用率门槛后挂单仍在市场")
 	}
+	var waits []time.Duration
+	f.e.app.Quality.Wait = func(ctx context.Context, delay time.Duration) error {
+		waits = append(waits, delay)
+		return ctx.Err()
+	}
 	for attempt := 1; attempt <= 2; attempt++ {
 		id, recovered := f.run(t, "recovery")
 		var requests, shortRequests, shortFailures int
 		var mode string
 		mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT r.mode,count(pr.*),count(*) FILTER(WHERE pr.check_key='D13' AND pr.instance_idx>=2000),count(*) FILTER(WHERE pr.check_key='D13' AND pr.instance_idx>=2000 AND (pr.http_status<>200 OR pr.passed IS NOT TRUE)) FROM probe_runs r JOIN probe_results pr ON pr.run_id=r.id WHERE r.id=$1 GROUP BY r.mode`, id), &mode, &requests, &shortRequests, &shortFailures)
 		fresh := recovered.Checks["D13"]
-		if mode != "full" || requests != 190 || shortRequests != 100 || shortFailures != 0 || recovered.Verdict != "normal" || fresh.Status != "pass" || fresh.Evidence.Source != "paired_probe" || fresh.Samples.Paired < 100 {
-			t.Fatalf("恢复须补足 100 个本次短样本，旧生产窗口不得覆盖：模式=%s 请求=%d 短题=%d 失败=%d 摘要=%+v", mode, requests, shortRequests, shortFailures, recovered)
+		if mode != "full" || requests != 110 || shortRequests != 20 || shortFailures != 0 || recovered.Verdict != "normal" || fresh.Status != "pass" || fresh.Evidence.Source != "recovery_probe" || fresh.Samples.Paired != 20*attempt {
+			t.Fatalf("恢复须累计最近两轮每次 20 个被测新样本，旧生产窗口不得覆盖：模式=%s 请求=%d 短题=%d 失败=%d 摘要=%+v", mode, requests, shortRequests, shortFailures, recovered)
+		}
+		var referenceExtras int
+		mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT count(*) FROM probe_results pr JOIN probe_runs r ON r.id=pr.run_id WHERE r.batch_id=(SELECT batch_id FROM probe_runs WHERE id=$1) AND r.trigger='reference' AND pr.generator_version='availability_recovery/2'`, id), &referenceExtras)
+		if referenceExtras != 0 || len(waits) != 20*attempt {
+			t.Fatalf("额外恢复样本不应发基线且每次须等待：基线=%d 等待=%v", referenceExtras, waits)
+		}
+		for _, delay := range waits {
+			if delay != 3*time.Second {
+				t.Fatalf("恢复采样间隔未按设置执行：%v", delay)
+			}
 		}
 		for _, gate := range recovered.Gates {
 			if gate.Confirmed {

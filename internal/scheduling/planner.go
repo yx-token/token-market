@@ -219,7 +219,7 @@ func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 					if minimum == "" {
 						minimum = "B"
 					}
-					if u.ConfirmedGate || inspection.GradeRank(u.Grade) < inspection.GradeRank(minimum) {
+					if u.ConfirmedGate || inspection.GradeRank(grade) < inspection.GradeRank(minimum) {
 						reasons = append(reasons, "质检等级或已确认门槛不满足保障池准入")
 						continue
 					}

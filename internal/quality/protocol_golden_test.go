@@ -104,17 +104,45 @@ func TestProbeErrorClassificationAndBudget(t *testing.T) {
 		status           int
 		expected         ProbeExpected
 	}{
-		{"gateway concurrency wins", `{"error":{"type":"rate_limit_error","code":"gateway_concurrency_limit","message":"Concurrency limit exceeded"}}`, "platform", 429, ProbeExpected{}},
-		{"ordinary outage", `{"error":{"type":"overloaded_error","message":"no available accounts"}}`, "http_5xx", 503, ProbeExpected{}},
-		{"ordinary rate limit", `{"error":{"type":"rate_limit_error","code":"rate_limit_error"}}`, "rate_limited", 429, ProbeExpected{}},
-		{"expected reject", `{"error":{"type":"invalid_request_error","code":"invalid_request_error"}}`, "expected_reject", 400, ProbeExpected{Outcome: "reject", HTTPStatus: []int{400}, ErrorCodes: []string{"invalid_request_error"}}},
+		{"网关并发优先", `{"error":{"type":"rate_limit_error","code":"gateway_concurrency_limit","message":"Concurrency limit exceeded"}}`, "platform", 429, ProbeExpected{}},
+		{"网关队列", `{"error":{"code":"gateway_queue_full"}}`, "platform", 429, ProbeExpected{}},
+		{"客户端版本", `{"error":{"code":"claude_code_version_too_old"}}`, "platform", 400, ProbeExpected{}},
+		{"平台余额", `{"code":"INSUFFICIENT_BALANCE","message":"余额不足"}`, "platform", 403, ProbeExpected{}},
+		{"嵌套平台余额", `{"error":{"code":"INSUFFICIENT_BALANCE"}}`, "platform", 403, ProbeExpected{}},
+		{"响应内平台余额", `{"response":{"error":{"code":"INSUFFICIENT_BALANCE"}}}`, "platform", 403, ProbeExpected{}},
+		{"小写余额码", `{"error":{"code":"insufficient_balance"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"余额码错误状态", `{"error":{"code":"INSUFFICIENT_BALANCE"}}`, "http_4xx", 402, ProbeExpected{}},
+		{"余额码限流状态", `{"error":{"code":"INSUFFICIENT_BALANCE"}}`, "rate_limited", 429, ProbeExpected{}},
+		{"余额码故障状态", `{"error":{"code":"INSUFFICIENT_BALANCE"}}`, "http_5xx", 500, ProbeExpected{}},
+		{"余额类型不是码", `{"error":{"type":"INSUFFICIENT_BALANCE"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"余额状态不是码", `{"error":{"status":"INSUFFICIENT_BALANCE"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"余额键不是码", `{"error":{"errorKey":"INSUFFICIENT_BALANCE"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"余额消息不是码", `{"error":{"message":"INSUFFICIENT_BALANCE"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"余额码前缀", `{"error":{"code":"VENDOR_INSUFFICIENT_BALANCE"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"余额码后缀", `{"error":{"code":"INSUFFICIENT_BALANCE_EXHAUSTED"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"余额码空格", `{"error":{"code":" INSUFFICIENT_BALANCE "}}`, "http_4xx", 403, ProbeExpected{}},
+		{"厂商余额提示", `{"error":{"message":"Insufficient balance"}}`, "http_4xx", 402, ProbeExpected{}},
+		{"厂商中文余额", `{"error":{"message":"余额不足"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"厂商余额不足码", `{"error":{"code":"balance_not_enough"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"厂商信用余额", `{"error":{"message":"insufficient credit balance"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"厂商余额参数类型", `{"error":{"type":"invalid_request_error","message":"insufficient credit balance"}}`, "http_4xx", 400, ProbeExpected{}},
+		{"厂商反序余额", `{"error":{"message":"balance insufficient"}}`, "http_5xx", 500, ProbeExpected{}},
+		{"普通并发提示", `{"error":{"message":"Concurrency limit exceeded"}}`, "rate_limited", 429, ProbeExpected{}},
+		{"普通并发故障", `{"error":{"message":"Concurrency limit exceeded"}}`, "http_5xx", 503, ProbeExpected{}},
+		{"不解析余额请求回显", `{"request":{"code":"INSUFFICIENT_BALANCE"}}`, "http_4xx", 403, ProbeExpected{}},
+		{"普通故障", `{"error":{"type":"overloaded_error","message":"no available accounts"}}`, "http_5xx", 503, ProbeExpected{}},
+		{"普通限流", `{"error":{"type":"rate_limit_error","code":"rate_limit_error"}}`, "rate_limited", 429, ProbeExpected{}},
+		{"预期拒绝", `{"error":{"type":"invalid_request_error","code":"invalid_request_error"}}`, "expected_reject", 400, ProbeExpected{Outcome: "reject", HTTPStatus: []int{400}, ErrorCodes: []string{"invalid_request_error"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			res := ProbeResult{HTTPStatus: tt.status}
 			classifyProbeError(&res, []byte(tt.body), ProbeRequest{Model: "m", Expected: tt.expected}, "secret-key-123456")
 			if res.ErrorClass != tt.want {
-				t.Fatalf("分类=%q, want %q (%+v)", res.ErrorClass, tt.want, res)
+				t.Fatalf("分类=%q，预期 %q (%+v)", res.ErrorClass, tt.want, res)
+			}
+			if res.HasFlag("platform") != (tt.want == "platform") {
+				t.Fatalf("平台标记须与分类一致，厂商余额错误不能排除观测：%+v", res)
 			}
 			if len(res.ErrorBody) > 4096 {
 				t.Fatalf("脱敏错误体超过4KiB: %d", len(res.ErrorBody))

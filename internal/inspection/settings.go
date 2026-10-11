@@ -31,6 +31,7 @@ func Defaults() Settings {
 	s.Scheduling.MinimumGrade, s.Scheduling.Strategy = "B", "quality_adjusted"
 	s.Timeouts.Full, s.Timeouts.Quick = 75, 20
 	s.Limits.Account, s.Limits.Global = 2, 32
+	s.Recovery.AvailabilitySamples, s.Recovery.IntervalSeconds = 20, 3
 	return s
 }
 
@@ -57,6 +58,9 @@ func (s Settings) Validate() error {
 	}
 	if s.Limits.Account < 1 || s.Limits.Global < s.Limits.Account || s.Limits.Global > 256 || s.Timeouts.Full < 1 || s.Timeouts.Full > 1440 || s.Timeouts.Quick < 1 || s.Timeouts.Quick > 1440 {
 		return errors.New("质检并发或截止时间配置无效")
+	}
+	if s.Recovery.AvailabilitySamples < 1 || s.Recovery.AvailabilitySamples > 100 || s.Recovery.IntervalSeconds < 1 || s.Recovery.IntervalSeconds > 60 {
+		return errors.New("恢复采样数须处于 [1, 100]，请求间隔须处于 [1, 60] 秒")
 	}
 	for _, mode := range []string{"full", "quick"} {
 		budget, ok := s.TokenBudgets[mode]

@@ -52,6 +52,7 @@ func attemptHTTPClass(status int, raw []byte) string {
 	var payload map[string]any
 	_ = json.Unmarshal(raw, &payload)
 	var fields []string
+	var platformBalance bool
 	var readError func(any, int)
 	readError = func(value any, depth int) {
 		if depth > 8 {
@@ -62,6 +63,9 @@ func attemptHTTPClass(status int, raw []byte) string {
 			for _, key := range []string{"code", "type", "status", "errorKey", "message", "errorMessage"} {
 				if s, ok := node[key].(string); ok {
 					fields = append(fields, strings.ToLower(s))
+					if key == "code" && s == "INSUFFICIENT_BALANCE" {
+						platformBalance = true
+					}
 				}
 			}
 			for _, key := range []string{"error", "cause", "details"} {
@@ -77,13 +81,25 @@ func attemptHTTPClass(status int, raw []byte) string {
 	}
 	readError(payload, 0)
 	details := strings.Join(fields, " ")
-	for _, marker := range []string{"gateway_concurrency_limit", "gateway_queue_full", "claude_code_version_too_old", "insufficient_balance", "balance_insufficient", "balance_not_enough", "balance insufficient", "insufficient balance", "insufficient credit balance", "余额不足"} {
+	for _, marker := range []string{"gateway_concurrency_limit", "gateway_queue_full", "claude_code_version_too_old"} {
 		if strings.Contains(details, marker) {
 			return "platform"
 		}
 	}
+	// 平台余额码大小写与状态必须同时匹配，厂商余额文案仍按原状态归类。
+	if status == http.StatusForbidden && platformBalance {
+		return "platform"
+	}
 	if status == http.StatusTooManyRequests || status == 529 {
 		return "rate_limited"
+	}
+	// 明确的厂商余额不足仍是卖家失败观测，不能落到 unknown 后被排除。
+	if status < http.StatusInternalServerError {
+		for _, marker := range []string{"insufficient_balance", "balance_insufficient", "balance_not_enough", "balance insufficient", "insufficient balance", "insufficient credit balance", "余额不足"} {
+			if strings.Contains(details, marker) {
+				return "http_4xx"
+			}
+		}
 	}
 	if strings.Contains(details, "invalid_request") || strings.Contains(details, "unsupported_parameter") || strings.Contains(details, "invalid_argument") {
 		return "configuration"

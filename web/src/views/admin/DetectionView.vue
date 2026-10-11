@@ -132,7 +132,7 @@ async function save() {
     tokenBudgets = JSON.parse(form.tokenBudgets)
     if (!tokenBudgets || Array.isArray(tokenBudgets) || typeof tokenBudgets !== 'object') throw new Error()
   } catch {
-    toast.error('词元预算需要是 JSON 对象')
+    toast.error('token 预算需要是 JSON 对象')
     return
   }
   const body = {
@@ -410,7 +410,7 @@ async function probe() {
     <div class="grid grid-cols-2 gap-3">
       <div><label class="label" for="policy-parallelism">题目并行上界</label><input id="policy-parallelism" v-model.number="form.parallelism" class="input" type="number" min="1" /><p class="hint">实际取策略、质检设置与账号当前下发并发的最小值；被测与基线各自限流。</p></div>
       <div><label class="label" for="policy-full-triggers">执行完整质检的触发类型</label><input id="policy-full-triggers" v-model="form.fullTriggers" class="input" /><p class="hint">逗号分隔：onboarding、admin、appeal、recovery、scheduled、append。</p></div>
-      <div class="col-span-2"><label class="label" for="policy-token-budgets">每侧词元预算覆盖（JSON）</label><textarea id="policy-token-budgets" v-model="form.tokenBudgets" class="input font-mono" /><p class="hint">{} 使用质检设置；可按 full/quick 配 input_tokens_per_side 与 output_tokens_per_side。</p></div>
+      <div class="col-span-2"><label class="label" for="policy-token-budgets">每侧 token 预算覆盖（JSON）</label><textarea id="policy-token-budgets" v-model="form.tokenBudgets" class="input font-mono" /><p class="hint">{} 使用质检设置；可按 full/quick 配 input_tokens_per_side 与 output_tokens_per_side。</p></div>
     </div>
     <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
       <div>

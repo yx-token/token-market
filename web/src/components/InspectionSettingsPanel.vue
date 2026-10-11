@@ -58,7 +58,7 @@ onMounted(load)
         <div><label class="label" for="inspection-min-grade">保障池最低等级</label><select id="inspection-min-grade" v-model="minimumGrade" class="input"><option v-for="grade in ['S', 'A', 'B', 'C']" :key="grade" :value="grade">{{ grade }}</option></select></div>
       </div>
       <p class="callout my-4">{{ mode === 'trial' ? '试运行：计算并展示质检结果，等级、回收报价与调度沿用现有判定。即使开启质检调度也不生效。' : '正式：新题接入判定并按质量系数定级；开启质检调度后应用保障池准入和质量价格排序。' }}</p>
-      <label class="label" for="inspection-advanced">定级、历史条件、时限、并发、词元预算与质检项覆盖（JSON）</label>
+      <label class="label" for="inspection-advanced">定级、历史条件、时限、并发、token 预算与质检项覆盖（JSON）</label>
       <textarea id="inspection-advanced" v-model="advanced" class="input min-h-80 font-mono text-xs" spellcheck="false" />
       <p class="hint">可直接编辑完整对象，上方控件同步对应字段。未校准规则即使启用，也不能参与扣价。</p>
     </template>

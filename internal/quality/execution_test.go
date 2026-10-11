@@ -52,17 +52,17 @@ func TestInspectionSharedRequestLimit(t *testing.T) {
 	u := &upstreamRow{id: 1}
 	st := defaultInspectionSettings()
 	p := &Policy{ItemParallelism: 8}
-	release, err := e.acquireRequest(context.Background(), u, p, st)
+	release, err := e.acquireRequest(context.Background(), u, p, st, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if _, err := e.acquireRequest(ctx, u, p, st); err == nil {
+	if _, err := e.acquireRequest(ctx, u, p, st, false); err == nil {
 		t.Fatal("没有实际并发观测时不能超过安全并发1")
 	}
 	release()
-	release, err = e.acquireRequest(context.Background(), u, p, st)
+	release, err = e.acquireRequest(context.Background(), u, p, st, false)
 	if err != nil {
 		t.Fatal(err)
 	}
