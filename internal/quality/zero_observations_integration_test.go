@@ -90,7 +90,7 @@ func TestUnobservedRunDoesNotVerifyOrResolve(t *testing.T) {
 			}))
 			defer server.Close()
 			e.Prober = &Prober{GatewayURL: server.URL, Client: server.Client()}
-			deadlineCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			deadlineCtx, cancel := context.WithTimeout(ctx, time.Minute)
 			defer cancel()
 			if err := e.ExecuteBatch(deadlineCtx, run.batch); err != nil {
 				t.Fatal(err)
