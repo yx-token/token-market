@@ -282,14 +282,14 @@ func AdminOverview(ctx context.Context, db DB) (*Overview, error) {
 	return out, err
 }
 
-// SeedDefaultItems 在题库为空时写入一组基础题。题目公开在代码中，正式运营前应由管理员替换为私有题库并做 IRT 标定。
+// SeedDefaultItems 仅空库写入旧基础题，另按稳定键补缺影子题，不覆盖管理员维护。
 func SeedDefaultItems(ctx context.Context, db DB) (int, error) {
 	var n int
 	if err := db.QueryRow(ctx, "SELECT count(*) FROM probe_items").Scan(&n); err != nil {
 		return 0, err
 	}
 	if n > 0 {
-		return 0, nil
+		return SyncInspectionItems(ctx, db)
 	}
 	items := defaultItems()
 	for _, it := range items {
@@ -297,7 +297,8 @@ func SeedDefaultItems(ctx context.Context, db DB) (int, error) {
 			return 0, err
 		}
 	}
-	return len(items), nil
+	added, err := SyncInspectionItems(ctx, db)
+	return len(items) + added, err
 }
 
 // defaultItems 是内置的基础题。

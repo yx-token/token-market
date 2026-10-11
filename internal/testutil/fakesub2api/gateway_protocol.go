@@ -250,6 +250,8 @@ func (s *Server) gatewayResponse(ctx context.Context, accountID int64, req Gatew
 	s.mu.Lock()
 	cfg := s.gatewayConfig[accountID]
 	answer, fullAnswer := s.answer, s.gatewayAnswer
+	registered, found := s.registeredAnswers[gatewayBodyKey(req.Body)]
+	incorrect := s.incorrectAnswers[accountID]
 	s.mu.Unlock()
 	if cfg.Delay > 0 {
 		timer := time.NewTimer(cfg.Delay)
@@ -261,7 +263,14 @@ func (s *Server) gatewayResponse(ctx context.Context, accountID int64, req Gatew
 		}
 	}
 	response := GatewayResponse{Text: "ok"}
-	if fullAnswer != nil || answer != nil {
+	if found {
+		response = registered
+		response.ToolCalls = cloneCalls(response.ToolCalls)
+		if incorrect {
+			response.Text = "错误答案"
+			response.ToolCalls = []GatewayToolCall{}
+		}
+	} else if fullAnswer != nil || answer != nil {
 		answered := make(chan GatewayResponse, 1)
 		go func() {
 			if fullAnswer != nil {

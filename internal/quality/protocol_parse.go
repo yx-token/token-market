@@ -527,7 +527,14 @@ func (geminiProtocol) parseJSON(b []byte, res *ProbeResult) error {
 	candidate := object(candidates[0])
 	res.StopReason = str(candidate["finishReason"])
 	var text strings.Builder
-	for _, raw := range list(object(candidate["content"])["parts"]) {
+	parts := list(object(candidate["content"])["parts"])
+	ids := map[string]bool{}
+	for _, raw := range parts {
+		if id := str(object(object(raw)["functionCall"])["id"]); id != "" {
+			ids[id] = true
+		}
+	}
+	for _, raw := range parts {
 		part := object(raw)
 		if thought, _ := part["thought"].(bool); !thought {
 			text.WriteString(str(part["text"]))
@@ -537,7 +544,19 @@ func (geminiProtocol) parseJSON(b []byte, res *ProbeResult) error {
 			if err != nil {
 				return err
 			}
-			res.ToolCalls = append(res.ToolCalls, ProbeToolCall{ID: str(call["id"]), Name: str(call["name"]), Arguments: args})
+			id := str(call["id"])
+			local := id == ""
+			if local {
+				// Gemini 可省略调用编号；内部续跑仍需要稳定且不重复的关联键。
+				for suffix := len(res.ToolCalls); ; suffix++ {
+					id = fmt.Sprintf("tm-gemini-local-%d", suffix)
+					if !ids[id] {
+						break
+					}
+				}
+			}
+			ids[id] = true
+			res.ToolCalls = append(res.ToolCalls, ProbeToolCall{ID: id, LocalID: local, ThoughtSignature: str(part["thoughtSignature"]), Name: str(call["name"]), Arguments: args})
 		}
 	}
 	res.Text = text.String()

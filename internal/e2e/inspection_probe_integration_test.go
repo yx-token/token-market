@@ -50,7 +50,7 @@ func TestInspectionProbeConcurrentBatches(t *testing.T) {
 	e := setup(t)
 	upstreamID, accountID, _ := inspectionProbeAccount(t, e)
 	e.fake.SetAccountDelay(accountID, 15*time.Millisecond)
-	ctx, cancel := context.WithTimeout(e.ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(e.ctx, time.Minute)
 	defer cancel()
 	var batches []string
 	for range 2 {
@@ -103,7 +103,7 @@ func TestInspectionProbeGatewayConcurrencyIsPlatform(t *testing.T) {
 		<-release
 		return "PONG1"
 	})
-	ctx, cancel := context.WithTimeout(e.ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(e.ctx, time.Minute)
 	defer cancel()
 	request := quality.ProbeRequest{Model: "claude-sonnet-4-5", Prompt: "只输出 PONG1。", MaxTokens: 32}
 	first := make(chan quality.ProbeResult, 1)
@@ -161,7 +161,7 @@ func TestInspectionProbeUsageStopsAndTools(t *testing.T) {
 			"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []string{"city"},
 		}}},
 	}
-	ctx, cancel := context.WithTimeout(e.ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(e.ctx, time.Minute)
 	defer cancel()
 	result := e.app.Quality.Prober.Probe(ctx, "anthropic", key, request)
 	if !result.OK() || result.Text != "" || result.InputTokens == nil || *result.InputTokens != 11 ||

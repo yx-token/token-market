@@ -42,20 +42,22 @@ type Server struct {
 	HTTP    *httptest.Server
 	handler http.Handler
 
-	mu            sync.Mutex
-	idem          map[string]cached
-	tokens        map[string]int64 // access token → user id
-	refresh       map[string]int64
-	sessions      map[string]oauthSession
-	failing       map[int64]int // account id → 网关对该账号返回的状态码
-	requests      []string      // 网关收到的请求的 X-Client-Request-ID
-	answer        func(accountID int64, prompt string) string
-	credits       map[int64]int // account id → 可用的重置卡张数
-	resets        map[int64]int // account id → 实际消耗的重置卡张数
-	recovers      map[int64]int // account id → 恢复账号状态的次数
-	active        map[int64]int // account id → 正在转发的请求数
-	gatewayConfig map[int64]GatewayConfig
-	gatewayAnswer func(accountID int64, request GatewayRequest) GatewayResponse
+	mu                sync.Mutex
+	idem              map[string]cached
+	tokens            map[string]int64 // access token → user id
+	refresh           map[string]int64
+	sessions          map[string]oauthSession
+	failing           map[int64]int // account id → 网关对该账号返回的状态码
+	requests          []string      // 网关收到的请求的 X-Client-Request-ID
+	answer            func(accountID int64, prompt string) string
+	credits           map[int64]int // account id → 可用的重置卡张数
+	resets            map[int64]int // account id → 实际消耗的重置卡张数
+	recovers          map[int64]int // account id → 恢复账号状态的次数
+	active            map[int64]int // account id → 正在转发的请求数
+	gatewayConfig     map[int64]GatewayConfig
+	gatewayAnswer     func(accountID int64, request GatewayRequest) GatewayResponse
+	registeredAnswers map[string]GatewayResponse
+	incorrectAnswers  map[int64]bool
 }
 
 type cached struct {
@@ -1081,7 +1083,9 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body map[string]any
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 40<<20)).Decode(&body); err != nil {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 40<<20))
+	decoder.UseNumber()
+	if err := decoder.Decode(&body); err != nil {
 		gatewayError(w, 400, "invalid_request_error", "invalid request body")
 		return
 	}

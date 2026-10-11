@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,6 +19,7 @@ const maxExecutionSnapshot = 32 << 20
 const maxStepState = 32 << 10
 
 type plannedStep struct {
+	Answer      string         `json:"answer,omitempty"`
 	Needle      string         `json:"needle,omitempty"`
 	Step        int            `json:"step"`
 	Request     ProbeRequest   `json:"request"`
@@ -39,8 +42,9 @@ type plannedInstance struct {
 }
 
 type executionSnapshot struct {
-	RequestTimeoutSeconds int64   `json:"request_timeout_seconds,omitempty"`
-	Policy                *Policy `json:"policy,omitempty"`
+	Warnings              []string `json:"warnings,omitempty"`
+	RequestTimeoutSeconds int64    `json:"request_timeout_seconds,omitempty"`
+	Policy                *Policy  `json:"policy,omitempty"`
 	Limits                struct {
 		Account int `json:"account_parallelism"`
 		Global  int `json:"global_parallelism"`
@@ -98,9 +102,72 @@ func (e *Engine) executionPlan(ctx context.Context, run runRow, p *Policy, items
 	if b, ok := p.TokenBudgets[budgetMode]; ok {
 		plan.Budget = b
 	}
-	for _, it := range items {
-		if len(it.Generator) > 0 && string(it.Generator) != "{}" {
-			return plan, errors.New("参数化生成器将在题库阶段注册，当前不能执行")
+	orderedItems := append([]Item(nil), items...)
+	sort.SliceStable(orderedItems, func(i, j int) bool {
+		a, b := strings.HasPrefix(orderedItems[i].Suite, "inspection_"), strings.HasPrefix(orderedItems[j].Suite, "inspection_")
+		if a != b {
+			return !a
+		}
+		return orderedItems[i].ID < orderedItems[j].ID
+	})
+	planBytes := len(mustJSON(plan)) + 65536
+	appendInstance := func(instance plannedInstance) bool {
+		size := len(mustJSON(instance)) + 1
+		if strings.HasPrefix(instance.Item.Suite, "inspection_") && (len(plan.Instances) >= 200 || planBytes+size > maxExecutionSnapshot) {
+			if !containsAny(plan.Warnings, "影子计划超过实例或快照上限，已停止扩样") {
+				plan.Warnings = append(plan.Warnings, "影子计划超过实例或快照上限，已停止扩样")
+			}
+			return false
+		}
+		plan.Instances = append(plan.Instances, instance)
+		planBytes += size
+		return true
+	}
+itemsLoop:
+	for _, it := range orderedItems {
+		d, err := parseGenerator(it.Generator)
+		if err != nil {
+			if strings.HasPrefix(it.Suite, "inspection_") {
+				plan.Warnings = append(plan.Warnings, "影子模板配置无效，请管理员检查")
+				continue
+			}
+			return plan, err
+		}
+		if d != nil {
+			count := 1
+			if d.Instances != nil {
+				count = d.Instances[mode]
+			}
+			for idx := 0; idx < count; idx++ {
+				if len(plan.Instances) >= 200 {
+					if !containsAny(plan.Warnings, "影子计划超过实例或快照上限，已停止扩样") {
+						plan.Warnings = append(plan.Warnings, "影子计划超过实例或快照上限，已停止扩样")
+					}
+					break
+				}
+				seed := e.instanceSeed(run.batch, it.ID, idx, d.TemplateID+"/"+d.Version)
+				generated, err := generateBankProbe(*d, seed)
+				if err != nil {
+					plan.Warnings = append(plan.Warnings, "影子实例生成失败，请管理员检查模板参数")
+					continue
+				}
+				req := mergeStepRequest(it.Request, generated.Request)
+				req.Model, req.MaxTokens = run.model, it.MaxTokens
+				if req.effectiveEffort() == "" && it.ReasoningEffort != nil {
+					req.ReasoningEffort = *it.ReasoningEffort
+				}
+				instance := plannedInstance{Item: Item{ID: it.ID, Suite: it.Suite, Category: it.Category, Version: it.Version}, ItemID: it.ID, InstanceIdx: idx, CheckKey: it.CheckKey, GeneratorVersion: d.TemplateID + "/" + d.Version, Seed: seed, Parameters: generated.Parameters, Steps: []plannedStep{{Request: req, Expected: generated.Grader, Answer: generated.Answer}}}
+				if err := validateInspectionGrader(generated.Grader); err != nil && inspectionGraderTypes[generated.Grader.Type] {
+					plan.Warnings = append(plan.Warnings, "影子实例判分配置无效，请管理员检查")
+					continue
+				}
+				sum := sha256.Sum256(mustJSON(instance))
+				instance.Hash = hex.EncodeToString(sum[:])
+				if !appendInstance(instance) {
+					break
+				}
+			}
+			continue
 		}
 		seed := e.instanceSeed(run.batch, it.ID, 0, "static-1")
 		a, _ := strconv.ParseUint(seed[:16], 16, 64)
@@ -130,7 +197,7 @@ func (e *Engine) executionPlan(ctx context.Context, run runRow, p *Policy, items
 		}
 		steps := req.Steps
 		req.Steps = nil
-		instance := plannedInstance{Item: Item{ID: it.ID, Suite: it.Suite, Category: it.Category, Version: it.Version}, ItemID: it.ID, CheckKey: it.CheckKey, GeneratorVersion: "static-1", Seed: seed, Needle: needle, Parameters: map[string]any{}, Steps: []plannedStep{{Request: req, Expected: it.Grader}}}
+		instance := plannedInstance{Item: Item{ID: it.ID, Suite: it.Suite, Category: it.Category, Version: it.Version}, ItemID: it.ID, CheckKey: it.CheckKey, GeneratorVersion: "static-1", Seed: seed, Needle: needle, Parameters: map[string]any{}, Steps: []plannedStep{{Request: req, Expected: it.Grader, Answer: staticAnswer(it.Grader)}}}
 		for i, step := range steps {
 			next := req
 			if step.Request != nil {
@@ -154,16 +221,26 @@ func (e *Engine) executionPlan(ctx context.Context, run runRow, p *Policy, items
 				g = *step.Expected
 			}
 			if _, err := grade(g, "", ""); err != nil {
+				if strings.HasPrefix(it.Suite, "inspection_") {
+					plan.Warnings = append(plan.Warnings, "影子步骤配置无效，请管理员检查")
+					continue itemsLoop
+				}
 				return plan, err
 			}
-			instance.Steps = append(instance.Steps, plannedStep{Step: i + 1, Request: next, Expected: g, Needle: stepNeedle, UsePrevious: step.UsePrevious, ToolResults: step.ToolResults})
+			instance.Steps = append(instance.Steps, plannedStep{Step: i + 1, Request: next, Expected: g, Answer: staticAnswer(g), Needle: stepNeedle, UsePrevious: step.UsePrevious, ToolResults: step.ToolResults})
 		}
 
 		// 哈希包含题面、判分器、参数与完整静态计划，排除账号凭据。
 		sum := sha256.Sum256(mustJSON(instance))
 		instance.Hash = hex.EncodeToString(sum[:])
-		plan.Instances = append(plan.Instances, instance)
+		appendInstance(instance)
 	}
+	sort.SliceStable(plan.Instances, func(i, j int) bool {
+		if plan.Instances[i].ItemID != plan.Instances[j].ItemID {
+			return plan.Instances[i].ItemID < plan.Instances[j].ItemID
+		}
+		return plan.Instances[i].InstanceIdx < plan.Instances[j].InstanceIdx
+	})
 	encoded, err := json.Marshal(plan)
 	if err != nil {
 		return plan, err

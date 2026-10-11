@@ -198,3 +198,88 @@ func TestProbeErrorNumericCode(t *testing.T) {
 		t.Fatalf("数字错误码未保留：%q", code)
 	}
 }
+
+func TestGeminiMissingToolIDMultiStep(t *testing.T) {
+	raw := []byte(`{"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"lookup_schedule","args":{"city":"杭州"}},"thoughtSignature":"opaque-signature"}]},"finishReason":"STOP"}]}`)
+	first := ProbeResult{}
+	if err := (geminiProtocol{}).parseJSON(raw, &first); err != nil {
+		t.Fatal(err)
+	}
+	if len(first.ToolCalls) != 1 || first.ToolCalls[0].ID == "" || !first.ToolCalls[0].LocalID || first.ToolCalls[0].ThoughtSignature != "opaque-signature" {
+		t.Fatalf("缺省调用编号或签名未规范化：%+v", first.ToolCalls)
+	}
+	// 状态经过数据库的 JSON 往返后，仍保留真实签名与内部编号。
+	state := resumedState{Complete: true, ToolCalls: first.ToolCalls}
+	var restored resumedState
+	if err := decodeInspectionJSON(mustJSON(state), &restored); err != nil {
+		t.Fatal(err)
+	}
+	previous := ProbeRequest{Model: "gemini-3.8-flash", Prompt: "查询杭州班次", MaxTokens: 100, Tools: []ProbeTool{{Name: "lookup_schedule", InputSchema: map[string]any{"type": "object"}}}}
+	step := plannedStep{UsePrevious: true, Request: ProbeRequest{Model: previous.Model, Prompt: "只输出发车时间", MaxTokens: 100, Tools: previous.Tools}, ToolResults: map[string]any{"lookup_schedule": map[string]any{"departure": "09:30"}}}
+	req := dynamicRequest(step, previous, restored)
+	for _, platform := range []string{"gemini", "antigravity"} {
+		if err := validateProbeRequest(platform, req); err != nil {
+			t.Fatalf("%s 的无编号工具多步请求无效：%v", platform, err)
+		}
+		body := buildJSON(t, platform, req.Model, req)
+		contents := body["contents"].([]any)
+		part := contents[1].(map[string]any)["parts"].([]any)[0].(map[string]any)
+		call := part["functionCall"].(map[string]any)
+		if _, present := call["id"]; present || part["thoughtSignature"] != "opaque-signature" || call["name"] != "lookup_schedule" {
+			t.Fatalf("本地编号进入 wire 或签名/名称丢失：%v", part)
+		}
+		response := contents[2].(map[string]any)["parts"].([]any)[0].(map[string]any)["functionResponse"].(map[string]any)
+		if _, present := response["id"]; present || response["name"] != "lookup_schedule" {
+			t.Fatalf("本地工具结果编号或名称无效：%v", response)
+		}
+		object, ok := response["response"].(map[string]any)
+		if !ok || object["departure"] != "09:30" {
+			t.Fatalf("Gemini 工具结果须为对象：%v", response)
+		}
+	}
+}
+
+func TestGeminiToolIDsAreDeterministicAndDistinct(t *testing.T) {
+	raw := []byte(`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup","args":{"n":1}}},{"functionCall":{"id":"tm-gemini-local-0","name":"lookup","args":{"n":2}}},{"functionCall":{"name":"lookup","args":{"n":3}}}]},"finishReason":"STOP"}]}`)
+	var first, second ProbeResult
+	if err := (geminiProtocol{}).parseJSON(raw, &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := (geminiProtocol{}).parseJSON(raw, &second); err != nil {
+		t.Fatal(err)
+	}
+	if string(mustJSON(first.ToolCalls)) != string(mustJSON(second.ToolCalls)) {
+		t.Fatal("相同响应的本地工具编号不稳定")
+	}
+	seen := map[string]bool{}
+	for i, call := range first.ToolCalls {
+		if call.ID == "" || seen[call.ID] || call.LocalID != (i != 1) {
+			t.Fatalf("工具编号为空、冲突或错误标记：%+v", first.ToolCalls)
+		}
+		seen[call.ID] = true
+	}
+	if first.ToolCalls[1].ID != "tm-gemini-local-0" {
+		t.Fatal("上游真实调用编号被覆盖")
+	}
+}
+
+func TestGeminiProvidedToolIDsAndResponseObject(t *testing.T) {
+	req := ProbeRequest{Model: "gemini-3.8-flash", MaxTokens: 100, Messages: []ProbeMessage{
+		{Role: "assistant", Content: []ProbeContent{{Type: "tool_use", ID: "upstream-call", Name: "lookup", Input: map[string]any{}, ThoughtSignature: "opaque-signature"}}},
+		{Role: "tool", Content: []ProbeContent{{Type: "tool_result", ToolUseID: "upstream-call", Name: "lookup", Content: `{"n":9007199254740993}`}}},
+	}}
+	if err := validateProbeRequest("gemini", req); err != nil {
+		t.Fatal(err)
+	}
+	_, raw, _ := (geminiProtocol{}).build(req)
+	body, err := decodeObject(mustJSON(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := list(body["contents"])
+	call := object(object(list(object(contents[0])["parts"])[0])["functionCall"])
+	response := object(object(list(object(contents[1])["parts"])[0])["functionResponse"])
+	if call["id"] != "upstream-call" || response["id"] != "upstream-call" || object(response["response"])["n"] != json.Number("9007199254740993") {
+		t.Fatalf("真实编号或工具结果大整数丢失：%v / %v", call, response)
+	}
+}
