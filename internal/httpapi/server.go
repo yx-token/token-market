@@ -198,6 +198,8 @@ func (s *Server) Handler() http.Handler {
 		{"PUT /api/admin/upstreams/{id}/detection-override", s.setOverride},
 		{"DELETE /api/admin/upstreams/{id}/detection-override", s.deleteOverride},
 		{"POST /api/admin/upstreams/{id}/probe", s.adminProbe},
+		{"GET /api/admin/upstreams/{id}/probe-runs", s.adminProbeRuns},
+		{"GET /api/admin/probe-runs/{id}", s.adminProbeRun},
 		{"GET /api/admin/probe-items", s.listItems},
 		{"POST /api/admin/probe-items", s.createItem},
 		{"PUT /api/admin/probe-items/{id}", s.updateItem},

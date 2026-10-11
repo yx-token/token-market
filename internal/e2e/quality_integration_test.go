@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -115,6 +116,45 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 	if asked != 25 || !askedSame || askedOther {
 		t.Fatalf("onboarding should ask all 25 applicable items and skip other models: asked=%d same=%v other=%v", asked, askedSame, askedOther)
 	}
+	// 管理员查看检测明细：逐题结果含题目与回答片段，并附同批次基线账号的结果
+	var runs []struct {
+		ID      int64  `json:"id"`
+		Trigger string `json:"trigger"`
+		Items   int    `json:"items"`
+		Passed  int    `json:"passed"`
+	}
+	admin.must("GET", fmt.Sprintf("/api/admin/upstreams/%d/probe-runs", up.ID), nil, &runs)
+	onboarding := -1
+	for i, r := range runs {
+		if r.Trigger == "onboarding" {
+			onboarding = i
+		}
+	}
+	if onboarding < 0 || runs[onboarding].Items != 25 || runs[onboarding].Passed != 25 || runs[0].ID < runs[len(runs)-1].ID {
+		t.Fatalf("admin probe runs (newest first, without reference runs): %+v", runs)
+	}
+	var runDetail struct {
+		Results []struct {
+			ItemID  int64  `json:"item_id"`
+			Prompt  string `json:"prompt"`
+			Passed  *bool  `json:"passed"`
+			Excerpt string `json:"excerpt"`
+		} `json:"results"`
+		Reference *struct {
+			UpstreamID int64 `json:"upstream_id"`
+		} `json:"reference"`
+		RefResults []json.RawMessage `json:"reference_results"`
+	}
+	admin.must("GET", fmt.Sprintf("/api/admin/probe-runs/%d", runs[onboarding].ID), nil, &runDetail)
+	if len(runDetail.Results) != 25 || runDetail.Reference == nil || runDetail.Reference.UpstreamID != ref.Upstream.ID || len(runDetail.RefResults) != 25 {
+		t.Fatalf("probe run detail: results=%d reference=%+v refResults=%d", len(runDetail.Results), runDetail.Reference, len(runDetail.RefResults))
+	}
+	for _, r := range runDetail.Results {
+		if r.ItemID == sameModel.ID && (r.Passed == nil || !*r.Passed || !strings.Contains(r.Prompt, "PONG13") || !strings.Contains(r.Excerpt, "PONG13")) {
+			t.Fatalf("model-specific item result: %+v", r)
+		}
+	}
+	seller.expect(403, "GET", fmt.Sprintf("/api/admin/probe-runs/%d", runs[onboarding].ID), nil)
 	var created struct {
 		Listing idOnly `json:"listing"`
 	}

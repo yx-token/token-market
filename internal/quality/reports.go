@@ -337,3 +337,128 @@ func defaultItems() []Item {
 	}
 	return items
 }
+
+// RunSummary 是管理员查看的一次检测记录（含基线对照检测）。
+type RunSummary struct {
+	ID         int64           `json:"id"`
+	UpstreamID int64           `json:"upstream_id"`
+	BatchID    string          `json:"batch_id"`
+	Trigger    string          `json:"trigger"`
+	Model      string          `json:"model"`
+	Status     string          `json:"status"`
+	Summary    json.RawMessage `json:"summary,omitempty"`
+	Items      int             `json:"items"`
+	Passed     int             `json:"passed"`
+	QueuedAt   time.Time       `json:"queued_at"`
+	FinishedAt *time.Time      `json:"finished_at,omitempty"`
+}
+
+// RunResult 是一次检测中一道题的结果，包含题目与回答片段，仅管理员可见。
+type RunResult struct {
+	ItemID          *int64   `json:"item_id,omitempty"`
+	Suite           string   `json:"suite"`
+	Category        string   `json:"category"`
+	Prompt          string   `json:"prompt"`
+	Models          []string `json:"models"`
+	Passed          *bool    `json:"passed"`
+	HTTPStatus      *int     `json:"http_status,omitempty"`
+	ErrorClass      *string  `json:"error_class,omitempty"`
+	TTFTMs          int      `json:"ttft_ms"`
+	DurationMs      int      `json:"duration_ms"`
+	OutputTokens    int      `json:"output_tokens"`
+	ReasoningTokens int      `json:"reasoning_tokens"`
+	ResponseModel   *string  `json:"response_model,omitempty"`
+	Excerpt         *string  `json:"excerpt,omitempty"`
+}
+
+// RunDetail 是一次检测的逐题明细；有基线对照时一并返回基线账号同批次的检测。
+type RunDetail struct {
+	Run        RunSummary  `json:"run"`
+	Results    []RunResult `json:"results"`
+	Reference  *RunSummary `json:"reference,omitempty"`
+	RefResults []RunResult `json:"reference_results,omitempty"`
+}
+
+const runSummaryColumns = `r.id, r.upstream_id, r.batch_id, r.trigger, r.model, r.status, r.summary,
+	(SELECT count(*) FROM probe_results x WHERE x.run_id = r.id),
+	(SELECT count(*) FILTER (WHERE x.passed) FROM probe_results x WHERE x.run_id = r.id),
+	r.queued_at, r.finished_at`
+
+func scanRunSummary(row pgx.CollectableRow) (RunSummary, error) {
+	var s RunSummary
+	var summary []byte
+	err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt)
+	if len(summary) > 0 {
+		s.Summary = summary
+	}
+	return s, err
+}
+
+// UpstreamRuns 返回某个上游最近的检测记录（不含基线对照检测），供管理员查看明细。
+func UpstreamRuns(ctx context.Context, db DB, upstreamID int64, limit int) ([]RunSummary, error) {
+	rows, err := db.Query(ctx, "SELECT "+runSummaryColumns+` FROM probe_runs r
+		WHERE r.upstream_id = $1 AND r.trigger <> 'reference' ORDER BY r.id DESC LIMIT $2`, upstreamID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, scanRunSummary)
+}
+
+// GetRunDetail 返回一次检测的逐题结果；被测上游的检测附带同批次基线账号的结果。
+func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
+	rows, err := db.Query(ctx, "SELECT "+runSummaryColumns+" FROM probe_runs r WHERE r.id = $1", runID)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := pgx.CollectRows(rows, scanRunSummary)
+	if err != nil {
+		return nil, err
+	}
+	if len(runs) == 0 {
+		return nil, httpx.NotFound("RUN_NOT_FOUND", "probe run not found")
+	}
+	out := &RunDetail{Run: runs[0]}
+	if out.Results, err = runResults(ctx, db, runID); err != nil {
+		return nil, err
+	}
+	if out.Run.Trigger == "reference" {
+		return out, nil
+	}
+	rows, err = db.Query(ctx, "SELECT "+runSummaryColumns+` FROM probe_runs r
+		WHERE r.batch_id = $1 AND r.trigger = 'reference' ORDER BY r.id LIMIT 1`, out.Run.BatchID)
+	if err != nil {
+		return nil, err
+	}
+	refs, err := pgx.CollectRows(rows, scanRunSummary)
+	if err != nil {
+		return nil, err
+	}
+	if len(refs) > 0 {
+		out.Reference = &refs[0]
+		if out.RefResults, err = runResults(ctx, db, refs[0].ID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func runResults(ctx context.Context, db DB, runID int64) ([]RunResult, error) {
+	rows, err := db.Query(ctx, `SELECT pr.item_id, pr.suite, COALESCE(i.category, ''), COALESCE(i.prompt, ''), COALESCE(i.models, '{}'),
+			pr.passed, pr.http_status, pr.error_class, COALESCE(pr.ttft_ms, 0), COALESCE(pr.duration_ms, 0),
+			COALESCE(pr.output_tokens, 0), COALESCE(pr.reasoning_tokens, 0), pr.response_model, pr.raw_excerpt
+		FROM probe_results pr LEFT JOIN probe_items i ON i.id = pr.item_id
+		WHERE pr.run_id = $1 ORDER BY pr.id`, runID)
+	if err != nil {
+		return nil, err
+	}
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunResult, error) {
+		var r RunResult
+		err := row.Scan(&r.ItemID, &r.Suite, &r.Category, &r.Prompt, &r.Models, &r.Passed, &r.HTTPStatus, &r.ErrorClass,
+			&r.TTFTMs, &r.DurationMs, &r.OutputTokens, &r.ReasoningTokens, &r.ResponseModel, &r.Excerpt)
+		return r, err
+	})
+	if out == nil {
+		out = []RunResult{}
+	}
+	return out, err
+}

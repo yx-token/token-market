@@ -798,6 +798,46 @@ export interface Grader {
   case_insensitive?: boolean
 }
 
+/** 管理员查看的一次检测记录 */
+export interface ProbeRun {
+  id: number
+  upstream_id: number
+  batch_id: string
+  trigger: string
+  model: string
+  status: string
+  summary?: { verdict?: string; error?: string } & Record<string, unknown>
+  items: number
+  passed: number
+  queued_at: string
+  finished_at?: string
+}
+
+/** 一次检测中一道题的结果（含题目与回答片段，仅管理员可见） */
+export interface ProbeRunResult {
+  item_id?: number
+  suite: string
+  category: string
+  prompt: string
+  models: string[]
+  passed: boolean | null
+  http_status?: number
+  error_class?: string
+  ttft_ms: number
+  duration_ms: number
+  output_tokens: number
+  reasoning_tokens: number
+  response_model?: string
+  excerpt?: string
+}
+
+export interface ProbeRunDetail {
+  run: ProbeRun
+  results: ProbeRunResult[]
+  reference?: ProbeRun
+  reference_results?: ProbeRunResult[]
+}
+
 export interface ProbeItem {
   id: number
   suite: string

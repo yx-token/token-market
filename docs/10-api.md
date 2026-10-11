@@ -179,6 +179,7 @@
 | 第三方检测 | `GET /api/admin/detection-providers`（可接入的检测站、配置、最近 1 小时提交次数）、`PUT /api/admin/detection-providers/:name`（`enabled`、`base_url`、`api_key`、`settings`、`max_runs_per_hour`、`timeout_minutes`）、`GET /api/admin/third-party-checks[?upstream_id=]` |
 | 单上游检测覆盖 | `PUT /api/admin/upstreams/:id/detection-override`、`DELETE …` |
 | 手动检测 | `POST /api/admin/upstreams/:id/probe`（对关闭检测的厂商也可执行） |
+| 检测明细 | `GET /api/admin/upstreams/:id/probe-runs`（最近的检测记录，不含基线对照检测，`limit` 默认 20）、`GET /api/admin/probe-runs/:id`（逐题结果：题目、是否通过、耗时、token、回答片段前 500 字符，附同批次基线账号的结果） |
 | 题库 | `GET/POST /api/admin/probe-items`、`PUT /api/admin/probe-items/:id`、`POST /api/admin/probe-items/:id/retire` |
 | 基线账号 | `GET/POST /api/admin/reference-accounts`、`DELETE /api/admin/reference-accounts/:id`（授权复用卖家的授权接口） |
 | 质量看板 | `GET /api/admin/quality/overview`（各厂商健康与等级分布、官方全局事件、降智上游列表） |
