@@ -18,7 +18,8 @@ import (
 func TestInspectionBankShadowLifecycle(t *testing.T) {
 	e := setup(t)
 	upstreamID, accountID, _ := inspectionProbeAccount(t, e)
-	ctx, cancel := context.WithTimeout(e.ctx, 45*time.Second)
+	// 四轮质检包含参数化题目生成，为 CI 的 race 运行预留整体时限。
+	ctx, cancel := context.WithTimeout(e.ctx, 4*time.Minute)
 	defer cancel()
 	admin := e.login("admin@market.test", "admin-password-1")
 	admin.must("POST", "/api/admin/proxies", map[string]any{"name": "质检基线测试代理", "protocol": "socks5", "host": "10.0.0.3", "port": 2082}, nil)
