@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"context"
 	"io"
@@ -75,6 +76,20 @@ func TestDefaultItems(t *testing.T) {
 		if got, err := grade(pigeonhole.Grader, c.text, ""); err != nil || got != c.want {
 			t.Errorf("pigeonhole grade(%q) = %v, %v; want %v", c.text, got, err, c.want)
 		}
+	}
+}
+
+func TestTruncateStr(t *testing.T) {
+	long := "The code is 21。" + strings.Repeat("这是一段很长的中文解释。", 80)
+	got := truncateStr(long, 500)
+	if !utf8.ValidString(got) || utf8.RuneCountInString(got) != 500 || !strings.HasPrefix(got, "The code is 21。这是") {
+		t.Fatalf("truncate long chinese: valid=%v runes=%d", utf8.ValidString(got), utf8.RuneCountInString(got))
+	}
+	if got := truncateStr("短回答", 500); got != "短回答" {
+		t.Fatalf("short text changed: %q", got)
+	}
+	if got := truncateStr("a\x00b\xffc", 500); got != "abc" {
+		t.Fatalf("NUL and invalid bytes should be removed: %q", got)
 	}
 }
 

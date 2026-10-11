@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // 质量检测：基线账号、上架检测、定级、降智后不调度、卖家看报告、恢复后重新调度。
@@ -61,7 +62,12 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 		if degraded[accountID] {
 			return "I am not sure."
 		}
-		return "The code is " + re.FindString(prompt)
+		code := re.FindString(prompt)
+		if code == "PONG13" {
+			// 长中文回答：回答片段截断处落在多字节字符中间时也不能写库失败
+			return "The code is PONG13。" + strings.Repeat("这是一段很长的中文解释。", 80)
+		}
+		return "The code is " + code
 	})
 	tick := func() {
 		t.Helper()
@@ -150,7 +156,8 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 		t.Fatalf("probe run detail: results=%d reference=%+v refResults=%d", len(runDetail.Results), runDetail.Reference, len(runDetail.RefResults))
 	}
 	for _, r := range runDetail.Results {
-		if r.ItemID == sameModel.ID && (r.Passed == nil || !*r.Passed || !strings.Contains(r.Prompt, "PONG13") || !strings.Contains(r.Excerpt, "PONG13")) {
+		if r.ItemID == sameModel.ID && (r.Passed == nil || !*r.Passed || !strings.Contains(r.Prompt, "PONG13") || !strings.Contains(r.Excerpt, "PONG13") ||
+			!utf8.ValidString(r.Excerpt) || utf8.RuneCountInString(r.Excerpt) != 500) {
 			t.Fatalf("model-specific item result: %+v", r)
 		}
 	}
