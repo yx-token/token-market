@@ -35,6 +35,8 @@ type Server struct {
 	DB       *pgxpool.Pool
 	AdminKey string
 	Version  string
+	// DefaultResetCredits 是没有用 SetResetCredits 设定过的账号的重置卡张数（开发环境用于演示，测试默认 0）
+	DefaultResetCredits int
 
 	HTTP    *httptest.Server
 	handler http.Handler
@@ -47,6 +49,9 @@ type Server struct {
 	failing  map[int64]int // account id → 网关对该账号返回的状态码
 	requests []string      // 网关收到的请求的 X-Client-Request-ID
 	answer   func(accountID int64, prompt string) string
+	credits  map[int64]int // account id → 可用的重置卡张数
+	resets   map[int64]int // account id → 实际消耗的重置卡张数
+	recovers map[int64]int // account id → 恢复账号状态的次数
 }
 
 type cached struct {
@@ -67,6 +72,7 @@ func NewUnstarted(db *pgxpool.Pool, adminKey string) *Server {
 		DB: db, AdminKey: adminKey, Version: "0.2.14",
 		idem: map[string]cached{}, tokens: map[string]int64{}, refresh: map[string]int64{},
 		sessions: map[string]oauthSession{}, failing: map[int64]int{},
+		credits: map[int64]int{}, resets: map[int64]int{}, recovers: map[int64]int{},
 	}
 	s.handler = s.routes()
 	return s
@@ -142,6 +148,18 @@ func (s *Server) routes() http.Handler {
 	admin("GET /api/v1/admin/channels/model-pricing", s.modelPricing)
 	admin("GET /api/v1/admin/cn-providers/accounts/{id}/quota", s.cnQuota)
 	admin("GET /api/v1/admin/accounts/{id}/usage", s.accountUsage)
+	admin("GET /api/v1/admin/accounts/{id}", func(_ http.ResponseWriter, r *http.Request) (any, error) {
+		id, err := pathID(r)
+		if err != nil {
+			return nil, err
+		}
+		return s.getAccount(r, id)
+	})
+	admin("POST /api/v1/admin/accounts/{id}/recover-state", s.recoverState)
+	admin("POST /api/v1/admin/openai/accounts/{id}/quota/refresh", s.openAIQuotaRefresh)
+	admin("POST /api/v1/admin/openai/accounts/{id}/reset-quota", s.openAIResetQuota)
+	admin("GET /api/v1/admin/accounts/{id}/claude/reset-credits", s.claudeResetCredits)
+	admin("POST /api/v1/admin/accounts/{id}/claude/reset-credits/redeem", s.idempotent(s.claudeRedeem))
 	admin("POST /api/v1/admin/accounts/generate-auth-url", s.authURL)
 	admin("POST /api/v1/admin/openai/generate-auth-url", s.authURL)
 	admin("POST /api/v1/admin/accounts/exchange-code", s.exchange)

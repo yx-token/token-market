@@ -287,6 +287,12 @@ export interface Upstream {
   tier?: string
   privacy_ok?: boolean
   self_reserve_percent: number
+  /** 已授权平台自动用卡（仅 Codex） */
+  auto_reset_enabled: boolean
+  /** 自动用卡阈值（百分比），未设定时跟随暂停线 */
+  auto_reset_5h_percent?: number
+  auto_reset_7d_percent?: number
+  auto_reset_authorized_at?: string
   grade?: string
   failure_reason?: string
   created_at: string
@@ -454,6 +460,10 @@ export interface UpstreamDetail extends Upstream {
   listing?: Listing
   quote?: Quote
   stats_24h: UpstreamStats
+  /** 能否使用重置卡（Codex、Claude OAuth） */
+  reset_credits_supported: boolean
+  /** 能否授权平台自动用卡（Codex） */
+  auto_reset_supported: boolean
 }
 
 export interface AuthorizationStart {
@@ -931,6 +941,70 @@ export interface AccountQuota {
   error?: string
   self_reserve_percent?: number
 }
+export interface ResetCreditItem {
+  label?: string
+  expires_at?: string
+  resets_left: number
+  /** Claude：用卡会恢复的窗口（five_hour / seven_day / seven_day_overage_included） */
+  clears?: string[]
+  redeemable: boolean
+  /** Claude：暂时不能用的原因 */
+  blocking?: string[]
+}
+
+export interface AutoResetState {
+  status: 'checking' | 'available' | 'resetting' | 'success' | 'no_credit' | 'failed' | string
+  trigger_window?: string
+  available_count: number
+  checked_at?: string
+  last_result_at?: string
+  error_code?: string
+}
+
+export interface AutoResetView {
+  enabled: boolean
+  /** 已在底层生效：授权且挂单正在面向买家时才开启 */
+  active: boolean
+  threshold_5h_percent?: number
+  threshold_7d_percent?: number
+  effective_5h_percent: number
+  effective_7d_percent: number
+  pause_line_percent: number
+  authorized_at?: string
+  state?: AutoResetState
+}
+
+export interface ResetCreditEvent {
+  id: number
+  trigger: 'manual' | 'auto'
+  status: 'pending' | 'success' | 'no_credit' | 'failed' | 'unknown'
+  windows: string[]
+  error_code?: string
+  detail?: Record<string, unknown>
+  created_at: string
+  finished_at?: string
+}
+
+export interface ResetCredits {
+  platform: string
+  /** 是否有官方数据（Claude 需要点"查询"才会向官方查询） */
+  queried: boolean
+  source?: 'snapshot' | 'live'
+  available_count: number
+  credits: ResetCreditItem[]
+  cooldown_until?: string
+  fetched_at?: string
+  error?: string
+  auto?: AutoResetView
+  events: ResetCreditEvent[]
+}
+
+export interface AutoResetInput {
+  enabled: boolean
+  threshold_5h_percent?: number
+  threshold_7d_percent?: number
+}
+
 export interface UpdateJob {
   id: string
   version: string

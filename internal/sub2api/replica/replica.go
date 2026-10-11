@@ -32,6 +32,7 @@ const (
 	qGroupByName       = "group_by_name"
 	qAccountByName     = "account_by_name"
 	qUsageSumAfter     = "usage_sum_after"
+	qAutoResetAudits   = "auto_reset_audits"
 )
 
 type Reader struct {
@@ -45,7 +46,7 @@ func New(db Querier) (*Reader, error) {
 		return nil, err
 	}
 	for _, name := range []string{qAppliedMigrations, qUsageLogsAfter, qTMAccounts, qTMAccountGroups, qTMGroups, qUserBalances,
-		qUserByEmail, qAPIKeyByKey, qGroupByName, qAccountByName, qUsageSumAfter} {
+		qUserByEmail, qAPIKeyByKey, qGroupByName, qAccountByName, qUsageSumAfter, qAutoResetAudits} {
 		if _, ok := qs[name]; !ok {
 			return nil, fmt.Errorf("replica: contract query %s missing", name)
 		}
@@ -178,6 +179,35 @@ func scanAccount(row pgx.CollectableRow) (Account, error) {
 		}
 	}
 	return a, nil
+}
+
+// AutoResetAudit 是 sub2api 自动使用 Codex 重置卡的一条审计记录。Extra 含 account_id、result_code
+// （success / no_credit / failed / recovery_failed）、trigger_window、windows_reset、error_code 等。
+type AutoResetAudit struct {
+	ID        int64
+	CreatedAt time.Time
+	Extra     map[string]any
+}
+
+// AutoResetAudits 返回 since 之后最近的自动用卡审计记录（按 ID 降序，最多 500 条）。
+func (r *Reader) AutoResetAudits(ctx context.Context, since time.Time) ([]AutoResetAudit, error) {
+	rows, err := r.db.Query(ctx, r.queries[qAutoResetAudits], since)
+	if err != nil {
+		return nil, fmt.Errorf("replica %s: %w", qAutoResetAudits, err)
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (AutoResetAudit, error) {
+		var a AutoResetAudit
+		var extra []byte
+		if err := row.Scan(&a.ID, &a.CreatedAt, &extra); err != nil {
+			return a, err
+		}
+		if len(extra) > 0 {
+			if err := json.Unmarshal(extra, &a.Extra); err != nil {
+				return a, fmt.Errorf("audit %d extra: %w", a.ID, err)
+			}
+		}
+		return a, nil
+	})
 }
 
 type AccountGroup struct {

@@ -94,6 +94,11 @@ const messages: Record<string, string> = {
   INVALID_PAYOUT_ACCOUNT: '请填写收款方式与账号',
   INVALID_NAME: '名称不正确',
   POOL_EXISTS: '默认分组已存在',
+  NO_RESET_CREDIT: '官方显示当前没有可用的重置卡',
+  RESET_CREDITS_CHANGED: '可用重置卡的数量已变化，已刷新，请重新确认',
+  RESET_IN_PROGRESS: '这个账号正在用卡，请稍后刷新查看结果',
+  RESET_CREDITS_QUERY_FAILED: '暂时无法向官方确认重置卡，没有用卡，请稍后重试',
+  INVALID_AUTO_RESET_THRESHOLD: '用卡阈值必须在 1% 到暂停线之间',
 }
 
 export function errorText(code: string, fallback: string): string {

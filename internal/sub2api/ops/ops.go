@@ -43,6 +43,8 @@ type NewOp struct {
 	IdempotencyKey string // 全局唯一；同时作为调用 sub2api 时的 Idempotency-Key
 	Priority       int16
 	MaxAttempts    int
+	// NotBefore 非零时到该时间后才发送。延时操作会阻塞同一 target 的后续操作，应使用独立的 target。
+	NotBefore time.Time
 }
 
 // Enqueue 记录一个待发送的操作。幂等键已存在时不重复插入，返回已有记录的 ID。
@@ -60,13 +62,17 @@ func Enqueue(ctx context.Context, db DB, op NewOp) (int64, error) {
 	if op.MaxAttempts <= 0 {
 		op.MaxAttempts = 10
 	}
+	var notBefore *time.Time
+	if !op.NotBefore.IsZero() {
+		notBefore = &op.NotBefore
+	}
 	var id int64
 	err = db.QueryRow(ctx, `
-		INSERT INTO sub2api_ops (op_type, target, payload, idempotency_key, priority, max_attempts)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO sub2api_ops (op_type, target, payload, idempotency_key, priority, max_attempts, next_attempt_at)
+		VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, now()))
 		ON CONFLICT (idempotency_key) DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key
 		RETURNING id`,
-		op.Type, op.Target, payload, op.IdempotencyKey, op.Priority, op.MaxAttempts).Scan(&id)
+		op.Type, op.Target, payload, op.IdempotencyKey, op.Priority, op.MaxAttempts, notBefore).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("ops: enqueue: %w", err)
 	}

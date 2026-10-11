@@ -42,12 +42,20 @@ tables:
   schema_migrations:
     used_by: [compat]
     columns: [filename, checksum]
+  audit_logs:
+    used_by: [listing]   # 同步 sub2api 自动使用 Codex 重置卡的结果
+    columns: [id, created_at, action, extra]
 
 # 读写的 jsonb 键（SQL 无法表达，靠行为契约测试验证）。
 jsonb_keys:
   accounts.extra:
-    read: [quota_used, quota_daily_used, quota_weekly_used, session_window_utilization]
-    write: [window_cost_limit, base_rpm, max_sessions, quota_daily_limit, quota_weekly_limit]
+    read: [quota_used, quota_daily_used, quota_weekly_used, session_window_utilization,
+           codex_reset_credit_snapshot, codex_auto_reset_credit_state, auto_reset_credit_enabled,
+           auto_reset_credit_5h_threshold, auto_reset_credit_7d_threshold]
+    write: [window_cost_limit, base_rpm, max_sessions, quota_daily_limit, quota_weekly_limit,
+            auto_reset_credit_enabled, auto_reset_credit_5h_threshold, auto_reset_credit_7d_threshold]
+  audit_logs.extra:
+    read: [account_id, result_code, trigger_window, windows_reset, error_code]
   accounts.credentials:
     write: [account_scheduling_threshold, account_mode, api_protocol, base_url, zhipu_organization, zhipu_project]
 
@@ -80,6 +88,12 @@ admin_api:
   - {method: POST,   path: "/api/v1/admin/accounts/:id/set-privacy"}
   - {method: GET,    path: "/api/v1/admin/cn-providers/accounts/:id/quota"}
   - {method: GET,    path: "/api/v1/admin/accounts/:id/usage"}
+  - {method: GET,    path: "/api/v1/admin/accounts/:id"}
+  - {method: POST,   path: "/api/v1/admin/accounts/:id/recover-state"}
+  - {method: POST,   path: "/api/v1/admin/openai/accounts/:id/quota/refresh"}
+  - {method: POST,   path: "/api/v1/admin/openai/accounts/:id/reset-quota"}
+  - {method: GET,    path: "/api/v1/admin/accounts/:id/claude/reset-credits"}
+  - {method: POST,   path: "/api/v1/admin/accounts/:id/claude/reset-credits/redeem", idempotency_key: required}
   - {method: POST,   path: /api/v1/admin/accounts/generate-auth-url,        request: [proxy_id]}
   - {method: POST,   path: /api/v1/admin/accounts/generate-setup-token-url, request: [proxy_id]}
   - {method: POST,   path: /api/v1/admin/accounts/exchange-code,            request: [session_id, code, proxy_id]}

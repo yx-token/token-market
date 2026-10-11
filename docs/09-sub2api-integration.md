@@ -27,6 +27,7 @@
 | Gemini / Antigravity / Grok 授权 | `POST /admin/{gemini,antigravity,grok}/oauth/auth-url`、`/oauth/exchange-code`；Gemini 带 `oauth_type`（`google_one` 或 `code_assist`），Code Assist 可带 `project_id` |
 | 账号 | `POST /admin/accounts`、`PUT /admin/accounts/:id`、`POST /admin/accounts/bulk-update`、`POST /:id/schedulable`、`DELETE /:id`、`POST /:id/clear-error`（重新授权后清除错误状态） |
 | 账号信息 | `POST /:id/set-privacy`（**只支持 OpenAI 与 Antigravity 的 OAuth 账号**）、`GET /admin/cn-providers/accounts/:id/quota`（Coding Plan 上架时确认是订阅 key；卖家查看窗口用量）、`GET /admin/accounts/:id/usage`（卖家查看官方订阅窗口用量：Claude 默认读 `source=passive` 的响应头采样快照，不访问上游，刷新或其他平台用 `source=active`，sub2api 自带缓存）。订阅档位从授权换到的令牌信息中读取（`plan_type`、`tier_id`、`subscription_tier`）；`refresh-tier` 只支持 Gemini 的 google_one 账号，第一期不用 |
+| 重置卡 | Codex：`POST /admin/openai/accounts/:id/quota/refresh`（查询用量与重置卡，同时写入快照）、`POST /admin/openai/accounts/:id/reset-quota`（用卡，**不幂等**）；Claude：`GET /admin/accounts/:id/claude/reset-credits`、`POST /admin/accounts/:id/claude/reset-credits/redeem`（强制 `Idempotency-Key`）；用卡后恢复账号 `POST /admin/accounts/:id/recover-state`；写自动用卡配置前读取账号 `GET /admin/accounts/:id`。见 [04 §8](04-listing.md#8-重置卡) |
 | 官方价 | `GET /admin/channels/model-pricing?model=`（市场展示的官方价目，倍率以它为基准） |
 | 分组 | `POST/PUT/DELETE /admin/groups`、`PUT /admin/groups/:id/rate-multipliers`（买家折扣，后续） |
 | 用户 | `POST /admin/users`、`PUT /admin/users/:id`（并发、可用分组）、`POST /admin/users/:id/balance`（强制 `Idempotency-Key`） |
@@ -66,11 +67,12 @@ sub2api 的 Admin API 不能替用户创建 key，只能用影子用户的登录
 | 表 | 使用的列 | 用途 |
 |---|---|---|
 | `usage_logs` | id、request_id、created_at、user_id、api_key_id、account_id、group_id、model、各类 token、total_cost、actual_cost、account_rate_multiplier、first_token_ms、duration_ms、upstream_response_model、upstream_model_mismatch | 用量入账、逐次尝试对账、被动指标 |
-| `accounts` | id、name、platform、type、status、error_message、schedulable、priority、concurrency、load_factor、rate_multiplier、rate_limit_reset_at、overload_until、temp_unschedulable_until、temp_unschedulable_reason、extra 中的窗口与配额键、deleted_at | 健康信号、状态对账 |
+| `accounts` | id、name、platform、type、status、error_message、schedulable、priority、concurrency、load_factor、rate_multiplier、rate_limit_reset_at、overload_until、temp_unschedulable_until、temp_unschedulable_reason、extra 中的窗口与配额键、重置卡快照与自动用卡配置、deleted_at | 健康信号、状态对账 |
 | `account_groups` | account_id、group_id | 状态对账 |
 | `groups` | id、name、platform、rate_multiplier、is_exclusive、利润控制字段 | 状态对账 |
 | `users`、`api_keys` | id、email、balance、status；id、user_id、group_id、status | 对账 |
 | `schema_migrations` | filename、checksum | 兼容自检 |
+| `audit_logs` | id、created_at、action、extra（account_id、result_code、trigger_window、windows_reset、error_code） | 同步 sub2api 自动使用 Codex 重置卡的结果 |
 
 不读取 `accounts.credentials`。
 

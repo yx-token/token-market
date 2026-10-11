@@ -14,6 +14,7 @@ import ModalDialog from '@/components/ModalDialog.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import ReportDetail from '@/components/ReportDetail.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
+import ResetCreditsPanel from '@/components/ResetCreditsPanel.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
 import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
 import { takesProjectID } from '@/utils/authGuides'
@@ -214,6 +215,9 @@ async function completeReauth() {
   }
 }
 
+// 用卡后额度窗口会变化，重新挂载额度面板以重新读取
+const quotaKey = ref(0)
+
 const showReserve = ref(false)
 const reserve = ref(0)
 async function saveReserve() {
@@ -295,7 +299,8 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
       </div>
     </div>
 
-    <QuotaPanel v-if="hasAccount" :upstream-id="u.id" class="mt-5" />
+    <QuotaPanel v-if="hasAccount" :key="quotaKey" :upstream-id="u.id" class="mt-5" />
+    <ResetCreditsPanel v-if="hasAccount && u.reset_credits_supported" :upstream-id="u.id" class="mt-5" @changed="quotaKey++" />
 
     <div v-if="u.proxy" class="card mt-5">
       <h2 class="card-title">绑定的代理 IP</h2>

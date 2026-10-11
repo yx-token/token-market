@@ -102,9 +102,12 @@
 | POST | `/api/seller/upstreams/:id/reauthorize` | 授权失效后重新授权：返回新的授权链接，之后同样用 `oauth/complete` 提交；必须是同一个官方账号；可选 `project_id` 同上 |
 | POST | `/api/seller/upstreams/:id/retry-verification` | 上架检测失败后重新检测 |
 | GET | `/api/seller/upstreams` | 上游列表 |
-| GET | `/api/seller/upstreams/:id` | 详情：状态、健康状态、档位、等级、当前挂单与报价、近 24 小时服务情况（请求数、收益、首字延迟、成功率） |
+| GET | `/api/seller/upstreams/:id` | 详情：状态、健康状态、档位、等级、当前挂单与报价、近 24 小时服务情况（请求数、收益、首字延迟、成功率）、能否使用重置卡与授权自动用卡（`reset_credits_supported`、`auto_reset_supported`）及自动用卡设置 |
 | PUT | `/api/seller/upstreams/:id/settings` | 修改自留比例：`self_reserve_percent`（0–90，仅支持窗口阈值的厂商） |
 | GET | `/api/seller/upstreams/:id/quota` | 账号的官方订阅额度：各窗口（5 小时、7 天、Sonnet / Opus 7 天、30 天、Gemini 每日、Antigravity 各模型、Coding Plan 各窗口）的使用率、重置时间与窗口内经平台的请求数 / token / 官方价费用，以及授权失效、封禁等提示和自留比例。Claude 默认读 sub2api 的响应头采样快照（不访问官方）；`refresh=1` 向官方查询（同一上游至少间隔 2 分钟，其余 1 分钟内复用结果） |
+| GET | `/api/seller/upstreams/:id/reset-credits` | 重置卡（仅 Codex 与 Claude 的 OAuth 账号，详情的 `reset_credits_supported` 为真）：`queried`（是否有官方数据）、`available_count`、各张卡的到期时间（Claude 另有恢复的窗口 `clears`、能否使用及原因）、官方冷却时间；Codex 另有自动用卡 `auto`（是否授权、是否已在底层生效、卖家设定与实际生效的阈值、暂停线、sub2api 的运行状态）；最近 20 条用卡记录 `events`（手动与平台自动）。Codex 默认读 sub2api 缓存的快照，Claude 默认返回最近一次查询结果；`refresh=1` 向官方查询（30 秒内复用结果） |
+| POST | `/api/seller/upstreams/:id/reset-credits/redeem` | 使用一张重置卡：`request_id`（8–64 位字母、数字、`-`、`_`，每次确认生成；网络中断重试沿用同一个，返回首次结果）、`expected_available`（确认时看到的可用张数）。用卡前向官方确认张数：没有卡返回 `NO_RESET_CREDIT`，张数变化返回 `RESET_CREDITS_CHANGED`，同一上游正在用卡返回 `RESET_IN_PROGRESS`，这三种情况都不消耗卡。返回用卡记录，`status` 为 success / no_credit / failed / unknown（结果不确定，卡可能已用掉） |
+| PUT | `/api/seller/upstreams/:id/auto-reset` | 授权或取消平台自动用卡（仅 Codex）：`enabled`，可选 `threshold_5h_percent`、`threshold_7d_percent`（1 到暂停线 100 − 自留比例，留空跟随暂停线，超出返回 `INVALID_AUTO_RESET_THRESHOLD`）。只在挂单面向买家时生效 |
 | DELETE | `/api/seller/upstreams/:id` | 删除上游 |
 
 ### 4.2 挂单

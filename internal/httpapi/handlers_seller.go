@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/DueGin/token-market/internal/billing"
 	"github.com/DueGin/token-market/internal/listing"
@@ -40,6 +41,9 @@ type upstreamDetail struct {
 	Quote    *listing.Quote   `json:"quote,omitempty"`
 	Proxy    *listing.Proxy   `json:"proxy,omitempty"`
 	Stats24h upstreamStats    `json:"stats_24h"`
+	// 能否使用重置卡、能否授权平台自动用卡
+	ResetCredits bool `json:"reset_credits_supported"`
+	AutoReset    bool `json:"auto_reset_supported"`
 }
 
 // upstreamStats 是上游近 24 小时的服务情况（只含已入账的用量，有几分钟延迟）。
@@ -60,7 +64,8 @@ func (s *Server) getUpstream(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	d := upstreamDetail{Upstream: u}
+	d := upstreamDetail{Upstream: u, ResetCredits: listing.SupportsResetCredits(u.Platform, u.AuthType),
+		AutoReset: listing.SupportsAutoReset(u.Platform, u.AuthType)}
 	if u.ProxyID != nil {
 		if d.Proxy, err = s.Proxies.Get(r.Context(), *u.ProxyID); err != nil {
 			return err
@@ -460,6 +465,52 @@ func (s *Server) upstreamQuota(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return ok(w, q)
+}
+
+func (s *Server) resetCredits(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	rc, err := s.Listings.ResetCredits(r.Context(), httpx.MustUser(r).UserID, id, r.URL.Query().Get("refresh") == "1")
+	if err != nil {
+		return err
+	}
+	return ok(w, rc)
+}
+
+func (s *Server) redeemResetCredit(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in listing.RedeemInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	// 用卡包含一次官方请求与 sub2api 的后续处理，可能超过服务默认的写超时
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(2 * time.Minute))
+	e, err := s.Listings.RedeemResetCredit(r.Context(), httpx.MustUser(r).UserID, id, in)
+	if err != nil {
+		return err
+	}
+	return ok(w, e)
+}
+
+func (s *Server) setAutoReset(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in listing.AutoResetInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	u, err := s.Listings.SetAutoReset(r.Context(), httpx.MustUser(r).UserID, id, in)
+	if err != nil {
+		return err
+	}
+	return ok(w, u)
 }
 
 func (s *Server) sellerUsage(w http.ResponseWriter, r *http.Request) error {

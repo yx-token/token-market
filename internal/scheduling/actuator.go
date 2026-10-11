@@ -96,6 +96,23 @@ func Diff(in DiffInput) (ops []PlannedOp, missing []int64) {
 			})
 		}
 
+		// 自动用卡配置只能整体替换 extra 写入（批量更新会丢弃）。顺序保证售卖不越过暂停线：
+		// 开启时先开自动用卡（sub2api 在用卡阈值处动态暂停）再关窗口阈值；关闭时先恢复窗口阈值再关自动用卡。
+		var autoReset *PlannedOp
+		if d.AutoReset != nil && a.Platform == "openai" && a.Type == "oauth" && autoResetDiffers(a.Extra, *d.AutoReset) {
+			set := map[string]any{extraAutoResetEnabled: d.AutoReset.Enabled}
+			if d.AutoReset.Enabled {
+				set[extraAutoReset5h], set[extraAutoReset7d] = d.AutoReset.Threshold5h, d.AutoReset.Threshold7d
+			}
+			autoReset = &PlannedOp{
+				Type: opshandlers.TypeAccountExtraMerge, Target: target, Urgent: c.urgent, Upstream: d.UpstreamID,
+				Payload: opshandlers.AccountExtraMergePayload{AccountID: d.AccountID, Set: set},
+			}
+			if d.AutoReset.Enabled {
+				c.ops = append(c.ops, *autoReset)
+			}
+		}
+
 		bulk := adminclient.BulkUpdateAccountsInput{AccountIDs: []int64{d.AccountID}}
 		bulkChanged := false
 		extra := map[string]any{}
@@ -123,6 +140,9 @@ func Diff(in DiffInput) (ops []PlannedOp, missing []int64) {
 				Type: opshandlers.TypeAccountBulkUpdate, Target: target, Urgent: c.urgent, Upstream: d.UpstreamID,
 				Payload: bulk, AppliedThreshold: appliedThr,
 			})
+		}
+		if autoReset != nil && !d.AutoReset.Enabled {
+			c.ops = append(c.ops, *autoReset)
 		}
 
 		if d.ListingGroupID != nil && d.ListingGroupRate != nil {
@@ -152,6 +172,25 @@ func Diff(in DiffInput) (ops []PlannedOp, missing []int64) {
 		ops = append(ops, c.ops...)
 	}
 	return ops, missing
+}
+
+// sub2api 账号 extra 中的自动用卡配置键（sub2api 0.2.14 service/openai_quota_auto_reset_config.go）。
+const (
+	extraAutoResetEnabled = "auto_reset_credit_enabled"
+	extraAutoReset5h      = "auto_reset_credit_5h_threshold"
+	extraAutoReset7d      = "auto_reset_credit_7d_threshold"
+)
+
+// autoResetDiffers 判断账号的自动用卡配置是否需要更新。关闭时只看开关（sub2api 会保留阈值，再次开启时覆盖）。
+func autoResetDiffers(extra map[string]any, want AutoResetConfig) bool {
+	enabled, _ := extra[extraAutoResetEnabled].(bool)
+	if enabled != want.Enabled {
+		return true
+	}
+	if !want.Enabled {
+		return false
+	}
+	return !sameJSONValue(extra[extraAutoReset5h], want.Threshold5h) || !sameJSONValue(extra[extraAutoReset7d], want.Threshold7d)
 }
 
 func equalIDs(a, b []int64) bool {

@@ -161,6 +161,7 @@ func (r *Runner) Cycle(ctx context.Context) (*CycleResult, error) {
 	if err := r.syncAccountHealth(ctx, ups, actual); err != nil {
 		return nil, err
 	}
+	r.syncAutoResetAudits(ctx, ups)
 	removed, removalOps, err := r.processRemovals(ctx, actual, pending)
 	if err != nil {
 		return nil, err
@@ -258,6 +259,38 @@ func (r *Runner) syncAccountHealth(ctx context.Context, ups []UpstreamInput, act
 		}
 	}
 	return nil
+}
+
+// syncAutoResetAudits 把 sub2api 最近一天的自动用卡结果同步为卖家可见的用卡记录（按审计 ID 幂等）。
+// 失败只记日志，不影响调度。
+func (r *Runner) syncAutoResetAudits(ctx context.Context, ups []UpstreamInput) {
+	accountUpstream := map[int64]int64{}
+	for _, u := range ups {
+		if listing.SupportsAutoReset(u.Platform, u.AuthType) {
+			accountUpstream[u.AccountID] = u.ID
+		}
+	}
+	if len(accountUpstream) == 0 {
+		return
+	}
+	audits, err := r.Replica.AutoResetAudits(ctx, r.now().Add(-24*time.Hour))
+	if err != nil {
+		r.Log.Warn("auto reset audits", "err", err)
+		return
+	}
+	in := make([]listing.AutoResetAuditInput, 0, len(audits))
+	for _, a := range audits {
+		accountID, _ := toFloat(a.Extra["account_id"])
+		windows, _ := toFloat(a.Extra["windows_reset"])
+		resultCode, _ := a.Extra["result_code"].(string)
+		trigger, _ := a.Extra["trigger_window"].(string)
+		errorCode, _ := a.Extra["error_code"].(string)
+		in = append(in, listing.AutoResetAuditInput{AuditID: a.ID, At: a.CreatedAt, AccountID: int64(accountID),
+			ResultCode: resultCode, TriggerWindow: trigger, WindowsReset: int(windows), ErrorCode: errorCode})
+	}
+	if err := listing.RecordAutoResetAudits(ctx, r.DB, in, accountUpstream); err != nil {
+		r.Log.Warn("record auto reset audits", "err", err)
+	}
 }
 
 // processRemovals 推进删除中的上游：先停止调度，等待进行中的请求结束后删除 sub2api 账号，最后释放代理。

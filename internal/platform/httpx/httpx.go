@@ -202,6 +202,9 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap 让 http.ResponseController 能找到底层连接（例如单独延长耗时接口的写超时）。
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // AccessLog 记录请求元数据（不记录请求体）。
 func AccessLog(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

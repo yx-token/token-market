@@ -42,6 +42,9 @@ type UpstreamInput struct {
 	ProbeGroupID *int64
 	Grade        string
 	SelfReserve  int
+	AutoReset    bool // 卖家授权平台自动用卡（仅 Codex）
+	AutoReset5h  *int // 卖家设定的自动用卡阈值（百分比），空表示跟随暂停线
+	AutoReset7d  *int
 	Listing      *ListingInput
 	DefaultGrade string // 检测没有给出等级时使用的默认等级（厂商策略的 default_grade）
 }
@@ -73,6 +76,14 @@ type Desired struct {
 	Reason           string
 	ListingGroupID   *int64
 	ListingGroupRate *float64
+	AutoReset        *AutoResetConfig // 非空时管理 sub2api 的自动用卡配置（仅支持自动用卡的上游）
+}
+
+// AutoResetConfig 是 sub2api 账号 extra 中的自动用卡配置，阈值为 0–1 的比例。
+type AutoResetConfig struct {
+	Enabled     bool
+	Threshold5h float64
+	Threshold7d float64
 }
 
 // Strategy 决定上游在所在优先级段内的位置。第一期按回收看等级、寄售看价格；
@@ -203,6 +214,20 @@ func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 				reasons = append(reasons, "suspected: concurrency halved")
 			}
 		}
+		if listing.SupportsAutoReset(u.Platform, u.AuthType) {
+			// 只在授权且面向买家时开启：不卖的时候用掉卖家的卡没有意义
+			ar := &AutoResetConfig{Enabled: u.AutoReset && d.BuyerFacing}
+			if ar.Enabled {
+				t5, t7 := listing.AutoResetThresholds(u.Platform, u.SelfReserve, u.AutoReset5h, u.AutoReset7d)
+				ar.Threshold5h, ar.Threshold7d = float64(t5)/100, float64(t7)/100
+				// sub2api 在用卡阈值处动态暂停调度并尝试用卡（阈值不高于暂停线，自留比例照样生效）。
+				// 窗口阈值会把账号落库暂停，而 sub2api 的自动用卡补偿扫描跳过这类账号，所以这时关闭窗口阈值。
+				off := 100
+				d.WindowThreshold = &off
+				reasons = append(reasons, fmt.Sprintf("auto reset credits at 5h %d%% / 7d %d%%", t5, t7))
+			}
+			d.AutoReset = ar
+		}
 		if l != nil && l.GroupID != nil && (l.Mode == listing.ModeConsignment || l.Mode == listing.ModePack) && l.Multiplier != nil {
 			rate := listing.BuyerPrice(*l.Multiplier, pc.Commission)
 			d.ListingGroupID = l.GroupID
@@ -274,6 +299,7 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 	// 默认等级取法与 quality.EffectivePolicy 一致：精确匹配接入方式的策略优先，其次厂商通用
 	rows, err = db.Query(ctx, `SELECT u.id, u.platform, u.auth_type, u.status, u.health, u.is_reference, u.sub2api_account_id,
 			u.probe_group_id, COALESCE(u.grade, ''), u.self_reserve_percent,
+			u.auto_reset_enabled, u.auto_reset_5h_percent, u.auto_reset_7d_percent,
 			l.id, l.mode, l.status, l.multiplier, l.join_default_pool, l.listing_group_id,
 			COALESCE(p.default_grade, 'B')
 		FROM upstreams u
@@ -295,7 +321,7 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 		var join *bool
 		var gid *int64
 		if err := rows.Scan(&u.ID, &u.Platform, &u.AuthType, &u.Status, &u.Health, &u.IsReference, &u.AccountID,
-			&u.ProbeGroupID, &u.Grade, &u.SelfReserve, &lid, &mode, &status, &mult, &join, &gid, &u.DefaultGrade); err != nil {
+			&u.ProbeGroupID, &u.Grade, &u.SelfReserve, &u.AutoReset, &u.AutoReset5h, &u.AutoReset7d, &lid, &mode, &status, &mult, &join, &gid, &u.DefaultGrade); err != nil {
 			return pc, nil, err
 		}
 		if lid != nil {

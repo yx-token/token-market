@@ -111,6 +111,12 @@ export const seller = {
   usage: (q?: Query) => http.get<T.SellerUsage>('/api/seller/usage', q),
   usageRecords: (q?: Query) => http.get<T.SellerUsageRecord[] | null>('/api/seller/usage/records', q),
   quota: (id: number, refresh = false) => http.get<T.AccountQuota>(`/api/seller/upstreams/${id}/quota`, refresh ? { refresh: 1 } : undefined),
+  resetCredits: (id: number, refresh = false) =>
+    http.get<T.ResetCredits>(`/api/seller/upstreams/${id}/reset-credits`, refresh ? { refresh: 1 } : undefined, 30000),
+  // 用卡包含一次官方请求与底层的后续处理，最长约 100 秒
+  redeemResetCredit: (id: number, request_id: string, expected_available: number) =>
+    http.post<T.ResetCreditEvent>(`/api/seller/upstreams/${id}/reset-credits/redeem`, { request_id, expected_available }, 120000),
+  setAutoReset: (id: number, body: T.AutoResetInput) => http.put<T.Upstream>(`/api/seller/upstreams/${id}/auto-reset`, body),
 }
 
 export const admin = {

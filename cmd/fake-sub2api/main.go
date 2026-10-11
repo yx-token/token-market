@@ -4,7 +4,7 @@
 //
 // 用法：
 //
-//	fake-sub2api --dsn postgres://.../fake_sub2api --sub2api-repo ../sub2api [--ref v0.2.14] [--listen 127.0.0.1:18081] [--admin-key dev-admin-key]
+//	fake-sub2api --dsn postgres://.../fake_sub2api --sub2api-repo ../sub2api [--ref v0.2.14] [--listen 127.0.0.1:18081] [--admin-key dev-admin-key] [--reset-credits 2]
 //
 // 数据库为空时先执行 sub2api 的全部迁移；本系统的 sub2api.replica_dsn 指向同一个库。
 package main
@@ -34,9 +34,10 @@ func main() {
 	ref := flag.String("ref", "v0.2.14", "sub2api 版本的 git ref")
 	listen := flag.String("listen", "127.0.0.1:18081", "监听地址")
 	adminKey := flag.String("admin-key", "dev-admin-key", "Admin API Key")
+	resetCredits := flag.Int("reset-credits", 2, "Codex / Claude OAuth 账号默认的重置卡张数（演示用卡）")
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if err := run(*dsn, *repo, *ref, *listen, *adminKey, log); err != nil {
+	if err := run(*dsn, *repo, *ref, *listen, *adminKey, *resetCredits, log); err != nil {
 		log.Error("fake-sub2api exited", "err", err)
 		os.Exit(1)
 	}
@@ -45,7 +46,7 @@ func main() {
 // pongRe 与题库约定：探测题要求回答"PONG<n>"之类的口令时，替身按口令作答，其他问题回答 ok。
 var pongRe = regexp.MustCompile(`PONG\d+`)
 
-func run(dsn, repo, ref, listen, adminKey string, log *slog.Logger) error {
+func run(dsn, repo, ref, listen, adminKey string, resetCredits int, log *slog.Logger) error {
 	if dsn == "" {
 		return errors.New("--dsn is required")
 	}
@@ -80,6 +81,7 @@ func run(dsn, repo, ref, listen, adminKey string, log *slog.Logger) error {
 	}
 	defer pool.Close()
 	f := fakesub2api.NewUnstarted(pool, adminKey)
+	f.DefaultResetCredits = resetCredits
 	f.SetResponder(func(_ int64, prompt string) string {
 		if code := pongRe.FindString(prompt); code != "" {
 			return "The code is " + code

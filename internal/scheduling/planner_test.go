@@ -192,3 +192,86 @@ func TestDiffBudget(t *testing.T) {
 		t.Fatalf("budget not enforced: %d ops", len(ops))
 	}
 }
+
+func TestPlanAutoResetOnlyWhileBuyerFacing(t *testing.T) {
+	active := &ListingInput{ID: 1, Mode: "consignment", Status: "active", Multiplier: f64(0.3), JoinDefaultPool: true}
+	ups := []UpstreamInput{
+		// 授权且面向买家：阈值未设定时跟随暂停线 80%，关闭窗口阈值
+		{ID: 1, Platform: "openai", AuthType: "oauth", Status: "listed", Health: "healthy", AccountID: 11, SelfReserve: 20, AutoReset: true, Listing: active},
+		// 卖家设定的 7d 阈值高于暂停线时按暂停线
+		{ID: 2, Platform: "openai", AuthType: "oauth", Status: "listed", Health: "healthy", AccountID: 12, SelfReserve: 20, AutoReset: true,
+			AutoReset5h: intPtr(50), AutoReset7d: intPtr(95), Listing: active},
+		// 授权了但挂单暂停：不开启，保留窗口阈值
+		{ID: 3, Platform: "openai", AuthType: "oauth", Status: "listed", Health: "healthy", AccountID: 13, SelfReserve: 20, AutoReset: true,
+			Listing: &ListingInput{ID: 3, Mode: "consignment", Status: "paused", Multiplier: f64(0.3)}},
+		// 未授权
+		{ID: 4, Platform: "openai", AuthType: "oauth", Status: "listed", Health: "healthy", AccountID: 14, Listing: active},
+		// 不支持自动用卡的厂商不管理该配置
+		{ID: 5, Platform: "anthropic", AuthType: "oauth", Status: "listed", Health: "healthy", AccountID: 15, AutoReset: true, Listing: active},
+	}
+	byID := map[int64]Desired{}
+	for _, d := range Plan(planCtx(), ups) {
+		byID[d.UpstreamID] = d
+	}
+	if d := byID[1]; d.AutoReset == nil || !d.AutoReset.Enabled || d.AutoReset.Threshold5h != 0.8 || d.AutoReset.Threshold7d != 0.8 ||
+		d.WindowThreshold == nil || *d.WindowThreshold != 100 {
+		t.Fatalf("authorized buyer-facing upstream: %+v %+v", d.AutoReset, d.WindowThreshold)
+	}
+	if d := byID[2]; d.AutoReset == nil || d.AutoReset.Threshold5h != 0.5 || d.AutoReset.Threshold7d != 0.8 {
+		t.Fatalf("thresholds must not exceed the pause line: %+v", d.AutoReset)
+	}
+	if d := byID[3]; d.AutoReset == nil || d.AutoReset.Enabled || d.WindowThreshold == nil || *d.WindowThreshold != 80 {
+		t.Fatalf("paused listing keeps auto reset off: %+v %v", d.AutoReset, *d.WindowThreshold)
+	}
+	if d := byID[4]; d.AutoReset == nil || d.AutoReset.Enabled {
+		t.Fatalf("unauthorized upstream: %+v", d.AutoReset)
+	}
+	if d := byID[5]; d.AutoReset != nil {
+		t.Fatalf("anthropic does not support auto reset: %+v", d.AutoReset)
+	}
+}
+
+func TestDiffAutoResetOrdering(t *testing.T) {
+	off, line := 100, 80
+	on := Desired{UpstreamID: 1, AccountID: 11, GroupIDs: []int64{1001}, Priority: 99, Concurrency: 1, RateMultiplier: 1,
+		WindowThreshold: &off, AutoReset: &AutoResetConfig{Enabled: true, Threshold5h: 0.8, Threshold7d: 0.8}}
+	acc := replica.Account{ID: 11, Platform: "openai", Type: "oauth", Priority: 99, Concurrency: 1, RateMultiplier: 1, Extra: map[string]any{}}
+	actual := Actual{Accounts: map[int64]replica.Account{11: acc}, Groups: map[int64][]int64{11: {1001}}}
+
+	// 开启：先开自动用卡，再关窗口阈值
+	ops, _ := Diff(DiffInput{Desired: []Desired{on}, Actual: actual, AppliedThreshold: map[int64]*int{1: &line}})
+	if len(ops) != 2 || ops[0].Type != opshandlers.TypeAccountExtraMerge || ops[1].Type != opshandlers.TypeAccountBulkUpdate {
+		t.Fatalf("enable order: %+v", ops)
+	}
+	set := ops[0].Payload.(opshandlers.AccountExtraMergePayload).Set
+	if set[extraAutoResetEnabled] != true || set[extraAutoReset5h] != 0.8 || set[extraAutoReset7d] != 0.8 {
+		t.Fatalf("enable payload: %+v", set)
+	}
+
+	// 已一致时不再下发
+	acc.Extra = map[string]any{extraAutoResetEnabled: true, extraAutoReset5h: 0.8, extraAutoReset7d: 0.8}
+	actual.Accounts[11] = acc
+	if ops, _ := Diff(DiffInput{Desired: []Desired{on}, Actual: actual, AppliedThreshold: map[int64]*int{1: &off}}); len(ops) != 0 {
+		t.Fatalf("converged: %+v", ops)
+	}
+
+	// 关闭：先恢复窗口阈值，再关自动用卡（只改开关）
+	offDesired := on
+	offDesired.WindowThreshold, offDesired.AutoReset = &line, &AutoResetConfig{}
+	ops, _ = Diff(DiffInput{Desired: []Desired{offDesired}, Actual: actual, AppliedThreshold: map[int64]*int{1: &off}})
+	if len(ops) != 2 || ops[0].Type != opshandlers.TypeAccountBulkUpdate || ops[1].Type != opshandlers.TypeAccountExtraMerge {
+		t.Fatalf("disable order: %+v", ops)
+	}
+	if set := ops[1].Payload.(opshandlers.AccountExtraMergePayload).Set; len(set) != 1 || set[extraAutoResetEnabled] != false {
+		t.Fatalf("disable payload: %+v", set)
+	}
+
+	// 从未开启过的账号不需要写关闭
+	acc.Extra = map[string]any{}
+	actual.Accounts[11] = acc
+	if ops, _ := Diff(DiffInput{Desired: []Desired{offDesired}, Actual: actual, AppliedThreshold: map[int64]*int{1: &line}}); len(ops) != 0 {
+		t.Fatalf("never enabled: %+v", ops)
+	}
+}
+
+func intPtr(v int) *int { return &v }
