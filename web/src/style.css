@@ -933,8 +933,9 @@ html.is-console :focus-visible {
   flex: 1;
   min-height: 0;
 }
+/* 填充用 backwards：播完即撤掉 transform，不让整页内容（含一堆毛玻璃卡片）常驻在变换层里 */
 .console-page {
-  animation: console-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: console-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   height: 100%;
 }
 @keyframes console-in {
@@ -1358,7 +1359,8 @@ html.is-console .liquid-stat {
   transition:
     transform 0.3s ease,
     box-shadow 0.3s ease;
-  animation: console-stat-in 0.45s ease both;
+  /* backwards：入场后不再由动画锁住 transform，hover 上浮才能生效 */
+  animation: console-stat-in 0.45s ease backwards;
 }
 html.is-console .stat::after {
   display: none !important;

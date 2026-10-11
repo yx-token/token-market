@@ -80,7 +80,7 @@ const ledgerCards = computed(() => {
           >
             <ConsoleIcon :name="t.icon" size="sm" />
           </div>
-          <span v-if="t.count" class="mt-1 h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary-500" />
+          <span v-if="t.count" class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary-500" />
         </div>
         <p :class="['liquid-stat-value mt-3', t.count ? 'text-primary-500' : 'text-gray-300']">{{ t.count }}</p>
         <p class="liquid-stat-label mt-1">{{ t.text }}</p>
@@ -96,20 +96,13 @@ const ledgerCards = computed(() => {
         </h2>
         <div v-if="status">
           <div class="mb-4 flex items-center gap-3 rounded-xl border border-white/50 bg-white/60 px-4 py-3">
-            <span class="relative flex h-3 w-3">
-              <span
-                :class="[
-                  'absolute inline-flex h-full w-full animate-ping rounded-full opacity-60',
-                  status.guard_state === 'normal' ? 'bg-emerald-400' : 'bg-amber-400',
-                ]"
-              />
-              <span
-                :class="[
-                  'relative inline-flex h-3 w-3 rounded-full',
-                  status.guard_state === 'normal' ? 'bg-emerald-600' : 'bg-amber-500',
-                ]"
-              />
-            </span>
+            <!-- 卡片是毛玻璃，里面不放 ping/pulse 这类无限动画，免得整片模糊跟着逐帧重算而闪烁 -->
+            <span
+              :class="[
+                'inline-flex h-3 w-3 shrink-0 rounded-full ring-4',
+                status.guard_state === 'normal' ? 'bg-emerald-600 ring-emerald-400/30' : 'bg-amber-500 ring-amber-400/30',
+              ]"
+            />
             <div>
               <div class="text-sm font-semibold text-gray-900">
                 {{ status.guard_state === 'normal' ? '兼容自检正常' : '安全模式：写入已暂停' }}

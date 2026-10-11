@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 对齐 YourHub AppTabBar：液态玻璃条 + 选中浅蓝底 + 底边流动指示线。
+ * 对齐 YourHub AppTabBar：液态玻璃条 + 选中浅蓝底 + 底边指示线。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -261,11 +261,13 @@ const canCloseLeft = computed(() => {
   background: rgba(5, 85, 206, 0.06);
   color: #0446a7;
 }
+/*
+ * 选中页签不再套一层 backdrop-filter（顶栏已是毛玻璃），指示线也不做无限流动动画：
+ * 它在 sticky 毛玻璃顶栏里逐帧重绘，Chrome 会跟着反复重算整片模糊，控制台各页都会一闪一闪。
+ */
 .tab-item.active {
   color: #0555ce;
-  background: rgba(230, 238, 250, 0.7);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(230, 238, 250, 0.85);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   border-radius: 6px 6px 0 0;
   margin: 0 2px;
@@ -279,18 +281,7 @@ const canCloseLeft = computed(() => {
   right: 10%;
   height: 2px;
   background: linear-gradient(90deg, transparent, #0555ce, #3878e6, #0555ce, transparent);
-  background-size: 200% 100%;
   border-radius: 1px;
-  animation: tabLineFlow 2s ease-in-out infinite;
-}
-@keyframes tabLineFlow {
-  0%,
-  100% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
 }
 .tab-title {
   max-width: 160px;
