@@ -80,7 +80,7 @@ func inspectionBuiltinItems() []Item {
 		static(fmt.Sprintf("inspection/amount/%d/1", i), "中文大写金额", "inspection_capability", "D07", "将人民币"+row.amount+"元写为中文大写金额，仅输出金额文字。", Grader{Type: "lines_alias", GraderOptions: GraderOptions{Lines: [][]string{aliases}}}, ProbeRequest{}, []string{"full"})
 	}
 	static("inspection/abstain/2", "缺失信息弃权", "inspection_capability", "D07.honesty", "资料仅写：一盒彩球。资料没有记载数量。问盒内共有多少球？无法由资料确定时只输出“无法确定”。", Grader{Type: "abstain", Answer: "无法确定", GraderOptions: GraderOptions{Patterns: []string{`^无法确定$`}, NegativePatterns: []string{`[0-9]`}}}, ProbeRequest{}, []string{"full"})
-	return items
+	return append(items, inspectionAdditionalItems()...)
 }
 
 // SyncInspectionItems 按稳定键只补缺项；管理员编辑、下线与版本均原样保留。

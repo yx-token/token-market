@@ -13,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DueGin/token-market/internal/inspection"
+	"github.com/jackc/pgx/v5"
 )
 
 const maxExecutionSnapshot = 32 << 20
@@ -42,9 +45,10 @@ type plannedInstance struct {
 }
 
 type executionSnapshot struct {
-	Warnings              []string `json:"warnings,omitempty"`
-	RequestTimeoutSeconds int64    `json:"request_timeout_seconds,omitempty"`
-	Policy                *Policy  `json:"policy,omitempty"`
+	Settings              *InspectionSettings `json:"inspection_settings,omitempty"`
+	Warnings              []string            `json:"warnings,omitempty"`
+	RequestTimeoutSeconds int64               `json:"request_timeout_seconds,omitempty"`
+	Policy                *Policy             `json:"policy,omitempty"`
 	Limits                struct {
 		Account int `json:"account_parallelism"`
 		Global  int `json:"global_parallelism"`
@@ -95,6 +99,7 @@ func (e *Engine) executionPlan(ctx context.Context, run runRow, p *Policy, items
 		budgetMode = "full"
 	}
 	plan := executionSnapshot{Policy: p, SchemaVersion: 1, PolicyVersion: p.Version, InspectionMode: st.Mode, Mode: mode, Budget: st.TokenBudgets[budgetMode], Scoring: containsAny(p.Suites, "iq", "reasoning", "long_context"), Thresholds: p.Thresholds}
+	plan.Settings = &st
 	plan.Limits.Account, plan.Limits.Global = st.Limits.Account, st.Limits.Global
 	if len(timeouts) > 0 {
 		plan.RequestTimeoutSeconds = int64(timeouts[0] / time.Second)
@@ -234,6 +239,25 @@ itemsLoop:
 		sum := sha256.Sum256(mustJSON(instance))
 		instance.Hash = hex.EncodeToString(sum[:])
 		appendInstance(instance)
+	}
+	addInspectionProbes(&plan, p, st)
+	if plan.InspectionMode == "formal" && mode == "full" {
+		var failed []string
+		err := e.DB.QueryRow(ctx, `SELECT last_failed_checks FROM upstream_quality_state WHERE upstream_id=$1`, run.upstreamID).Scan(&failed)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return plan, err
+		}
+		if containsAny(failed, "D13", "D04") {
+			d, _ := inspection.Effective("D13", st)
+			limits, _ := inspection.Effective("D04", st)
+			n := max(int(d.Thresholds["min_samples"]), int(d.Thresholds["gate_min_samples"]))
+			if containsAny(failed, "D04") {
+				n = max(n, int(limits.Thresholds["min_samples"]))
+			}
+			if err := e.addAvailabilityRecoveryProbes(&plan, run.batch, n); err != nil {
+				return plan, err
+			}
+		}
 	}
 	sort.SliceStable(plan.Instances, func(i, j int) bool {
 		if plan.Instances[i].ItemID != plan.Instances[j].ItemID {

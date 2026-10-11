@@ -7,6 +7,7 @@ type ProbeMessage struct {
 }
 
 type ProbeContent struct {
+	CacheControl     map[string]any `json:"cache_control,omitempty"`
 	LocalID          bool           `json:"local_id,omitempty"`
 	ThoughtSignature string         `json:"thought_signature,omitempty"`
 	Type             string         `json:"type"`

@@ -24,6 +24,7 @@ type Attempt struct {
 	PoolID           int64     `json:"pool_id,omitempty"`
 	Sub2APIRequestID string    `json:"sub2api_request_id,omitempty"`
 	HTTPStatus       int       `json:"http_status,omitempty"`
+	ErrorClass       string    `json:"error_class"`
 	Committed        bool      `json:"committed"`
 	Billable         bool      `json:"billable"`
 	EndReason        string    `json:"end_reason"` // completed / client_cancel / upstream_error / timeout / skipped / retry
@@ -124,11 +125,11 @@ func (l *AttemptLogger) insert(ctx context.Context, batch []Attempt) error {
 		if a.TTFBMs > 0 {
 			ttfb = &a.TTFBMs
 		}
-		rows[i] = []any{a.EdgeRequestID, a.BuyerKeyID, a.Hop, lid, pid, reqID, status, a.Committed, a.Billable, a.EndReason, ttfb, a.StartedAt, a.EndedAt}
+		rows[i] = []any{a.EdgeRequestID, a.BuyerKeyID, a.Hop, lid, pid, reqID, status, a.Committed, a.Billable, a.EndReason, ttfb, a.StartedAt, a.EndedAt, a.ErrorClass}
 	}
 	_, err := l.db.CopyFrom(ctx, pgx.Identifier{"edge_attempts"},
 		[]string{"edge_request_id", "buyer_key_id", "hop", "listing_id", "pool_id", "sub2api_request_id", "http_status",
-			"committed", "billable", "end_reason", "ttfb_ms", "started_at", "ended_at"},
+			"committed", "billable", "end_reason", "ttfb_ms", "started_at", "ended_at", "error_class"},
 		pgx.CopyFromRows(rows))
 	return err
 }

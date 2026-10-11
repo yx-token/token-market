@@ -44,7 +44,7 @@ func init() {
 	add("A02", "响应型号一致", "authenticity", "display", "", "核对声明型号、官方回退规则与接入配置，完成复检。", nil, map[string]float64{"min_pairs": 2})
 	add("A03", "输入计数指纹", "authenticity", "display", "", "确认被测与基线采用相同接入方式，复核输入计数差异。", nil, map[string]float64{"min_pairs": 2})
 	add("A04", "型号权限", "configuration", "gate", "", "核对账号对上架型号的访问权限，修复后重新检测。", nil, map[string]float64{"min_pairs": 1})
-	add("A05", "上下文边界", "configuration", "gate", "", "核对声明上下文长度、请求预算与入口行为，修复后完成完整复检。", nil, map[string]float64{"probe_tokens": 262145, "max_probe_tokens": 524288})
+	add("A05", "上下文边界", "configuration", "gate", "", "核对声明上下文长度、请求预算与入口行为，修复后完成完整复检。", nil, map[string]float64{"probe_tokens": 262145, "max_probe_tokens": 524288, "min_input_ratio": 0.95})
 	add("A06", "推理档位", "configuration", "display", "", "核对型号支持的推理档位及实际接入配置。", nil, nil)
 	add("A08", "知识代际", "display", "display", "", "与同时段同型号基线对照，避免将过期事实或缺失信息作为确定失败。", nil, nil)
 	add("A12", "回退与拒答", "authenticity", "display", "", "检查无害请求的回退与拒答情况，并对照同期基线。", nil, map[string]float64{"min_pairs": 10})

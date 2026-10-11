@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/DueGin/token-market/internal/inspection"
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/platform/httpx"
 	"github.com/jackc/pgx/v5"
@@ -26,6 +27,9 @@ const reportColumns = `id, upstream_id, trigger, verdict, summary, impact, creat
 func scanReport(row pgx.CollectableRow) (Report, error) {
 	var r Report
 	err := row.Scan(&r.ID, &r.UpstreamID, &r.Trigger, &r.Verdict, &r.Summary, &r.Impact, &r.CreatedAt)
+	if err == nil {
+		r.Summary = publicReportSummary(r.Summary)
+	}
 	return r, err
 }
 
@@ -145,14 +149,20 @@ func scanAppeal(row pgx.Row) (*Appeal, error) {
 	return &a, nil
 }
 
-// CreateAppeal 卖家对"降智"或"不可用"的判定提出申诉。
+// CreateAppeal 卖家对降智、不可用或正式扣价项提出申诉。
 func CreateAppeal(ctx context.Context, db DB, sellerID, reportID int64, reason string) (*Appeal, error) {
 	r, err := SellerReport(ctx, db, sellerID, reportID)
 	if err != nil {
 		return nil, err
 	}
-	if r.Verdict != "degraded" && r.Verdict != "unavailable" {
-		return nil, httpx.BadRequest("NOT_APPEALABLE", "only degraded or unavailable verdicts can be appealed")
+	var summary struct {
+		Checks map[string]inspection.Check `json:"checks"`
+	}
+	if err := json.Unmarshal(r.Summary, &summary); err != nil {
+		return nil, err
+	}
+	if r.Verdict != "degraded" && r.Verdict != "unavailable" && !hasAppliedDiscount(summary.Checks) {
+		return nil, httpx.BadRequest("NOT_APPEALABLE", "只有降智、不可用或正式扣价项可以申诉")
 	}
 	if reason == "" {
 		return nil, httpx.BadRequest("REASON_REQUIRED", "reason is required")
@@ -356,6 +366,19 @@ type RunSummary struct {
 
 // RunResult 是一次检测中一道题的结果，包含题目与回答片段，仅管理员可见。
 type RunResult struct {
+	CheckKey            string   `json:"check_key"`
+	InstanceIdx         int      `json:"instance_idx"`
+	Step                int      `json:"step"`
+	InstanceHash        string   `json:"instance_hash"`
+	GeneratorVersion    string   `json:"generator_version"`
+	InputTokens         *int64   `json:"input_tokens"`
+	CacheReadTokens     *int64   `json:"cache_read_tokens"`
+	CacheCreationTokens *int64   `json:"cache_creation_tokens"`
+	StopReason          string   `json:"stop_reason"`
+	Effort              string   `json:"effort"`
+	Flags               []string `json:"flags"`
+	ErrorBody           string   `json:"error_body"`
+
 	ItemID          *int64   `json:"item_id,omitempty"`
 	Suite           string   `json:"suite"`
 	Category        string   `json:"category"`
@@ -446,7 +469,7 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 func runResults(ctx context.Context, db DB, runID int64) ([]RunResult, error) {
 	rows, err := db.Query(ctx, `SELECT pr.item_id, pr.suite, COALESCE(i.category, ''), COALESCE(i.prompt, ''), COALESCE(i.models, '{}'),
 			pr.passed, pr.http_status, pr.error_class, COALESCE(pr.ttft_ms, 0), COALESCE(pr.duration_ms, 0),
-			COALESCE(pr.output_tokens, 0), COALESCE(pr.reasoning_tokens, 0), pr.response_model, pr.raw_excerpt
+			COALESCE(pr.output_tokens, 0), COALESCE(pr.reasoning_tokens, 0), pr.response_model, pr.raw_excerpt, pr.check_key, pr.instance_idx, pr.step, pr.instance_hash, pr.generator_version, pr.input_tokens, pr.cache_read_tokens, pr.cache_creation_tokens, pr.stop_reason, pr.effort, pr.flags, pr.error_body
 		FROM probe_results pr LEFT JOIN probe_items i ON i.id = pr.item_id
 		WHERE pr.run_id = $1 ORDER BY pr.id`, runID)
 	if err != nil {
@@ -455,7 +478,7 @@ func runResults(ctx context.Context, db DB, runID int64) ([]RunResult, error) {
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunResult, error) {
 		var r RunResult
 		err := row.Scan(&r.ItemID, &r.Suite, &r.Category, &r.Prompt, &r.Models, &r.Passed, &r.HTTPStatus, &r.ErrorClass,
-			&r.TTFTMs, &r.DurationMs, &r.OutputTokens, &r.ReasoningTokens, &r.ResponseModel, &r.Excerpt)
+			&r.TTFTMs, &r.DurationMs, &r.OutputTokens, &r.ReasoningTokens, &r.ResponseModel, &r.Excerpt, &r.CheckKey, &r.InstanceIdx, &r.Step, &r.InstanceHash, &r.GeneratorVersion, &r.InputTokens, &r.CacheReadTokens, &r.CacheCreationTokens, &r.StopReason, &r.Effort, &r.Flags, &r.ErrorBody)
 		return r, err
 	})
 	if out == nil {

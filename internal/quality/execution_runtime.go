@@ -233,7 +233,7 @@ func (e *Engine) budgetForRun(ctx context.Context, id int64, limit TokenBudget) 
 func (e *Engine) executePlanItems(ctx context.Context, run runRow, ref *runRow, u, refUp *upstreamRow, targetKey, refKey string, plan executionSnapshot, p *Policy, st InspectionSettings, timeout time.Duration) ([]Outcome, []string, error) {
 	outcomes := make([]Outcome, len(plan.Instances))
 	for i, instance := range plan.Instances {
-		outcomes[i] = Outcome{Suite: instance.Item.Suite, ItemID: instance.ItemID, CheckKey: instance.CheckKey}
+		outcomes[i] = instanceOutcome(instance)
 	}
 	if plan.Limits.Account > 0 && plan.Limits.Global > 0 {
 		st.Limits.Account, st.Limits.Global = plan.Limits.Account, plan.Limits.Global
@@ -308,16 +308,16 @@ func (e *Engine) executePlanItems(ctx context.Context, run runRow, ref *runRow, 
 				}
 				pair.Wait()
 				if te != nil {
-					outcomes[i] = Outcome{ItemID: instance.ItemID, Suite: instance.Item.Suite, CheckKey: instance.CheckKey, Target: tr}
+					outcomes[i] = withInstanceObservation(instance, tr, false, nil, false)
 					errs[i] = te
 					continue
 				}
 				if re != nil {
-					outcomes[i] = Outcome{ItemID: instance.ItemID, Suite: instance.Item.Suite, CheckKey: instance.CheckKey, Target: tr, TargetPass: tp, Ref: &rr}
+					outcomes[i] = withInstanceObservation(instance, tr, tp, &rr, false)
 					errs[i] = re
 					continue
 				}
-				o := Outcome{CheckKey: instance.CheckKey, ItemID: instance.ItemID, Suite: instance.Item.Suite, Target: tr, TargetPass: tp}
+				o := withInstanceObservation(instance, tr, tp, nil, false)
 				if refKey != "" {
 					o.Ref, o.RefPass = &rr, rp
 				}
@@ -344,6 +344,13 @@ func (e *Engine) executePlanItems(ctx context.Context, run runRow, ref *runRow, 
 	}
 	close(jobs)
 	workers.Wait()
+	for i, instance := range plan.Instances {
+		outcomes[i].InstanceIdx = instance.InstanceIdx
+		outcomes[i].GeneratorVersion = instance.GeneratorVersion
+		if len(instance.Steps) > 0 {
+			outcomes[i].RequestedModel = instance.Steps[0].Request.Model
+		}
+	}
 	for _, err := range errs {
 		if err != nil {
 			return outcomes, warnings, err
@@ -429,7 +436,7 @@ func (e *Engine) executeInstance(ctx context.Context, run runRow, u *upstreamRow
 		if err != nil {
 			return last, false, err
 		}
-		if strings.HasPrefix(it.GeneratorVersion, "long_context/") {
+		if strings.HasPrefix(it.GeneratorVersion, "long_context/") || strings.HasPrefix(it.GeneratorVersion, "context_boundary/") {
 			// 草堆使用模板的词元估算并预留 25% 误差；实际 usage 仍是记账依据。
 			var estimate struct {
 				Tokens int64 `json:"estimated_input_tokens"`
@@ -458,6 +465,17 @@ func (e *Engine) executeInstance(ctx context.Context, run runRow, u *upstreamRow
 			release()
 			if windowUnknown {
 				last.addFlag("window_unknown")
+			} else {
+				last.addFlag("window_available")
+				if last.ErrorClass == "rate_limited" {
+					snapshot, snapshotErr := e.accountSnapshot(ctx, u)
+					if snapshotErr == nil {
+						known, low := windowStatus(snapshot, e.now())
+						if known && !low {
+							last.addFlag("abnormal_rate_limited")
+						}
+					}
+				}
 			}
 			actualInput := int64(0)
 			if last.InputTokens != nil {
@@ -557,7 +575,7 @@ func (e *Engine) loadInstanceResult(ctx context.Context, runID int64, it planned
 	var passed bool
 	var raw []byte
 	var hash string
-	err := e.DB.QueryRow(ctx, `SELECT instance_hash, COALESCE(passed,false), COALESCE(http_status,0), COALESCE(error_class,''), COALESCE(output_tokens,0), COALESCE(reasoning_tokens,0), COALESCE(ttft_ms,0), COALESCE(duration_ms,0), input_tokens, cache_read_tokens, cache_creation_tokens, stop_reason, effort, flags, step_state, reasoning_tokens IS NOT NULL, output_tokens IS NOT NULL FROM probe_results WHERE run_id=$1 AND item_id=$2 AND instance_idx=$3 AND step=$4 AND instance_hash<>''`, runID, it.ItemID, it.InstanceIdx, step).Scan(&hash, &passed, &r.HTTPStatus, &r.ErrorClass, &r.OutputTokens, &r.ReasoningTokens, &r.TTFT, &r.Duration, &r.InputTokens, &r.CacheReadTokens, &r.CacheCreationTokens, &r.StopReason, &r.Effort, &r.Flags, &raw, &r.ReasoningObserved, &r.OutputObserved)
+	err := e.DB.QueryRow(ctx, `SELECT instance_hash, COALESCE(passed,false), COALESCE(http_status,0), COALESCE(error_class,''), COALESCE(output_tokens,0), COALESCE(reasoning_tokens,0), COALESCE(ttft_ms,0), COALESCE(duration_ms,0), input_tokens, cache_read_tokens, cache_creation_tokens, stop_reason, effort, flags, step_state, reasoning_tokens IS NOT NULL, output_tokens IS NOT NULL,COALESCE(response_model,''),error_body FROM probe_results WHERE run_id=$1 AND item_id=$2 AND instance_idx=$3 AND step=$4 AND instance_hash<>''`, runID, it.ItemID, it.InstanceIdx, step).Scan(&hash, &passed, &r.HTTPStatus, &r.ErrorClass, &r.OutputTokens, &r.ReasoningTokens, &r.TTFT, &r.Duration, &r.InputTokens, &r.CacheReadTokens, &r.CacheCreationTokens, &r.StopReason, &r.Effort, &r.Flags, &raw, &r.ReasoningObserved, &r.OutputObserved, &r.ResponseModel, &r.ErrorBody)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, false, resumedState{}, false, nil
 	}
@@ -574,6 +592,7 @@ func (e *Engine) loadInstanceResult(ctx context.Context, runID int64, it planned
 	r.TTFT *= time.Millisecond
 	r.Duration *= time.Millisecond
 	r.Text, r.ToolCalls = state.Text, state.ToolCalls
+	r.ErrorCode, _, _ = errorDetails([]byte(r.ErrorBody))
 	r.RetryAfter = time.Duration(state.RetryAfterMS) * time.Millisecond
 	return r, passed, state, state.Complete, nil
 }
@@ -619,4 +638,17 @@ func inspectionRetryDelay(retryAfter time.Duration, attempt int) (time.Duration,
 		return retryAfter, true
 	}
 	return time.Duration(1<<attempt) * time.Second, true
+}
+
+func instanceOutcome(it plannedInstance) Outcome {
+	o := Outcome{ItemID: it.ItemID, CheckKey: it.CheckKey, Suite: it.Item.Suite, InstanceIdx: it.InstanceIdx, GeneratorVersion: it.GeneratorVersion, StaticComparable: len(it.Steps) == 1}
+	if len(it.Steps) > 0 {
+		o.RequestedModel = it.Steps[0].Request.Model
+	}
+	return o
+}
+func withInstanceObservation(it plannedInstance, target ProbeResult, pass bool, ref *ProbeResult, refPass bool) Outcome {
+	o := instanceOutcome(it)
+	o.Target, o.TargetPass, o.Ref, o.RefPass = target, pass, ref, refPass
+	return o
 }

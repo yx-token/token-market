@@ -14,6 +14,8 @@ import (
 )
 
 type Item struct {
+	listing.InspectionView
+	UpstreamID       int64     `json:"-"`
 	ListingID        int64     `json:"listing_id"`
 	Platform         string    `json:"platform"`
 	AuthType         string    `json:"auth_type"`
@@ -94,7 +96,7 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 	}
 	var q string
 	if withMetrics {
-		q = `SELECT l.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
+		q = `SELECT l.id, u.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
 			att.success_rate, COALESCE(att.requests, 0), usage.ttft_p50,
 			l.mode, l.sku_kind, l.face_value, l.stock, l.stock_sold, l.min_amount::float8, l.title, l.description,
 			COALESCE(l.categories, '{}')
@@ -115,7 +117,7 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 			AND ($7 = '' OR $7 = ANY (COALESCE(l.categories, '{}')))
 		ORDER BY ` + order + ` LIMIT $4 OFFSET $5`
 	} else {
-		q = `SELECT l.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
+		q = `SELECT l.id, u.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
 			NULL::float8, 0, NULL::float8,
 			l.mode, l.sku_kind, l.face_value, l.stock, l.stock_sold, l.min_amount::float8, l.title, l.description,
 			COALESCE(l.categories, '{}')
@@ -134,7 +136,7 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Item, error) {
 		var it Item
-		err := row.Scan(&it.ListingID, &it.Platform, &it.AuthType, &it.Tier, &it.Grade, &it.Health, &it.SellerMultiplier, &it.ListedSince,
+		err := row.Scan(&it.ListingID, &it.UpstreamID, &it.Platform, &it.AuthType, &it.Tier, &it.Grade, &it.Health, &it.SellerMultiplier, &it.ListedSince,
 			&it.SuccessRate24h, &it.Requests24h, &it.TTFTp50Ms,
 			&it.Mode, &it.SKUKind, &it.FaceValue, &it.Stock, &it.StockSold, &it.MinAmount, &it.Title, &it.Description, &it.Categories)
 		if it.Categories == nil {
@@ -143,7 +145,21 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 		it.BuyerPrice = listing.BuyerPrice(it.SellerMultiplier, c)
 		return it, err
 	})
-	return items, err
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, len(items))
+	for i := range items {
+		ids[i] = items[i].UpstreamID
+	}
+	views, err := listing.LoadInspectionViews(ctx, s.DB, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].InspectionView = views[items[i].UpstreamID]
+	}
+	return items, nil
 }
 
 // Get 返回单个挂单摘要。

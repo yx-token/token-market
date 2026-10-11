@@ -87,7 +87,7 @@ func (s Settings) Validate() error {
 			if !finite(value) || value < 0 || value > 10000000 {
 				return fmt.Errorf("质检项 %s 阈值 %s 超出范围", key, parameter)
 			}
-			if strings.Contains(parameter, "rate") || strings.Contains(parameter, "relative") || parameter == "alpha" || parameter == "confidence" || (key == "D06" && (strings.Contains(parameter, "ratio") || parameter == "ci_upper")) {
+			if strings.Contains(parameter, "rate") || strings.Contains(parameter, "relative") || parameter == "alpha" || parameter == "confidence" || parameter == "min_input_ratio" || (key == "D06" && (strings.Contains(parameter, "ratio") || parameter == "ci_upper")) {
 				if value > 1 {
 					return fmt.Errorf("质检项 %s 比例阈值 %s 须处于 [0, 1]", key, parameter)
 				}
