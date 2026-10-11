@@ -142,6 +142,7 @@ func (s *Server) marketConfig(w http.ResponseWriter, r *http.Request) error {
 		"withdraw_min": st.WithdrawMin, "max_hops": 5,
 		"require_seller_proxy": st.RequireSellerProxy,
 		"payment_channels":     channels, "recharge_min": st.RechargeMin, "recharge_max": st.RechargeMax,
+		"price_models": st.PriceModels,
 	})
 }
 
@@ -334,7 +335,8 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return created(w, map[string]any{"key": plain, "note": "store this key now; it will not be shown again", "detail": k})
+	w.Header().Set("Cache-Control", "no-store")
+	return created(w, map[string]any{"key": plain, "detail": k})
 }
 
 func (s *Server) listKeys(w http.ResponseWriter, r *http.Request) error {
@@ -355,6 +357,20 @@ func (s *Server) getKey(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return ok(w, k)
+}
+
+// keySecret 返回 Key 明文，供买家再次复制。
+func (s *Server) keySecret(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	plain, err := s.Keys.Secret(r.Context(), httpx.MustUser(r).UserID, id)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	return ok(w, map[string]string{"key": plain})
 }
 
 func (s *Server) updateKey(w http.ResponseWriter, r *http.Request) error {

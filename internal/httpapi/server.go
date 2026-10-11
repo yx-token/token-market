@@ -107,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 		{"POST /api/buyer/keys", s.createKey},
 		{"GET /api/buyer/keys", s.listKeys},
 		{"GET /api/buyer/keys/{id}", s.getKey},
+		{"GET /api/buyer/keys/{id}/secret", s.keySecret},
 		{"PUT /api/buyer/keys/{id}", s.updateKey},
 		{"POST /api/buyer/keys/{id}/disable", s.setKeyEnabled(false)},
 		{"POST /api/buyer/keys/{id}/enable", s.setKeyEnabled(true)},
