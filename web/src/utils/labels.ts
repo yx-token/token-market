@@ -171,6 +171,26 @@ const table: Record<string, Record<string, Label>> = {
     adaptive: { text: '追加检测', tone: 'yellow' },
     appeal: { text: '申诉复测', tone: 'purple' },
   },
+  // 管理员查看的检测记录另有基线账号同批次的对照检测
+  runTrigger: {
+    onboarding: { text: '上架检测', tone: 'blue' },
+    scheduled: { text: '定时检测', tone: 'gray' },
+    recovery: { text: '恢复复测', tone: 'blue' },
+    seller_manual: { text: '手动复测', tone: 'blue' },
+    admin: { text: '平台检测', tone: 'purple' },
+    adaptive: { text: '追加检测', tone: 'yellow' },
+    appeal: { text: '申诉复测', tone: 'purple' },
+    reference: { text: '基线对照', tone: 'gray' },
+  },
+  probeRunStatus: {
+    queued: { text: '排队中', tone: 'gray' },
+    running: { text: '检测中', tone: 'blue' },
+    third_party: { text: '等待第三方', tone: 'blue' },
+    done: { text: '完成', tone: 'green' },
+    failed: { text: '失败', tone: 'red' },
+    skipped_budget: { text: '超预算跳过', tone: 'yellow' },
+    skipped_disabled: { text: '未开启跳过', tone: 'gray' },
+  },
   attribution: {
     account: { text: '账号本身', tone: 'red' },
     proxy: { text: '代理线路', tone: 'yellow' },

@@ -26,6 +26,7 @@ const consoleChildren: RouteRecordRaw[] = [
   { path: 'detection', name: 'console-detection', component: () => import('@/views/admin/DetectionView.vue') },
   { path: 'third-party', name: 'console-third-party', component: () => import('@/views/admin/ThirdPartyView.vue') },
   { path: 'probe-items', name: 'console-probe-items', component: () => import('@/views/admin/ProbeItemsView.vue') },
+  { path: 'probe-records', name: 'console-probe-records', component: () => import('@/views/admin/ProbeRecordsView.vue') },
   { path: 'quality', name: 'console-quality', component: () => import('@/views/admin/QualityView.vue') },
   { path: 'upstreams', name: 'console-upstreams', component: () => import('@/views/admin/UpstreamsView.vue') },
   { path: 'users', name: 'console-users', component: () => import('@/views/admin/UsersView.vue') },

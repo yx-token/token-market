@@ -395,6 +395,69 @@ func (s *Server) adminProbeRun(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, d)
 }
 
+// recordFilter 读取检测记录的筛选参数；from / to 是本地日期（YYYY-MM-DD），to 当天包含在内。
+func recordFilter(r *http.Request) (quality.RecordFilter, error) {
+	q := r.URL.Query()
+	f := quality.RecordFilter{Platform: q.Get("platform"), UpstreamID: queryInt64(r, "upstream_id"), Model: q.Get("model"),
+		Trigger: q.Get("trigger"), Status: q.Get("status"), Verdict: q.Get("verdict")}
+	for _, p := range []struct {
+		name string
+		dst  **time.Time
+		days int
+	}{{"from", &f.From, 0}, {"to", &f.To, 1}} {
+		if v := q.Get(p.name); v != "" {
+			d, err := time.ParseInLocation("2006-01-02", v, time.Local)
+			if err != nil {
+				return f, httpx.BadRequest("INVALID_DATE", p.name+" must be YYYY-MM-DD")
+			}
+			d = d.AddDate(0, 0, p.days)
+			*p.dst = &d
+		}
+	}
+	return f, nil
+}
+
+func (s *Server) adminProbeRecords(w http.ResponseWriter, r *http.Request) error {
+	f, err := recordFilter(r)
+	if err != nil {
+		return err
+	}
+	limit, offset := page(r)
+	recs, err := quality.ListRunRecords(r.Context(), s.DB, f, limit, offset)
+	if err != nil {
+		return err
+	}
+	return ok(w, recs)
+}
+
+func (s *Server) adminProbeItemStats(w http.ResponseWriter, r *http.Request) error {
+	f, err := recordFilter(r)
+	if err != nil {
+		return err
+	}
+	stats, err := quality.ListItemStats(r.Context(), s.DB, f)
+	if err != nil {
+		return err
+	}
+	return ok(w, stats)
+}
+
+func (s *Server) adminProbeItemResults(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	f, err := recordFilter(r)
+	if err != nil {
+		return err
+	}
+	res, err := quality.ListItemResults(r.Context(), s.DB, id, f, httpx.QueryInt(r, "limit", 50, 1, 200))
+	if err != nil {
+		return err
+	}
+	return ok(w, res)
+}
+
 func (s *Server) listItems(w http.ResponseWriter, r *http.Request) error {
 	items, err := quality.ListItems(r.Context(), s.DB, r.URL.Query().Get("status"))
 	if err != nil {
