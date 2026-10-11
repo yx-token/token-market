@@ -349,6 +349,32 @@
   gap: 10px 16px;
 }
 
+.xm-market .xm-key-plain {
+  margin-top: 10px;
+  background: #fafafa;
+  border: 1px dashed rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.xm-market .xm-key-plain code {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  color: #303030;
+}
+.xm-market .xm-key-sample { margin-top: 12px; }
+.xm-market .xm-key-sample .lab {
+  font-size: 12px;
+  font-weight: 800;
+  color: #666;
+  margin-bottom: 6px;
+}
+.xm-market .xm-key-sample .hint {
+  font-size: 12px;
+  color: #888;
+  margin-top: 6px;
+}
+
 .xm-market .xm-table-wrap {
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.08);

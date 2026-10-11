@@ -43,6 +43,7 @@ export const buyer = {
   refundPack: (id: number, dest = 'balance') => http.post<T.QuotaPack>(`/api/buyer/packs/${id}/refund`, { dest }),
   keys: () => http.get<T.BuyerKey[] | null>('/api/buyer/keys'),
   key: (id: number) => http.get<T.BuyerKey>(`/api/buyer/keys/${id}`),
+  keySecret: (id: number) => http.get<{ key: string }>(`/api/buyer/keys/${id}/secret`),
   createKey: (body: { name: string; route: T.RouteInput; limits: T.Limits }) => http.post<T.CreatedKey>('/api/buyer/keys', body),
   updateKey: (id: number, body: { name?: string; route?: T.RouteInput; limits?: T.Limits }) =>
     http.put<T.BuyerKey>(`/api/buyer/keys/${id}`, body),
