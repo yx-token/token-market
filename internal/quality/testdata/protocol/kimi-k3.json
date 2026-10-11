@@ -7,12 +7,7 @@
         "role": "system"
       },
       {
-        "content": [
-          {
-            "text": "只输出最终答案。",
-            "type": "text"
-          }
-        ],
+        "content": "只输出最终答案。",
         "role": "user"
       }
     ],

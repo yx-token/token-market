@@ -75,6 +75,10 @@
 }
 ```
 
+Chat 协议纯文本消息使用字符串，多个文本块顺序拼接；只有含图片时使用内容块数组，以兼容各 Coding Plan 通道。Codex 通道不发送顶层 `instructions` 或 system 角色，将题目系统指令前置到第一条 user 消息，避免覆盖 sub2api 在 instructions 为空时注入的官方 Codex 提示。社区报告非官方 instructions 可能返回 400；这是风险规避，真实兼容性**待运营校准**。Gemini 3 `thinkingLevel` 的 high/HIGH 大小写也**待运营校准**。
+
+新套件包含 inspection_authenticity（真伪）、inspection_capability（能力）、inspection_context（上下文）、inspection_function（功能）、inspection_output（输出）、inspection_performance（性能与可用观测复用）。
+
 `generator` 定义：template_id（注册表模板键）、version（不可变版本）、parameters（允许参数域，不是自由代码）、instances（full/quick 每模式实例数）。静态题为 `{}`。示例只说明结构，不把该题面或参数当作校准后的难度。
 
 ```json
@@ -273,10 +277,10 @@ onboarding/admin/appeal 现有美元日预算豁免保留；窗口、安全 toke
 - 迁移为 `0022_inspection_probe.sql`。所有新列按 §2 增加；估价、checks、gates 等列仅预留结构，阶段二不写新 Q、不改变等级公式或调度策略。22 道旧内置题及默认检测模型保留。
 - 未启用 `inspection_*` 套件的旧流程继续创建 `legacy` run，使用既有单请求/批次设置；启用新套件后，按 `full_triggers` 选择 full/quick。阶段三接入生成器和新题选择器；阶段二遇到未注册的 generator 会在发请求前报配置错误，不执行自由代码。
 - 所有模式第一次开始时固定 deadline_at。full/quick 取消后保留完成结果；legacy 维持原有“清空结果后重跑”的行为，但保留同一份题面快照与截止时间，并在内部 run.summary.resume_budget 中累计清除结果之前的预算，不能借重启重置预算。恢复状态不进入卖家报告。
-- 步骤先预留输入和合并输出预算；每侧独立计账，可靠 usage 到达后修正实际值，缺失计数/请求中断保留预留。Claude 输入合并缓存创建与读取；OpenAI 缓存不重复加；Gemini/Grok 独列推理只加一次。平台与限流错误的重试也受预算和截止时间约束。
+- 步骤先预留输入和合并输出预算；每侧独立计账，可靠 usage 到达后修正实际值，缺失计数/请求中断保留预留。Claude 输入合并缓存创建与读取；OpenAI 缓存不重复加；Gemini/Grok 独列推理只加一次。平台与限流错误的重试也受预算和截止时间约束。单次重试等待最多 30 秒；Retry-After 超过上限直接记录 rate_limited，不再重试本题，原等待信息以 step_state.retry_after_ms（毫秒）保留。legacy 的预留及实际用量超支只记 warning，不中止、不失败；full/quick 仍执行硬上限。
 - 校准前输入按完整请求 JSON 的 UTF-8 字节数加网关注入预留量估算，数值偏保守。Gemini 3 的思考档位没有独立数值预算，额外预留 65,536 tokens；这些是执行保护参数，不是厂商 tokenizer 或额度保证，需运营用真实基线校准。长题若无法预留则停止该批次，不能自动扩充预算。
 - sub2api 的 Codex OAuth 会删去 max_output_tokens，其他协议也可能缺失完整 usage；token-market 能限制派发、累计返回观测并停止后续请求，无法保证一次在途请求的厂商实际消耗绝不超过预留。要取得网关之外的强制输出限额，记为“依赖 sub2api，后续处理”，不修改 sub2api。
 - 窗口只读现有账号快照。Claude 5h 到期时间读 accounts.session_window_end，7d/OI 与 Codex 到期时间读 extra；已过期或无效的快照视为未知。未知照常执行并标记 window_unknown／“窗口余量未知”；明确不足时记录顺延原因，基线同样检查。不访问 active usage 接口。
 - 新判分器的工具参数用精确 JSON 数值；JSON Schema 只允许本题内引用，禁止加载外部文件或 URL。工具结果来自注册的本地确定性数据，不执行模型生成代码。
-- 现有 SPRT、等级和健康处置口径保持不变；只剔除平台/限流/题目配置失败及拒答、截断等无效智力配对。没有任何有效可用观测时记 inconclusive；不把平台限制当作账号 unavailable。旧题缺基线的既有口径保留，新题的“无合格基线不判定”在题库接入时落实。
+- 现有 SPRT、等级和健康处置口径保持不变；只剔除平台/限流/题目配置失败及拒答、截断等无效智力配对。没有任何有效可用观测时定时/追加检测记 inconclusive；上架、申诉、恢复复测按“检测未完成”处理：上架不通过且说明无有效观测、申诉回待处理、恢复退避重排，均不改变健康状态。汇总单独列出平台/限流/配置错误，供管理员排查；不把平台限制当作账号 unavailable。旧题缺基线的既有口径保留，新题的“无合格基线不判定”在题库接入时落实。
 - 真实基线无意外 4xx、Claude 推理量大于零、同配置双侧 input_tokens 相等、完整质检 p95 与预算估算，均为**待运营校准**；离线替身仅验证数据流与控制逻辑。

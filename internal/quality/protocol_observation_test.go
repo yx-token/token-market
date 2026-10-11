@@ -124,3 +124,77 @@ func TestHaiku55DisabledThinkingOverride(t *testing.T) {
 		t.Fatal("关闭思考的请求不应伪造推理观测")
 	}
 }
+
+func TestChatTextContentRemainsString(t *testing.T) {
+	for _, platform := range []string{"kimi", "glm", "minimax"} {
+		t.Run(platform, func(t *testing.T) {
+			req := ProbeRequest{Model: "coding-model", MaxTokens: 100, Messages: []ProbeMessage{
+				{Role: "user", Content: []ProbeContent{{Type: "text", Text: "第一段。"}, {Type: "text", Text: "第二段。"}}},
+				{Role: "assistant", Content: []ProbeContent{{Type: "text", Text: "答案"}}},
+			}}
+			body := buildJSON(t, platform, req.Model, req)
+			messages := body["messages"].([]any)
+			if got := messages[0].(map[string]any)["content"]; got != "第一段。第二段。" {
+				t.Fatalf("纯文本块应拼接为字符串：%v", got)
+			}
+			if got := messages[1].(map[string]any)["content"]; got != "答案" {
+				t.Fatalf("助手纯文本应使用字符串：%v", got)
+			}
+		})
+	}
+
+	req := ProbeRequest{Model: "coding-model", MaxTokens: 100, Attachments: []ProbeAttachment{{ID: "图", MediaType: "image/png", Encoding: "base64", Data: "eA=="}},
+		Messages: []ProbeMessage{{Role: "user", Content: []ProbeContent{{Type: "text", Text: "查看图像。"}, {Type: "image", AttachmentID: "图"}}}}}
+	body := buildJSON(t, "kimi", req.Model, req)
+	content, ok := body["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	if !ok || len(content) != 2 || content[1].(map[string]any)["type"] != "image_url" {
+		t.Fatalf("图片消息应保留内容块：%v", body)
+	}
+}
+
+func TestCodexSystemRequirementIsUserContent(t *testing.T) {
+	req := ProbeRequest{Model: "gpt-6.1-sol", System: "只输出最终答案。", MaxTokens: 100, Messages: []ProbeMessage{
+		{Role: "user", Content: []ProbeContent{{Type: "text", Text: "第一题"}}},
+		{Role: "assistant", Content: []ProbeContent{{Type: "text", Text: "42"}}},
+		{Role: "user", Content: []ProbeContent{{Type: "text", Text: "第二题"}}},
+	}}
+	body := buildJSON(t, "openai", req.Model, req)
+	if _, ok := body["instructions"]; ok {
+		t.Fatal("Codex 请求不能覆盖官方 instructions")
+	}
+	input := body["input"].([]any)
+	for _, item := range input {
+		if item.(map[string]any)["role"] == "system" {
+			t.Fatal("Codex 请求不能携带 system 角色")
+		}
+	}
+	first := input[0].(map[string]any)["content"].([]any)
+	if first[0].(map[string]any)["text"] != req.System+"\n\n" || first[1].(map[string]any)["text"] != "第一题" {
+		t.Fatalf("系统要求未前置首条用户消息：%v", first)
+	}
+	last := input[2].(map[string]any)["content"].([]any)
+	if len(last) != 1 || last[0].(map[string]any)["text"] != "第二题" || req.Messages[0].Content[0].Text != "第一题" {
+		t.Fatal("系统要求被重复加入或原始消息被修改")
+	}
+
+	req.Prompt, req.Messages = "第一题", nil
+	body = buildJSON(t, "openai", req.Model, req)
+	if body["input"] != req.System+"\n\n第一题" {
+		t.Fatalf("短请求系统要求未前置用户题面：%v", body)
+	}
+}
+
+func TestContextWindowExceededIsTruncated(t *testing.T) {
+	res := ProbeResult{StopReason: "model_context_window_exceeded"}
+	normalizeStop(&res)
+	if !res.HasFlag("truncated") || res.HasFlag("unknown_stop_reason") || res.EligibleForIntelligence() {
+		t.Fatalf("上下文窗口耗尽应记为截断并排除智力统计：%+v", res)
+	}
+}
+
+func TestProbeErrorNumericCode(t *testing.T) {
+	code, _, _ := errorDetails([]byte(`{"error":{"code":429,"message":"请求过多"}}`))
+	if code != "429" {
+		t.Fatalf("数字错误码未保留：%q", code)
+	}
+}

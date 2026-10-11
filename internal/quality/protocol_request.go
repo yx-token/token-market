@@ -188,11 +188,20 @@ func (anthropicProtocol) build(req ProbeRequest) (string, any, bool) {
 func (responsesProtocol) build(req ProbeRequest) (string, any, bool) {
 	body := map[string]any{"model": req.Model, "max_output_tokens": req.MaxTokens, "stream": true}
 	if len(req.Messages) == 0 && len(req.Attachments) == 0 {
-		body["input"] = req.Prompt
+		prompt := req.Prompt
+		if req.System != "" {
+			prompt = req.System + "\n\n" + prompt
+		}
+		body["input"] = prompt
 	} else {
 		var input []map[string]any
+		system := req.System
 		for _, m := range requestMessages(req) {
 			var content []map[string]any
+			if system != "" && m.Role == "user" {
+				content = append(content, map[string]any{"type": "input_text", "text": system + "\n\n"})
+				system = ""
+			}
 			for _, c := range m.Content {
 				switch c.Type {
 				case "tool_use":
@@ -217,11 +226,12 @@ func (responsesProtocol) build(req ProbeRequest) (string, any, bool) {
 				input = append(input, map[string]any{"role": m.Role, "content": content})
 			}
 		}
+		if system != "" {
+			input = append([]map[string]any{{"role": "user", "content": []map[string]any{{"type": "input_text", "text": system}}}}, input...)
+		}
 		body["input"] = input
 	}
-	if req.System != "" {
-		body["instructions"] = req.System
-	}
+	// 留空 instructions，让 Codex 网关注入官方提示；题目要求放在首条用户消息。
 	if effort := req.effectiveEffort(); effort != "" {
 		body["reasoning"] = map[string]any{"effort": effort}
 	}
@@ -243,6 +253,8 @@ func (chatProtocol) build(req ProbeRequest) (string, any, bool) {
 	}
 	for _, m := range requestMessages(req) {
 		var content, calls []map[string]any
+		var text strings.Builder
+		hasImage := false
 		for _, c := range m.Content {
 			switch c.Type {
 			case "tool_use":
@@ -250,14 +262,21 @@ func (chatProtocol) build(req ProbeRequest) (string, any, bool) {
 			case "tool_result":
 				messages = append(messages, map[string]any{"role": "tool", "tool_call_id": c.ToolUseID, "content": contentString(c.Content)})
 			case "image":
+				hasImage = true
 				a := attachmentFor(req, c.AttachmentID)
 				content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:" + a.MediaType + ";base64," + a.Data}})
 			default:
+				text.WriteString(c.Text)
 				content = append(content, map[string]any{"type": "text", "text": c.Text})
 			}
 		}
 		if len(content) > 0 || len(calls) > 0 {
-			msg := map[string]any{"role": m.Role, "content": content}
+			// Coding Plan 的纯文本消息沿用字符串，图片消息才使用内容块数组。
+			var messageContent any = text.String()
+			if hasImage {
+				messageContent = content
+			}
+			msg := map[string]any{"role": m.Role, "content": messageContent}
 			if len(calls) > 0 {
 				msg["tool_calls"] = calls
 			}

@@ -9,7 +9,7 @@ ALTER TABLE probe_items
 ALTER TABLE probe_items DROP CONSTRAINT probe_items_suite_check;
 ALTER TABLE probe_items ADD CONSTRAINT probe_items_suite_check CHECK
     (suite IN ('iq', 'reasoning', 'long_context', 'tool_call', 'inspection_authenticity',
-              'inspection_capability', 'inspection_function', 'inspection_output', 'inspection_performance'));
+              'inspection_capability', 'inspection_context', 'inspection_function', 'inspection_output', 'inspection_performance'));
 ALTER TABLE probe_results
     ADD COLUMN check_key text NOT NULL DEFAULT '',
     ADD COLUMN instance_idx integer NOT NULL DEFAULT 0,

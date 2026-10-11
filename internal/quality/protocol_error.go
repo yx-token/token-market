@@ -54,9 +54,6 @@ func errorDetails(raw []byte) (code, kind, message string) {
 		} else if n, ok := e["code"].(float64); ok {
 			code = strconv.FormatInt(int64(n), 10)
 		}
-		if n, ok := e["code"].(json.Number); ok {
-			code = n.String()
-		}
 	}
 	if kind == "" {
 		kind = str(e["status"])
@@ -177,7 +174,7 @@ func normalizeStop(res *ProbeResult) {
 	switch strings.ToLower(res.StopReason) {
 	case "end_turn", "stop_sequence", "tool_use", "stop", "tool_calls", "function_call", "completed":
 		res.addFlag("stop_normal")
-	case "max_tokens", "max_output_tokens", "length", "incomplete":
+	case "max_tokens", "max_output_tokens", "length", "incomplete", "model_context_window_exceeded":
 		res.addFlag("truncated")
 	case "refusal", "content_filter", "safety", "recitation", "blocklist", "prohibited_content", "spii", "image_safety", "reasoning_extraction":
 		res.addFlag("refusal")

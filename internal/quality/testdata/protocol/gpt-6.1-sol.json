@@ -1,7 +1,6 @@
 {
   "body": {
-    "input": "只输出最终答案。",
-    "instructions": "只返回题目指定格式。",
+    "input": "只返回题目指定格式。\n\n只输出最终答案。",
     "max_output_tokens": 1024,
     "model": "gpt-6.1-sol",
     "reasoning": {

@@ -575,13 +575,21 @@ func (e *Engine) requeueBatch(ctx context.Context, batch string) error {
 // failRun 记录检测失败（超时、中断或出错），并让依赖这次检测的流程继续：上架检测记为不通过（卖家可以重新检测），
 // 申诉回到待处理，恢复复测按退避重新安排。
 func (e *Engine) failRun(ctx context.Context, run runRow, msg string) error {
+	return e.failRunWithSummary(ctx, run, msg, nil)
+}
+
+func (e *Engine) failRunWithSummary(ctx context.Context, run runRow, msg string, summary map[string]any) error {
+	if summary == nil {
+		summary = map[string]any{}
+	}
+	summary["error"] = msg
 	tx, err := e.DB.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	tag, err := tx.Exec(ctx, `UPDATE probe_runs SET status = 'failed', finished_at = now(), summary = $2 WHERE id = $1 AND status = 'running'`,
-		run.id, mustJSON(map[string]string{"error": msg}))
+	tag, err := tx.Exec(ctx, `UPDATE probe_runs SET status = 'failed', finished_at = now(), summary = $2 WHERE id = $1 AND status IN ('running', 'third_party')`,
+		run.id, mustJSON(summary))
 	if err != nil || tag.RowsAffected() == 0 {
 		return err
 	}
@@ -699,10 +707,27 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, tim
 
 	assessment := Assess(outcomes, plan.Thresholds, plan.Scoring)
 	assessment.Warnings = warnings
+	if incomplete, err := e.failUnobservedRun(ctx, run, u, assessment); incomplete {
+		return err
+	}
 	if waiting, err := e.startThirdParty(ctx, run, u, p, assessment); err != nil || waiting {
 		return err
 	}
 	return e.conclude(ctx, run, u, p, assessment, nil)
+}
+
+func (e *Engine) failUnobservedRun(ctx context.Context, run runRow, u *upstreamRow, a Assessment) (bool, error) {
+	if a.AvailableTotal != 0 || !containsAny([]string{"onboarding", "appeal", "recovery"}, run.trigger) {
+		return false, nil
+	}
+	// 没有观测不能证明上架、申诉或恢复通过；检测失败只推进流程，不修改健康状态。
+	msg := "没有有效观测：限流/平台错误，可稍后重试"
+	if a.ErrorCounts["configuration"] > 0 {
+		msg += "；存在题目配置错误，请管理员检查"
+	}
+	summary := e.buildSummary(run, u, a, "")
+	summary["incomplete"] = true
+	return true, e.failRunWithSummary(ctx, run, msg, summary)
 }
 
 func containsAny(list []string, want ...string) bool {
@@ -774,6 +799,9 @@ var recoveryBackoff = []time.Duration{30 * time.Minute, time.Hour, 2 * time.Hour
 // conclude 记录判定、更新等级与健康状态、推进上架检测与申诉、生成卖家报告。
 // tp 是第三方检测的结果：折算后的结论比内部判定更严重时以其为准（身份不一致归因于账号本身）。
 func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Policy, a Assessment, tp []tpResult) error {
+	if incomplete, err := e.failUnobservedRun(ctx, run, u, a); incomplete {
+		return err
+	}
 	internalVerdict, tpCause := a.Verdict, ""
 	for _, c := range tp {
 		// 只有检测站给出明确的问题结论才会加重判定；检测失败、证据不足不影响内部判定
@@ -1004,6 +1032,12 @@ func (e *Engine) buildSummary(run runRow, u *upstreamRow, a Assessment, attribut
 	}
 	if len(a.Warnings) > 0 {
 		out["warnings"] = a.Warnings
+	}
+	if len(a.ErrorCounts) > 0 {
+		out["error_counts"] = a.ErrorCounts
+	}
+	if len(a.ReferenceErrorCounts) > 0 {
+		out["reference_error_counts"] = a.ReferenceErrorCounts
 	}
 	if attribution != "" {
 		out["attribution"] = attribution

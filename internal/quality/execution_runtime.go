@@ -15,6 +15,7 @@ import (
 )
 
 type resumedState struct {
+	RetryAfterMS  int64           `json:"retry_after_ms,omitempty"`
 	Complete      bool            `json:"complete"`
 	Text          string          `json:"text,omitempty"`
 	ToolCalls     []ProbeToolCall `json:"tool_calls,omitempty"`
@@ -26,12 +27,13 @@ type sideBudget struct {
 	sync.Mutex
 	used  TokenBudget
 	limit TokenBudget
+	soft  bool // 旧题只告警，不能引入新的检测失败方式。
 }
 
 func (b *sideBudget) reserve(input, output int64) bool {
 	b.Lock()
 	defer b.Unlock()
-	if input > b.limit.Input-b.used.Input || output > b.limit.Output-b.used.Output {
+	if !b.soft && (input > b.limit.Input-b.used.Input || output > b.limit.Output-b.used.Output) {
 		return false
 	}
 	b.used.Input += input
@@ -260,6 +262,10 @@ func (e *Engine) executePlan(ctx context.Context, run runRow, ref *runRow, u, re
 			return nil, nil, err
 		}
 	}
+	targetBudget.soft = plan.Mode == "legacy"
+	if refBudget != nil {
+		refBudget.soft = targetBudget.soft
+	}
 	outcomes := make([]Outcome, len(plan.Instances))
 	errs := make([]error, len(plan.Instances))
 	parallel := p.ItemParallelism
@@ -332,6 +338,12 @@ func (e *Engine) executePlan(ctx context.Context, run runRow, ref *runRow, u, re
 	for _, err := range errs {
 		if err != nil {
 			return nil, nil, err
+		}
+	}
+	for _, budget := range []*sideBudget{targetBudget, refBudget} {
+		if budget != nil && budget.soft && (budget.used.Input > budget.limit.Input || budget.used.Output > budget.limit.Output) {
+			warnings = append(warnings, "旧题模式 token 预算超出，仅告警，检测继续")
+			break
 		}
 	}
 	return outcomes, warnings, nil
@@ -456,6 +468,9 @@ func (e *Engine) executeInstance(ctx context.Context, run runRow, u *upstreamRow
 			state.OutputCharged += extraOutput
 			state.Text, state.ToolCalls = last.Text, last.ToolCalls
 			retry := last.ErrorClass == "rate_limited" || (last.ErrorClass == "platform" && last.HTTPStatus == 429)
+			delay, canRetry := inspectionRetryDelay(last.RetryAfter, attempt)
+			retry = retry && canRetry
+			state.RetryAfterMS = last.RetryAfter.Milliseconds()
 			state.Complete = ctx.Err() == nil && (!retry || attempt == 2) && len(mustJSON(state)) <= maxStepState
 			if !state.Complete || !needsState {
 				state.Text, state.ToolCalls = "", nil
@@ -491,15 +506,11 @@ func (e *Engine) executeInstance(ctx context.Context, run runRow, u *upstreamRow
 			if ctx.Err() != nil {
 				return last, false, ctx.Err()
 			}
-			if exceeded {
+			if exceeded && !budget.soft {
 				return last, false, errors.New("上游返回的实际用量超过质检 token 预算，已停止后续请求")
 			}
 			if !retry || attempt == 2 {
 				break
-			}
-			delay := last.RetryAfter
-			if delay <= 0 {
-				delay = time.Duration(1<<attempt) * time.Second
 			}
 			timer := time.NewTimer(delay)
 			select {
@@ -540,6 +551,7 @@ func (e *Engine) loadInstanceResult(ctx context.Context, runID int64, it planned
 	r.TTFT *= time.Millisecond
 	r.Duration *= time.Millisecond
 	r.Text, r.ToolCalls = state.Text, state.ToolCalls
+	r.RetryAfter = time.Duration(state.RetryAfterMS) * time.Millisecond
 	return r, passed, state, state.Complete, nil
 }
 
@@ -571,4 +583,17 @@ func observedOutput(r ProbeResult) *int {
 		return &r.OutputTokens
 	}
 	return nil
+}
+
+// 长窗口限流直接保留证据，不能用一次重试占满整批截止时间。
+const maxInspectionRetryWait = 30 * time.Second
+
+func inspectionRetryDelay(retryAfter time.Duration, attempt int) (time.Duration, bool) {
+	if retryAfter > maxInspectionRetryWait {
+		return 0, false
+	}
+	if retryAfter > 0 {
+		return retryAfter, true
+	}
+	return time.Duration(1<<attempt) * time.Second, true
 }

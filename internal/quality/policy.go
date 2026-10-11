@@ -212,7 +212,7 @@ func EffectivePolicy(ctx context.Context, db DB, upstreamID int64, platform, aut
 	return p, nil
 }
 
-var validSuites = map[string]bool{"availability": true, "latency": true, "iq": true, "reasoning": true, "long_context": true, "inspection_authenticity": true, "inspection_capability": true, "inspection_function": true, "inspection_output": true, "inspection_performance": true}
+var validSuites = map[string]bool{"availability": true, "latency": true, "iq": true, "reasoning": true, "long_context": true, "inspection_authenticity": true, "inspection_capability": true, "inspection_context": true, "inspection_function": true, "inspection_output": true, "inspection_performance": true}
 
 type PolicyInput struct {
 	ItemParallelism  *int                    `json:"item_parallelism"`
@@ -448,7 +448,7 @@ func scanItem(row pgx.Row) (*Item, error) {
 
 func validateItem(it Item) error {
 	switch it.Suite {
-	case "iq", "reasoning", "long_context", "inspection_authenticity", "inspection_capability", "inspection_function", "inspection_output", "inspection_performance":
+	case "iq", "reasoning", "long_context", "inspection_authenticity", "inspection_capability", "inspection_context", "inspection_function", "inspection_output", "inspection_performance":
 	default:
 		return httpx.BadRequest("INVALID_SUITE", "item suite must be iq, reasoning or long_context")
 	}

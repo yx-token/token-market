@@ -106,3 +106,28 @@ func TestInspectionExcludesPlatformAndInvalidPairs(t *testing.T) {
 		t.Fatalf("无效配对污染智力统计：%+v", a)
 	}
 }
+
+func TestInspectionLegacyBudgetOnlyWarns(t *testing.T) {
+	b := sideBudget{limit: TokenBudget{Input: 1, Output: 1}, soft: true}
+	for range 2 {
+		if !b.reserve(10, 20) {
+			t.Fatal("旧题预算超支不应停止派发")
+		}
+	}
+	if b.used.Input != 20 || b.used.Output != 40 {
+		t.Fatal("旧题预算超支不应停止派发，且必须累计消耗")
+	}
+}
+
+func TestInspectionRetryWaitBound(t *testing.T) {
+	for _, tc := range []struct {
+		after time.Duration
+		wait  time.Duration
+		retry bool
+	}{{0, time.Second, true}, {30 * time.Second, 30 * time.Second, true}, {31 * time.Second, 0, false}, {time.Hour, 0, false}} {
+		wait, retry := inspectionRetryDelay(tc.after, 0)
+		if wait != tc.wait || retry != tc.retry {
+			t.Fatalf("重试等待不匹配：%v %v", wait, retry)
+		}
+	}
+}
