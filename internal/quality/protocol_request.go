@@ -319,9 +319,28 @@ func (geminiProtocol) build(req ProbeRequest) (string, any, bool) {
 				a := attachmentFor(req, c.AttachmentID)
 				parts = append(parts, map[string]any{"inlineData": map[string]any{"mimeType": a.MediaType, "data": a.Data}})
 			case "tool_use":
-				parts = append(parts, map[string]any{"functionCall": map[string]any{"id": c.ID, "name": c.Name, "args": c.Input}})
+				call := map[string]any{"name": c.Name, "args": c.Input}
+				if c.ID != "" && !c.LocalID {
+					call["id"] = c.ID
+				}
+				part := map[string]any{"functionCall": call}
+				if c.ThoughtSignature != "" {
+					part["thoughtSignature"] = c.ThoughtSignature
+				}
+				parts = append(parts, part)
 			case "tool_result":
-				parts = append(parts, map[string]any{"functionResponse": map[string]any{"id": c.ToolUseID, "name": c.Name, "response": c.Content}})
+				response := object(c.Content)
+				if response == nil {
+					response, _ = decodeObject([]byte(contentString(c.Content)))
+				}
+				if response == nil {
+					response = map[string]any{"output": c.Content}
+				}
+				call := map[string]any{"name": c.Name, "response": response}
+				if c.ToolUseID != "" && !c.LocalID {
+					call["id"] = c.ToolUseID
+				}
+				parts = append(parts, map[string]any{"functionResponse": call})
 			default:
 				parts = append(parts, map[string]any{"text": c.Text})
 			}

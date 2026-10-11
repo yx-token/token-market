@@ -83,6 +83,10 @@ func validateConstraint(c Constraint) error {
 		if c.Text == "" {
 			return errors.New("首尾约束的文本不能为空")
 		}
+	case "exact_text":
+		if c.Text == "" {
+			return errors.New("完整文本约束需要非空 text")
+		}
 	case "sentence_max_words", "max_word_repeat":
 		if c.Max == nil {
 			return errors.New("最大值约束需要 max")
@@ -125,6 +129,8 @@ func checkConstraint(text string, c Constraint) bool {
 		return n
 	}
 	switch c.Kind {
+	case "exact_text":
+		return text == c.Text
 	case "word_count":
 		return inRange(len(words(text)))
 	case "han_count":

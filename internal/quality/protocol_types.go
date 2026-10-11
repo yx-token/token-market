@@ -7,14 +7,16 @@ type ProbeMessage struct {
 }
 
 type ProbeContent struct {
-	Type         string         `json:"type"`
-	Text         string         `json:"text,omitempty"`
-	AttachmentID string         `json:"attachment_id,omitempty"`
-	ID           string         `json:"id,omitempty"`
-	Name         string         `json:"name,omitempty"`
-	Input        map[string]any `json:"input,omitempty"`
-	ToolUseID    string         `json:"tool_use_id,omitempty"`
-	Content      any            `json:"content,omitempty"`
+	LocalID          bool           `json:"local_id,omitempty"`
+	ThoughtSignature string         `json:"thought_signature,omitempty"`
+	Type             string         `json:"type"`
+	Text             string         `json:"text,omitempty"`
+	AttachmentID     string         `json:"attachment_id,omitempty"`
+	ID               string         `json:"id,omitempty"`
+	Name             string         `json:"name,omitempty"`
+	Input            map[string]any `json:"input,omitempty"`
+	ToolUseID        string         `json:"tool_use_id,omitempty"`
+	Content          any            `json:"content,omitempty"`
 }
 
 type ProbeTool struct {
@@ -45,9 +47,11 @@ type ProbeStep struct {
 }
 
 type ProbeToolCall struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
+	LocalID          bool           `json:"local_id,omitempty"`
+	ThoughtSignature string         `json:"thought_signature,omitempty"`
+	ID               string         `json:"id"`
+	Name             string         `json:"name"`
+	Arguments        map[string]any `json:"arguments"`
 }
 
 type ToolCall = ProbeToolCall

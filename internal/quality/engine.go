@@ -28,16 +28,18 @@ import (
 
 // Engine 调度并执行探测、判定、处置。实现 listing.QualityHook。
 type Engine struct {
-	DB          *pgxpool.Pool
-	Replica     *replica.Reader
-	Shadow      *buyer.ShadowService
-	Keyring     *crypto.Keyring
-	Prober      *Prober
-	Listings    *listing.Service
-	Kicker      listing.Kicker
-	Settings    func(ctx context.Context) (settings.Settings, error)
-	Log         *slog.Logger
-	Concurrency int // 同时执行的检测批次上限
+	DB       *pgxpool.Pool
+	Replica  *replica.Reader
+	Shadow   *buyer.ShadowService
+	Keyring  *crypto.Keyring
+	Prober   *Prober
+	Listings *listing.Service
+	Kicker   listing.Kicker
+	Settings func(ctx context.Context) (settings.Settings, error)
+	Log      *slog.Logger
+	// RegisterInstance 仅供离线替身登记答案；生产环境不设置。
+	RegisterInstance func(ProbeRegistration)
+	Concurrency      int // 同时执行的检测批次上限
 	// Gate 返回 false 时 RunBatches 不派发新批次（兼容自检未通过的安全模式）
 	Gate func(ctx context.Context) (bool, string)
 	Now  func() time.Time
@@ -685,7 +687,7 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, tim
 		}
 	}
 
-	items, err := selectItems(ctx, e.DB, u.platform, run.model, p.Suites)
+	items, err := selectExecutionItems(ctx, e.DB, u.platform, run.model, p.Suites, run.mode)
 	if err != nil {
 		return err
 	}
@@ -705,8 +707,15 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, tim
 		return err
 	}
 
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		// 影子阶段到期只停止新请求；给已完成的旧题留出数据库收尾时间。
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+	}
 	assessment := Assess(outcomes, plan.Thresholds, plan.Scoring)
 	assessment.Warnings = warnings
+	assessment.Shadow = summarizeShadow(outcomes)
 	if incomplete, err := e.failUnobservedRun(ctx, run, u, assessment); incomplete {
 		return err
 	}
@@ -1029,6 +1038,9 @@ func (e *Engine) buildSummary(run runRow, u *upstreamRow, a Assessment, attribut
 		"suites":     suites,
 		"baseline":   a.Baseline,
 		"mode":       run.mode,
+	}
+	if a.Shadow != nil {
+		out["shadow"] = a.Shadow
 	}
 	if len(a.Warnings) > 0 {
 		out["warnings"] = a.Warnings

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/DueGin/token-market/internal/listing"
@@ -452,8 +453,25 @@ func validateItem(it Item) error {
 	default:
 		return httpx.BadRequest("INVALID_SUITE", "item suite must be iq, reasoning or long_context")
 	}
-	if (it.Prompt == "" && len(it.Request.Messages) == 0) || it.MaxTokens <= 0 {
-		return httpx.BadRequest("INVALID_ITEM", "prompt and max_tokens are required")
+	d, err := parseGenerator(it.Generator)
+	if err != nil {
+		return httpx.BadRequest("INVALID_GENERATOR", err.Error())
+	}
+	if (it.Prompt == "" && it.Request.Prompt == "" && len(it.Request.Messages) == 0 && d == nil) || it.MaxTokens <= 0 {
+		return httpx.BadRequest("INVALID_ITEM", "题面或请求内容与正数 max_tokens 必填")
+	}
+	if d != nil {
+		if !strings.HasPrefix(it.Suite, "inspection_") {
+			return httpx.BadRequest("INVALID_SUITE", "生成题须使用新质检套件")
+		}
+		if _, err := generateBankProbe(*d, strings.Repeat("1", 64)); err != nil {
+			return httpx.BadRequest("INVALID_GENERATOR", err.Error())
+		}
+	}
+	for _, mode := range it.Modes {
+		if mode != "full" && mode != "quick" {
+			return httpx.BadRequest("INVALID_MODES", "题目模式须为 full 或 quick")
+		}
 	}
 	var gradeErr error
 	if inspectionGraderTypes[it.Grader.Type] {
@@ -520,7 +538,7 @@ func UpdateItem(ctx context.Context, db DB, id int64, it Item) (*Item, error) {
 	}
 	out, err := scanItem(db.QueryRow(ctx, `UPDATE probe_items SET suite = $2, category = $3, prompt = $4, grader = $5, platforms = $6,
 			models = $7, max_tokens = $8, reasoning_effort = $9, irt_difficulty = $10, irt_discrimination = $11, status = $12,
-			check_key = $13, request = $14, generator = $15, modes = $16, builtin_key = $17, weight = $18,
+			check_key = $13, request = $14, generator = $15, modes = $16, builtin_key = COALESCE($17,builtin_key), weight = $18,
 			version = version + 1, updated_at = now() WHERE id = $1 RETURNING `+itemColumns,
 		id, it.Suite, it.Category, it.Prompt, g, it.Platforms, it.Models, it.MaxTokens, it.ReasoningEffort, it.IRTDifficulty, it.IRTDiscrimination, it.Status, it.CheckKey, mustJSON(it.Request), it.Generator, it.Modes, it.BuiltinKey, it.Weight))
 	if errors.Is(err, pgx.ErrNoRows) {

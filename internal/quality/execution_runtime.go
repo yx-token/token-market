@@ -230,43 +230,50 @@ func (e *Engine) budgetForRun(ctx context.Context, id int64, limit TokenBudget) 
 	return &sideBudget{used: TokenBudget{Input: input + discarded.Input, Output: output + discarded.Output}, limit: limit}, err
 }
 
-func (e *Engine) executePlan(ctx context.Context, run runRow, ref *runRow, u, refUp *upstreamRow, targetKey, refKey string, plan executionSnapshot, p *Policy, st InspectionSettings, timeout time.Duration) ([]Outcome, []string, error) {
+func (e *Engine) executePlanItems(ctx context.Context, run runRow, ref *runRow, u, refUp *upstreamRow, targetKey, refKey string, plan executionSnapshot, p *Policy, st InspectionSettings, timeout time.Duration) ([]Outcome, []string, error) {
+	outcomes := make([]Outcome, len(plan.Instances))
+	for i, instance := range plan.Instances {
+		outcomes[i] = Outcome{Suite: instance.Item.Suite, ItemID: instance.ItemID, CheckKey: instance.CheckKey}
+	}
 	if plan.Limits.Account > 0 && plan.Limits.Global > 0 {
 		st.Limits.Account, st.Limits.Global = plan.Limits.Account, plan.Limits.Global
 	}
-	warnings := []string{}
+	warnings := append([]string(nil), plan.Warnings...)
+	windowUnknown := false
 	for _, side := range []*upstreamRow{u, refUp} {
 		if side == nil {
 			continue
 		}
 		a, err := e.accountSnapshot(ctx, side)
 		if err != nil {
-			return nil, nil, err
+			return outcomes, warnings, err
 		}
 		known, low := windowStatus(a, e.now())
 		if low {
-			return nil, nil, errWindowInsufficient
+			return outcomes, warnings, errWindowInsufficient
 		}
 		if !known {
-			warnings = []string{"窗口余量未知"}
+			windowUnknown = true
+			if !containsAny(warnings, "窗口余量未知") {
+				warnings = append(warnings, "窗口余量未知")
+			}
 		}
 	}
 	targetBudget, err := e.budgetForRun(ctx, run.id, plan.Budget)
 	if err != nil {
-		return nil, nil, err
+		return outcomes, warnings, err
 	}
 	var refBudget *sideBudget
 	if refKey != "" {
 		refBudget, err = e.budgetForRun(ctx, ref.id, plan.Budget)
 		if err != nil {
-			return nil, nil, err
+			return outcomes, warnings, err
 		}
 	}
 	targetBudget.soft = plan.Mode == "legacy"
 	if refBudget != nil {
 		refBudget.soft = targetBudget.soft
 	}
-	outcomes := make([]Outcome, len(plan.Instances))
 	errs := make([]error, len(plan.Instances))
 	parallel := p.ItemParallelism
 	if parallel < 1 {
@@ -290,25 +297,27 @@ func (e *Engine) executePlan(ctx context.Context, run runRow, ref *runRow, u, re
 				pair.Add(1)
 				go func() {
 					defer pair.Done()
-					tr, tp, te = e.executeInstance(ctx, run, u, targetKey, instance, p, st, targetBudget, timeout, len(warnings) > 0)
+					tr, tp, te = e.executeInstance(ctx, run, u, targetKey, instance, p, st, targetBudget, timeout, windowUnknown)
 				}()
 				if refKey != "" {
 					pair.Add(1)
 					go func() {
 						defer pair.Done()
-						rr, rp, re = e.executeInstance(ctx, *ref, refUp, refKey, instance, p, st, refBudget, timeout, len(warnings) > 0)
+						rr, rp, re = e.executeInstance(ctx, *ref, refUp, refKey, instance, p, st, refBudget, timeout, windowUnknown)
 					}()
 				}
 				pair.Wait()
 				if te != nil {
+					outcomes[i] = Outcome{ItemID: instance.ItemID, Suite: instance.Item.Suite, CheckKey: instance.CheckKey, Target: tr}
 					errs[i] = te
 					continue
 				}
 				if re != nil {
+					outcomes[i] = Outcome{ItemID: instance.ItemID, Suite: instance.Item.Suite, CheckKey: instance.CheckKey, Target: tr, TargetPass: tp, Ref: &rr}
 					errs[i] = re
 					continue
 				}
-				o := Outcome{ItemID: instance.ItemID, Suite: instance.Item.Suite, Target: tr, TargetPass: tp}
+				o := Outcome{CheckKey: instance.CheckKey, ItemID: instance.ItemID, Suite: instance.Item.Suite, Target: tr, TargetPass: tp}
 				if refKey != "" {
 					o.Ref, o.RefPass = &rr, rp
 				}
@@ -330,14 +339,14 @@ func (e *Engine) executePlan(ctx context.Context, run runRow, ref *runRow, u, re
 		case <-ctx.Done():
 			close(jobs)
 			workers.Wait()
-			return nil, nil, ctx.Err()
+			return outcomes, warnings, ctx.Err()
 		}
 	}
 	close(jobs)
 	workers.Wait()
 	for _, err := range errs {
 		if err != nil {
-			return nil, nil, err
+			return outcomes, warnings, err
 		}
 	}
 	for _, budget := range []*sideBudget{targetBudget, refBudget} {
@@ -365,7 +374,7 @@ func dynamicRequest(step plannedStep, previous ProbeRequest, state resumedState)
 		content = append(content, ProbeContent{Type: "text", Text: state.Text})
 	}
 	for _, call := range state.ToolCalls {
-		content = append(content, ProbeContent{Type: "tool_use", ID: call.ID, Name: call.Name, Input: call.Arguments})
+		content = append(content, ProbeContent{Type: "tool_use", ID: call.ID, Name: call.Name, Input: call.Arguments, LocalID: call.LocalID, ThoughtSignature: call.ThoughtSignature})
 	}
 	history = append(history, ProbeMessage{Role: "assistant", Content: content})
 	if len(state.ToolCalls) > 0 {
@@ -375,7 +384,7 @@ func dynamicRequest(step plannedStep, previous ProbeRequest, state resumedState)
 			if !ok {
 				value = map[string]any{"error": "未注册本地工具结果"}
 			}
-			results = append(results, ProbeContent{Type: "tool_result", ToolUseID: call.ID, Content: string(mustJSON(value))})
+			results = append(results, ProbeContent{Type: "tool_result", ToolUseID: call.ID, Name: call.Name, Content: string(mustJSON(value)), LocalID: call.LocalID})
 		}
 		history = append(history, ProbeMessage{Role: "user", Content: results})
 	}
@@ -420,6 +429,16 @@ func (e *Engine) executeInstance(ctx context.Context, run runRow, u *upstreamRow
 		if err != nil {
 			return last, false, err
 		}
+		if strings.HasPrefix(it.GeneratorVersion, "long_context/") {
+			// 草堆使用模板的词元估算并预留 25% 误差；实际 usage 仍是记账依据。
+			var estimate struct {
+				Tokens int64 `json:"estimated_input_tokens"`
+			}
+			if err := decodeInspectionJSON(mustJSON(it.Parameters), &estimate); err != nil || estimate.Tokens <= 0 {
+				return last, false, errors.New("长上下文词元估算缺失")
+			}
+			input = estimate.Tokens*5/4 + 1024
+		}
 		for attempt := 0; attempt < 3; attempt++ {
 			release, err := e.acquireRequest(ctx, u, p, st)
 			if err != nil {
@@ -431,6 +450,10 @@ func (e *Engine) executeInstance(ctx context.Context, run runRow, u *upstreamRow
 			}
 			state.InputCharged += input
 			state.OutputCharged += output
+			if e.RegisterInstance != nil {
+				_, body, _ := protocolForModel(u.platform, req.Model).build(req)
+				e.RegisterInstance(ProbeRegistration{CheckKey: it.CheckKey, GeneratorVersion: it.GeneratorVersion, WireBody: mustJSON(body), InstanceHash: it.Hash, Step: i, Platform: u.platform, Request: req, Grader: step.Expected, Answer: step.Answer})
+			}
 			last = e.probe(ctx, u.platform, key, req, timeout)
 			release()
 			if windowUnknown {

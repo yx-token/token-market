@@ -1,6 +1,6 @@
 # 质检升级数据契约、预算与校准
 
-日期：2026-10-12。本文是分阶段实施契约，协议与执行底座已在阶段二实现，题库和估价行为继续由后续阶段落实；依据[汇总报告](../quality-inspection-2026-10-12.md)与已确认方案。字段名是接口约定，说明与错误信息使用简体中文。所有表均为 token-market 的表；sub2api 数据库只读，所有写入仅调用其现有接口。能力缺口记为“依赖 sub2api，后续处理”。
+日期：2026-10-12。本文是分阶段实施契约，协议与执行底座已在阶段二实现，参数化题库已在阶段三以影子模式接入，逐项评估与估价由阶段四落实；依据[汇总报告](../quality-inspection-2026-10-12.md)与已确认方案。字段名是接口约定，说明与错误信息使用简体中文。所有表均为 token-market 的表；sub2api 数据库只读，所有写入仅调用其现有接口。能力缺口记为“依赖 sub2api，后续处理”。
 
 ## 1. 发布与回退边界
 
@@ -55,7 +55,7 @@
 |---|---|---|
 | system | string | 平台题目系统指令；不得伪装 Claude Code 绕过网关改写 |
 | messages | array | `{role, content}`；role 为 user/assistant/tool，content 为协议无关内容块数组 |
-| content 块 | object | type 为 text/image/document/tool_use/tool_result；对应 text、attachment_id、id/name/input、tool_use_id/content 字段 |
+| content 块 | object | type 为 text/image/document/tool_use/tool_result；对应 text、attachment_id、id/name/input、tool_use_id/content 字段；工具块另可带 local_id（boolean）与 thought_signature（string），用于 Gemini 动态历史 |
 | tools | array | `{name, description, input_schema}`，input_schema 为 JSON Schema；仅本地确定性虚拟工具，不访问网络/外部服务 |
 | attachments | array | `{id, media_type, encoding, data}`，encoding 为 base64；仅平台审核的图片/PDF，限制大小，不接受远程 URL 拉取 |
 | effort | string | 型号允许的显式档位；按型号规则转换，不统一假设 low/high 都可用 |
@@ -85,12 +85,12 @@ Chat 协议纯文本消息使用字符串，多个文本块顺序拼接；只有
 {
   "template_id": "register_machine",
   "version": "1",
-  "parameters": {"registers": [3, 4], "operations": [30, 60], "difficulty": "候选高档"},
+  "parameters": {"operations": [30, 60]},
   "instances": {"full": 8, "quick": 4}
 }
 ```
 
-派发前按稳定 item_id、实例序号、步骤顺序生成所有实例；seed 使用 HMAC(平台密钥, batch_id | item_id | instance_idx | generator_version)，分隔与序列化须无歧义，密钥不入库。每批仅在被测 run 保存一份版本、哈希与 execution_snapshot，基线 run 不复制草堆，包含实际参数、派生 seed、静态请求计划和期望答案（不保存平台 HMAC 密钥）；后台改题/参数、密钥轮换或版本升级后，禁止重算已开始批次。快照最多 32MiB，超限视为题目配置错误，派发前拒绝，不归因卖家。Go 同 seed 同哈希；不承诺与 Python 的随机数序列相同。
+派发前按稳定 item_id、实例序号、步骤顺序生成所有实例；seed 使用 HMAC(平台密钥, batch_id | item_id | instance_idx | generator_version)，分隔与序列化须无歧义，密钥不入库。每批仅在被测 run 保存一份版本、哈希与 execution_snapshot，基线 run 不复制草堆，包含实际参数、派生 seed、静态请求计划和期望答案（不保存平台 HMAC 密钥）；后台改题/参数、密钥轮换或版本升级后，禁止重算已开始批次。快照最多 32MiB；旧计划超限为题目配置错误，不归因卖家。阶段三先为旧题保留空间，影子扩样超过容量则停止扩样并告警，不能让旧检测新增失败，详见 §10。Go 同 seed 同哈希；不承诺与 Python 的随机数序列相同。
 
 双侧使用相同的初始题面、参数与静态步骤；instance_hash 是预生成请求计划/题面/期望答案的规范序列化哈希，不包含账号凭据。多步后续请求使用各自真实上轮响应，字节可能不同；这些动态步骤不能直接做 A03“输入计数必须相等”。A03 只对双侧有效输入内容一致、接入配置一致的请求比较。模板升级、难度改变、入口/网关配置改变均切分历史，不能混入近 7 天旧通过率。execution_snapshot 只保存内部探针计划，不复制真实买家对话。多步的 step_state 仅保存下一步所需 text/tool_calls 与完整性标记；超限/不完整则不消费截断状态，保留已完成单元，以该多步单元为边界重跑并计入重试预算。旧 raw_excerpt 仅用于管理员展示，不能替代续跑状态。这两列是为落实确认方案的断点续跑而补充的存储细节，不扩大外部功能范围。
 
@@ -98,9 +98,9 @@ Chat 协议纯文本消息使用字符串，多个文本块顺序拼接；只有
 
 读取时按 batch_id 找 trigger != reference 的被测 run；被测和基线均使用它的 execution_snapshot。基线 run 只引用既有 batch_id，不复制长上下文草堆；被测 run 有快照则无需重新生成。旧批次无快照按 legacy 初始化，一旦持久化不得覆盖。
 
-execution_snapshot 还保存开始时的 policy（完整检测策略）、limits、request_timeout_seconds、scoring 与 thresholds；读取旧快照缺这些字段时用旧路径兼容。顶层含 schema_version（整数）、policy_version（既有策略版本）、inspection_mode（trial/formal）、mode（full/quick）、token_budget（本次每侧输入/输出上限）、instances（实例计划数组）。每个实例保存 item_id/instance_idx/check_key/generator_version/instance_hash、seed（派生值，字符串）、parameters（实际参数对象）与 steps；step 含 step 序号、request（§3 模板/已生成题面）与 expected（判分期望对象）。型号、接入配置与参与角色绑定使用既有 batch/run 信息；内部对象不返回给卖家或市场。旧 {} 走 legacy，不能当作新计划续跑。
+execution_snapshot 还保存开始时的 policy（完整检测策略）、limits、request_timeout_seconds、scoring 与 thresholds；读取旧快照缺这些字段时用旧路径兼容。顶层含 schema_version（整数）、policy_version（既有策略版本）、inspection_mode（trial/formal）、mode（legacy/full/quick）、token_budget（本次每侧输入/输出上限）、instances（实例计划数组）及可选 warnings（简体中文字符串数组，计划生成告警）。每个实例保存 item_id/instance_idx/check_key/generator_version/instance_hash、seed（派生值，字符串）、parameters（实际参数对象）与 steps；step 含 step 序号、request（§3 模板/已生成题面）、expected（判分期望对象）及可选 answer（测试替身的标准响应，真实请求不带此字段）。型号、接入配置与参与角色绑定使用既有 batch/run 信息；内部对象不返回给卖家或市场。旧 {} 走 legacy，不能当作新计划续跑。
 
-step_state 为 `{complete:boolean, text:string, tool_calls:array, input_charged:integer, output_charged:integer}`；工具调用为 `{id:string, name:string, arguments:object}`。text/tool_calls 仅在下一步确实依赖时保存；预算累计字段保存当前步骤包括重试的消耗，恢复时与本 run 其他步骤合计，缺 usage 或中断保留预留值，可靠 usage 到达后按实际计数修正。完整响应/工具结果超过上限则 complete=false，不把截断片段设为 complete=true。无中间依赖时只保存 complete 和预算累计字段，不保存 text/tool_calls；旧记录仍允许 {}。写入状态与完成结果在同一事务，恢复前校验实例哈希；不保存推理正文、凭据、真实买家历史或无关响应元数据。
+step_state 为 `{complete:boolean, text:string, tool_calls:array, input_charged:integer, output_charged:integer}`；工具调用为 `{id:string, name:string, arguments:object, local_id?:boolean, thought_signature?:string}`，另可含 retry_after_ms（毫秒）。text/tool_calls 仅在下一步确实依赖时保存；预算累计字段保存当前步骤包括重试的消耗，恢复时与本 run 其他步骤合计，缺 usage 或中断保留预留值，可靠 usage 到达后按实际计数修正。完整响应/工具结果超过上限则 complete=false，不把截断片段设为 complete=true。无中间依赖时只保存 complete 和预算累计字段，不保存 text/tool_calls；旧记录仍允许 {}。写入状态与完成结果在同一事务，恢复前校验实例哈希；不保存推理正文、凭据、真实买家历史或无关响应元数据。thought_signature 只保留不透明签名，不能视为推理正文或推理量。
 
 ```json
 {
@@ -118,12 +118,13 @@ ProbeRequest 增加 System/Messages/Tools/Attachments/Effort/Extra；ProbeResult
 
 - Claude 5.x、Opus 4.7/4.8 按型号表使用 adaptive + output_config.effort；Sonnet/Haiku 4.5 等旧型号用 budget_tokens。Haiku 5.5 在 ≤high 时可 disabled，Sonnet 5.5 API 默认 high 而 Code 默认 medium，不能笼统判断所有 5.x 同规则。功能题 tool_choice=auto；异常参数仅在 A15 指纹测试使用。被 sub2api 本地拦截的规则不能作为官方指纹。
 - Gemini 3.x 使用 thinkingLevel，2.5 使用 thinkingBudget；OpenAI 使用 reasoning.effort；GLM 经网关 low/medium→high，xhigh→max，只比较实际可区分档位。
+- Gemini 函数调用可不返回 id：内部生成稳定且避开真实编号的关联键，local_id=true；回发 Gemini 时省略合成 id，真实 id 保留。动态历史保留真实 thoughtSignature；functionResponse 带工具 name，response 为 JSON 对象而非字符串，数值精度不丢失。只读核实本地 sub2api 仓库的 HEAD 与 v0.2.14：Gemini 原生网关保留真实签名，缺签名时补 dummy；Antigravity 保留函数调用内容块，仅签名报错且开启修复配置时改 dummy 重试。真实签名与 dummy 的厂商接受行为**待运营校准**，不能据此宣称工具题已通过真实联调。
 - 输入计数：Claude 总输入=input+cache_creation+cache_read；OpenAI cached_tokens 已包含在 input_tokens 内，不重复加；Gemini promptTokenCount/cache 字段按其含义单独记录。不同通道的注入差异先排除，不直接跨通道比较。
 - 推理量：Claude 优先读 usage 输出明细，缺失时用总输出减可见文本 token 的估算，标记 reasoning_estimated；不能按 thinking 字符数。OpenAI reasoning 是 output 子集；Gemini thoughts 单列；Grok reasoning 不包含在 output 内，输出预算按对应协议加一次。没有可靠观测时记 NULL，不把空 thinking 当零推理。
 - 结束原因归一化为 normal/truncated/refusal/error，保留原值。HTTP 200 也可能 refusal，不作为智力错误；无法识别则标 unknown_stop_reason。
 - 分类优先识别 platform：网关并发限制（包括本地429）、探测余额不足、claude_code_version_too_old 均属平台；其余429/529为 rate_limited，按 Retry-After/退避重试，不作为主动探针可用失败或智力错误。明确预期的 400 为 expected_reject，非预期 4xx 再区分题目配置/平台/账号。
 
-11 种新判分器：answer_tag、fields_exact、set_exact、lines_alias、constraints、json_schema、tool_calls、abstain、full_output、num_list、accept_reject。统一输出 `{pass: boolean, partial: number|null, flags: string[]}`，partial 为 [0,1] 的辅助展示，SPRT/McNemar 只用二元 pass。计数配对由引擎计算，不另造 token_count_equal 判分器。answer_tag 必须匹配明确 ANSWER 标记，不能猜最后一个数字。
+11 种新判分器：answer_tag、fields_exact、set_exact、lines_alias、constraints、json_schema、tool_calls、abstain、full_output、num_list、accept_reject。统一输出 `{pass: boolean, partial: number|null, flags: string[]}`，partial 为 [0,1] 的辅助展示，SPRT/McNemar 只用二元 pass。计数配对由引擎计算，不另造 token_count_equal 判分器。answer_tag 必须匹配明确 ANSWER 标记，不能猜最后一个数字。阶段三新增 constraints 的 exact_text 子规则：保存唯一合法见证全文，经既有判分文本规范化后逐字比较，其他子规则仍提供部分分；额外标点、分隔符或内部空行不能通过。已有判分规则语义不变。
 
 既有 error_class 列承载本次主错误分类（含 platform/rate_limited/expected_reject），flags 是可并存的补充状态，不能取代主错误原因。flags 允许 stop_normal/truncated/refusal/stop_error/lazy_placeholder/format_error/rate_limited/platform/expected_reject/reasoning_estimated/unknown_stop_reason/window_unknown/configuration；其中 stop_normal/truncated/refusal/stop_error 分别保存归一化的 normal/truncated/refusal/error，原 stop_reason 仍原样记录。拒答、截断、限流、平台错误从智力统计剔除，仍保留对应功能/输出/可用项证据。成对样本只要任一侧不合格，两侧一并剔除，SPRT 与 McNemar 使用同一数据清单。无同批基线且无合格历史时，新题不可用默认 0.95 代替基线；记录“无法判定”，不进入降智或扣价。
 
@@ -153,6 +154,8 @@ ProbeRequest 增加 System/Messages/Tools/Attachments/Effort/Extra；ProbeResult
 `gates` 为事件数组，每个 `{check_key, code, health, confirmed, occurred_at, reason}`；health 只能 degraded/unavailable。试运行新门槛只展示，旧门槛逻辑继续；正式模式 confirmed=true 才驱动现有暂停/上架不通过。门槛触发时 quality_factor/appraisal.factor 为 null，估价标“暂不估价”。gates 不是长期健康状态的唯一来源，账号既有健康限制始终存在。
 
 新增 summary 字段：inspection_mode（trial/formal）、mode（legacy/full/quick）、checks、quality_factor（number/null）、appraisal、gates。appraisal 为 `{base:number|null, factor:number|null, multiplier:number|null, tier:string, checked_at:string|null, configured:boolean, provisional:boolean}`；multiplier 是寄售卖家侧倍率，不含抽佣。checked_at 来自 appraised_at，改基准不伪造新检测时间；provisional 表示试运行或覆盖不足。缺基准时 configured=false、base/multiplier=null。
+
+阶段二已写入 error_counts 与 reference_error_counts（可省略的对象，主错误分类 → 请求数），分别记录旧判定中被测与基线的错误来源。阶段三另加 shadow，结构见 §10；shadow.checks 只是影子样本计数，不是本节正式的 summary.checks。上面的 checks/quality_factor/appraisal/gates 在阶段三仍为阶段四契约，不能将示例中的系数当作已计算结果。
 
 完整兼容示例（仅为格式示例，不是真实测量；试运行 grade 仍来自旧逻辑）：
 
@@ -278,9 +281,67 @@ onboarding/admin/appeal 现有美元日预算豁免保留；窗口、安全 toke
 - 未启用 `inspection_*` 套件的旧流程继续创建 `legacy` run，使用既有单请求/批次设置；启用新套件后，按 `full_triggers` 选择 full/quick。阶段三接入生成器和新题选择器；阶段二遇到未注册的 generator 会在发请求前报配置错误，不执行自由代码。
 - 所有模式第一次开始时固定 deadline_at。full/quick 取消后保留完成结果；legacy 维持原有“清空结果后重跑”的行为，但保留同一份题面快照与截止时间，并在内部 run.summary.resume_budget 中累计清除结果之前的预算，不能借重启重置预算。恢复状态不进入卖家报告。
 - 步骤先预留输入和合并输出预算；每侧独立计账，可靠 usage 到达后修正实际值，缺失计数/请求中断保留预留。Claude 输入合并缓存创建与读取；OpenAI 缓存不重复加；Gemini/Grok 独列推理只加一次。平台与限流错误的重试也受预算和截止时间约束。单次重试等待最多 30 秒；Retry-After 超过上限直接记录 rate_limited，不再重试本题，原等待信息以 step_state.retry_after_ms（毫秒）保留。legacy 的预留及实际用量超支只记 warning，不中止、不失败；full/quick 仍执行硬上限。
-- 校准前输入按完整请求 JSON 的 UTF-8 字节数加网关注入预留量估算，数值偏保守。Gemini 3 的思考档位没有独立数值预算，额外预留 65,536 tokens；这些是执行保护参数，不是厂商 tokenizer 或额度保证，需运营用真实基线校准。长题若无法预留则停止该批次，不能自动扩充预算。
+- 校准前普通题输入按完整请求 JSON 的 UTF-8 字节数加网关注入预留量估算，数值偏保守。阶段三生成长题改用 §10 的词元估算与保护余量，实际 usage 仍用于记账。Gemini 3 的思考档位没有独立数值预算，额外预留 65,536 tokens；这些是执行保护参数，不是厂商 tokenizer 或额度保证，需运营用真实基线校准。长题若无法预留则停止新派发，不能自动扩充预算；阶段三影子失败不推翻已完成的旧检测。
 - sub2api 的 Codex OAuth 会删去 max_output_tokens，其他协议也可能缺失完整 usage；token-market 能限制派发、累计返回观测并停止后续请求，无法保证一次在途请求的厂商实际消耗绝不超过预留。要取得网关之外的强制输出限额，记为“依赖 sub2api，后续处理”，不修改 sub2api。
 - 窗口只读现有账号快照。Claude 5h 到期时间读 accounts.session_window_end，7d/OI 与 Codex 到期时间读 extra；已过期或无效的快照视为未知。未知照常执行并标记 window_unknown／“窗口余量未知”；明确不足时记录顺延原因，基线同样检查。不访问 active usage 接口。
 - 新判分器的工具参数用精确 JSON 数值；JSON Schema 只允许本题内引用，禁止加载外部文件或 URL。工具结果来自注册的本地确定性数据，不执行模型生成代码。
 - 现有 SPRT、等级和健康处置口径保持不变；只剔除平台/限流/题目配置失败及拒答、截断等无效智力配对。没有任何有效可用观测时定时/追加检测记 inconclusive；上架、申诉、恢复复测按“检测未完成”处理：上架不通过且说明无有效观测、申诉回待处理、恢复退避重排，均不改变健康状态。汇总单独列出平台/限流/配置错误，供管理员排查；不把平台限制当作账号 unavailable。旧题缺基线的既有口径保留，新题的“无合格基线不判定”在题库接入时落实。
 - 真实基线无意外 4xx、Claude 推理量大于零、同配置双侧 input_tokens 相等、完整质检 p95 与预算估算，均为**待运营校准**；离线替身仅验证数据流与控制逻辑。
+
+## 10. 阶段三参数化题库与影子边界
+
+### 10.1 模板与参数域
+
+注册表有以下 8 个模板，当前均为 version="1"。整数参数接受单个整数或 `[下界,上界]` 闭区间；字符串参数为固定枚举值，未设置的题型由 seed 选择。只接受模板白名单参数，不执行自由代码。generator.instances 的 full/quick 值为 0–32；未写 instances 时生成 1 个实例，存在 instances 但缺当前模式时为 0。实际抽到的参数与答案冻结在快照中，generator_version 保存 `模板/版本`。
+
+| 模板键 | 题型与允许参数 |
+|---|---|
+| zebra | houses：4–5（默认 4）；attributes：3–4（默认 3）；每个属性的取值与房子一一对应，8 类线索，求解器确认唯一解 |
+| knights_knaves | people：4–8（默认 6）；8 类陈述，确认唯一身份配置 |
+| register_machine | operations：20–80（默认 40）；固定 5 寄存器、模 100，7 种指令；不支持 registers/difficulty 参数 |
+| aime_math | kind：count/lastdigits/binary/grid；count 的 n 800–2000、modulus 6–13、remainder 0–modulus−1、digit_modulus 3–7、excluded_multiple 5–11；lastdigits 的 base 3–99 且与 10 互素、exponent_base 3–9、exponent_power 3–6；binary 的 length 14–18、ones 5–8、run_limit 3–4；grid 的 width 6–8、height 5–7、blocked_count 4–6 |
+| code_output | kind：A/B/D/G；cases：3–6（默认 3）；覆盖列表切片、字符串分支、Python 语义陷阱、双重循环，答案由 Go 计算 |
+| string_date | kind：transform/sort/date；transform 的 length 14–30、shift 1–25；date 的 year 2024–2028、start_day 1–24（10 月）、business_days 5–15、elapsed_hours 100–400、holiday_count 1–3；题面给出节假日和纽约夏令时规则，sort 使用自定义字母顺序 |
+| constraints | lang：zh/en（默认 zh）；四段结构、首词、词频与句尾联立约束，穷举见证并严格验证唯一全文 |
+| long_context | target_tokens：8192/32768/131072（仅固定值，默认 8192）；variant：multi_needle/multi_hop/aggregate/edges/associative（默认 multi_hop） |
+
+独立验算测试读取渲染后的题面，避免只重跑生成器内部算法：逻辑题用另一种搜索/执行法、数学题用枚举与公式、字符串题用独立变换、日期题用系统时区核对、中英约束穷举、长题解析记录查表。代码预测在 Go 内计算答案；仅测试在有 python3 时以 `python3 -I` 实际执行本项目生成的安全程序交叉验证，缺少解释器时跳过这部分；生产服务不执行生成代码。各模板均验证同 seed 同题面、同哈希。版本 1 的逻辑题另覆盖 1500 个默认 seed，确保有界生成过程不轻易失败；这不是对真实模型难度的标定。
+
+长草堆使用 lexical_subword_v1 估算：按字母子词、数字组与标点计数，不能把字符数标成 token。快照 parameters 保存 target_tokens、estimated_input_tokens、token_estimator、records、target_record；生成到估算长度达到目标。执行预算预留 `estimated_input_tokens × 1.25 + 1024`，可靠返回后以 probe_results.input_tokens（及对应缓存口径）修正。估算器不是厂商 tokenizer，实际测到的长度必须依据 usage 展示；保护余量和 8K/32K/128K 对应的真实输入均**待运营校准**。
+
+### 10.2 起步题量与同步
+
+启动同步新增 26 个稳定 builtin_key 条目：6 个通用模板、中英约束 2 个、长上下文 10 个、静态题 8 个。仅 `INSERT ... ON CONFLICT(builtin_key) DO NOTHING`，不覆盖管理员编辑、不复活 retired、不变更已有版本；22 道旧题内容与状态保持原样。后台题库支持 check_key/request/generator/modes/weight，按模板和版本过滤，编辑保留旧 IRT 参数与 builtin_key。
+
+| 阶段三已接入内容 | full 每侧请求 | quick 每侧请求 |
+|---|---:|---:|
+| 六类能力生成器 | 48 | 20 |
+| 中英可验证约束 | 6 | 2 |
+| 五型长上下文，8K×3/32K×3/128K×4 | 10 | 0 |
+| 工具两步、Schema 一步、多轮两步 | 5 | 3 |
+| 完整输出、中文金额两题、稳定事实、缺失信息弃权 | 5 | 0 |
+| **全部适用时合计** | **74** | **25** |
+
+这是新影子题的起步量，旧题另计。Codex 通道跳过完整输出题，其 full 为 73；管理员可按模式/套件调整。§7 的约 90 次是完整方案规划量，low 锚定重测、缓存、图片/PDF、边界与参数指纹等尚需阶段四接入对应质检项和适用条件，不能把阶段三 74 次显示成已完成完整核验。稳定事实与弃权只提供起步功能证据，不验证知识截止日期。
+
+### 10.3 不影响旧判定的执行与汇总
+
+默认策略不自动启用新套件。管理员显式加入 inspection_* 后，新入口按 full/quick 和 modes 选择影子题；原 selectItems 的 SQL 与套件白名单保持不变，在新结构上仍只能读旧题。阶段三无论 inspection.mode 配置为何值，新题都只记录，不参与 SPRT、可用率、速度、推理比、旧错误分母、健康、等级、Q 或报价。
+
+先完成驱动现有判定的旧题，再执行影子题；每个阶段内被测/基线同步、账号实际并发约束与多步顺序保持。影子预算、窗口、配置或截止失败只保留证据和 warning，不能推翻已完成的旧结果；影子到期后允许最多 10 秒数据库收尾。进程主动取消仍按已有规则重排。配置/实例生成无效的影子题跳过并告警；快照先保留旧题，再将影子扩样限制到总实例数 200 和 32MiB（增量预留 64KiB），超限停止影子扩样。旧 legacy 不因这个新增实例上限失败。
+
+`summary.shadow` 为 `{applied:false, checks:{质检键:计数对象}}`，同一字段随 Assessment 进入第三方等待态；以下计数单位均为题目单元，多步合并为一个单元：
+
+| 字段 | 定义 |
+|---|---|
+| planned | 本次冻结计划中的影子单元数；生成时跳过的配置错误只在 warnings 中，不伪造结果 |
+| not_run | 尚未取得 HTTP 状态且没有主错误分类的单元数；不能记作通过或失败 |
+| observed | 已派发并取得结果/错误的被测单元数，planned = not_run + observed |
+| passed | 被测全部步骤通过的单元数 |
+| paired | 双侧均合格、可用于智力配对的单元数；此阶段只展示，不接入判定 |
+| reference_passed | paired 中基线通过的单元数 |
+| error_counts | 可省略对象，主错误分类 → 被测单元数 |
+
+逐步 usage、flags、结束原因与实例 hash 仍存在 probe_results，不以聚合计数替代。现有 summary.suites 结构不变；新 Q、正式 summary.checks 与估价本阶段不写入。
+
+Engine.RegisterInstance 是可选测试回调，在派发前登记协议请求体、实例 hash、步骤、判分期望与标准答案。e2e 显式交给 token-market 自有替身，替身按完整请求哈希作答并可按账号注入错误；不执行题目程序。生产环境不设置回调，标准答案不进入真实请求。

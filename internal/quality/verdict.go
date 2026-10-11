@@ -3,11 +3,13 @@ package quality
 import (
 	"math"
 	"sort"
+	"strings"
 	"time"
 )
 
 // Outcome 是一道题在被测上游与基线账号上的结果。
 type Outcome struct {
+	CheckKey    string
 	ItemID      int64
 	Suite       string
 	Target      ProbeResult
@@ -19,6 +21,7 @@ type Outcome struct {
 
 // Assessment 是一次检测的评估结果。
 type Assessment struct {
+	Shadow               *ShadowSummary `json:"shadow,omitempty"`
 	ErrorCounts          map[string]int `json:"error_counts,omitempty"`
 	ReferenceErrorCounts map[string]int `json:"reference_error_counts,omitempty"`
 	Warnings             []string       `json:"warnings,omitempty"`
@@ -54,6 +57,10 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 	var targetPass, refPass, both, targetScored int
 	var tReason, rReason []float64
 	for _, o := range outcomes {
+		// 新题仅保留影子证据，不进入旧判定的任一指标或错误分母。
+		if strings.HasPrefix(o.Suite, "inspection_") {
+			continue
+		}
 		countProbeError(&a.ErrorCounts, o.Target.ErrorClass)
 		if o.Ref != nil {
 			countProbeError(&a.ReferenceErrorCounts, o.Ref.ErrorClass)

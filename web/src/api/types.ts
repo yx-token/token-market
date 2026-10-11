@@ -806,6 +806,7 @@ export interface Grader {
   pattern?: string
   keys?: string[]
   case_insensitive?: boolean
+  [rule: string]: unknown
 }
 
 /** 管理员查看的一次检测记录 */
@@ -897,6 +898,29 @@ export interface ProbeItemResult {
   created_at: string
 }
 
+/** 题目请求模板只保存协议无关数据，不执行工具或生成的代码。 */
+export interface ProbeRequest {
+  model?: string
+  prompt?: string
+  max_tokens?: number
+  reasoning_effort?: string
+  system?: string
+  messages?: { role: string; content: Record<string, unknown>[] }[]
+  tools?: { name: string; description?: string; input_schema: Record<string, unknown> }[]
+  attachments?: { id: string; media_type: string; encoding: string; data: string }[]
+  effort?: string
+  extra?: Record<string, unknown>
+  expected?: { outcome?: string; http_status?: number[]; error_codes?: string[] }
+  steps?: { request?: ProbeRequest; expected?: Grader; use_previous?: boolean; tool_results?: Record<string, unknown> }[]
+}
+
+export interface ProbeGenerator {
+  template_id?: string
+  version?: string
+  parameters?: Record<string, unknown>
+  instances?: { full?: number; quick?: number }
+}
+
 export interface ProbeItem {
   id: number
   suite: string
@@ -909,6 +933,14 @@ export interface ProbeItem {
   reasoning_effort?: string
   status: string
   version: number
+  irt_difficulty?: number
+  irt_discrimination?: number
+  check_key?: string
+  request?: ProbeRequest
+  generator?: ProbeGenerator
+  modes?: ('full' | 'quick')[]
+  builtin_key?: string
+  weight?: number
 }
 
 export interface QualityOverview {
