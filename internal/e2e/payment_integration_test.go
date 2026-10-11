@@ -327,4 +327,166 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 	}
 }
 
+type refundView struct {
+	ID              int64   `json:"id"`
+	Kind            string  `json:"kind"`
+	RechargeOrderID *int64  `json:"recharge_order_id"`
+	Status          string  `json:"status"`
+	Amount          float64 `json:"amount"`
+	Payouts         []struct {
+		Channel         string `json:"channel"`
+		Status          string `json:"status"`
+		RechargeOrderID *int64 `json:"recharge_order_id"`
+	} `json:"payouts"`
+}
+
+// 按充值单退款：买家或管理员对单笔订单退指定金额，不暂停 Key；扣减余额成功后才原路退回，扣减失败时打款明细作废。
+func TestRechargeOrderRefund(t *testing.T) {
+	fake, configure := withPayments(t)
+	e := setup(t)
+	admin := e.login("admin@market.test", "admin-password-1")
+	configure(e, admin)
+	buyer := e.newUser("order-refund@market.test")
+	other := e.newUser("other-buyer@market.test")
+	recharge := func(amount float64, channel string) rechargeView {
+		var res struct {
+			Order rechargeView `json:"order"`
+		}
+		body := map[string]any{"amount": amount}
+		if channel != "" {
+			body["channel"] = channel
+		}
+		buyer.must("POST", "/api/buyer/recharge", body, &res)
+		return res.Order
+	}
+	f2f := recharge(20, "alipay_f2f")
+	browse(t, f2f.Payment.QRCode)
+	wx := recharge(9.9, "wechat_native")
+	browse(t, wx.Payment.QRCode)
+	manual := recharge(6, "")
+	admin.must("POST", "/api/admin/recharges/"+itoa(manual.ID)+"/confirm", map[string]string{"provider_ref": "bank-002"}, nil)
+	unpaid := recharge(3, "alipay_f2f")
+	e.settle()
+	refundPath := func(o rechargeView) string { return "/api/buyer/recharge/" + itoa(o.ID) + "/refund" }
+	type wallet struct {
+		Balance    *float64 `json:"balance"`
+		Refundable *float64 `json:"refundable"`
+	}
+	balanceIs := func(want float64) {
+		t.Helper()
+		var w wallet
+		buyer.must("GET", "/api/buyer/wallet", nil, &w)
+		if w.Balance == nil || w.Refundable == nil || !approx(*w.Balance, want) || !approx(*w.Refundable, want) {
+			t.Fatalf("wallet: %v %v, want %v", w.Balance, w.Refundable, want)
+		}
+	}
+	refundedOf := func(o rechargeView) float64 {
+		t.Helper()
+		var got struct {
+			Refunded float64 `json:"refunded_amount"`
+		}
+		buyer.must("GET", "/api/buyer/recharge/"+itoa(o.ID), nil, &got)
+		return got.Refunded
+	}
+	advance := func() {
+		t.Helper()
+		if err := e.app.Funds.AdvanceRefunds(e.ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.app.Funds.AdvanceRefundPayouts(e.ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	balanceIs(35.9)
+
+	// 只能退自己已到账的订单；金额不超过订单未退金额，最多两位小数
+	other.expect(404, "POST", refundPath(f2f), map[string]any{"amount": 1})
+	buyer.expect(409, "POST", refundPath(unpaid), map[string]any{"amount": 1})
+	buyer.expect(400, "POST", refundPath(f2f), map[string]any{"amount": 20.01})
+	buyer.expect(400, "POST", refundPath(f2f), map[string]any{"amount": 1.234})
+
+	// 1. 买家退支付宝订单 5 元：不暂停 Key，扣减余额成功前不向渠道退款
+	var rf refundView
+	buyer.must("POST", refundPath(f2f), map[string]any{"amount": 5, "note": "退一部分"}, &rf)
+	if rf.Kind != "order" || rf.Status != "subtracting" || rf.RechargeOrderID == nil || *rf.RechargeOrderID != f2f.ID ||
+		len(rf.Payouts) != 1 || rf.Payouts[0].Channel != "alipay_f2f" || rf.Payouts[0].Status != "pending" {
+		t.Fatalf("order refund: %+v", rf)
+	}
+	var locked bool
+	mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT keys_locked FROM shadow_identities WHERE kind = 'buyer' AND owner_id = $1",
+		userID(t, e, "order-refund@market.test")), &locked)
+	if locked {
+		t.Fatal("order refund should not lock keys")
+	}
+	buyer.expect(409, "POST", refundPath(wx), map[string]any{"amount": 1})
+	buyer.expect(409, "POST", "/api/buyer/refunds", map[string]string{})
+	if err := e.app.Funds.AdvanceRefundPayouts(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, refunded, _ := fake.TradeState(*f2f.OutTradeNo); refunded != 0 {
+		t.Fatalf("channel refunded before balance subtraction: %d", refunded)
+	}
+	e.drain()
+	advance()
+	if err := e.app.DB.QueryRow(e.ctx, "SELECT status FROM refunds WHERE id = $1", rf.ID).Scan(&rf.Status); err != nil || rf.Status != "done" {
+		t.Fatalf("order refund should be done: %s %v", rf.Status, err)
+	}
+	if _, refunded, _ := fake.TradeState(*f2f.OutTradeNo); refunded != 500 {
+		t.Fatalf("channel refunded: %d", refunded)
+	}
+	if got := refundedOf(f2f); !approx(got, 5) {
+		t.Fatalf("order refunded amount: %v", got)
+	}
+	balanceIs(30.9)
+	buyer.expect(400, "POST", refundPath(f2f), map[string]any{"amount": 15.01})
+
+	// 2. 管理员代退人工充值单：人工打款，登记流水号后完成；订单退完后不能再退
+	rf = refundView{}
+	admin.must("POST", "/api/admin/recharges/"+itoa(manual.ID)+"/refund", map[string]any{"amount": 6}, &rf)
+	if len(rf.Payouts) != 1 || rf.Payouts[0].Channel != "manual" || rf.Payouts[0].Status != "manual" ||
+		rf.Payouts[0].RechargeOrderID == nil || *rf.Payouts[0].RechargeOrderID != manual.ID {
+		t.Fatalf("manual order refund: %+v", rf)
+	}
+	e.drain()
+	advance()
+	admin.must("POST", "/api/admin/refunds/"+itoa(rf.ID)+"/paid", map[string]string{"payout_ref": "bank-refund-002"}, nil)
+	if r, err := e.app.Funds.GetRefund(e.ctx, 0, rf.ID); err != nil || r.Status != "done" {
+		t.Fatalf("manual order refund should be done: %+v %v", r, err)
+	}
+	buyer.expect(400, "POST", "/api/buyer/recharge/"+itoa(manual.ID)+"/refund", map[string]any{"amount": 0.01})
+	balanceIs(24.9)
+
+	// 3. 余额不足（已被消费）时不能按订单退
+	admin.must("POST", "/api/admin/adjustments", map[string]any{"buyer_user_id": userID(t, e, "order-refund@market.test"), "amount": -20,
+		"reason": "模拟消费"}, nil)
+	e.drain()
+	balanceIs(4.9)
+	buyer.expect(400, "POST", refundPath(wx), map[string]any{"amount": 5})
+	if n, err := e.app.Reconciler.RunBalances(e.ctx); err != nil || n != 0 {
+		t.Fatalf("balances should reconcile after order refunds: %d %v", n, err)
+	}
+
+	// 4. 扣减余额失败（期间余额被用掉）：退款失败，打款明细作废并释放订单的可退金额，不会向渠道退款
+	rf = refundView{}
+	buyer.must("POST", refundPath(wx), map[string]any{"amount": 4.9}, &rf)
+	if got := refundedOf(wx); !approx(got, 4.9) {
+		t.Fatalf("refundable amount should be held: %v", got)
+	}
+	if _, err := e.app.DB.Exec(e.ctx, "UPDATE sub2api_ops SET status = 'dead' WHERE id = (SELECT op_id FROM refunds WHERE id = $1)", rf.ID); err != nil {
+		t.Fatal(err)
+	}
+	advance()
+	r, err := e.app.Funds.GetRefund(e.ctx, 0, rf.ID)
+	if err != nil || r.Status != "failed" || len(r.Payouts) != 1 || r.Payouts[0].Status != "cancelled" {
+		t.Fatalf("failed order refund: %+v %v", r, err)
+	}
+	if _, refunded, _ := fake.TradeState(*wx.OutTradeNo); refunded != 0 {
+		t.Fatalf("cancelled payout must not reach the channel: %d", refunded)
+	}
+	if got := refundedOf(wx); !approx(got, 0) {
+		t.Fatalf("refundable amount should be released: %v", got)
+	}
+	balanceIs(4.9)
+}
+
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }

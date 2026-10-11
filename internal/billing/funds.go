@@ -72,8 +72,9 @@ func (f *Funds) now() time.Time {
 // ---- 余额 ----
 
 type Wallet struct {
-	Balance      *float64        `json:"balance"`     // sub2api 实时余额，影子用户未开通时为空
-	LedgerCash   float64         `json:"ledger_cash"` // 账面余额（用量入账有几分钟延迟）
+	Balance      *float64        `json:"balance"`              // sub2api 实时余额，影子用户未开通时为空
+	Refundable   *float64        `json:"refundable,omitempty"` // 可按充值单退款的余额：实时余额减去未用完的额度包
+	LedgerCash   float64         `json:"ledger_cash"`          // 账面余额（用量入账有几分钟延迟）
 	Recharges    []RechargeOrder `json:"recent_recharges"`
 	ActiveRefund *Refund         `json:"active_refund,omitempty"`
 }
@@ -91,6 +92,12 @@ func (f *Funds) Wallet(ctx context.Context, userID int64) (*Wallet, error) {
 		}
 		if len(bs) == 1 {
 			w.Balance = &bs[0].Balance
+			fen, err := f.refundableFen(ctx, userID, bs[0].Balance)
+			if err != nil {
+				return nil, err
+			}
+			v := float64(fen) / 100
+			w.Refundable = &v
 		}
 	}
 	bal, err := Balances(ctx, f.DB, "buyer", userID)
@@ -109,23 +116,33 @@ func (f *Funds) Wallet(ctx context.Context, userID int64) (*Wallet, error) {
 
 // ---- 退款 ----
 
+// 退款类型：退全部余额（暂停 Key）、按充值单退指定金额、额度包原路退回。后两种不暂停 Key，预先生成打款明细。
+const (
+	RefundBalance = "balance"
+	RefundOrder   = "order"
+	RefundPack    = "pack"
+)
+
 type Refund struct {
-	ID         int64          `json:"id"`
-	UserID     int64          `json:"user_id"`
-	Status     string         `json:"status"`
-	Amount     *float64       `json:"amount,omitempty"`
-	PayoutRef  *string        `json:"payout_ref,omitempty"`
-	Note       *string        `json:"note,omitempty"`
-	CreatedAt  time.Time      `json:"created_at"`
-	FinishedAt *time.Time     `json:"finished_at,omitempty"`
-	Payouts    []RefundPayout `json:"payouts"`
+	ID              int64          `json:"id"`
+	UserID          int64          `json:"user_id"`
+	Kind            string         `json:"kind"`
+	RechargeOrderID *int64         `json:"recharge_order_id,omitempty"`
+	Status          string         `json:"status"`
+	Amount          *float64       `json:"amount,omitempty"`
+	PayoutRef       *string        `json:"payout_ref,omitempty"`
+	Note            *string        `json:"note,omitempty"`
+	CreatedAt       time.Time      `json:"created_at"`
+	FinishedAt      *time.Time     `json:"finished_at,omitempty"`
+	Payouts         []RefundPayout `json:"payouts"`
 }
 
-const refundColumns = `id, user_id, status, amount::float8, payout_ref, note, created_at, finished_at`
+const refundColumns = `id, user_id, kind, recharge_order_id, status, amount::float8, payout_ref, note, created_at, finished_at`
 
 func scanRefund(row pgx.Row) (*Refund, error) {
 	var r Refund
-	if err := row.Scan(&r.ID, &r.UserID, &r.Status, &r.Amount, &r.PayoutRef, &r.Note, &r.CreatedAt, &r.FinishedAt); err != nil {
+	if err := row.Scan(&r.ID, &r.UserID, &r.Kind, &r.RechargeOrderID, &r.Status, &r.Amount, &r.PayoutRef, &r.Note, &r.CreatedAt,
+		&r.FinishedAt); err != nil {
 		return nil, err
 	}
 	return &r, nil
@@ -263,12 +280,8 @@ func (f *Funds) advanceRefund(ctx context.Context, r Refund) error {
 			}); err != nil && !errors.Is(err, ErrDuplicateTxn) {
 				return err
 			}
-			// 额度包原路退款已预写打款明细；普通退款再按充值单拆分
-			has, err := payoutsExist(ctx, tx, r.ID)
-			if err != nil {
-				return err
-			}
-			if !has {
+			// 按单退款、额度包原路退款已预写打款明细；退全部余额时再按充值单拆分
+			if r.Kind == RefundBalance {
 				if err := f.planPayouts(ctx, tx, r.ID, r.UserID, amount); err != nil {
 					return err
 				}
@@ -279,16 +292,15 @@ func (f *Funds) advanceRefund(ctx context.Context, r Refund) error {
 			if err := tx.Commit(ctx); err != nil {
 				return err
 			}
-			// 额度包原路退款未锁 Key；普通退款在扣完影子余额后解锁
-			if r.Note != nil && len(*r.Note) >= 14 && (*r.Note)[:14] == "pack_original:" {
+			// 只有退全部余额锁了 Key，扣完影子余额后解锁
+			if r.Kind != RefundBalance {
 				return nil
 			}
 			return f.Keys.SetBuyerLocked(ctx, r.UserID, false)
 		case ops.StatusDead:
-			if r.Note != nil && len(*r.Note) >= 14 && (*r.Note)[:14] == "pack_original:" {
-				// 额度包原路：账面已退回余额；渠道扣减失败则结束，避免反复锁 Key
-				_, err := f.DB.Exec(ctx, "UPDATE refunds SET status = 'failed', finished_at = now() WHERE id = $1", r.ID)
-				return err
+			if r.Kind != RefundBalance {
+				// 按单退款：期间余额被用掉；额度包原路：账面已退回余额。都直接结束，打款明细作废
+				return f.abortRefund(ctx, r.ID)
 			}
 			// 期间余额发生变化导致扣减失败：重新读取余额再试
 			_, err := f.DB.Exec(ctx, "UPDATE refunds SET status = 'locking', lock_until = now(), op_id = NULL, amount = NULL WHERE id = $1", r.ID)

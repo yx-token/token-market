@@ -723,6 +723,24 @@ func (s *Server) confirmRecharge(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, o)
 }
 
+// adminRefundRecharge 管理员代买家按充值单退款。
+func (s *Server) adminRefundRecharge(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in refundRechargeInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	ref, err := s.Funds.RefundRechargeOrder(r.Context(), 0, id, in.Amount, in.Note)
+	if err != nil {
+		return err
+	}
+	s.audit(r, "recharge.refund", fmt.Sprintf("recharge:%d", id), in)
+	return created(w, ref)
+}
+
 func (s *Server) adminRefunds(w http.ResponseWriter, r *http.Request) error {
 	limit, offset := page(r)
 	rs, err := s.Funds.ListRefunds(r.Context(), 0, r.URL.Query().Get("status"), limit, offset)

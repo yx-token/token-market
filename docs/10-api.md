@@ -36,12 +36,13 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/buyer/wallet` | `balance`（sub2api 实时余额）、`ledger_cash`（账面余额，用量入账有几分钟延迟）、近期充值、进行中的退款 |
+| GET | `/api/buyer/wallet` | `balance`（sub2api 实时余额）、`refundable`（可按充值单退款的余额：实时余额减去未用完的额度包）、`ledger_cash`（账面余额，用量入账有几分钟延迟）、近期充值、进行中的退款 |
 | POST | `/api/buyer/recharge` | 创建充值订单：`amount`（两位小数）、`channel`（`alipay_page` / `alipay_f2f` / `wechat_native` / `manual`，默认 `manual`）。返回订单与 `payment`：`kind` 为 `redirect`（跳转 `url`，支付宝收银台）、`qrcode`（把 `qr_code` 渲染成二维码）或 `manual` |
 | GET | `/api/buyer/recharge/:id` | 充值订单：状态 `pending` / `crediting` / `credited` / `failed` / `cancelled` / `expired`；待支付订单带 `payment` 便于继续支付。待支付的在线订单距上次查单超过 5 秒时先向渠道查单 |
 | POST | `/api/buyer/recharge/:id/cancel` | 取消未支付订单（在线订单先向渠道关单，发现已支付返回 409 `ORDER_PAID`） |
+| POST | `/api/buyer/recharge/:id/refund` | 按充值单退款：`amount`（两位小数，不超过该订单未退金额与 `refundable`）、可选 `note`。不暂停 Key，直接扣减 sub2api 余额，成功后原路退回该订单（人工充值或超过原路退回期限时人工打款）；扣减失败则退款失败。已有进行中的退款返回 409 `REFUND_IN_PROGRESS` |
 | POST | `/api/buyer/refunds` | 申请退还全部剩余余额（退到分）：先暂停该买家全部 Key，等待 `refund_lock_seconds` 后扣减 sub2api 余额，再按打款明细原路退回或人工打款 |
-| GET | `/api/buyer/refunds` | 退款记录，含打款明细 `payouts`（渠道、金额、状态） |
+| GET | `/api/buyer/refunds` | 退款记录：`kind`（`balance` 退全部余额 / `order` 按充值单，带 `recharge_order_id` / `pack` 额度包原路退回），含打款明细 `payouts`（渠道、金额、状态） |
 | POST | `/api/buyer/packs` | 购买额度包：`listing_id`，可选 `channel`（第一期仅 `balance`）、`name`。校验可调用余额 ≥ 面额后账面预付、占库存并签发 Key（明文只返回一次）；调用抵包内 remaining，未用量可退回账面 |
 | GET | `/api/buyer/packs` | 我的额度包：面额、剩余、状态 |
 | POST | `/api/buyer/packs/:id/refund` | 按未用量退货：停用 Key、释放卖家库存。可选 `dest`（`balance` / `original`，第一期记状态） |
@@ -188,7 +189,7 @@
 | 申诉 | `GET /api/admin/appeals`、`POST /api/admin/appeals/:id/resolve`（`action`：`retest` / `overturn` / `uphold`） |
 | 上游 | `GET /api/admin/upstreams`、`POST /api/admin/upstreams/:id/suspend`、`/unsuspend`、`DELETE /api/admin/upstreams/:id` |
 | 用户与实名 | `GET /api/admin/kyc`、`POST /api/admin/kyc/:id/review`、`POST /api/admin/users/:id/status`（冻结 / 解冻） |
-| 充值 | `GET /api/admin/recharges`、`POST /api/admin/recharges/:id/confirm`（只用于人工充值单）、`POST /api/admin/recharges/:id/sync`（向渠道查单） |
+| 充值 | `GET /api/admin/recharges`、`POST /api/admin/recharges/:id/confirm`（只用于人工充值单）、`POST /api/admin/recharges/:id/sync`（向渠道查单）、`POST /api/admin/recharges/:id/refund`（代买家按充值单退款，参数与规则同买家接口） |
 | 支付配置 | `GET /api/admin/payments/merchants`（支付宝、微信支付商户配置，密钥只返回是否已设置；`ready` 与 `problem` 说明是否可用）、`PUT /api/admin/payments/merchants/:provider`（`enabled`、`alipay` / `wechat` 配置、`private_key`、`api_v3_key`，密钥留空表示不变）、`POST /api/admin/payments/merchants/:provider/test`（测试连接）、`GET /api/admin/payments/status`（各支付方式是否可用，最近 50 条通知处理记录）；通知地址、支付方式开关、充值上下限、支付时限、原路退回在系统设置中（`payment_public_url`、`payment_channels`、`recharge_min`、`recharge_max`、`recharge_order_timeout_minutes`、`refund_original_route`、`refund_original_route_days`） |
 | 退款 | `GET /api/admin/refunds`、`POST /api/admin/refunds/:id/paid`（登记人工打款部分的流水号）、`POST /api/admin/refund-payouts/:id/retry`（重试失败的原路退款）、`POST /api/admin/refund-payouts/:id/manual`（失败的原路退款改为人工打款） |
 | 提现 | `GET /api/admin/withdrawals`、`POST /api/admin/withdrawals/:id/review`（`approve` 为真通过，否则驳回并退回可提现）、`POST /api/admin/withdrawals/:id/paid`（`failed` 为真表示打款失败） |

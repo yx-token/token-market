@@ -9,6 +9,7 @@ import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
+import RechargeRefundDialog from '@/components/RechargeRefundDialog.vue'
 import { label } from '@/utils/labels'
 import { dateTime, money } from '@/utils/format'
 
@@ -22,6 +23,8 @@ const showPay = ref(false)
 const payOrder = ref<RechargeOrder | null>(null)
 const showRefund = ref(false)
 const refundNote = ref('')
+const showOrderRefund = ref(false)
+const refundOrder = ref<RechargeOrder | null>(null)
 
 function reload() {
   wallet.load()
@@ -47,6 +50,14 @@ function newRecharge() {
 function openOrder(o: RechargeOrder) {
   payOrder.value = o
   showPay.value = true
+}
+
+// 已到账且还有未退金额的充值单可以按单退款
+const orderRefundable = (o: RechargeOrder) => o.status === 'credited' && o.amount - o.refunded_amount >= 0.01
+
+function openOrderRefund(o: RechargeOrder) {
+  refundOrder.value = o
+  showOrderRefund.value = true
 }
 
 async function refund() {
@@ -79,7 +90,9 @@ async function refund() {
       <div class="xm-stat">
         <b>退款</b>
         <strong>{{ wallet.data.value?.active_refund ? '处理中' : '无' }}</strong>
-        <em>{{ wallet.data.value?.active_refund ? '完成前 Key 暂停' : '可退还剩余余额' }}</em>
+        <em v-if="!wallet.data.value?.active_refund">可退全部余额，或在充值记录中按单退款</em>
+        <em v-else-if="wallet.data.value?.active_refund?.kind === 'balance'">完成前 Key 暂停</em>
+        <em v-else>Key 照常可用</em>
       </div>
     </div>
 
@@ -110,6 +123,15 @@ async function refund() {
         <template #cell-credited_at="{ row }">{{ dateTime(row.credited_at) }}</template>
         <template #cell-actions="{ row }">
           <button v-if="row.status === 'pending'" class="btn-ghost btn-sm" @click="openOrder(row)">{{ row.channel === 'manual' ? '查看' : '继续支付' }}</button>
+          <button
+            v-if="orderRefundable(row)"
+            class="btn-ghost btn-sm"
+            :disabled="!!wallet.data.value?.active_refund"
+            :title="wallet.data.value?.active_refund ? '已有退款在处理中' : ''"
+            @click="openOrderRefund(row)"
+          >
+            退款
+          </button>
         </template>
       </DataTable>
     </div>
@@ -119,6 +141,7 @@ async function refund() {
       <DataTable
         :columns="[
           { key: 'id', label: '编号' },
+          { key: 'kind', label: '类型' },
           { key: 'status', label: '状态' },
           { key: 'amount', label: '金额', align: 'right' },
           { key: 'payouts', label: '退回方式' },
@@ -129,6 +152,10 @@ async function refund() {
         row-key="id"
       >
         <template #cell-id="{ row }">#{{ row.id }}</template>
+        <template #cell-kind="{ row }">
+          {{ label('refundKind', row.kind).text }}
+          <span v-if="row.recharge_order_id" class="block text-xs text-slate-400">订单 #{{ row.recharge_order_id }}</span>
+        </template>
         <template #cell-status="{ row }"><StatusBadge kind="refundStatus" :value="row.status" /></template>
         <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
         <template #cell-payouts="{ row }">
@@ -147,11 +174,14 @@ async function refund() {
 
     <PaymentDialog v-model:open="showPay" :order="payOrder" @changed="reload" />
 
-    <ModalDialog v-model:open="showRefund" title="申请退款">
+    <RechargeRefundDialog v-model:open="showOrderRefund" :order="refundOrder" :refundable="wallet.data.value?.refundable" @done="reload" />
+
+    <ModalDialog v-model:open="showRefund" title="申请退款（全部余额）">
       <p class="text-sm text-slate-600">
         退还全部剩余余额（精确到分）。提交后你的所有 API Key 会先暂停，等待进行中的请求结束后扣减余额：近期通过支付宝、微信支付的充值原路退回，
         其余部分由平台人工打款。
       </p>
+      <p class="hint">只想退一部分？在充值记录中对某笔订单点「退款」，输入金额即可，Key 不会暂停。</p>
       <div>
         <label class="label" for="note">备注（可选）</label>
         <input id="note" v-model="refundNote" class="input" />

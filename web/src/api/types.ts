@@ -119,6 +119,9 @@ export interface RefundPayout {
 export interface Refund {
   id: number
   user_id: number
+  /** balance 退全部余额 / order 按充值单 / pack 额度包原路退回 */
+  kind: string
+  recharge_order_id?: number
   status: string
   amount?: number
   payout_ref?: string
@@ -187,6 +190,8 @@ export interface PaymentStatus {
 
 export interface Wallet {
   balance: number | null
+  /** 可按充值单退款的余额：实时余额减去未用完的额度包 */
+  refundable?: number
   ledger_cash: number
   recent_recharges: RechargeOrder[] | null
   active_refund?: Refund
