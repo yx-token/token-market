@@ -127,7 +127,46 @@ func quotaReset(v any) (time.Time, bool) {
 }
 
 // 全局与账号计数跨批次共享；每次派发都读取当前下发并发，不能绕过 suspected 的减半。
-func (e *Engine) acquireRequest(ctx context.Context, u *upstreamRow, p *Policy, st InspectionSettings) (func(), error) {
+func requestAccountKey(u *upstreamRow) int64 {
+	if u.accountID != nil {
+		return *u.accountID
+	}
+	return u.id
+}
+
+// 恢复采样期间独占账号；其他批次不能在样本之间挤入并发请求。
+func (e *Engine) acquireRecovery(ctx context.Context, u *upstreamRow) (func(), error) {
+	key := requestAccountKey(u)
+	for {
+		e.mu.Lock()
+		if e.recoveryRunning == nil {
+			e.recoveryRunning = map[int64]bool{}
+		}
+		if e.requestWake == nil {
+			e.requestWake = make(chan struct{})
+		}
+		if !e.recoveryRunning[key] && e.requestRunning[key] == 0 {
+			e.recoveryRunning[key] = true
+			e.mu.Unlock()
+			return func() {
+				e.mu.Lock()
+				delete(e.recoveryRunning, key)
+				close(e.requestWake)
+				e.requestWake = make(chan struct{})
+				e.mu.Unlock()
+			}, nil
+		}
+		wake := e.requestWake
+		e.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-wake:
+		}
+	}
+}
+
+func (e *Engine) acquireRequest(ctx context.Context, u *upstreamRow, p *Policy, st InspectionSettings, recovery bool) (func(), error) {
 	for {
 		a, err := e.accountSnapshot(ctx, u)
 		if err != nil {
@@ -142,9 +181,9 @@ func (e *Engine) acquireRequest(ctx context.Context, u *upstreamRow, p *Policy, 
 			upper = 4
 		}
 		limit := min(upper, st.Limits.Account, actual)
-		key := u.id
-		if u.accountID != nil {
-			key = *u.accountID
+		key := requestAccountKey(u)
+		if recovery {
+			limit = 1
 		}
 		e.mu.Lock()
 		if e.requestRunning == nil {
@@ -153,7 +192,7 @@ func (e *Engine) acquireRequest(ctx context.Context, u *upstreamRow, p *Policy, 
 		if e.requestWake == nil {
 			e.requestWake = make(chan struct{})
 		}
-		if e.requestTotal < st.Limits.Global && e.requestRunning[key] < limit {
+		if (recovery || !e.recoveryRunning[key]) && e.requestTotal < st.Limits.Global && e.requestRunning[key] < limit {
 			e.requestTotal++
 			e.requestRunning[key]++
 			e.mu.Unlock()
@@ -233,13 +272,14 @@ func (e *Engine) budgetForRun(ctx context.Context, id int64, limit TokenBudget) 
 func (e *Engine) executePlanItems(ctx context.Context, run runRow, ref *runRow, u, refUp *upstreamRow, targetKey, refKey string, plan executionSnapshot, p *Policy, st InspectionSettings, timeout time.Duration) ([]Outcome, []string, error) {
 	outcomes := make([]Outcome, len(plan.Instances))
 	for i, instance := range plan.Instances {
-		outcomes[i] = Outcome{Suite: instance.Item.Suite, ItemID: instance.ItemID, CheckKey: instance.CheckKey}
+		outcomes[i] = instanceOutcome(instance)
 	}
 	if plan.Limits.Account > 0 && plan.Limits.Global > 0 {
 		st.Limits.Account, st.Limits.Global = plan.Limits.Account, plan.Limits.Global
 	}
 	warnings := append([]string(nil), plan.Warnings...)
 	windowUnknown := false
+	targetWindowUnknown := false
 	for _, side := range []*upstreamRow{u, refUp} {
 		if side == nil {
 			continue
@@ -254,6 +294,9 @@ func (e *Engine) executePlanItems(ctx context.Context, run runRow, ref *runRow, 
 		}
 		if !known {
 			windowUnknown = true
+			if side == u {
+				targetWindowUnknown = true
+			}
 			if !containsAny(warnings, "窗口余量未知") {
 				warnings = append(warnings, "窗口余量未知")
 			}
@@ -299,7 +342,7 @@ func (e *Engine) executePlanItems(ctx context.Context, run runRow, ref *runRow, 
 					defer pair.Done()
 					tr, tp, te = e.executeInstance(ctx, run, u, targetKey, instance, p, st, targetBudget, timeout, windowUnknown)
 				}()
-				if refKey != "" {
+				if refKey != "" && !instance.TargetOnly {
 					pair.Add(1)
 					go func() {
 						defer pair.Done()
@@ -308,17 +351,17 @@ func (e *Engine) executePlanItems(ctx context.Context, run runRow, ref *runRow, 
 				}
 				pair.Wait()
 				if te != nil {
-					outcomes[i] = Outcome{ItemID: instance.ItemID, Suite: instance.Item.Suite, CheckKey: instance.CheckKey, Target: tr}
+					outcomes[i] = withInstanceObservation(instance, tr, false, nil, false)
 					errs[i] = te
 					continue
 				}
 				if re != nil {
-					outcomes[i] = Outcome{ItemID: instance.ItemID, Suite: instance.Item.Suite, CheckKey: instance.CheckKey, Target: tr, TargetPass: tp, Ref: &rr}
+					outcomes[i] = withInstanceObservation(instance, tr, tp, &rr, false)
 					errs[i] = re
 					continue
 				}
-				o := Outcome{CheckKey: instance.CheckKey, ItemID: instance.ItemID, Suite: instance.Item.Suite, Target: tr, TargetPass: tp}
-				if refKey != "" {
+				o := withInstanceObservation(instance, tr, tp, nil, false)
+				if refKey != "" && !instance.TargetOnly {
 					o.Ref, o.RefPass = &rr, rp
 				}
 				hist, ok, err := e.refHistory(ctx, u.platform, instance.ItemID)
@@ -334,6 +377,9 @@ func (e *Engine) executePlanItems(ctx context.Context, run runRow, ref *runRow, 
 		}()
 	}
 	for i := range plan.Instances {
+		if plan.Instances[i].TargetOnly {
+			continue
+		}
 		select {
 		case jobs <- i:
 		case <-ctx.Done():
@@ -344,6 +390,32 @@ func (e *Engine) executePlanItems(ctx context.Context, run runRow, ref *runRow, 
 	}
 	close(jobs)
 	workers.Wait()
+	var releaseRecovery func()
+	for i, instance := range plan.Instances {
+		if !instance.TargetOnly {
+			continue
+		}
+		if releaseRecovery == nil {
+			releaseRecovery, err = e.acquireRecovery(ctx, u)
+			if err != nil {
+				return outcomes, warnings, err
+			}
+			defer releaseRecovery()
+		}
+		tr, pass, err := e.executeInstance(ctx, run, u, targetKey, instance, p, st, targetBudget, timeout, targetWindowUnknown)
+		outcomes[i] = withInstanceObservation(instance, tr, pass, nil, false)
+		errs[i] = err
+		if err != nil {
+			break
+		}
+	}
+	for i, instance := range plan.Instances {
+		outcomes[i].InstanceIdx = instance.InstanceIdx
+		outcomes[i].GeneratorVersion = instance.GeneratorVersion
+		if len(instance.Steps) > 0 {
+			outcomes[i].RequestedModel = instance.Steps[0].Request.Model
+		}
+	}
 	for _, err := range errs {
 		if err != nil {
 			return outcomes, warnings, err
@@ -429,7 +501,7 @@ func (e *Engine) executeInstance(ctx context.Context, run runRow, u *upstreamRow
 		if err != nil {
 			return last, false, err
 		}
-		if strings.HasPrefix(it.GeneratorVersion, "long_context/") {
+		if strings.HasPrefix(it.GeneratorVersion, "long_context/") || strings.HasPrefix(it.GeneratorVersion, "context_boundary/") {
 			// 草堆使用模板的词元估算并预留 25% 误差；实际 usage 仍是记账依据。
 			var estimate struct {
 				Tokens int64 `json:"estimated_input_tokens"`
@@ -440,7 +512,13 @@ func (e *Engine) executeInstance(ctx context.Context, run runRow, u *upstreamRow
 			input = estimate.Tokens*5/4 + 1024
 		}
 		for attempt := 0; attempt < 3; attempt++ {
-			release, err := e.acquireRequest(ctx, u, p, st)
+			// 每次实际发送均留间隔，含重试与续跑；已完成实例无需再次等待。
+			if it.TargetOnly {
+				if err := e.wait(ctx, time.Duration(st.Recovery.IntervalSeconds)*time.Second); err != nil {
+					return last, false, err
+				}
+			}
+			release, err := e.acquireRequest(ctx, u, p, st, it.TargetOnly)
 			if err != nil {
 				return last, false, err
 			}
@@ -458,6 +536,17 @@ func (e *Engine) executeInstance(ctx context.Context, run runRow, u *upstreamRow
 			release()
 			if windowUnknown {
 				last.addFlag("window_unknown")
+			} else {
+				last.addFlag("window_available")
+				if last.ErrorClass == "rate_limited" {
+					snapshot, snapshotErr := e.accountSnapshot(ctx, u)
+					if snapshotErr == nil {
+						known, low := windowStatus(snapshot, e.now())
+						if known && !low {
+							last.addFlag("abnormal_rate_limited")
+						}
+					}
+				}
 			}
 			actualInput := int64(0)
 			if last.InputTokens != nil {
@@ -535,12 +624,8 @@ func (e *Engine) executeInstance(ctx context.Context, run runRow, u *upstreamRow
 			if !retry || attempt == 2 {
 				break
 			}
-			timer := time.NewTimer(delay)
-			select {
-			case <-timer.C:
-			case <-ctx.Done():
-				timer.Stop()
-				return last, false, ctx.Err()
+			if err := e.wait(ctx, delay); err != nil {
+				return last, false, err
 			}
 		}
 		pass = pass && passed
@@ -557,7 +642,7 @@ func (e *Engine) loadInstanceResult(ctx context.Context, runID int64, it planned
 	var passed bool
 	var raw []byte
 	var hash string
-	err := e.DB.QueryRow(ctx, `SELECT instance_hash, COALESCE(passed,false), COALESCE(http_status,0), COALESCE(error_class,''), COALESCE(output_tokens,0), COALESCE(reasoning_tokens,0), COALESCE(ttft_ms,0), COALESCE(duration_ms,0), input_tokens, cache_read_tokens, cache_creation_tokens, stop_reason, effort, flags, step_state, reasoning_tokens IS NOT NULL, output_tokens IS NOT NULL FROM probe_results WHERE run_id=$1 AND item_id=$2 AND instance_idx=$3 AND step=$4 AND instance_hash<>''`, runID, it.ItemID, it.InstanceIdx, step).Scan(&hash, &passed, &r.HTTPStatus, &r.ErrorClass, &r.OutputTokens, &r.ReasoningTokens, &r.TTFT, &r.Duration, &r.InputTokens, &r.CacheReadTokens, &r.CacheCreationTokens, &r.StopReason, &r.Effort, &r.Flags, &raw, &r.ReasoningObserved, &r.OutputObserved)
+	err := e.DB.QueryRow(ctx, `SELECT instance_hash, COALESCE(passed,false), COALESCE(http_status,0), COALESCE(error_class,''), COALESCE(output_tokens,0), COALESCE(reasoning_tokens,0), COALESCE(ttft_ms,0), COALESCE(duration_ms,0), input_tokens, cache_read_tokens, cache_creation_tokens, stop_reason, effort, flags, step_state, reasoning_tokens IS NOT NULL, output_tokens IS NOT NULL,COALESCE(response_model,''),error_body FROM probe_results WHERE run_id=$1 AND item_id=$2 AND instance_idx=$3 AND step=$4 AND instance_hash<>''`, runID, it.ItemID, it.InstanceIdx, step).Scan(&hash, &passed, &r.HTTPStatus, &r.ErrorClass, &r.OutputTokens, &r.ReasoningTokens, &r.TTFT, &r.Duration, &r.InputTokens, &r.CacheReadTokens, &r.CacheCreationTokens, &r.StopReason, &r.Effort, &r.Flags, &raw, &r.ReasoningObserved, &r.OutputObserved, &r.ResponseModel, &r.ErrorBody)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r, false, resumedState{}, false, nil
 	}
@@ -574,6 +659,7 @@ func (e *Engine) loadInstanceResult(ctx context.Context, runID int64, it planned
 	r.TTFT *= time.Millisecond
 	r.Duration *= time.Millisecond
 	r.Text, r.ToolCalls = state.Text, state.ToolCalls
+	r.ErrorCode, _, _ = errorDetails([]byte(r.ErrorBody))
 	r.RetryAfter = time.Duration(state.RetryAfterMS) * time.Millisecond
 	return r, passed, state, state.Complete, nil
 }
@@ -619,4 +705,17 @@ func inspectionRetryDelay(retryAfter time.Duration, attempt int) (time.Duration,
 		return retryAfter, true
 	}
 	return time.Duration(1<<attempt) * time.Second, true
+}
+
+func instanceOutcome(it plannedInstance) Outcome {
+	o := Outcome{ItemID: it.ItemID, CheckKey: it.CheckKey, Suite: it.Item.Suite, InstanceIdx: it.InstanceIdx, GeneratorVersion: it.GeneratorVersion, StaticComparable: len(it.Steps) == 1}
+	if len(it.Steps) > 0 {
+		o.RequestedModel = it.Steps[0].Request.Model
+	}
+	return o
+}
+func withInstanceObservation(it plannedInstance, target ProbeResult, pass bool, ref *ProbeResult, refPass bool) Outcome {
+	o := instanceOutcome(it)
+	o.Target, o.TargetPass, o.Ref, o.RefPass = target, pass, ref, refPass
+	return o
 }

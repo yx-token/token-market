@@ -20,7 +20,7 @@ const { queryParams, resetQuery, handleQuery } = useListQuery({
 const vendors = useLoader(() => admin.vendors(), [] as VendorConfig[] | null)
 const { busy, run } = useAction()
 const editing = ref<VendorConfig | null>(null)
-const form = reactive({ enabled: false, authTypes: [] as string[], min: '', max: '', base: '', concurrency: '', extra: '' })
+const form = reactive({ enabled: false, authTypes: [] as string[], min: '', max: '', base: '', appraisal: '', concurrency: '', extra: '' })
 
 onMounted(vendors.load)
 
@@ -53,6 +53,7 @@ function edit(v: VendorConfig) {
     min: String(v.consignment_min),
     max: String(v.consignment_max),
     base: JSON.stringify(v.buyback_base),
+    appraisal: JSON.stringify(v.appraisal_base ?? {}),
     concurrency: String(v.default_concurrency),
     extra: JSON.stringify(v.extra_limits),
   })
@@ -65,12 +66,15 @@ async function quickToggle(v: VendorConfig) {
 async function save() {
   if (!editing.value) return
   let base: Record<string, number>
+  let appraisal: Record<string, number>
   let extra: Record<string, unknown>
   try {
     base = JSON.parse(form.base)
+    appraisal = JSON.parse(form.appraisal)
     extra = JSON.parse(form.extra)
+    if (!appraisal || Array.isArray(appraisal) || typeof appraisal !== 'object' || Object.values(appraisal).some((value) => typeof value !== 'number' || !Number.isFinite(value) || value <= 0)) throw new Error()
   } catch {
-    toast.error('回收基础倍率与限流参数需要是 JSON 对象')
+    toast.error('回收基础倍率、质检估价基准与限流参数需要是 JSON 对象；估价基准须为正数')
     return
   }
   if (!form.authTypes.length) {
@@ -83,6 +87,7 @@ async function save() {
     consignment_min: Number(form.min),
     consignment_max: Number(form.max),
     buyback_base: base,
+    appraisal_base: appraisal,
     default_concurrency: Number(form.concurrency),
     extra_limits: extra,
   }
@@ -97,7 +102,7 @@ async function save() {
   <ConsoleListPage
     id="console-vendors-page"
     title="厂商"
-    description="开放哪些厂商接入、寄售倍率区间、平台回收的基础倍率，以及账号在 sub2api 中的默认并发与限流参数。"
+    description="开放哪些厂商接入、寄售倍率区间、独立的质检估价与回收基准，以及账号默认并发与限流参数。"
   >
     <template #filters>
       <div class="filter-item">
@@ -135,6 +140,7 @@ async function save() {
         { key: 'auth_types', label: '接入方式' },
         { key: 'range', label: '寄售倍率区间' },
         { key: 'buyback_base', label: '回收基础倍率' },
+        { key: 'appraisal_base', label: '质检估价基准' },
         { key: 'default_concurrency', label: '默认并发', align: 'right' },
         { key: 'actions', label: '操作' },
       ]"
@@ -150,6 +156,7 @@ async function save() {
       <template #cell-auth_types="{ row }">{{ row.auth_types.map((t: string) => authTypeText(row.platform, t)).join('、') }}</template>
       <template #cell-range="{ row }">{{ row.consignment_min }}–{{ row.consignment_max }}×</template>
       <template #cell-buyback_base="{ row }">{{ Object.entries(row.buyback_base).map(([k, v]) => `${k}: ${v}`).join('，') }}</template>
+      <template #cell-appraisal_base="{ row }">{{ Object.keys(row.appraisal_base ?? {}).length ? Object.entries(row.appraisal_base ?? {}).map(([k, v]) => `${k}: ${v}`).join('，') : '未配置' }}</template>
       <template #cell-actions="{ row }">
         <button class="btn-ghost btn-sm" :disabled="busy" @click="quickToggle(row)">{{ row.enabled ? '关闭' : '开放' }}</button>
         <button class="btn-ghost btn-sm" @click="edit(row)">编辑</button>
@@ -189,6 +196,11 @@ async function save() {
       <label class="label" for="vbase">回收基础倍率（按订阅档位，JSON）</label>
       <input id="vbase" v-model="form.base" class="input font-mono" />
       <p class="hint">必须包含 default，例如 {"default": 0.15, "max": 0.2}</p>
+    </div>
+    <div>
+      <label class="label" for="vappraisal">质检估价基准（按订阅档位，JSON）</label>
+      <input id="vappraisal" v-model="form.appraisal" class="input font-mono" />
+      <p class="hint">估价 = 本基准 × Q；缺少对应档位与 default 时显示未配置，不使用回收基础倍率。{} 表示未配置。</p>
     </div>
     <div>
       <label class="label" for="vcon">默认并发</label>

@@ -127,6 +127,11 @@ export const admin = {
   startSystemUpdate: (version: string) => http.post<T.UpdateJob>('/api/admin/system/update', { version }, 20000),
   settings: () => http.get<T.Settings>('/api/admin/settings'),
   updateSettings: (patch: Partial<T.Settings>) => http.put<T.Settings>('/api/admin/settings', patch),
+  inspectionSettings: () => http.get<T.InspectionSettings>('/api/admin/inspection/settings'),
+  updateInspectionSettings: (body: T.InspectionSettings) => http.put<T.InspectionSettings>('/api/admin/inspection/settings', body),
+  inspectionChecks: () => http.get<T.InspectionCheckDefinition[]>('/api/admin/inspection/checks'),
+  updateInspectionCheck: (key: string, body: T.InspectionCheckOverride) =>
+    http.put<T.InspectionCheckDefinition>(`/api/admin/inspection/checks/${encodeURIComponent(key)}`, body),
   marketDiscovery: () => http.get<Record<string, unknown>>('/api/admin/market-discovery'),
   updateMarketDiscovery: (body: Record<string, unknown>) =>
     http.put<Record<string, unknown>>('/api/admin/market-discovery', body),

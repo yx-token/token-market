@@ -299,27 +299,32 @@ async function openItem(s: ProbeItemStat) {
               <th class="p-2">触发</th>
               <th class="p-2">结果</th>
               <th class="p-2">首字 / 总时长</th>
-              <th class="p-2">输出 / 推理 token</th>
+              <th class="p-2">输入 / 输出 / 推理 token</th>
               <th class="p-2">回答片段</th>
               <th class="p-2"></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in itemResults" :key="`${r.run_id}-${r.created_at}`" class="border-t border-slate-100 align-top">
+            <tr v-for="r in itemResults" :key="`${r.run_id}-${r.instance_idx ?? 0}-${r.step ?? 0}`" class="border-t border-slate-100 align-top">
               <td class="p-2 whitespace-nowrap">{{ dateTime(r.created_at) }}</td>
               <td class="p-2">
                 #{{ r.upstream_id }} · {{ label('platform', r.platform).text }}
                 <div class="max-w-[12rem] truncate text-slate-500" :title="r.account_email">{{ r.account_email }}</div>
                 <div class="text-slate-500">{{ r.model }}<span v-if="r.response_model && r.response_model !== r.model" class="text-amber-700">（返回 {{ r.response_model }}）</span></div>
+                <div class="text-slate-500">{{ r.check_key || '旧题' }} · 实例 {{ r.instance_idx ?? 0 }} · 步骤 {{ r.step ?? 0 }}</div>
+                <div v-if="r.generator_version" class="text-slate-500">{{ r.generator_version }}</div>
+                <div v-if="r.instance_hash" class="max-w-[12rem] truncate font-mono text-slate-500" :title="r.instance_hash">{{ r.instance_hash }}</div>
               </td>
               <td class="p-2"><StatusBadge kind="runTrigger" :value="r.trigger" /></td>
               <td class="p-2" :class="r.passed ? 'text-emerald-700' : 'text-red-600'">
                 {{ r.passed === null ? '—' : r.passed ? '通过' : '未通过' }}
                 <div v-if="r.error_class" class="text-slate-500">{{ r.error_class }}{{ r.http_status ? ` · ${r.http_status}` : '' }}</div>
+                <div v-if="r.stop_reason || r.effort" class="text-slate-500">{{ r.stop_reason || '—' }} · {{ r.effort || '—' }}</div>
+                <div v-if="r.flags?.length" class="text-slate-500">{{ r.flags.join('、') }}</div>
               </td>
               <td class="p-2 whitespace-nowrap">{{ ms(r.ttft_ms) }} / {{ ms(r.duration_ms) }}</td>
-              <td class="p-2 whitespace-nowrap">{{ r.output_tokens }} / {{ r.reasoning_tokens }}</td>
-              <td class="p-2"><div class="max-w-sm whitespace-pre-wrap break-words text-slate-600">{{ r.excerpt || '—' }}</div></td>
+              <td class="p-2 whitespace-nowrap">{{ r.input_tokens ?? '未取得' }} / {{ r.output_tokens }} / {{ r.reasoning_tokens }}<div class="text-slate-500">缓存读 {{ r.cache_read_tokens ?? '未取得' }} / 写 {{ r.cache_creation_tokens ?? '未取得' }}</div></td>
+              <td class="p-2"><div class="max-w-sm whitespace-pre-wrap break-words text-slate-600">{{ r.excerpt || '—' }}</div><details v-if="r.error_body" class="text-red-700"><summary>脱敏错误体</summary><pre class="max-w-sm whitespace-pre-wrap break-words">{{ r.error_body }}</pre></details></td>
               <td class="p-2"><button class="btn-ghost btn-sm" @click="openRun(r)">整次检测</button></td>
             </tr>
           </tbody>

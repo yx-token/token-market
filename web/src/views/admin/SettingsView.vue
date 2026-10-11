@@ -5,6 +5,7 @@ import type { Settings } from '@/api/types'
 import { useAction } from '@/composables/useAsync'
 import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
+import InspectionSettingsPanel from '@/components/InspectionSettingsPanel.vue'
 
 const toast = useToast()
 const s = ref<Settings | null>(null)
@@ -89,6 +90,6 @@ async function save() {
         <input v-model="s.allow_no_proxy" type="checkbox" /> 平台没有可用代理时允许直接接入（仅开发环境；卖家必填要求仍生效）
       </label>
     </div>
-
+    <InspectionSettingsPanel />
   </div>
 </template>

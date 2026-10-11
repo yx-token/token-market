@@ -13,12 +13,14 @@ import DataTable from '@/components/DataTable.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import ReportDetail from '@/components/ReportDetail.vue'
+import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
 import ResetCreditsPanel from '@/components/ResetCreditsPanel.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
 import { authTypeText, isKeyAuthType, label, upstreamName } from '@/utils/labels'
 import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
+import { appealableReport } from '@/utils/inspection'
 
 const props = defineProps<{ id: string }>()
 const upstreamId = computed(() => Number(props.id))
@@ -243,7 +245,7 @@ async function submitAppeal() {
     appealReason.value = ''
   }
 }
-const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'unavailable'
+const appealable = appealableReport
 </script>
 
 <template>
@@ -299,6 +301,7 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
       </div>
     </div>
 
+    <InspectionAppraisal class="mt-5" :appraisal="u.appraisal" :grade="u.grade" :quality-factor="u.quality_factor" :inspection-mode="u.inspection_mode" :price="u.listing?.multiplier" />
     <QuotaPanel v-if="hasAccount" :key="quotaKey" :upstream-id="u.id" class="mt-5" />
     <ResetCreditsPanel v-if="hasAccount && u.reset_credits_supported" :upstream-id="u.id" class="mt-5" @changed="quotaKey++" />
 
@@ -432,7 +435,7 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
     </div>
 
     <div class="card mt-5">
-      <h2 class="card-title">测试报告</h2>
+      <h2 class="card-title">质检报告</h2>
       <DataTable
         :columns="[
           { key: 'created_at', label: '时间' },
@@ -455,7 +458,7 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
       </DataTable>
     </div>
 
-    <ModalDialog :open="!!openReport" title="测试报告" wide @update:open="(v: boolean) => !v && (openReport = null)">
+    <ModalDialog :open="!!openReport" title="质检报告" wide @update:open="(v: boolean) => !v && (openReport = null)">
       <ReportDetail v-if="openReport" :report="openReport" />
       <template #footer>
         <button v-if="openReport && appealable(openReport)" class="btn-secondary" @click="showAppeal = true">申诉</button>

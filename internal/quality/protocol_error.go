@@ -35,11 +35,7 @@ func parseRetryAfter(value string, now time.Time) time.Duration {
 	return 0
 }
 
-func errorDetails(raw []byte) (code, kind, message string) {
-	m, err := decodeObject(raw)
-	if err != nil {
-		return "", "", "上游返回非结构化错误响应"
-	}
+func probeErrorObject(m map[string]any) map[string]any {
 	e := object(m["error"])
 	if e == nil {
 		e = object(object(m["response"])["error"])
@@ -47,6 +43,15 @@ func errorDetails(raw []byte) (code, kind, message string) {
 	if e == nil {
 		e = m
 	}
+	return e
+}
+
+func errorDetails(raw []byte) (code, kind, message string) {
+	m, err := decodeObject(raw)
+	if err != nil {
+		return "", "", "上游返回非结构化错误响应"
+	}
+	e := probeErrorObject(m)
 	code, kind, message = str(e["code"]), str(e["type"]), str(e["message"])
 	if code == "" {
 		if n, ok := e["code"].(json.Number); ok {
@@ -73,6 +78,19 @@ func errorDetails(raw []byte) (code, kind, message string) {
 	return code, kind, message
 }
 
+func isProbePlatformBalance(status int, raw []byte) bool {
+	if status != http.StatusForbidden {
+		return false
+	}
+	m, err := decodeObject(raw)
+	if err != nil {
+		return false
+	}
+	// 不使用 errorDetails 的 type/status 回退，平台余额只认原始 code 字段。
+	code, ok := probeErrorObject(m)["code"].(string)
+	return ok && code == "INSUFFICIENT_BALANCE"
+}
+
 func classifyProbeError(res *ProbeResult, raw []byte, req ProbeRequest, key string) {
 	code, kind, message := errorDetails(raw)
 	res.ErrorCode = code
@@ -80,8 +98,7 @@ func classifyProbeError(res *ProbeResult, raw []byte, req ProbeRequest, key stri
 	// 网关业务码先于 HTTP 429 和预期拒绝，避免把本地限制当成官方指纹。
 	switch {
 	case strings.Contains(lower, "gateway_concurrency_limit") || strings.Contains(lower, "gateway_queue_full") ||
-		strings.Contains(lower, "concurrency limit exceeded") || strings.Contains(lower, "claude_code_version_too_old") ||
-		strings.Contains(lower, "insufficient_balance") || strings.Contains(lower, "balance insufficient") || strings.Contains(lower, "余额不足"):
+		strings.Contains(lower, "claude_code_version_too_old") || isProbePlatformBalance(res.HTTPStatus, raw):
 		res.ErrorClass = "platform"
 		res.addFlag("platform")
 	case res.HTTPStatus == 429 || res.HTTPStatus == 529 || kind == "rate_limit_error":
@@ -90,6 +107,9 @@ func classifyProbeError(res *ProbeResult, raw []byte, req ProbeRequest, key stri
 	case expectedRejection(req.Expected, res.HTTPStatus, code):
 		res.ErrorClass = "expected_reject"
 		res.addFlag("expected_reject")
+	case res.HTTPStatus >= 400 && res.HTTPStatus < 500 && containsProbeBalanceError(lower):
+		// 厂商也可能使用 invalid_request_error 包装余额不足，仍是卖家失败观测。
+		res.ErrorClass = "http_4xx"
 	case res.HTTPStatus == 400 && (kind == "invalid_request_error" || kind == "INVALID_ARGUMENT" || code == "invalid_request_error" || code == "unsupported_parameter"):
 		res.ErrorClass = "configuration"
 		res.addFlag("configuration")
@@ -101,6 +121,15 @@ func classifyProbeError(res *ProbeResult, raw []byte, req ProbeRequest, key stri
 		res.ErrorClass = "parse"
 	}
 	res.ErrorBody = sanitizeProbeError(code, kind, message, req, key)
+}
+
+func containsProbeBalanceError(details string) bool {
+	for _, marker := range []string{"insufficient_balance", "balance_insufficient", "balance_not_enough", "balance insufficient", "insufficient balance", "insufficient credit balance", "余额不足"} {
+		if strings.Contains(details, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func expectedRejection(expected ProbeExpected, status int, code string) bool {

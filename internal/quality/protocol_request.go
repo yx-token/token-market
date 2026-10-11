@@ -153,7 +153,11 @@ func (anthropicProtocol) build(req ProbeRequest) (string, any, bool) {
 			case "tool_result":
 				content = append(content, map[string]any{"type": "tool_result", "tool_use_id": c.ToolUseID, "content": c.Content})
 			default:
-				content = append(content, map[string]any{"type": "text", "text": c.Text})
+				text := map[string]any{"type": "text", "text": c.Text}
+				if c.CacheControl != nil {
+					text["cache_control"] = c.CacheControl
+				}
+				content = append(content, text)
 			}
 		}
 		role := m.Role

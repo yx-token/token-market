@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { FeedSku } from '@/market/config'
+import { inspectionSummary } from '@/utils/inspection'
+import { dateTime } from '@/utils/format'
 
 defineProps<{ sku: FeedSku }>()
 
@@ -29,6 +31,12 @@ function hrefOf(sku: FeedSku) {
         <span class="grade">{{ sku.grade }} 级</span>
         <span>成功率 {{ (sku.success * 100).toFixed(0) }}%</span>
         <span>{{ sku.ttft }}ms</span>
+      </div>
+      <div v-if="sku.listingId" class="my-2 text-xs leading-relaxed text-slate-500">
+        <p v-for="line in inspectionSummary(sku.qualityChecks)" :key="line">{{ line }}</p>
+        <p>上次检测：{{ sku.lastCheckedAt ? dateTime(sku.lastCheckedAt) : '未提供' }}</p>
+        <p v-if="sku.inspectionMode === 'trial'">试运行，不影响价格</p>
+        <p>检测是抽样，不能保证没有偷换</p>
       </div>
       <div class="card-foot">
         <div class="price-block">

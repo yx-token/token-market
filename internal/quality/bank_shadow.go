@@ -139,7 +139,14 @@ func staticAnswer(g Grader) string {
 
 // 影子题在旧题完成后执行；其预算、配置或时限失败只保留证据，不能改变旧结论。
 func (e *Engine) executePlan(ctx context.Context, run runRow, ref *runRow, u, refUp *upstreamRow, targetKey, refKey string, plan executionSnapshot, p *Policy, st InspectionSettings, timeout time.Duration) ([]Outcome, []string, error) {
+	if plan.InspectionMode == "formal" {
+		return e.executePlanItems(ctx, run, ref, u, refUp, targetKey, refKey, plan, p, st, timeout)
+	}
 	legacy, shadow := plan, plan
+	// 试运行旧题超支仅告警，新增硬预算只约束影子题，避免引入旧判定失败方式。
+	if plan.Policy != nil && containsAny(plan.Policy.Suites, "inspection_function") {
+		legacy.Mode = "legacy"
+	}
 	legacy.Instances, shadow.Instances = nil, nil
 	legacy.Warnings, shadow.Warnings = nil, nil
 	for _, instance := range plan.Instances {
@@ -150,7 +157,7 @@ func (e *Engine) executePlan(ctx context.Context, run runRow, ref *runRow, u, re
 		}
 	}
 	if len(shadow.Instances) == 0 {
-		return e.executePlanItems(ctx, run, ref, u, refUp, targetKey, refKey, plan, p, st, timeout)
+		return e.executePlanItems(ctx, run, ref, u, refUp, targetKey, refKey, legacy, p, st, timeout)
 	}
 	var rows []Outcome
 	warnings := append([]string(nil), plan.Warnings...)

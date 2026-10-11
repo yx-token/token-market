@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/DueGin/token-market/internal/platform/httpx"
@@ -59,6 +61,7 @@ type VendorConfig struct {
 	ConsignmentMin     float64            `json:"consignment_min"`
 	ConsignmentMax     float64            `json:"consignment_max"`
 	BuybackBase        map[string]float64 `json:"buyback_base"`
+	AppraisalBase      map[string]float64 `json:"appraisal_base"`
 	DefaultConcurrency int                `json:"default_concurrency"`
 	ExtraLimits        map[string]any     `json:"extra_limits"`
 	UpdatedAt          time.Time          `json:"updated_at"`
@@ -82,7 +85,17 @@ func (v VendorConfig) BuybackBaseFor(tier string) float64 {
 	return v.BuybackBase["default"]
 }
 
+// AppraisalBaseFor 只读取独立的质检估价基准，缺配置时不回退到回收报价。
+func (v VendorConfig) AppraisalBaseFor(tier string) (float64, bool) {
+	base, ok := v.AppraisalBase[tier]
+	if tier == "" || !ok {
+		base, ok = v.AppraisalBase["default"]
+	}
+	return base, ok && base > 0 && !math.IsNaN(base) && !math.IsInf(base, 0)
+}
+
 type Upstream struct {
+	InspectionView
 	ID                 int64      `json:"id"`
 	SellerID           int64      `json:"seller_id"`
 	Platform           string     `json:"platform"`
@@ -196,10 +209,10 @@ var (
 
 func GetVendor(ctx context.Context, db DB, platform string) (*VendorConfig, error) {
 	var v VendorConfig
-	var base, extra []byte
+	var base, appraisal, extra []byte
 	err := db.QueryRow(ctx, `SELECT platform, enabled, auth_types, consignment_min, consignment_max, buyback_base,
-		default_concurrency, extra_limits, updated_at FROM vendor_configs WHERE platform = $1`, platform).
-		Scan(&v.Platform, &v.Enabled, &v.AuthTypes, &v.ConsignmentMin, &v.ConsignmentMax, &base, &v.DefaultConcurrency, &extra, &v.UpdatedAt)
+		appraisal_base, default_concurrency, extra_limits, updated_at FROM vendor_configs WHERE platform = $1`, platform).
+		Scan(&v.Platform, &v.Enabled, &v.AuthTypes, &v.ConsignmentMin, &v.ConsignmentMax, &base, &appraisal, &v.DefaultConcurrency, &extra, &v.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, httpx.NotFound("VENDOR_NOT_FOUND", "unknown vendor "+platform)
 	}
@@ -208,6 +221,12 @@ func GetVendor(ctx context.Context, db DB, platform string) (*VendorConfig, erro
 	}
 	if err := json.Unmarshal(base, &v.BuybackBase); err != nil {
 		return nil, fmt.Errorf("vendor %s buyback_base: %w", platform, err)
+	}
+	if err := json.Unmarshal(appraisal, &v.AppraisalBase); err != nil {
+		return nil, fmt.Errorf("厂商 %s 质检估价基准：%w", platform, err)
+	}
+	if v.AppraisalBase == nil {
+		v.AppraisalBase = map[string]float64{}
 	}
 	if err := json.Unmarshal(extra, &v.ExtraLimits); err != nil {
 		return nil, fmt.Errorf("vendor %s extra_limits: %w", platform, err)
@@ -243,6 +262,7 @@ type UpdateVendorInput struct {
 	ConsignmentMin     *float64            `json:"consignment_min"`
 	ConsignmentMax     *float64            `json:"consignment_max"`
 	BuybackBase        *map[string]float64 `json:"buyback_base"`
+	AppraisalBase      *map[string]float64 `json:"appraisal_base"`
 	DefaultConcurrency *int                `json:"default_concurrency"`
 	ExtraLimits        *map[string]any     `json:"extra_limits"`
 }
@@ -283,6 +303,9 @@ func UpdateVendor(ctx context.Context, db DB, platform string, in UpdateVendorIn
 	if in.BuybackBase != nil {
 		v.BuybackBase = *in.BuybackBase
 	}
+	if in.AppraisalBase != nil {
+		v.AppraisalBase = *in.AppraisalBase
+	}
 	if in.DefaultConcurrency != nil {
 		v.DefaultConcurrency = *in.DefaultConcurrency
 	}
@@ -298,15 +321,28 @@ func UpdateVendor(ctx context.Context, db DB, platform string, in UpdateVendorIn
 	if _, ok := v.BuybackBase["default"]; !ok {
 		return nil, httpx.BadRequest("INVALID_BUYBACK_BASE", "buyback_base must contain a default entry")
 	}
+	if err := validateAppraisalBase(v.AppraisalBase); err != nil {
+		return nil, err
+	}
 	base, _ := json.Marshal(v.BuybackBase)
+	appraisal, _ := json.Marshal(v.AppraisalBase)
 	extra, _ := json.Marshal(v.ExtraLimits)
 	_, err = db.Exec(ctx, `UPDATE vendor_configs SET enabled = $2, consignment_min = $3, consignment_max = $4,
-		buyback_base = $5, default_concurrency = $6, extra_limits = $7, auth_types = $8, updated_at = now() WHERE platform = $1`,
-		platform, v.Enabled, v.ConsignmentMin, v.ConsignmentMax, base, v.DefaultConcurrency, extra, v.AuthTypes)
+		buyback_base = $5, default_concurrency = $6, extra_limits = $7, auth_types = $8, appraisal_base = $9, updated_at = now() WHERE platform = $1`,
+		platform, v.Enabled, v.ConsignmentMin, v.ConsignmentMax, base, v.DefaultConcurrency, extra, v.AuthTypes, appraisal)
 	if err != nil {
 		return nil, err
 	}
 	return GetVendor(ctx, db, platform)
+}
+
+func validateAppraisalBase(base map[string]float64) error {
+	for tier, value := range base {
+		if strings.TrimSpace(tier) == "" || value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+			return httpx.BadRequest("INVALID_APPRAISAL_BASE", "质检估价基准须为档位到正数倍率的映射")
+		}
+	}
+	return nil
 }
 
 func GetUpstream(ctx context.Context, db DB, id int64) (*Upstream, error) {
@@ -314,7 +350,15 @@ func GetUpstream(ctx context.Context, db DB, id int64) (*Upstream, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUpstreamNotFound
 	}
-	return u, err
+	if err != nil {
+		return nil, err
+	}
+	views, err := LoadInspectionViews(ctx, db, []int64{id})
+	if err != nil {
+		return nil, err
+	}
+	u.InspectionView = views[id]
+	return u, nil
 }
 
 // GetSellerUpstream 返回属于该卖家的上游。
@@ -334,7 +378,7 @@ func ListSellerUpstreams(ctx context.Context, db DB, sellerID int64) ([]Upstream
 	if err != nil {
 		return nil, err
 	}
-	return collectUpstreams(rows)
+	return collectUpstreamsWithInspection(ctx, db, rows)
 }
 
 // ListUpstreams 管理后台列表，status 为空表示全部（不含已删除）。
@@ -344,7 +388,7 @@ func ListUpstreams(ctx context.Context, db DB, status string, limit, offset int)
 	if err != nil {
 		return nil, err
 	}
-	return collectUpstreams(rows)
+	return collectUpstreamsWithInspection(ctx, db, rows)
 }
 
 func collectUpstreams(rows pgx.Rows) ([]Upstream, error) {
@@ -358,6 +402,25 @@ func collectUpstreams(rows pgx.Rows) ([]Upstream, error) {
 		out = append(out, *u)
 	}
 	return out, rows.Err()
+}
+
+func collectUpstreamsWithInspection(ctx context.Context, db DB, rows pgx.Rows) ([]Upstream, error) {
+	ups, err := collectUpstreams(rows)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, len(ups))
+	for i := range ups {
+		ids[i] = ups[i].ID
+	}
+	views, err := LoadInspectionViews(ctx, db, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range ups {
+		ups[i].InspectionView = views[ups[i].ID]
+	}
+	return ups, nil
 }
 
 func GetListing(ctx context.Context, db DB, id int64) (*Listing, error) {

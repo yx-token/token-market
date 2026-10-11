@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DueGin/token-market/internal/inspection"
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/settings"
 )
@@ -32,21 +33,23 @@ type ListingInput struct {
 }
 
 type UpstreamInput struct {
-	ID           int64
-	Platform     string
-	AuthType     string
-	Status       string
-	Health       string
-	IsReference  bool
-	AccountID    int64
-	ProbeGroupID *int64
-	Grade        string
-	SelfReserve  int
-	AutoReset    bool // 卖家授权平台自动用卡（仅 Codex）
-	AutoReset5h  *int // 卖家设定的自动用卡阈值（百分比），空表示跟随暂停线
-	AutoReset7d  *int
-	Listing      *ListingInput
-	DefaultGrade string // 检测没有给出等级时使用的默认等级（厂商策略的 default_grade）
+	ID            int64
+	Platform      string
+	AuthType      string
+	Status        string
+	Health        string
+	IsReference   bool
+	AccountID     int64
+	ProbeGroupID  *int64
+	Grade         string
+	SelfReserve   int
+	AutoReset     bool // 卖家授权平台自动用卡（仅 Codex）
+	AutoReset5h   *int // 卖家设定的自动用卡阈值（百分比），空表示跟随暂停线
+	AutoReset7d   *int
+	Listing       *ListingInput
+	DefaultGrade  string  // 检测没有给出等级时使用的默认等级（厂商策略的 default_grade）
+	QualityFactor float64 // 正式检测的有效 Q；未检测或无有效值时排序按 1
+	ConfirmedGate bool
 }
 
 type VendorInput struct {
@@ -59,6 +62,7 @@ type PlanContext struct {
 	Vendors    map[string]VendorInput
 	Commission float64
 	Strategy   Strategy
+	Inspection inspection.Settings
 }
 
 // Desired 是一个上游在 sub2api 中的期望状态。
@@ -123,6 +127,23 @@ func (DefaultStrategy) ConsignmentPriority(_ UpstreamInput, m float64) int {
 	return p
 }
 
+// QualityAdjustedStrategy 在原优先级段内按 m_s/Q 排序，不改变卖家倍率或实际费用。
+type QualityAdjustedStrategy struct{}
+
+func (QualityAdjustedStrategy) Name() string { return "quality_adjusted" }
+
+func (QualityAdjustedStrategy) BuybackPriority(u UpstreamInput, grade string) int {
+	return (DefaultStrategy{}).BuybackPriority(u, grade)
+}
+
+func (QualityAdjustedStrategy) ConsignmentPriority(u UpstreamInput, m float64) int {
+	q := u.QualityFactor
+	if q < 0.5 || q > 1.05 || math.IsNaN(q) || math.IsInf(q, 0) {
+		q = 1
+	}
+	return (DefaultStrategy{}).ConsignmentPriority(u, m/q)
+}
+
 // eligibleHealth 判断健康状态是否允许面向买家。unknown（尚未通过检测）一律不调度。
 func eligibleHealth(health string) bool {
 	switch health {
@@ -136,6 +157,10 @@ func eligibleHealth(health string) bool {
 // Plan 是纯函数：根据上游、挂单与默认分组计算期望状态。
 func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 	strategy := pc.Strategy
+	qualityScheduling := pc.Inspection.Mode == inspection.ModeFormal && pc.Inspection.Scheduling.Enabled
+	if qualityScheduling && pc.Inspection.Scheduling.Strategy == "quality_adjusted" {
+		strategy = QualityAdjustedStrategy{}
+	}
 	if strategy == nil {
 		strategy = DefaultStrategy{}
 	}
@@ -188,6 +213,16 @@ func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 				}
 				if l.Mode == listing.ModePack || (l.Mode == listing.ModeConsignment && !l.JoinDefaultPool) {
 					continue
+				}
+				if qualityScheduling {
+					minimum := pc.Inspection.Scheduling.MinimumGrade
+					if minimum == "" {
+						minimum = "B"
+					}
+					if u.ConfirmedGate || inspection.GradeRank(grade) < inspection.GradeRank(minimum) {
+						reasons = append(reasons, "质检等级或已确认门槛不满足保障池准入")
+						continue
+					}
 				}
 				if m > p.Cap()+1e-9 {
 					reasons = append(reasons, fmt.Sprintf("multiplier above %s cap", p.Name))
@@ -267,6 +302,11 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 		Vendors:    map[string]VendorInput{},
 		Commission: st.CommissionRate,
 	}
+	inspectionSettings, err := inspection.Load(ctx, db)
+	if err != nil {
+		return pc, nil, err
+	}
+	pc.Inspection = inspectionSettings
 	pools, err := ListPools(ctx, db, true)
 	if err != nil {
 		return pc, nil, err
@@ -301,11 +341,16 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 			u.probe_group_id, COALESCE(u.grade, ''), u.self_reserve_percent,
 			u.auto_reset_enabled, u.auto_reset_5h_percent, u.auto_reset_7d_percent,
 			l.id, l.mode, l.status, l.multiplier, l.join_default_pool, l.listing_group_id,
-			COALESCE(p.default_grade, 'B')
+			COALESCE(p.default_grade, 'B'), CASE WHEN u.appraised_at IS NULL THEN 1 ELSE u.quality_factor END,
+			COALESCE(q.inspection_mode = 'formal', false) AND
+				EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(q.gates) = 'array' THEN q.gates ELSE '[]'::jsonb END) gate WHERE gate->>'confirmed' = 'true')
 		FROM upstreams u
 		LEFT JOIN listings l ON l.upstream_id = u.id AND l.closed_at IS NULL
 		LEFT JOIN LATERAL (SELECT dp.default_grade FROM detection_policies dp
 			WHERE dp.platform = u.platform AND dp.auth_type IN (u.auth_type, '') ORDER BY (dp.auth_type = u.auth_type) DESC LIMIT 1) p ON true
+		LEFT JOIN LATERAL (SELECT qv.gates, r.summary->>'inspection_mode' AS inspection_mode FROM quality_verdicts qv
+			LEFT JOIN probe_runs r ON r.id = qv.run_id
+			WHERE qv.upstream_id = u.id ORDER BY qv.created_at DESC, qv.id DESC LIMIT 1) q ON true
 		WHERE u.sub2api_account_id IS NOT NULL AND u.status IN ('verifying', 'verify_failed', 'ready', 'listed', 'suspended')
 		ORDER BY u.id`)
 	if err != nil {
@@ -321,7 +366,7 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 		var join *bool
 		var gid *int64
 		if err := rows.Scan(&u.ID, &u.Platform, &u.AuthType, &u.Status, &u.Health, &u.IsReference, &u.AccountID,
-			&u.ProbeGroupID, &u.Grade, &u.SelfReserve, &u.AutoReset, &u.AutoReset5h, &u.AutoReset7d, &lid, &mode, &status, &mult, &join, &gid, &u.DefaultGrade); err != nil {
+			&u.ProbeGroupID, &u.Grade, &u.SelfReserve, &u.AutoReset, &u.AutoReset5h, &u.AutoReset7d, &lid, &mode, &status, &mult, &join, &gid, &u.DefaultGrade, &u.QualityFactor, &u.ConfirmedGate); err != nil {
 			return pc, nil, err
 		}
 		if lid != nil {

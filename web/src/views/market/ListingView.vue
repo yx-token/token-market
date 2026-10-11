@@ -10,7 +10,8 @@ import { useToast } from '@/stores/toast'
 import QrCode from '@/components/QrCode.vue'
 import { apiToPlat, coverFor } from '@/market/config'
 import { authTypeText, label } from '@/utils/labels'
-import { percent } from '@/utils/format'
+import { dateTime, percent } from '@/utils/format'
+import { inspectionSummary } from '@/utils/inspection'
 
 const props = defineProps<{ id: string }>()
 const auth = useAuth()
@@ -182,6 +183,12 @@ async function cancelPay() {
         <span class="kind" :class="{ pack: isPack }">{{ isPack ? '额度包' : '按量通道' }}</span>
         <h1>{{ title }}</h1>
         <p class="lead">{{ desc }}</p>
+        <div class="mb-4 rounded-lg border border-slate-200 p-3 text-sm">
+          <p v-for="line in inspectionSummary(item.data.value.quality_checks)" :key="line">{{ line }}</p>
+          <p>上次检测：{{ item.data.value.last_checked_at ? dateTime(item.data.value.last_checked_at) : '未提供' }}</p>
+          <p v-if="item.data.value.inspection_mode === 'trial'">试运行，不影响价格</p>
+          <p class="text-slate-500">检测是抽样，不能保证没有偷换</p>
+        </div>
         <div class="cover">
           <img :src="cover" :alt="title" />
         </div>

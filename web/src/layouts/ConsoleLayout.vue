@@ -69,6 +69,7 @@ const navItems: NavNode[] = [
     icon: 'flask-conical',
     children: [
       { key: 'detection', text: '检测策略', to: '/console/detection', icon: 'flask-conical' },
+      { key: 'inspection-checks', text: '质检项', to: '/console/inspection-checks', icon: 'badge-check' },
       { key: 'probe-records', text: '检测记录', to: '/console/probe-records', icon: 'activity' },
       { key: 'third-party', text: '第三方检测', to: '/console/third-party', icon: 'scan-search' },
       { key: 'probe-items', text: '题库与基线', to: '/console/probe-items', icon: 'book-open' },

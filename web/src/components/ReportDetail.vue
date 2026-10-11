@@ -1,11 +1,21 @@
 <script setup lang="ts">
 // 卖家测试报告（脱敏）：只包含结论、各项指标与建议，不包含题目、答案和基线信息。
+import { computed } from 'vue'
 import type { Report } from '@/api/types'
+import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ThirdPartyResult from '@/components/ThirdPartyResult.vue'
 import { dateTime, ms, percent } from '@/utils/format'
+import { inspectionCategories, inspectionStatuses } from '@/utils/inspection'
 
-defineProps<{ report: Report }>()
+const props = defineProps<{ report: Report }>()
+const groups = computed(() => {
+  const checks = Object.values(props.report.summary.checks ?? {})
+  return [...new Set(checks.map((check) => check.category))].map((category) => ({ category, checks: checks.filter((check) => check.category === category) }))
+})
+const trial = computed(() => props.report.summary.inspection_mode === 'trial')
+const metricUnits: Record<string, string> = { ms: '毫秒', tokens: 'token', tokens_per_second: 'token/s', count: '个', ratio: '比例', fraction: '比例' }
+const metricNames: Record<string, string> = { ttft_ratio: '首字延迟相对值', output_tps_ratio: '输出速度相对值', mismatches: '不一致观测', mismatch_rate: '不一致比例', success_rate: '成功率', relative_score: '智力相对分', mcnemar_p: '配对显著性', target_pass_rate: '通过率', reasoning_ratio: '推理量相对值', high_low_ratio: '高低档推理量之比' }
 
 const suggestionText: Record<string, string> = {
   check_authorization: '账号没有正常响应：请检查授权是否被撤销、订阅是否到期，然后重新授权。',
@@ -26,7 +36,37 @@ const suggestionText: Record<string, string> = {
       <span class="text-slate-500">模型 {{ report.summary.model }}</span>
       <span class="text-slate-500">{{ dateTime(report.summary.checked_at || report.created_at) }}</span>
     </div>
-    <dl class="kv">
+    <template v-if="groups.length">
+      <InspectionAppraisal :appraisal="report.summary.appraisal" :grade="report.summary.grade" :quality-factor="report.summary.quality_factor" :inspection-mode="report.summary.inspection_mode" />
+      <dl class="kv">
+        <template v-for="(factor, group) in report.summary.group_factors ?? {}" :key="group"><dt>{{ inspectionCategories[group] ?? group }}组系数{{ trial ? '（试算）' : '' }}</dt><dd>{{ factor === null ? '无法判定' : factor.toFixed(3) }}</dd></template>
+        <template v-if="report.summary.proposed_grade"><dt>{{ trial ? '试算等级' : '本次建议等级' }}</dt><dd>{{ report.summary.proposed_grade }}</dd></template>
+        <template v-if="report.summary.repaired_grade"><dt>修复后预计等级</dt><dd>{{ report.summary.repaired_grade }}（需复测确认；S 仍需满足持续可用与无门槛历史条件）</dd></template>
+        <template v-if="report.impact?.buyer_facing_paused !== undefined"><dt>调度状态</dt><dd>{{ report.impact.buyer_facing_paused ? '已暂停调度，等待复测恢复' : '正常调度' }}</dd></template>
+        <template v-if="report.impact?.next_check_at"><dt>下次复测</dt><dd>{{ dateTime(String(report.impact.next_check_at)) }}</dd></template>
+      </dl>
+      <div v-if="report.summary.gates?.length" class="callout callout-warn">
+        <div class="font-medium">门槛事件</div>
+        <p v-for="(gate, index) in report.summary.gates" :key="index" class="mt-1">{{ gate.reason }} · {{ trial ? '试运行，仅展示' : gate.confirmed ? '已确认，按健康限制处置' : '待确认，不据此暂停' }}</p>
+      </div>
+      <section v-for="group in groups" :key="group.category" class="rounded-lg border border-slate-200">
+        <h3 class="border-b border-slate-200 bg-slate-50 px-3 py-2 font-medium">{{ inspectionCategories[group.category] ?? group.category }}</h3>
+        <div v-for="check in group.checks" :key="check.key" class="border-b border-slate-100 p-3 last:border-b-0" :data-check-key="check.key">
+          <div class="flex flex-wrap items-center gap-2">
+            <strong>{{ check.name }}</strong>
+            <span class="rounded px-2 py-0.5 text-xs" :class="check.status === 'pass' ? 'bg-emerald-50 text-emerald-700' : check.status === 'fail' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'">{{ inspectionStatuses[check.status] ?? check.status }}</span>
+            <span v-if="check.role === 'factor' && check.factor !== null" class="text-xs text-slate-500">{{ check.applied ? '生效系数' : '候选系数，不生效' }} {{ check.factor.toFixed(3) }}</span>
+            <span v-else-if="check.role === 'gate'" class="text-xs text-slate-500">门槛项</span>
+          </div>
+          <p v-if="check.reason" class="mt-1">{{ check.reason }}</p>
+          <div v-if="check.metrics && Object.keys(check.metrics).length" class="mt-1 flex flex-wrap gap-x-4 text-xs text-slate-500"><span v-for="(metric, name) in check.metrics" :key="name">{{ metricNames[name] ?? name }}：{{ metric.value === null ? '未取得' : metric.value.toFixed(3) }} {{ metricUnits[metric.unit] ?? metric.unit }}</span></div>
+          <p class="mt-1 text-slate-600">{{ trial ? '试运行，不影响价格与调度。' : check.impact || '本项未影响价格与调度。' }}</p>
+          <p v-if="check.advice" class="mt-1 text-slate-600">建议：{{ check.advice }}</p>
+        </div>
+      </section>
+      <p class="text-xs text-slate-500">检测是抽样，不能保证没有偷换；无法判定与未测项目不扣价。</p>
+    </template>
+    <dl v-else class="kv">
       <dt>可用性</dt>
       <dd>
         <template v-if="report.summary.suites.availability">

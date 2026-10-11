@@ -302,6 +302,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, body []byte, in
 	req, err := http.NewRequestWithContext(ctx, r.Method, s.targetURL(r, internalKey, loc), bytes.NewReader(body))
 	if err != nil {
 		timer.Stop()
+		a.ErrorClass = "configuration"
 		a.EndReason, a.EndedAt = "upstream_error", s.now()
 		s.record(*a)
 		return false, nil
@@ -321,6 +322,12 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, body []byte, in
 			reason = "client_cancel"
 		}
 		a.EndReason, a.EndedAt = reason, s.now()
+		if reason != "client_cancel" {
+			a.ErrorClass = attemptNetworkClass(err)
+			if reason == "timeout" {
+				a.ErrorClass = "timeout"
+			}
+		}
 		s.record(*a)
 		if reason == "client_cancel" {
 			return true, nil
@@ -337,6 +344,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, body []byte, in
 
 	if retryableStatus(resp.StatusCode) {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		a.ErrorClass = attemptHTTPClass(resp.StatusCode, b)
 		a.EndReason, a.EndedAt = "retry", s.now()
 		s.record(*a)
 		if s.breaker.Failure(hop.Label) {
@@ -359,7 +367,16 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, body []byte, in
 	h.Set("X-TM-Hop", strconv.Itoa(hopNo))
 	w.WriteHeader(resp.StatusCode)
 	a.Committed = true
-	a.EndReason = streamBody(w, resp.Body, r.Context())
+	reader := io.Reader(resp.Body)
+	var errorBody attemptErrorCapture
+	if resp.StatusCode >= http.StatusBadRequest {
+		reader = io.TeeReader(reader, &errorBody)
+	}
+	a.EndReason = streamBody(w, reader, r.Context())
+	a.ErrorClass = attemptHTTPClass(resp.StatusCode, errorBody.data)
+	if a.EndReason == "upstream_error" && a.ErrorClass == "" {
+		a.ErrorClass = "network"
+	}
 	a.EndedAt = s.now()
 	s.record(*a)
 	return true, nil
@@ -476,12 +493,14 @@ func (s *Server) serveWebSocket(w http.ResponseWriter, r *http.Request, cfg *edg
 		}
 		upstream, resp, err := s.dialWebSocket(r, internalKey, loc)
 		if err != nil {
+			a.ErrorClass = attemptNetworkClass(err)
 			a.EndReason, a.EndedAt = "upstream_error", s.now()
 			s.record(a)
 			s.breaker.Failure(hop.Label)
 			continue
 		}
 		a.HTTPStatus = resp.StatusCode
+		a.ErrorClass = attemptHTTPClass(resp.StatusCode, nil)
 		a.Sub2APIRequestID = resp.Header.Get("X-Client-Request-ID")
 		if resp.StatusCode != http.StatusSwitchingProtocols && retryableStatus(resp.StatusCode) {
 			_ = upstream.Close()
@@ -498,7 +517,14 @@ func (s *Server) serveWebSocket(w http.ResponseWriter, r *http.Request, cfg *edg
 		}
 		resp.Header.Set("X-TM-Listing", hop.Label)
 		resp.Header.Set("X-TM-Request-ID", reqID)
+		var errorBody attemptErrorCapture
+		if resp.StatusCode >= http.StatusBadRequest {
+			resp.Body = &attemptCapturedBody{ReadCloser: resp.Body, capture: &errorBody}
+		}
 		_ = resp.Write(client)
+		if resp.StatusCode >= http.StatusBadRequest {
+			a.ErrorClass = attemptHTTPClass(resp.StatusCode, errorBody.data)
+		}
 		a.Committed = true
 		if resp.StatusCode == http.StatusSwitchingProtocols {
 			if buf.Reader.Buffered() > 0 {

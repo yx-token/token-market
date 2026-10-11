@@ -13,6 +13,7 @@ import { useToast } from '@/stores/toast'
 import { authGuides, takesProjectID, takesTeam } from '@/utils/authGuides'
 import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
 import { multiplier, percent } from '@/utils/format'
+import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 
 const route = useRoute()
 const cfg = useConfig()
@@ -561,6 +562,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
     <section v-else-if="step === 4" class="xm-pub-panel">
       <h2>定价与上架内容</h2>
       <p class="sub">设置买家看到的价格与标题。</p>
+      <InspectionAppraisal v-if="upstream" class="mb-4" :appraisal="upstream.appraisal" :grade="upstream.grade" :quality-factor="upstream.quality_factor" :inspection-mode="upstream.inspection_mode" :price="sku === 'buyback' ? undefined : Number(mult)" />
 
       <template v-if="sku === 'consignment'">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">

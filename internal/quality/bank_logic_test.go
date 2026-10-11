@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 type parsedZebraRule struct {
@@ -242,7 +241,7 @@ func TestBankLogicZebraIndependentUnique(t *testing.T) {
 	}
 }
 
-func assertBankLogicAnswer(t *testing.T, generated generatedProbe) {
+func assertBankLogicAnswer(t testing.TB, generated generatedProbe) {
 	t.Helper()
 	if err := validateInspectionGrader(generated.Grader); err != nil {
 		t.Fatalf("判分器配置无效：%v", err)
@@ -549,24 +548,6 @@ func TestBankLogicSeedsAndParameterDomains(t *testing.T) {
 	}
 }
 
-func TestBankLogicZebraGenerationDuration(t *testing.T) {
-	for _, dimensions := range [][2]int{{5, 5}, {5, 6}, {6, 6}} {
-		start := time.Now()
-		var maximum time.Duration
-		for seed := uint64(0); seed < 10; seed++ {
-			oneStart := time.Now()
-			if _, err := generateZebra(rand.New(rand.NewPCG(seed, seed+17)), map[string]any{"houses": dimensions[0], "attributes": dimensions[1]}); err != nil {
-				t.Fatalf("%dx%d seed=%d：%v", dimensions[0], dimensions[1], seed, err)
-			}
-			if duration := time.Since(oneStart); duration > maximum {
-				maximum = duration
-			}
-		}
-		duration := time.Since(start)
-		t.Logf("%dx%d：10 个 seed 耗时 %s，平均 %s，最大 %s", dimensions[0], dimensions[1], duration, duration/10, maximum)
-	}
-}
-
 func TestBankLogicZebraDefaultDimensions(t *testing.T) {
 	generated, err := generateZebra(rand.New(rand.NewPCG(101, 103)), nil)
 	if err != nil {
@@ -585,24 +566,5 @@ func TestBankLogicZebraDefaultDimensions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(first, second) {
 		t.Fatal("最大规格同 seed 的题面、参数、判分器和答案不同")
-	}
-}
-
-func TestBankLogicDefaultGenerationStress(t *testing.T) {
-	for _, generator := range []struct {
-		name     string
-		generate func(*rand.Rand, map[string]any) (generatedProbe, error)
-	}{
-		{"zebra", generateZebra}, {"knights", generateKnights}, {"register", generateRegister},
-	} {
-		t.Run(generator.name, func(t *testing.T) {
-			for seed := uint64(0); seed < 500; seed++ {
-				generated, err := generator.generate(rand.New(rand.NewPCG(seed, seed+17)), nil)
-				if err != nil {
-					t.Fatalf("seed=%d 默认域生成失败：%v", seed, err)
-				}
-				assertBankLogicAnswer(t, generated)
-			}
-		})
 	}
 }

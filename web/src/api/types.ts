@@ -51,6 +51,11 @@ export interface MarketItem {
   title?: string
   description?: string
   categories?: string[]
+  inspection_mode?: 'trial' | 'formal'
+  quality_factor?: number | null
+  appraisal?: InspectionAppraisal
+  quality_checks?: Record<string, InspectionCheckResult>
+  last_checked_at?: string | null
 }
 
 export interface PoolItem {
@@ -306,6 +311,11 @@ export interface Upstream {
   auto_reset_7d_percent?: number
   auto_reset_authorized_at?: string
   grade?: string
+  inspection_mode?: 'trial' | 'formal'
+  quality_factor?: number | null
+  appraisal?: InspectionAppraisal
+  quality_checks?: Record<string, InspectionCheckResult>
+  last_checked_at?: string | null
   failure_reason?: string
   created_at: string
   updated_at: string
@@ -524,6 +534,15 @@ export interface ReportSummary {
   suggestions?: string[]
   internal_verdict?: string
   third_party?: ThirdPartyResult[]
+  inspection_mode?: 'trial' | 'formal'
+  mode?: 'legacy' | 'full' | 'quick'
+  checks?: Record<string, InspectionCheckResult>
+  quality_factor?: number | null
+  group_factors?: Record<string, number | null>
+  gates?: InspectionGate[]
+  appraisal?: InspectionAppraisal
+  proposed_grade?: string
+  repaired_grade?: string
   suites: {
     availability?: { success: number; total: number }
     latency?: { ttft_p50_ms?: number; ttft_p95_ms?: number; output_tps?: number }
@@ -651,6 +670,7 @@ export interface VendorConfig {
   consignment_min: number
   consignment_max: number
   buyback_base: Record<string, number>
+  appraisal_base?: Record<string, number>
   default_concurrency: number
   extra_limits: Record<string, unknown>
   updated_at: string
@@ -747,6 +767,9 @@ export interface Policy {
   auto_pause: boolean
   default_grade: string
   third_party: ThirdPartyCheck[] | null
+  item_parallelism?: number
+  full_triggers?: string[]
+  token_budgets?: Partial<Record<'full' | 'quick', InspectionTokenBudget>>
   version: number
   updated_at: string
 }
@@ -840,6 +863,97 @@ export interface ProbeRunResult {
   reasoning_tokens: number
   response_model?: string
   excerpt?: string
+  check_key?: string
+  instance_idx?: number
+  step?: number
+  instance_hash?: string
+  generator_version?: string
+  input_tokens?: number | null
+  cache_read_tokens?: number | null
+  cache_creation_tokens?: number | null
+  stop_reason?: string
+  effort?: string
+  flags?: string[]
+  error_body?: string
+}
+
+export interface InspectionAppraisal {
+  base: number | null
+  factor: number | null
+  multiplier: number | null
+  tier: string
+  checked_at: string | null
+  configured: boolean
+  provisional: boolean
+}
+
+/** 卖家与市场使用脱敏后的结果，不读取内部 evidence 或精确阈值。 */
+export interface InspectionCheckResult {
+  key: string
+  name: string
+  category: string
+  status: 'pass' | 'warning' | 'fail' | 'inconclusive' | 'not_applicable' | 'not_run'
+  role: 'gate' | 'factor' | 'display'
+  factor_group: string | null
+  factor: number | null
+  applied: boolean
+  metrics?: Record<string, { value: number | null; unit: string; ci?: [number, number] | null; confidence?: number | null }>
+  samples?: { observed: number; paired: number; excluded: number }
+  reason?: string
+  advice?: string
+  impact?: string
+  checked_at?: string
+}
+
+export interface InspectionGate {
+  check_key: string
+  code: string
+  health: 'degraded' | 'unavailable'
+  confirmed: boolean
+  occurred_at: string
+  reason: string
+}
+
+export interface InspectionCheckDefinition {
+  key: string
+  name: string
+  category: string
+  role: 'gate' | 'factor' | 'display'
+  factor_group: string | null
+  enabled: boolean
+  calibrated: boolean
+  coefficients: Record<string, number>
+  thresholds: Record<string, number>
+  advice: string
+  calibration_note: string
+  description?: string
+}
+
+export interface InspectionCheckOverride {
+  enabled: boolean
+  calibrated: boolean
+  calibration_note: string
+  coefficients: Record<string, number>
+  thresholds: Record<string, number>
+}
+
+export interface InspectionTokenBudget {
+  input_tokens_per_side: number
+  output_tokens_per_side: number
+}
+
+export interface InspectionSettings {
+  mode: 'trial' | 'formal'
+  check_overrides: Record<string, Partial<InspectionCheckOverride>>
+  grade_thresholds: Record<string, number>
+  grade_hysteresis: number
+  downgrade_confirmations: number
+  s_requirements: { gate_free_days: number; availability_days: number; min_availability: number }
+  scheduling: { enabled: boolean; minimum_grade: string; strategy: string }
+  timeouts: { full_minutes: number; quick_minutes: number }
+  limits: { account_parallelism: number; global_parallelism: number }
+  token_budgets: Record<'full' | 'quick', InspectionTokenBudget>
+  [key: string]: unknown
 }
 
 export interface ProbeRunDetail {
@@ -879,7 +993,7 @@ export interface ProbeItemStat {
 }
 
 /** 一道题在某次检测中的结果 */
-export interface ProbeItemResult {
+export interface ProbeItemResult extends Pick<ProbeRunResult, 'check_key' | 'instance_idx' | 'step' | 'instance_hash' | 'generator_version' | 'input_tokens' | 'cache_read_tokens' | 'cache_creation_tokens' | 'stop_reason' | 'effort' | 'flags' | 'error_body'> {
   run_id: number
   upstream_id: number
   platform: string
