@@ -124,7 +124,7 @@ ProbeRequest 增加 System/Messages/Tools/Attachments/Effort/Extra；ProbeResult
 - 结束原因归一化为 normal/truncated/refusal/error，保留原值。HTTP 200 也可能 refusal，不作为智力错误；无法识别则标 unknown_stop_reason。
 - 分类优先识别 platform：网关并发限制（包括本地429）、探测余额不足、claude_code_version_too_old 均属平台；其余429/529为 rate_limited，按 Retry-After/退避重试，不作为主动探针可用失败或智力错误。明确预期的 400 为 expected_reject，非预期 4xx 再区分题目配置/平台/账号。
 
-11 种新判分器：answer_tag、fields_exact、set_exact、lines_alias、constraints、json_schema、tool_calls、abstain、full_output、num_list、accept_reject。统一输出 `{pass: boolean, partial: number|null, flags: string[]}`，partial 为 [0,1] 的辅助展示，SPRT/McNemar 只用二元 pass。计数配对由引擎计算，不另造 token_count_equal 判分器。answer_tag 必须匹配明确 ANSWER 标记，不能猜最后一个数字。阶段三新增 constraints 的 exact_text 子规则：保存唯一合法见证全文，经既有判分文本规范化后逐字比较，其他子规则仍提供部分分；额外标点、分隔符或内部空行不能通过。已有判分规则语义不变。
+11 种新判分器：answer_tag、fields_exact、set_exact、lines_alias、constraints、json_schema、tool_calls、abstain、full_output、num_list、accept_reject。统一输出 `{pass: boolean, partial: number|null, flags: string[]}`，partial 为 [0,1] 的辅助展示，SPRT/McNemar 只用二元 pass。计数配对由引擎计算，不另造 token_count_equal 判分器。answer_tag 必须匹配明确 ANSWER 标记，不能猜最后一个数字。constraints 版本 1 的 exact_text 子规则保留旧批次回放语义；版本 2 改为自由写作，不再要求唯一答案或全文匹配。中文七条、英文八条可验证约束同时判分，参考文本与另一份合法文本均须通过，逐项构造仅违反该项的反例并检出。新增 paragraph_shape 子规则含 n、initials、sep、language（段数、首字/首词、分隔符、语言）；ends_sentence 校验完整固定末句。已有判分规则语义不变。
 
 既有 error_class 列承载本次主错误分类（含 platform/rate_limited/expected_reject），flags 是可并存的补充状态，不能取代主错误原因。flags 允许 stop_normal/truncated/refusal/stop_error/lazy_placeholder/format_error/rate_limited/platform/expected_reject/reasoning_estimated/unknown_stop_reason/window_unknown/configuration；其中 stop_normal/truncated/refusal/stop_error 分别保存归一化的 normal/truncated/refusal/error，原 stop_reason 仍原样记录。拒答、截断、限流、平台错误从智力统计剔除，仍保留对应功能/输出/可用项证据。成对样本只要任一侧不合格，两侧一并剔除，SPRT 与 McNemar 使用同一数据清单。无同批基线且无合格历史时，新题不可用默认 0.95 代替基线；记录“无法判定”，不进入降智或扣价。
 
@@ -290,28 +290,30 @@ onboarding/admin/appeal 现有美元日预算豁免保留；窗口、安全 toke
 
 ## 10. 阶段三参数化题库与影子边界
 
+修正后斑马与中英自由写作使用生成器版本 2 和新版 builtin_key；输出平台、弃权分类同样使用新版键。同步只补新版缺项，旧键行与管理员编辑保留，新选择器排除已替代的旧键（含低区分度的每周天数题），旧批次仍按冻结快照回放。斑马版本 1 无参数时仍为 4×3。版本 2 覆盖 4–6 房屋、3–6 属性的全部规格与双求解器唯一解；6×6 的 10 个本地 seed 平均约 77ms、最慢约 100ms，保留单次搜索步数上限，无需离线预生成。内置 5×5 的真实区分度待运营校准。
+
 ### 10.1 模板与参数域
 
 注册表有以下 8 个模板，当前均为 version="1"。整数参数接受单个整数或 `[下界,上界]` 闭区间；字符串参数为固定枚举值，未设置的题型由 seed 选择。只接受模板白名单参数，不执行自由代码。generator.instances 的 full/quick 值为 0–32；未写 instances 时生成 1 个实例，存在 instances 但缺当前模式时为 0。实际抽到的参数与答案冻结在快照中，generator_version 保存 `模板/版本`。
 
 | 模板键 | 题型与允许参数 |
 |---|---|
-| zebra | houses：4–5（默认 4）；attributes：3–4（默认 3）；每个属性的取值与房子一一对应，8 类线索，求解器确认唯一解 |
+| zebra | houses：4–6（版本 2 默认 5）；attributes：3–6（版本 2 默认 5）；每个属性的取值与房子一一对应，8 类线索，求解器确认唯一解 |
 | knights_knaves | people：4–8（默认 6）；8 类陈述，确认唯一身份配置 |
 | register_machine | operations：20–80（默认 40）；固定 5 寄存器、模 100，7 种指令；不支持 registers/difficulty 参数 |
 | aime_math | kind：count/lastdigits/binary/grid；count 的 n 800–2000、modulus 6–13、remainder 0–modulus−1、digit_modulus 3–7、excluded_multiple 5–11；lastdigits 的 base 3–99 且与 10 互素、exponent_base 3–9、exponent_power 3–6；binary 的 length 14–18、ones 5–8、run_limit 3–4；grid 的 width 6–8、height 5–7、blocked_count 4–6 |
 | code_output | kind：A/B/D/G；cases：3–6（默认 3）；覆盖列表切片、字符串分支、Python 语义陷阱、双重循环，答案由 Go 计算 |
 | string_date | kind：transform/sort/date；transform 的 length 14–30、shift 1–25；date 的 year 2024–2028、start_day 1–24（10 月）、business_days 5–15、elapsed_hours 100–400、holiday_count 1–3；题面给出节假日和纽约夏令时规则，sort 使用自定义字母顺序 |
-| constraints | lang：zh/en（默认 zh）；四段结构、首词、词频与句尾联立约束，穷举见证并严格验证唯一全文 |
+| constraints | lang：zh/en（默认 zh）；版本 2 自由写作，同时满足 7/8 条有张力的汉字数/词数、关键词频次、段落首字/首词、禁用字符、逐句上限、重复上限、小写和结尾约束，不提供候选或唯一答案 |
 | long_context | target_tokens：8192/32768/131072（仅固定值，默认 8192）；variant：multi_needle/multi_hop/aggregate/edges/associative（默认 multi_hop） |
 
-独立验算测试读取渲染后的题面，避免只重跑生成器内部算法：逻辑题用另一种搜索/执行法、数学题用枚举与公式、字符串题用独立变换、日期题用系统时区核对、中英约束穷举、长题解析记录查表。代码预测在 Go 内计算答案；仅测试在有 python3 时以 `python3 -I` 实际执行本项目生成的安全程序交叉验证，缺少解释器时跳过这部分；生产服务不执行生成代码。各模板均验证同 seed 同题面、同哈希。版本 1 的逻辑题另覆盖 1500 个默认 seed，确保有界生成过程不轻易失败；这不是对真实模型难度的标定。
+独立验算测试读取渲染后的题面，避免只重跑生成器内部算法：逻辑题用另一种搜索/执行法、数学题用枚举与公式、字符串题用独立变换、日期题用系统时区核对、中英约束按题面独立解析、逐项违例与多份合法文本验证、长题解析记录查表。代码预测在 Go 内计算答案；仅测试在有 python3 时以 `python3 -I` 实际执行本项目生成的安全程序交叉验证，缺少解释器时跳过这部分；生产服务不执行生成代码。各模板均验证同 seed 同题面、同哈希。版本 1 的逻辑题另覆盖 1500 个默认 seed，确保有界生成过程不轻易失败；这不是对真实模型难度的标定。
 
 长草堆使用 lexical_subword_v1 估算：按字母子词、数字组与标点计数，不能把字符数标成 token。快照 parameters 保存 target_tokens、estimated_input_tokens、token_estimator、records、target_record；生成到估算长度达到目标。执行预算预留 `estimated_input_tokens × 1.25 + 1024`，可靠返回后以 probe_results.input_tokens（及对应缓存口径）修正。估算器不是厂商 tokenizer，实际测到的长度必须依据 usage 展示；保护余量和 8K/32K/128K 对应的真实输入均**待运营校准**。
 
 ### 10.2 起步题量与同步
 
-启动同步新增 26 个稳定 builtin_key 条目：6 个通用模板、中英约束 2 个、长上下文 10 个、静态题 8 个。仅 `INSERT ... ON CONFLICT(builtin_key) DO NOTHING`，不覆盖管理员编辑、不复活 retired、不变更已有版本；22 道旧题内容与状态保持原样。后台题库支持 check_key/request/generator/modes/weight，按模板和版本过滤，编辑保留旧 IRT 参数与 builtin_key。
+启动同步新增 25 个稳定 builtin_key 条目：6 个通用模板、中英约束 2 个、长上下文 10 个、静态题 7 个。仅 `INSERT ... ON CONFLICT(builtin_key) DO NOTHING`，不覆盖管理员编辑、不复活 retired、不变更已有版本；22 道旧题内容与状态保持原样。后台题库支持 check_key/request/generator/modes/weight，按模板和版本过滤，编辑保留旧 IRT 参数与 builtin_key。
 
 | 阶段三已接入内容 | full 每侧请求 | quick 每侧请求 |
 |---|---:|---:|
@@ -320,9 +322,9 @@ onboarding/admin/appeal 现有美元日预算豁免保留；窗口、安全 toke
 | 五型长上下文，8K×3/32K×3/128K×4 | 10 | 0 |
 | 工具两步、Schema 一步、多轮两步 | 5 | 3 |
 | 完整输出、中文金额两题、稳定事实、缺失信息弃权 | 5 | 0 |
-| **全部适用时合计** | **74** | **25** |
+| **全部适用时合计** | **73** | **25** |
 
-这是新影子题的起步量，旧题另计。Codex 通道跳过完整输出题，其 full 为 73；管理员可按模式/套件调整。§7 的约 90 次是完整方案规划量，low 锚定重测、缓存、图片/PDF、边界与参数指纹等尚需阶段四接入对应质检项和适用条件，不能把阶段三 74 次显示成已完成完整核验。稳定事实与弃权只提供起步功能证据，不验证知识截止日期。
+这是新影子题的起步量，旧题另计。Codex 通道跳过完整输出题，其 full 为 72；管理员可按模式/套件调整。§7 的约 90 次是完整方案规划量，low 锚定重测、缓存、图片/PDF、边界与参数指纹等尚需阶段四接入对应质检项和适用条件，不能把阶段三 73 次显示成已完成完整核验。弃权挂 D07.honesty，归入智力配对的诚实子类；A08 暂不放题，等待安全可靠的截止期附近事实与同期基线。完整输出适用平台为除 openai 外全部现有平台。
 
 ### 10.3 不影响旧判定的执行与汇总
 

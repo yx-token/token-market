@@ -97,7 +97,7 @@ func parseGenerator(raw json.RawMessage) (*generatorDefinition, error) {
 	if err := decodeInspectionJSON(raw, &d); err != nil {
 		return nil, fmt.Errorf("解析生成器：%w", err)
 	}
-	if d.Version != "1" || bankGenerators[d.TemplateID] == nil {
+	if !bankGeneratorVersion(d.TemplateID, d.Version) || bankGenerators[d.TemplateID] == nil {
 		return nil, errors.New("生成器模板或版本未注册")
 	}
 	allowed := map[string]string{
@@ -132,8 +132,23 @@ func generateBankProbe(d generatorDefinition, seed string) (generatedProbe, erro
 		return generatedProbe{}, err
 	}
 	fn := bankGenerators[d.TemplateID]
-	if fn == nil || d.Version != "1" {
+	if fn == nil || !bankGeneratorVersion(d.TemplateID, d.Version) {
 		return generatedProbe{}, errors.New("生成器模板或版本未注册")
 	}
+	if d.TemplateID == "constraints" && d.Version == "1" {
+		fn = generateConstraintsLegacy
+	}
+	if d.TemplateID == "zebra" && d.Version == "1" {
+		// 保留旧版默认规格；新模板的升难度不混入旧历史。
+		parameters := map[string]any{"houses": 4, "attributes": 3}
+		for key, value := range d.Parameters {
+			parameters[key] = value
+		}
+		d.Parameters = parameters
+	}
 	return fn(rand.New(rand.NewPCG(a, b)), d.Parameters) //nolint:gosec // seed 来自平台 HMAC，题库生成不是密钥生成。
+}
+
+func bankGeneratorVersion(template, version string) bool {
+	return version == "1" || (version == "2" && (template == "constraints" || template == "zebra"))
 }

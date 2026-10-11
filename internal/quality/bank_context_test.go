@@ -22,11 +22,11 @@ func contextHash(t *testing.T, value generatedProbe) [32]byte {
 	return sha256.Sum256(raw)
 }
 
-func TestBankConstraintsIndependentUniqueSolution(t *testing.T) {
+func TestBankConstraintsLegacyIndependentUniqueSolution(t *testing.T) {
 	for _, lang := range []string{"zh", "en"} {
 		t.Run(lang, func(t *testing.T) {
 			for seed := uint64(0); seed < 40; seed++ {
-				probe, err := generateConstraints(contextRNG(seed), map[string]any{"lang": lang})
+				probe, err := generateConstraintsLegacy(contextRNG(seed), map[string]any{"lang": lang})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -61,7 +61,7 @@ func TestBankConstraintsIndependentUniqueSolution(t *testing.T) {
 				if len(solutions) != 1 || solutions[0] != probe.Answer {
 					t.Fatalf("seed %d：唯一解数量 %d，与标准答案不一致", seed, len(solutions))
 				}
-				duplicate, err := generateConstraints(contextRNG(seed), map[string]any{"lang": lang})
+				duplicate, err := generateConstraintsLegacy(contextRNG(seed), map[string]any{"lang": lang})
 				if err != nil || contextHash(t, duplicate) != contextHash(t, probe) {
 					t.Fatalf("seed %d：哈希不确定：%v", seed, err)
 				}
@@ -70,10 +70,10 @@ func TestBankConstraintsIndependentUniqueSolution(t *testing.T) {
 	}
 }
 
-func TestBankConstraintsRejectRewrittenText(t *testing.T) {
+func TestBankConstraintsLegacyRejectRewrittenText(t *testing.T) {
 	for _, lang := range []string{"zh", "en"} {
 		t.Run(lang, func(t *testing.T) {
-			probe, err := generateConstraints(contextRNG(17), map[string]any{"lang": lang})
+			probe, err := generateConstraintsLegacy(contextRNG(17), map[string]any{"lang": lang})
 			if err != nil {
 				t.Fatal(err)
 			}

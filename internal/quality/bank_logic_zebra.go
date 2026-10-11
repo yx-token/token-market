@@ -7,12 +7,14 @@ import (
 	"strings"
 )
 
-var bankZebraAttributes = []string{"姓名", "饮品", "宠物", "颜色"}
+var bankZebraAttributes = []string{"姓名", "饮品", "宠物", "颜色", "职业", "乐器"}
 var bankZebraValues = [][]string{
-	{"赵", "钱", "孙", "李", "周"},
-	{"茶", "咖啡", "牛奶", "果汁", "矿泉水"},
-	{"猫", "狗", "鹦鹉", "金鱼", "兔子"},
-	{"红", "绿", "蓝", "黄", "白"},
+	{"赵", "钱", "孙", "李", "周", "吴"},
+	{"茶", "咖啡", "牛奶", "果汁", "矿泉水", "可可"},
+	{"猫", "狗", "鹦鹉", "金鱼", "兔子", "仓鼠"},
+	{"红", "绿", "蓝", "黄", "白", "紫"},
+	{"教师", "画家", "厨师", "木匠", "园丁", "会计"},
+	{"钢琴", "小提琴", "笛子", "吉他", "鼓", "二胡"},
 }
 
 type zebraItem struct{ attribute, value int }
@@ -139,8 +141,12 @@ func zebraDescription(x zebraItem) string {
 		return "喝" + value + "的人"
 	case 2:
 		return "养" + value + "的人"
-	default:
+	case 3:
 		return value + "房子的住户"
+	case 4:
+		return "当" + value + "的人"
+	default:
+		return "演奏" + value + "的人"
 	}
 }
 
@@ -167,11 +173,11 @@ func renderZebraClue(c zebraClue) string {
 }
 
 func generateZebra(rng *rand.Rand, parameters map[string]any) (generatedProbe, error) {
-	houses, err := bankInt(parameters, "houses", 4, 4, 5, rng)
+	houses, err := bankInt(parameters, "houses", 5, 4, 6, rng)
 	if err != nil {
 		return generatedProbe{}, err
 	}
-	attributes, err := bankInt(parameters, "attributes", 3, 3, 4, rng)
+	attributes, err := bankInt(parameters, "attributes", 5, 3, 6, rng)
 	if err != nil {
 		return generatedProbe{}, err
 	}

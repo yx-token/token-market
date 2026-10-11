@@ -37,6 +37,7 @@ var (
 	englishSentences  = regexp.MustCompile(`[.!?]+(?:\s+|$)`)
 	chineseSentences  = regexp.MustCompile(`[。！？]+`)
 	asciiAlphaNumeric = regexp.MustCompile(`[A-Za-z0-9]`)
+	starParagraphs    = regexp.MustCompile(`(?m)^[ \t]*\*\*\*[ \t]*$`)
 )
 
 func validateConstraint(c Constraint) error {
@@ -79,9 +80,29 @@ func validateConstraint(c Constraint) error {
 				return errors.New("段落前缀不能为空")
 			}
 		}
-	case "ends_with", "starts_with":
+	case "paragraph_shape":
+		if c.N == nil || *c.N == 0 || *c.N != len(c.Initials) || c.Language != "zh" && c.Language != "en" {
+			return errors.New("段落形状需要相同数量的段数、首字或首词，并指定 zh 或 en")
+		}
+		if c.Sep != "blank" && c.Sep != "***" {
+			return errors.New("段落形状只支持空行或独立星号行分隔")
+		}
+		for _, initial := range c.Initials {
+			if c.Language == "zh" {
+				runes := []rune(initial)
+				if len(runes) != 1 || !unicode.Is(unicode.Han, runes[0]) {
+					return errors.New("中文段落首字需要一个汉字")
+				}
+			} else if englishWords.FindString(initial) != initial || initial == "" {
+				return errors.New("英文段落首词需要一个完整单词")
+			}
+		}
+	case "ends_with", "starts_with", "ends_sentence":
 		if c.Text == "" {
 			return errors.New("首尾约束的文本不能为空")
+		}
+		if c.Kind == "ends_sentence" && !strings.HasSuffix(c.Text, ".") && !strings.HasSuffix(c.Text, "!") && !strings.HasSuffix(c.Text, "?") {
+			return errors.New("固定英文末句需要句末标点")
 		}
 	case "exact_text":
 		if c.Text == "" {
@@ -160,8 +181,41 @@ func checkConstraint(text string, c Constraint) bool {
 			}
 		}
 		return true
+	case "paragraph_shape":
+		paragraphs := blankParagraphs.Split(strings.TrimSpace(text), -1)
+		if c.Sep == "***" {
+			paragraphs = starParagraphs.Split(strings.TrimSpace(text), -1)
+		}
+		if len(paragraphs) != *c.N {
+			return false
+		}
+		for i, paragraph := range paragraphs {
+			paragraph = strings.TrimSpace(paragraph)
+			if c.Language == "zh" {
+				if !strings.HasPrefix(paragraph, c.Initials[i]) {
+					return false
+				}
+			} else {
+				first := englishWords.FindStringIndex(paragraph)
+				if first == nil || first[0] != 0 || paragraph[:first[1]] != c.Initials[i] {
+					return false
+				}
+			}
+		}
+		return true
 	case "ends_with":
 		return strings.HasSuffix(strings.TrimSpace(text), c.Text)
+	case "ends_sentence":
+		text = strings.TrimSpace(text)
+		if !strings.HasSuffix(text, c.Text) {
+			return false
+		}
+		prefix := strings.TrimSuffix(text, c.Text)
+		if prefix != "" && strings.TrimRightFunc(prefix, unicode.IsSpace) == prefix {
+			return false
+		}
+		before := strings.TrimSpace(prefix)
+		return before == "" || strings.ContainsAny(before[len(before)-1:], ".!?")
 	case "starts_with":
 		return strings.HasPrefix(strings.TrimSpace(text), c.Text)
 	case "all_lowercase":

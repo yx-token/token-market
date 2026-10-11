@@ -59,7 +59,7 @@ func bankCodeA(rng *rand.Rand, cases int) (string, string, map[string]any) {
 	inputs := make([][]int, cases)
 	lines := make([]string, cases)
 	var code strings.Builder
-	fmt.Fprintf(&code, "def f(xs):\n    out = []\n    for i, x in enumerate(xs):\n        if x %% %d == %d:\n            out.insert(0, x // %d)\n        elif i %% 2 == 1:\n            out.append(x * %d - i)\n        else:\n            mid = len(out) // 2\n            out[mid:mid] = [x + i]\n    out = sorted(out, key=lambda v: (v %% %d, -v))\n    return out[%d:%d] + out[::- %d][:2]\n\n", k1, remainder, divisor, multiplier, k2, start, end, stride)
+	fmt.Fprintf(&code, "def f(xs):\n    out = []\n    for i, x in enumerate(xs):\n        if x %% %d == %d:\n            out.insert(0, x // %d)\n        elif i %% 2 == 1:\n            out.append(x * %d - i)\n        else:\n            mid = len(out) // 2\n            out[mid:mid] = [x + i]\n    out = sorted(out, key=lambda v: (v %% %d, -v))\n    return out[%d:%d] + out[::-%d][:2]\n\n", k1, remainder, divisor, multiplier, k2, start, end, stride)
 	for ci := range cases {
 		xs := make([]int, 7+rng.IntN(4))
 		out := []int{}

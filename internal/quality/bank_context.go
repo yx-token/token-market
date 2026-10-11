@@ -13,7 +13,8 @@ func init() {
 	bankGenerators["long_context"] = generateLongContext
 }
 
-func generateConstraints(rng *rand.Rand, parameters map[string]any) (generatedProbe, error) {
+// 已保存的旧版本继续使用原题面，新的自由写作实例由新版生成器生成。
+func generateConstraintsLegacy(rng *rand.Rand, parameters map[string]any) (generatedProbe, error) {
 	lang, err := bankString(parameters, "lang", "zh")
 	if err != nil {
 		return generatedProbe{}, err

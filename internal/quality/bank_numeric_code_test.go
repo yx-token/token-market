@@ -40,6 +40,9 @@ func TestBankCodeIndependentGoSolvers(t *testing.T) {
 			for seed := uint64(0); seed < 40; seed++ {
 				got := bankNumericVerifyDeterminism(t, generateCode, map[string]any{"kind": kind, "cases": 3 + int(seed%4)}, seed)
 				program := bankGeneratedProgram(t, got)
+				if strings.Contains(program, "out[::- ") {
+					t.Fatalf("切片步长前不应出现多余空格：%s", program)
+				}
 				bankNumericVerifyAnswer(t, got, bankCodeIndependent(t, kind, program))
 			}
 		})
@@ -76,7 +79,7 @@ func bankCodeIndependent(t *testing.T, kind, code string) string {
 	lines := []string{}
 	switch kind {
 	case "A":
-		v := bankNumericRenderedInts(t, `(?s)if x % (\d+) == (\d+):.*?x // (\d+).*?x \* (\d+) - i.*?v % (\d+), -v.*?out\[(\d+):(\d+)\] \+ out\[::- (\d+)\]`, code)
+		v := bankNumericRenderedInts(t, `(?s)if x % (\d+) == (\d+):.*?x // (\d+).*?x \* (\d+) - i.*?v % (\d+), -v.*?out\[(\d+):(\d+)\] \+ out\[::-(\d+)\]`, code)
 		for _, call := range regexp.MustCompile(`print\(f\((\[[0-9, ]+\])\)\)`).FindAllStringSubmatch(code, -1) {
 			// 排序后插入顺序无影响，独立直接算贡献，再按余数分桶。
 			buckets := make([][]int, v[4])

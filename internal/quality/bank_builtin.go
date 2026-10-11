@@ -13,21 +13,32 @@ func inspectionBuiltinItems() []Item {
 	high := "high"
 	var items []Item
 	addGenerator := func(key, name, suite, check, template string, p map[string]any, full, quick int) {
+		version := "1"
+		if template == "zebra" || template == "constraints" {
+			version = "2"
+		}
 		modes := []string{"full"}
 		if quick > 0 {
 			modes = append(modes, "quick")
 		}
-		items = append(items, Item{BuiltinKey: &key, Suite: suite, CheckKey: check, Category: name, Prompt: name + "（现场参数化生成，仅输出最终答案）", Grader: Grader{Type: "exact", Answer: "由生成器冻结"}, Generator: mustJSON(generatorDefinition{TemplateID: template, Version: "1", Parameters: p, Instances: map[string]int{"full": full, "quick": quick}}), Modes: modes, MaxTokens: 8192, ReasoningEffort: &high, Status: "active", Weight: 1})
+		items = append(items, Item{BuiltinKey: &key, Suite: suite, CheckKey: check, Category: name, Prompt: name + "（现场参数化生成，仅输出最终答案）", Grader: Grader{Type: "exact", Answer: "由生成器冻结"}, Generator: mustJSON(generatorDefinition{TemplateID: template, Version: version, Parameters: p, Instances: map[string]int{"full": full, "quick": quick}}), Modes: modes, MaxTokens: 8192, ReasoningEffort: &high, Status: "active", Weight: 1})
 	}
 	for i, row := range []struct{ key, name string }{{"zebra", "斑马谜题"}, {"knights_knaves", "骑士与无赖"}, {"register_machine", "寄存器机"}, {"aime_math", "AIME 式数学"}, {"code_output", "代码输出预测"}, {"string_date", "字符串与日期"}} {
 		quick := 3
 		if i < 2 {
 			quick = 4
 		}
-		addGenerator("inspection/"+row.key+"/1", row.name, "inspection_capability", "D07", row.key, nil, 8, quick)
+		var parameters map[string]any
+		version := "1"
+		if row.key == "zebra" {
+			// 前沿模型起步使用 5×5，实际区分度待运营校准。
+			parameters = map[string]any{"houses": 5, "attributes": 5}
+			version = "2"
+		}
+		addGenerator("inspection/"+row.key+"/"+version, row.name, "inspection_capability", "D07", row.key, parameters, 8, quick)
 	}
 	for _, lang := range []string{"zh", "en"} {
-		addGenerator("inspection/constraints/"+lang+"/1", "可验证约束（"+lang+"）", "inspection_capability", "D07", "constraints", map[string]any{"lang": lang}, 3, 1)
+		addGenerator("inspection/constraints/"+lang+"/2", "可验证约束（"+lang+"）", "inspection_capability", "D07", "constraints", map[string]any{"lang": lang}, 3, 1)
 	}
 	variants := []string{"multi_needle", "multi_hop", "aggregate", "edges", "associative"}
 	for i := 0; i < 10; i++ {
@@ -58,9 +69,9 @@ func inspectionBuiltinItems() []Item {
 	}
 	output := strings.Join(lines, "\n")
 	digest := sha256.Sum256([]byte(output))
-	static("inspection/output/1", "完整枚举输出", "inspection_output", "D08", "从1到60逐行输出平方数，格式第01项：1、第02项：4，编号两位补零。不得省略任何行，不加解释、代码围栏或空行。", Grader{Type: "full_output", Answer: output, GraderOptions: GraderOptions{SHA256: hex.EncodeToString(digest[:]), MinLines: 60, Lazy: "list", RequireNormalStop: true}}, ProbeRequest{}, []string{"full"})
+	static("inspection/output/2", "完整枚举输出", "inspection_output", "D08", "从1到60逐行输出平方数，格式第01项：1、第02项：4，编号两位补零。不得省略任何行，不加解释、代码围栏或空行。", Grader{Type: "full_output", Answer: output, GraderOptions: GraderOptions{SHA256: hex.EncodeToString(digest[:]), MinLines: 60, Lazy: "list", RequireNormalStop: true}}, ProbeRequest{}, []string{"full"})
 	// Codex 会删除输出上限，完整输出项不适用于该通道。
-	items[len(items)-1].Platforms = []string{"anthropic", "gemini", "antigravity", "kimi", "glm", "minimax", "grok"}
+	items[len(items)-1].Platforms = []string{"anthropic", "gemini", "antigravity", "grok", "kimi", "zhipu", "minimax", "opencode_go"}
 	for i, row := range []struct{ amount, answer string }{{"1409.50", "壹仟肆佰零玖元伍角"}, {"16.09", "壹拾陆元零玖分"}} {
 		aliases := []string{row.answer}
 		if i == 0 {
@@ -68,8 +79,7 @@ func inspectionBuiltinItems() []Item {
 		}
 		static(fmt.Sprintf("inspection/amount/%d/1", i), "中文大写金额", "inspection_capability", "D07", "将人民币"+row.amount+"元写为中文大写金额，仅输出金额文字。", Grader{Type: "lines_alias", GraderOptions: GraderOptions{Lines: [][]string{aliases}}}, ProbeRequest{}, []string{"full"})
 	}
-	static("inspection/fact/1", "稳定事实", "inspection_capability", "A08", "一周有多少天？只输出阿拉伯数字。", Grader{Type: "exact", Answer: "7"}, ProbeRequest{}, []string{"full"})
-	static("inspection/abstain/1", "缺失信息弃权", "inspection_capability", "A08", "资料仅写：一盒彩球。资料没有记载数量。问盒内共有多少球？无法由资料确定时只输出“无法确定”。", Grader{Type: "abstain", Answer: "无法确定", GraderOptions: GraderOptions{Patterns: []string{`^无法确定$`}, NegativePatterns: []string{`[0-9]`}}}, ProbeRequest{}, []string{"full"})
+	static("inspection/abstain/2", "缺失信息弃权", "inspection_capability", "D07.honesty", "资料仅写：一盒彩球。资料没有记载数量。问盒内共有多少球？无法由资料确定时只输出“无法确定”。", Grader{Type: "abstain", Answer: "无法确定", GraderOptions: GraderOptions{Patterns: []string{`^无法确定$`}, NegativePatterns: []string{`[0-9]`}}}, ProbeRequest{}, []string{"full"})
 	return items
 }
 

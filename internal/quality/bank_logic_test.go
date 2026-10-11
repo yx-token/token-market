@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 type parsedZebraRule struct {
@@ -51,6 +52,10 @@ func parseZebraPrompt(t *testing.T, prompt string) parsedZebra {
 					description = "养" + value + "的人"
 				case "颜色":
 					description = value + "房子的住户"
+				case "职业":
+					description = "当" + value + "的人"
+				case "乐器":
+					description = "演奏" + value + "的人"
 				default:
 					t.Fatalf("未识别属性：%s", parts[0])
 				}
@@ -204,7 +209,7 @@ func solveZebraCells(puzzle parsedZebra) [][]int {
 }
 
 func TestBankLogicZebraIndependentUnique(t *testing.T) {
-	for _, dimensions := range [][2]int{{4, 3}, {4, 4}, {5, 3}, {5, 4}} {
+	for _, dimensions := range [][2]int{{4, 3}, {4, 4}, {4, 5}, {4, 6}, {5, 3}, {5, 4}, {5, 5}, {5, 6}, {6, 3}, {6, 4}, {6, 5}, {6, 6}} {
 		for seed := uint64(1); seed <= 6; seed++ {
 			t.Run(fmt.Sprintf("%dx%d/%d", dimensions[0], dimensions[1], seed), func(t *testing.T) {
 				generated, err := generateZebra(rand.New(rand.NewPCG(seed, 17)), map[string]any{"houses": dimensions[0], "attributes": dimensions[1]})
@@ -519,7 +524,7 @@ func TestBankLogicSeedsAndParameterDomains(t *testing.T) {
 		parameters map[string]any
 		invalid    []map[string]any
 	}{
-		{"zebra", generateZebra, map[string]any{"houses": []int{4, 5}, "attributes": []any{json.Number("3"), json.Number("4")}}, []map[string]any{{"houses": 6}, {"attributes": 2}, {"houses": []int{5, 4}}}},
+		{"zebra", generateZebra, map[string]any{"houses": []int{4, 6}, "attributes": []any{json.Number("3"), json.Number("6")}}, []map[string]any{{"houses": 7}, {"attributes": 2}, {"attributes": 7}, {"houses": []int{5, 4}}}},
 		{"knights", generateKnights, map[string]any{"people": []int{4, 8}}, []map[string]any{{"people": 3}, {"people": 9}, {"people": "6"}}},
 		{"register", generateRegister, map[string]any{"operations": []int{20, 80}}, []map[string]any{{"operations": 19}, {"operations": 81}, {"operations": 40.5}}},
 	} {
@@ -541,6 +546,45 @@ func TestBankLogicSeedsAndParameterDomains(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBankLogicZebraGenerationDuration(t *testing.T) {
+	for _, dimensions := range [][2]int{{5, 5}, {5, 6}, {6, 6}} {
+		start := time.Now()
+		var maximum time.Duration
+		for seed := uint64(0); seed < 10; seed++ {
+			oneStart := time.Now()
+			if _, err := generateZebra(rand.New(rand.NewPCG(seed, seed+17)), map[string]any{"houses": dimensions[0], "attributes": dimensions[1]}); err != nil {
+				t.Fatalf("%dx%d seed=%d：%v", dimensions[0], dimensions[1], seed, err)
+			}
+			if duration := time.Since(oneStart); duration > maximum {
+				maximum = duration
+			}
+		}
+		duration := time.Since(start)
+		t.Logf("%dx%d：10 个 seed 耗时 %s，平均 %s，最大 %s", dimensions[0], dimensions[1], duration, duration/10, maximum)
+	}
+}
+
+func TestBankLogicZebraDefaultDimensions(t *testing.T) {
+	generated, err := generateZebra(rand.New(rand.NewPCG(101, 103)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if generated.Parameters["houses"] != 5 || generated.Parameters["attributes"] != 5 {
+		t.Fatalf("默认规格不是 5×5：%v", generated.Parameters)
+	}
+	first, err := generateZebra(rand.New(rand.NewPCG(101, 103)), map[string]any{"houses": 6, "attributes": 6})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := generateZebra(rand.New(rand.NewPCG(101, 103)), map[string]any{"houses": 6, "attributes": 6})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatal("最大规格同 seed 的题面、参数、判分器和答案不同")
 	}
 }
 

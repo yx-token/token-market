@@ -3,6 +3,8 @@ package quality
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -59,8 +61,63 @@ func TestInspectionBuiltinDefinitions(t *testing.T) {
 	}
 }
 
+func TestInspectionBuiltinCheckAndPlatformAssignments(t *testing.T) {
+	platforms := []string{"anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "minimax", "opencode_go"}
+	outputPlatforms := []string{"anthropic", "gemini", "antigravity", "grok", "kimi", "zhipu", "minimax", "opencode_go"}
+	foundOutput, foundZebra, foundHonesty := false, false, false
+	for _, it := range inspectionBuiltinItems() {
+		for _, platform := range it.Platforms {
+			if !slices.Contains(platforms, platform) {
+				t.Fatalf("内置题包含未知平台 %s：%s", *it.BuiltinKey, platform)
+			}
+		}
+		switch *it.BuiltinKey {
+		case "inspection/output/2":
+			foundOutput = true
+			if !slices.Equal(it.Platforms, outputPlatforms) {
+				t.Fatalf("完整输出适用平台未覆盖除 Codex 外的全部平台：%v", it.Platforms)
+			}
+		case "inspection/zebra/2":
+			foundZebra = true
+			d, err := parseGenerator(it.Generator)
+			if err != nil || d == nil || d.Version != "2" || d.Parameters["houses"] != json.Number("5") || d.Parameters["attributes"] != json.Number("5") {
+				t.Fatalf("斑马题起步规格须为 5×5：%+v %v", d, err)
+			}
+		case "inspection/abstain/2":
+			foundHonesty = true
+			if it.CheckKey != "D07.honesty" {
+				t.Fatalf("弃权题应归入诚实子类：%s", it.CheckKey)
+			}
+		}
+		if it.CheckKey == "A08" || *it.BuiltinKey == "inspection/fact/1" {
+			t.Fatalf("缺少同期安全事实题时不应登记知识代际内置项：%s", *it.BuiltinKey)
+		}
+	}
+	if !foundOutput || !foundZebra || !foundHonesty {
+		t.Fatalf("内置定义缺失：完整输出=%t，斑马=%t，诚实=%t", foundOutput, foundZebra, foundHonesty)
+	}
+}
+
+func TestBankKnightsPromptUsesActualPeople(t *testing.T) {
+	for people := 4; people <= 8; people++ {
+		got, err := generateKnights(bankNumericTestRNG(uint64(people)), map[string]any{"people": people})
+		if err != nil {
+			t.Fatal(err)
+		}
+		order := "按" + strings.Join(bankKnightNames[:people], "") + "的顺序"
+		if !strings.Contains(got.Request.Prompt, order) {
+			t.Fatalf("题面未使用实际人数顺序：%s", got.Request.Prompt)
+		}
+		for _, absent := range bankKnightNames[people:] {
+			if strings.Contains(got.Request.Prompt, absent) {
+				t.Fatalf("%d 人题面出现多余代号 %s", people, absent)
+			}
+		}
+	}
+}
+
 func TestInspectionGeneratorValidation(t *testing.T) {
-	for _, raw := range []string{`{"template_id":"自由代码","version":"1"}`, `{"template_id":"zebra","version":"2"}`, `{"template_id":"zebra","version":"1","instances":{"full":33}}`} {
+	for _, raw := range []string{`{"template_id":"自由代码","version":"1"}`, `{"template_id":"zebra","version":"3"}`, `{"template_id":"zebra","version":"1","instances":{"full":33}}`} {
 		if _, err := parseGenerator(json.RawMessage(raw)); err == nil {
 			t.Fatalf("非法配置未拒绝：%s", raw)
 		}

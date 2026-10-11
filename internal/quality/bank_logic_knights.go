@@ -120,7 +120,7 @@ func generateKnights(rng *rand.Rand, parameters map[string]any) (generatedProbe,
 			knights = append(knights, bankKnightNames[i])
 		}
 	}
-	prompt.WriteString("符合全部陈述的身份分配唯一。只输出所有骑士的代号，按甲乙丙丁戊己庚辛的顺序，以单个空格分隔，不要解释。")
+	fmt.Fprintf(&prompt, "符合全部陈述的身份分配唯一。只输出所有骑士的代号，按%s的顺序，以单个空格分隔，不要解释。", strings.Join(bankKnightNames[:people], ""))
 	return generatedProbe{Request: ProbeRequest{Prompt: prompt.String()}, Grader: Grader{Type: "set_exact", GraderOptions: GraderOptions{Items: knights, Sep: `\s+`}},
 		Parameters: map[string]any{"people": people}, Answer: strings.Join(knights, " ")}, nil
 }

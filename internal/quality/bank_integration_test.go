@@ -26,7 +26,7 @@ func TestInspectionBuiltinSyncAndLegacySelection(t *testing.T) {
 		}
 	}
 	var id int64
-	if err := pool.QueryRow(ctx, `SELECT id FROM probe_items WHERE builtin_key='inspection/zebra/1'`).Scan(&id); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT id FROM probe_items WHERE builtin_key='inspection/zebra/2'`).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE probe_items SET status='retired',prompt='管理员私有题面',version=9 WHERE id=$1`, id); err != nil {
@@ -99,7 +99,7 @@ func TestInspectionShadowInvalidConfigurationDoesNotBlockOldPlan(t *testing.T) {
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
 	legacy := Item{ID: 1, Suite: "iq", Prompt: "旧题", MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}}
-	shadow := Item{ID: 2, Suite: "inspection_capability", MaxTokens: 32, Generator: []byte(`{"template_id":"zebra","version":"1","parameters":{"houses":6}}`)}
+	shadow := Item{ID: 2, Suite: "inspection_capability", MaxTokens: 32, Generator: []byte(`{"template_id":"zebra","version":"1","parameters":{"houses":7}}`)}
 	e := Engine{DB: pool, Keyring: testInspectionKeyring(t)}
 	p := &Policy{Version: 1, Suites: []string{"iq", "inspection_capability"}, Thresholds: th}
 	plan, err := e.executionPlan(ctx, run, p, []Item{shadow, legacy}, defaultInspectionSettings())

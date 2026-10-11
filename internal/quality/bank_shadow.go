@@ -99,10 +99,25 @@ func selectExecutionItems(ctx context.Context, db DB, platform, model string, su
 		if err != nil {
 			return nil, err
 		}
+		if obsoleteInspectionBuiltin(it.BuiltinKey) {
+			continue
+		}
 		items = append(items, *it)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	return items, rows.Err()
+}
+
+// 保留旧内置记录及管理员编辑，新版选择器只选已纠正的内置版本。
+func obsoleteInspectionBuiltin(key *string) bool {
+	if key == nil {
+		return false
+	}
+	switch *key {
+	case "inspection/zebra/1", "inspection/constraints/zh/1", "inspection/constraints/en/1", "inspection/output/1", "inspection/abstain/1", "inspection/fact/1":
+		return true
+	}
+	return false
 }
 
 func staticAnswer(g Grader) string {
