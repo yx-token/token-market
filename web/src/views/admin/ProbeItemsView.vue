@@ -18,7 +18,7 @@ const tab = ref<'items' | 'refs'>('items')
 const pageTitle = computed(() => (tab.value === 'items' ? '题库' : '基线账号'))
 const pageDescription = computed(() =>
   tab.value === 'items'
-    ? '题库私有、定期轮换；新质检题当前只记录结果，不影响等级与价格。'
+    ? '题库私有、定期轮换；试运行只记录新题，正式模式将新题接入判定。'
     : '平台自备的干净官方账号，与被测上游同批次答题作对照。',
 )
 const { queryParams, resetQuery, handleQuery } = useListQuery({
@@ -358,7 +358,7 @@ async function removeRef(u: Upstream) {
     <div class="grid grid-cols-3 gap-3">
       <div>
         <label class="label" for="icheck">质检项键</label>
-        <input id="icheck" v-model="form.checkKey" class="input" placeholder="A09 / D09 / A11.tools" />
+        <input id="icheck" v-model="form.checkKey" class="input" placeholder="D07 / D09 / A11.tools" />
       </div>
       <div>
         <label class="label" for="iweight">题族权重</label>

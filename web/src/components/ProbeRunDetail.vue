@@ -4,16 +4,17 @@ import { computed } from 'vue'
 import type { ProbeRunDetail, ProbeRunResult } from '@/api/types'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { dateTime, ms, percent } from '@/utils/format'
+import { probeResultKey } from '@/utils/inspection'
 
 const props = defineProps<{ detail: ProbeRunDetail }>()
 
 const run = computed(() => props.detail.run)
 const metrics = computed(() => run.value.summary?.suites)
 
-// 按题目合并被测上游与基线账号的结果
+// 按题目、实例和步骤配对，不能把同模板的不同实例互相覆盖。
 const rows = computed(() => {
-  const ref = new Map((props.detail.reference_results ?? []).map((x) => [x.item_id, x]))
-  return props.detail.results.map((r) => ({ ...r, ref: r.item_id !== undefined ? ref.get(r.item_id) : undefined }))
+  const ref = new Map((props.detail.reference_results ?? []).map((x) => [probeResultKey(x), x]))
+  return props.detail.results.map((r) => ({ ...r, ref: r.item_id !== undefined ? ref.get(probeResultKey(r)) : undefined }))
 })
 
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0)
@@ -133,28 +134,34 @@ function passText(p: boolean | null | undefined) {
               <th class="p-2">结果</th>
               <th v-if="detail.reference" class="p-2">基线</th>
               <th class="p-2">首字 / 总时长</th>
-              <th class="p-2">输出 / 推理 token</th>
+              <th class="p-2">输入 / 输出 / 推理词元</th>
               <th class="p-2">回答片段</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(r, i) in rows" :key="i" class="border-t border-slate-100 align-top">
+            <tr v-for="(r, i) in rows" :key="r.item_id !== undefined ? probeResultKey(r) : i" class="border-t border-slate-100 align-top" :data-result-key="probeResultKey(r)">
               <td class="p-2">
                 <div class="font-medium">#{{ r.item_id ?? '—' }}</div>
+                <div class="text-slate-500">实例 {{ r.instance_idx ?? 0 }} · 步骤 {{ r.step ?? 0 }}</div>
+                <div v-if="r.generator_version" class="text-slate-500">{{ r.generator_version }}</div>
+                <div v-if="r.instance_hash" class="max-w-xs truncate font-mono text-slate-500" :title="r.instance_hash">哈希 {{ r.instance_hash }}</div>
                 <div class="max-w-xs truncate text-slate-500" :title="r.prompt">{{ r.prompt }}</div>
                 <div v-if="r.models.length" class="text-slate-500">限 {{ r.models.join(', ') }}</div>
               </td>
-              <td class="p-2">{{ r.suite }}<div class="text-slate-500">{{ r.category }}</div></td>
+              <td class="p-2">{{ r.suite }}<div class="text-slate-500">{{ r.category }}{{ r.check_key ? ` · ${r.check_key}` : '' }}</div></td>
               <td class="p-2" :class="r.passed ? 'text-emerald-700' : 'text-red-600'">
                 {{ passText(r.passed) }}
                 <div v-if="r.error_class" class="text-slate-500">{{ r.error_class }}{{ r.http_status ? ` · ${r.http_status}` : '' }}</div>
                 <div v-if="r.response_model && r.response_model !== run.model" class="text-amber-700">返回 {{ r.response_model }}</div>
+                <div v-if="r.stop_reason || r.effort" class="text-slate-500">结束 {{ r.stop_reason || '—' }} · 强度 {{ r.effort || '—' }}</div>
+                <div v-if="r.flags?.length" class="text-slate-500">{{ r.flags.join('、') }}</div>
               </td>
               <td v-if="detail.reference" class="p-2" :class="r.ref?.passed ? 'text-emerald-700' : 'text-red-600'">{{ passText(r.ref?.passed) }}</td>
               <td class="p-2 whitespace-nowrap">{{ ms(r.ttft_ms) }} / {{ ms(r.duration_ms) }}</td>
-              <td class="p-2 whitespace-nowrap">{{ r.output_tokens }} / {{ r.reasoning_tokens }}</td>
+              <td class="p-2 whitespace-nowrap">{{ r.input_tokens ?? '未取得' }} / {{ r.output_tokens }} / {{ r.reasoning_tokens }}<div class="text-slate-500">缓存读 {{ r.cache_read_tokens ?? '未取得' }} / 写 {{ r.cache_creation_tokens ?? '未取得' }}</div></td>
               <td class="p-2">
                 <div class="max-w-sm whitespace-pre-wrap break-words text-slate-600">{{ r.excerpt || '—' }}</div>
+                <details v-if="r.error_body" class="mt-1 text-red-700"><summary>脱敏错误体</summary><pre class="max-w-sm whitespace-pre-wrap break-words">{{ r.error_body }}</pre></details>
               </td>
             </tr>
           </tbody>

@@ -140,6 +140,9 @@ function toSku(it: MarketItem): FeedSku {
     ttft: Math.round(it.ttft_p50_ms ?? 450),
     badge: isPack ? '可退货' : cats.includes('low_rate') || it.price <= 0.55 ? '低倍率' : undefined,
     categories: cats,
+    inspectionMode: it.inspection_mode,
+    qualityChecks: it.quality_checks,
+    lastCheckedAt: it.last_checked_at,
   }
 }
 

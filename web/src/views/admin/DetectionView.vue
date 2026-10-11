@@ -52,6 +52,9 @@ const form = reactive({
   beta: 0.1,
   autoPause: true,
   grade: 'B',
+  parallelism: 2,
+  fullTriggers: 'onboarding, admin, appeal, recovery',
+  tokenBudgets: '{}',
 })
 const newAuth = reactive({ platform: '', authType: '' })
 const override = reactive({ upstream: '', mode: 'on', scheduled: '', expires: '', reason: '' })
@@ -98,6 +101,9 @@ function edit(p: Policy) {
     beta: p.thresholds.beta,
     autoPause: p.auto_pause,
     grade: p.default_grade,
+    parallelism: p.item_parallelism ?? 2,
+    fullTriggers: (p.full_triggers ?? ['onboarding', 'admin', 'appeal', 'recovery']).join(', '),
+    tokenBudgets: JSON.stringify(p.token_budgets ?? {}, null, 2),
   })
   for (const pr of providers.data.value ?? []) {
     const c = (p.third_party ?? []).find((x) => x.provider === pr.name)
@@ -121,6 +127,14 @@ const split = (s: string) => s.split(/[,\s]+/).filter(Boolean)
 async function save() {
   const p = editing.value
   if (!p) return
+  let tokenBudgets: Record<string, unknown>
+  try {
+    tokenBudgets = JSON.parse(form.tokenBudgets)
+    if (!tokenBudgets || Array.isArray(tokenBudgets) || typeof tokenBudgets !== 'object') throw new Error()
+  } catch {
+    toast.error('词元预算需要是 JSON 对象')
+    return
+  }
   const body = {
     enabled: form.enabled,
     scheduled_enabled: form.enabled && form.scheduled,
@@ -132,6 +146,9 @@ async function save() {
     thresholds: { h0: Number(form.h0), h1: Number(form.h1), alpha: Number(form.alpha), beta: Number(form.beta) },
     auto_pause: form.autoPause,
     default_grade: form.grade,
+    item_parallelism: Number(form.parallelism),
+    full_triggers: split(form.fullTriggers),
+    token_budgets: tokenBudgets,
     third_party: Object.entries(thirdParty)
       .filter(([, t]) => t.enabled)
       .map(
@@ -387,8 +404,13 @@ async function probe() {
       <div>
         <label class="label" for="ps">套件</label>
         <input id="ps" v-model="form.suites" class="input" />
-        <p class="hint">availability, latency, iq, reasoning, long_context</p>
+        <p class="hint">旧套件：availability, latency, iq, reasoning, long_context；质检套件：inspection_authenticity, inspection_capability, inspection_context, inspection_function, inspection_output, inspection_performance。试运行新题仅记录；正式模式只使用质检题。</p>
       </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="label" for="policy-parallelism">题目并行上界</label><input id="policy-parallelism" v-model.number="form.parallelism" class="input" type="number" min="1" /><p class="hint">实际取策略、质检设置与账号当前下发并发的最小值；被测与基线各自限流。</p></div>
+      <div><label class="label" for="policy-full-triggers">执行完整质检的触发类型</label><input id="policy-full-triggers" v-model="form.fullTriggers" class="input" /><p class="hint">逗号分隔：onboarding、admin、appeal、recovery、scheduled、append。</p></div>
+      <div class="col-span-2"><label class="label" for="policy-token-budgets">每侧词元预算覆盖（JSON）</label><textarea id="policy-token-budgets" v-model="form.tokenBudgets" class="input font-mono" /><p class="hint">{} 使用质检设置；可按 full/quick 配 input_tokens_per_side 与 output_tokens_per_side。</p></div>
     </div>
     <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
       <div>

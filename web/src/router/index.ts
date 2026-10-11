@@ -24,6 +24,7 @@ const consoleChildren: RouteRecordRaw[] = [
   { path: 'proxies', name: 'console-proxies', component: () => import('@/views/admin/ProxiesView.vue') },
   { path: 'pools', name: 'console-pools', component: () => import('@/views/admin/PoolsView.vue') },
   { path: 'detection', name: 'console-detection', component: () => import('@/views/admin/DetectionView.vue') },
+  { path: 'inspection-checks', name: 'console-inspection-checks', component: () => import('@/views/admin/InspectionChecksView.vue') },
   { path: 'third-party', name: 'console-third-party', component: () => import('@/views/admin/ThirdPartyView.vue') },
   { path: 'probe-items', name: 'console-probe-items', component: () => import('@/views/admin/ProbeItemsView.vue') },
   { path: 'probe-records', name: 'console-probe-records', component: () => import('@/views/admin/ProbeRecordsView.vue') },

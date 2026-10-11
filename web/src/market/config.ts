@@ -1,4 +1,5 @@
 /** 市场发现配置（对齐 docs/prototypes/market-config.js） */
+import type { InspectionCheckResult } from '@/api/types'
 
 export type MarketAction = {
   plat?: string
@@ -325,6 +326,9 @@ export type FeedSku = {
   pool?: boolean
   badge?: string
   categories?: string[]
+  inspectionMode?: string
+  qualityChecks?: Record<string, InspectionCheckResult>
+  lastCheckedAt?: string | null
 }
 
 /** 合并服务端运营配置与本地默认（服务端缺字段时保留默认） */
