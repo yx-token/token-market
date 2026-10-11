@@ -371,6 +371,30 @@ func (s *Server) adminProbe(w http.ResponseWriter, r *http.Request) error {
 	return created(w, map[string]int64{"run_id": runID})
 }
 
+func (s *Server) adminProbeRuns(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	runs, err := quality.UpstreamRuns(r.Context(), s.DB, id, httpx.QueryInt(r, "limit", 20, 1, 100))
+	if err != nil {
+		return err
+	}
+	return ok(w, runs)
+}
+
+func (s *Server) adminProbeRun(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	d, err := quality.GetRunDetail(r.Context(), s.DB, id)
+	if err != nil {
+		return err
+	}
+	return ok(w, d)
+}
+
 func (s *Server) listItems(w http.ResponseWriter, r *http.Request) error {
 	items, err := quality.ListItems(r.Context(), s.DB, r.URL.Query().Get("status"))
 	if err != nil {

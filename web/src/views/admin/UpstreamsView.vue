@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { admin } from '@/api'
 import type { Upstream } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
@@ -7,6 +7,7 @@ import { filterByDateField, filterByKeyword, useClientPage, useListQuery } from 
 import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import DataTable from '@/components/DataTable.vue'
+import ProbeRunsDialog from '@/components/ProbeRunsDialog.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { authTypeText, label, options, upstreamName } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
@@ -55,6 +56,12 @@ function suspend(u: Upstream) {
 }
 function remove(u: Upstream) {
   if (confirm(`强制删除上游 #${u.id}？`)) act(() => admin.removeUpstream(u.id), '正在删除')
+}
+const runsOf = ref<Upstream | null>(null)
+const showRuns = ref(false)
+function openRuns(u: Upstream) {
+  runsOf.value = u
+  showRuns.value = true
 }
 </script>
 
@@ -128,6 +135,7 @@ function remove(u: Upstream) {
       <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
       <template #cell-actions="{ row }">
         <button class="btn-ghost btn-sm" :disabled="busy" @click="act(() => admin.probe(row.id), '已排队检测')">检测</button>
+        <button class="btn-ghost btn-sm" @click="openRuns(row)">检测明细</button>
         <button v-if="row.status !== 'suspended'" class="btn-ghost btn-sm" :disabled="busy" @click="suspend(row)">冻结</button>
         <button v-else class="btn-ghost btn-sm" :disabled="busy" @click="act(() => admin.suspendUpstream(row.id, false), '已解冻')">解冻</button>
         <button class="btn-ghost btn-sm text-red-600" :disabled="busy" @click="remove(row)">删除</button>
@@ -141,4 +149,6 @@ function remove(u: Upstream) {
       <button type="button" class="btn btn-secondary btn-sm" :disabled="pageNum * pageSize >= total" @click="pageNum++">下一页</button>
     </template>
   </ConsoleListPage>
+
+  <ProbeRunsDialog v-model:open="showRuns" :upstream="runsOf" />
 </template>
