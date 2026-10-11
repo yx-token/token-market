@@ -667,10 +667,7 @@ func (e *Engine) probe(ctx context.Context, platform, key string, req ProbeReque
 }
 
 func (e *Engine) saveResult(ctx context.Context, runID int64, it Item, r ProbeResult, passed bool) error {
-	excerpt := r.Text
-	if len(excerpt) > 500 {
-		excerpt = excerpt[:500]
-	}
+	excerpt := truncateStr(r.Text, 500)
 	var status *int
 	if r.HTTPStatus > 0 {
 		status = &r.HTTPStatus

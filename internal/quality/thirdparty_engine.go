@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DueGin/token-market/internal/edgecfg"
 	"github.com/DueGin/token-market/internal/platform/randx"
@@ -156,11 +157,14 @@ func (e *Engine) failCheck(ctx context.Context, id int64, status, msg string) er
 	return err
 }
 
+// truncateStr 保留前 n 个字符后写库：按字符而不是字节截断，并去掉 text 列不接受的无效 UTF-8 与 NUL，
+// 否则中文等多字节内容在截断处被切开会导致写库失败。
 func truncateStr(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
+	s = strings.ReplaceAll(strings.ToValidUTF8(s, ""), "\x00", "")
+	if utf8.RuneCountInString(s) <= n {
+		return s
 	}
-	return s
+	return string([]rune(s)[:n])
 }
 
 func (e *Engine) provider(ctx context.Context, name string) (thirdparty.Provider, *providerRow, error) {
