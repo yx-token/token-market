@@ -5,7 +5,9 @@
 - **sub2api 负责秒级调度**：选账号、负载均衡、粘性会话、遇到 429 / 5xx 熔断和故障转移。
 - **本系统负责分钟级调度**：决定每个上游进哪些分组、在哪个优先级段、账号级参数取什么值，并通过 Admin API 下发。
 
-本系统不改 sub2api 代码，所以只能使用 sub2api 已有的参数来表达调度意图。
+本系统不改 sub2api 代码，所以只能使用 sub2api 已有的参数来表达调度意图。全部调度功能在 token-market 侧实现，通过现有 Admin API、只读数据库与配置驱动 sub2api；现有接口无法表达的能力记为“依赖 sub2api，后续处理”。
+
+下文标为“质检升级规划”的内容在阶段四实现，本轮仅确定契约。详细字段、回退规则与校准要求见[质检数据契约](research/inspection/data-contract.md)。
 
 ## 1. 默认分组结构
 
@@ -46,6 +48,20 @@ sub2api 的 Anthropic 网关和 OpenAI 普通调度都是严格按优先级分�
 
 **寄售专属分组**（`tm-l-<listing_id>`）只有一个账号，优先级在其中没有作用。
 
+### 2.1 质检升级规划：保障池准入
+
+正式启用质检调度后，默认分组作为保障池，在现有挂单状态、健康状态、卖家加入意愿和毛利上限条件上，再要求**等级达到 `inspection.scheduling.minimum_grade`（默认 B）且无已确认的门槛事件**。此检查只加在 `Plan` 的默认分组成员循环，不用于限制卖家设定寄售倍率。
+
+买家指定的寄售专属分组不受这一新增等级准入限制；账号原有健康限制仍适用，`degraded` / `unavailable` 等不能继续面向买家。不能因专属分组不检查最低等级，就绕过门槛事件引起的健康暂停。
+
+| `inspection.mode` | `inspection.scheduling.enabled` | 等级、默认分组准入与排序 |
+|---|---|---|
+| `trial`（默认试运行） | false（默认）或 true | 新质检只展示；等级、调度继续现有逻辑，规划器输出与旧版一致 |
+| `formal`（正式） | false | 等级由 Q 决定；新增准入和策略关闭，规划器对相同输入的输出与现状完全一致 |
+| `formal`（正式） | true | 在现有条件上启用保障池准入及 `quality_adjusted` 策略 |
+
+正式模式的等级变化属于质检输入变化；“调度开关关闭时输出一致”指规划器没有额外读取 Q 改排序或施加新准入条件。开关关闭不豁免既有健康暂停。两个开关均放在 settings 的独立 `inspection` 键，不加入旧的 `platform` 整包设置。
+
 ## 3. 账号级参数
 
 以下参数是账号级的，在该账号所属的所有分组里取值相同：
@@ -64,37 +80,23 @@ sub2api 的 Anthropic 网关和 OpenAI 普通调度都是严格按优先级分�
 
 ## 4. 调度策略插件
 
-策略只负责计算期望状态，不关心如何落地到 sub2api：
+实际策略接口只负责段内优先级；默认分组准入、健康限制和期望账号状态由 `Plan` 统一计算，执行器负责落地到 sub2api：
 
 ```go
 type Strategy interface {
     Name() string
-    // Assign 为一个默认分组计算期望的成员和参数
-    Assign(ctx context.Context, pool PoolState, candidates []UpstreamState) ([]Assignment, error)
-}
-
-type UpstreamState struct {
-    UpstreamID   int64
-    Mode         ListingMode // consignment / buyback
-    Multiplier   float64
-    Grade        string
-    Health       Health
-    Tier         string
-    WindowUsage  WindowUsage // 5h / 周用量与重置时间
-    Recent       Metrics     // 成功率、首字延迟、429 率
-}
-
-type Assignment struct {
-    UpstreamID  int64
-    Band        Band   // buyback / consignment
-    Priority    int
-    LoadFactor  *int
-    Concurrency int
-    Reason      string // 写入审计，便于解释"为什么这个账号排在这里"
+    BuybackPriority(u UpstreamInput, grade string) int
+    ConsignmentPriority(u UpstreamInput, multiplier float64) int
 }
 ```
 
-第一期实现两个策略：`grade_first`（回收段）和 `price_bucket`（寄售段）。后续可以增加探索-利用（给新上游保底流量）、公平分配、按目标份额的闭环控制等策略，每个默认分组单独配置使用哪个策略。
+当前实现是一个 `DefaultStrategy`，名称为 `grade_first+price_bucket`：回收段按等级，寄售段按价格档；未提供策略时由 `Plan` 选择它。结果由规划器限制在回收段 1–19、寄售段 50–79。账号健康为 `suspected` 时，当前并发减半规则继续保留。
+
+**质检升级规划**：新增 `quality_adjusted`，实现同一个接口。回收段继续按确认等级排序；寄售段使用有效价格 `m_s / Q`，每 0.05 一档，优先级为 `50 + floor((m_s / Q) / 0.05)`，仍限制在 50–79，不跨到回收段。计算时沿用现有浮点边界容差，避免整档倍率落入前一档。例如倍率均为 0.30，Q=1 的账号落在 56，Q=0.75 的账号落在 58；卖家实际倍率和买家费用均不因此改动。
+
+`LoadPlanInputs` 读取 token-market 的 `upstreams.quality_factor`；未检测账号的排序兼容值为 1，不能把该默认值展示成“已通过质检”。门槛事件通过健康状态排除账号，不以 Q=0 参加除法；字段与历史缺失规则见[数据契约](research/inspection/data-contract.md#2-新增列)。新策略只在正式模式且调度开关启用时选择，关闭时仍用现有策略。
+
+探索-利用（给新上游保底流量）、公平分配、按目标份额的闭环控制仍为后续方向，本次不增加按默认分组配置多个策略的机制。
 
 ## 5. 执行器
 

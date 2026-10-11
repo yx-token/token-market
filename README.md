@@ -41,6 +41,8 @@ Go + PostgreSQL + Redis，独立仓库、独立数据库。对接的 sub2api 基
 
 第一期（M0–M5）与前端已完成：卖家上架、调度、买家 Key 与 Edge、结算与对账、质量检测、兼容闸门，在线支付（支付宝电脑网站支付与当面付、微信支付 Native，余额退款原路退回），第三方检测（BazaarLink 模型身份检测），以及市场、买家中心、卖家中心、管理后台的页面。详见 [11 路线图](docs/11-roadmap.md)，其中列出了需要运营方完成的事项（sub2api 管理员合规确认、真实厂商授权与支付商户联调、提现代付、题库、压测）。
 
+质检体系升级的阶段一设计见[2026-10-12 汇总](docs/research/quality-inspection-2026-10-12.md)，包含四份研究、86 项逐项取舍、[数据契约与预算/校准](docs/research/inspection/data-contract.md)。协议引擎、参数化题库与估价调度属于后续实施；默认试运行，不改变当前定级与调度。
+
 ## 快速体验（本地）
 
 不需要真实的 sub2api、厂商账号与支付商户：`scripts/dev.sh` 启动 PostgreSQL / Redis 容器、sub2api 替身（`cmd/fake-sub2api`，在 sub2api v0.2.14 的真实表结构上模拟 Admin API、用户 API 与网关）、第三方服务替身（`cmd/fake-thirdparty`：支付宝、微信支付、BazaarLink，按真实协议签名验签，不产生真实扣款）和三个服务，并写入演示数据（开放厂商、代理、默认分组、本地可通过的题库、Claude 上架检测追加 BazaarLink 身份检测）。
