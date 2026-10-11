@@ -368,10 +368,8 @@ func (s *Service) CompleteAuthorization(ctx context.Context, sellerID, upstreamI
 			return nil, err
 		}
 	}
-	if tier := spec.tier(tok); tier != "" {
-		if _, err := s.DB.Exec(ctx, "UPDATE upstreams SET tier = $2 WHERE id = $1", u.ID, tier); err != nil {
-			return nil, err
-		}
+	if err := s.saveAccountProfile(ctx, u.ID, spec, tok); err != nil {
+		return nil, err
 	}
 	if err := s.createAccount(ctx, u, spec.accountType, spec.credentials(tok), spec.extra(tok), proxyID); err != nil {
 		_ = setUpstreamStatus(ctx, s.DB, u.ID, StatusFailed, strPtr("account creation failed"))
@@ -402,10 +400,8 @@ func (s *Service) applyReauthorization(ctx context.Context, u *Upstream, spec oa
 	if err := s.Admin.ClearError(ctx, *u.Sub2APIAccountID); err != nil {
 		s.Log.Warn("clear account error after reauthorization", "upstream_id", u.ID, "err", err)
 	}
-	if tier := spec.tier(tok); tier != "" {
-		if _, err := s.DB.Exec(ctx, "UPDATE upstreams SET tier = $2 WHERE id = $1", u.ID, tier); err != nil {
-			return nil, err
-		}
+	if err := s.saveAccountProfile(ctx, u.ID, spec, tok); err != nil {
+		return nil, err
 	}
 	if privacyPlatforms[u.Platform] && u.AuthType == "oauth" {
 		ok := false
@@ -521,6 +517,17 @@ func (s *Service) claimIdentity(ctx context.Context, upstreamID int64, identity 
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return ErrAlreadyListed
 	}
+	return err
+}
+
+// saveAccountProfile 保存从令牌信息中识别出的订阅档位与官方账号邮箱，识别不到的项保持原值。
+func (s *Service) saveAccountProfile(ctx context.Context, upstreamID int64, spec oauthSpec, tok map[string]any) error {
+	tier, email := spec.tier(tok), AccountEmail(tok)
+	if tier == "" && email == "" {
+		return nil
+	}
+	_, err := s.DB.Exec(ctx, `UPDATE upstreams SET tier = COALESCE(NULLIF($2, ''), tier),
+		account_email = COALESCE(NULLIF($3, ''), account_email) WHERE id = $1`, upstreamID, tier, email)
 	return err
 }
 

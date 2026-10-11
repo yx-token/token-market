@@ -51,7 +51,8 @@ jsonb_keys:
   accounts.extra:
     read: [quota_used, quota_daily_used, quota_weekly_used, session_window_utilization,
            codex_reset_credit_snapshot, codex_auto_reset_credit_state, auto_reset_credit_enabled,
-           auto_reset_credit_5h_threshold, auto_reset_credit_7d_threshold]
+           auto_reset_credit_5h_threshold, auto_reset_credit_7d_threshold,
+           email_address, email]   # 官方账号邮箱，补齐 0019 之前接入的上游
     write: [window_cost_limit, base_rpm, max_sessions, quota_daily_limit, quota_weekly_limit,
             auto_reset_credit_enabled, auto_reset_credit_5h_threshold, auto_reset_credit_7d_threshold]
   audit_logs.extra:

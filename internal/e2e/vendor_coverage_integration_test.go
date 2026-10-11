@@ -45,9 +45,10 @@ func TestVendorAuthTypeCoverage(t *testing.T) {
 
 	seller := e.newUser("vendors@market.test")
 	type upstream struct {
-		ID     int64   `json:"id"`
-		Status string  `json:"status"`
-		Tier   *string `json:"tier"`
+		ID           int64   `json:"id"`
+		Status       string  `json:"status"`
+		Tier         *string `json:"tier"`
+		AccountEmail *string `json:"account_email"`
 	}
 	create := func(platform, authType string) upstream {
 		t.Helper()
@@ -100,6 +101,11 @@ func TestVendorAuthTypeCoverage(t *testing.T) {
 	gk := oauth(create("grok", "oauth"), nil, "gus")
 	if ag.Tier == nil || *ag.Tier != "pro" || gk.Tier == nil || *gk.Tier != "supergrok" {
 		t.Fatalf("antigravity %+v grok %+v", ag, gk)
+	}
+	// 能拿到官方账号邮箱的平台记录邮箱；Gemini 的令牌信息里没有邮箱
+	if ag.AccountEmail == nil || *ag.AccountEmail != "amy@example.test" || gk.AccountEmail == nil || *gk.AccountEmail != "gus@example.test" ||
+		g1.AccountEmail != nil || ca.AccountEmail != nil {
+		t.Fatalf("account emails: antigravity %+v grok %+v gemini %+v %+v", ag, gk, g1, ca)
 	}
 
 	codingKey := func(u upstream, body map[string]any) upstream {

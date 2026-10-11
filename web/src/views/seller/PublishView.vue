@@ -374,7 +374,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
         <select v-model="resumeUpstreamID" class="xm-input">
           <option value="">— 新接入账号 —</option>
           <option v-for="u in readyUpstreams" :key="u.id" :value="u.id">
-            #{{ u.id }} {{ label('platform', u.platform).text }} · {{ u.tier || u.grade || u.status }}
+            #{{ u.id }} {{ label('platform', u.platform).text }}{{ u.account_email ? ` · ${u.account_email}` : '' }} · {{ u.tier || u.grade || u.status }}
           </option>
         </select>
       </div>
@@ -491,7 +491,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
     <!-- 2 检测 -->
     <section v-else-if="step === 2" class="xm-pub-panel">
       <h2>上架检测</h2>
-      <p class="sub">首次接入必做。通过前不能挂单。上游 #{{ upstream?.id }}</p>
+      <p class="sub">首次接入必做。通过前不能挂单。上游 #{{ upstream?.id }}{{ upstream?.account_email ? ` · ${upstream.account_email}` : '' }}</p>
 
       <div class="xm-probe" :class="{ ok: probeOk, fail: probeFail }">
         <div class="font-bold text-[13px]">
@@ -660,7 +660,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
         <template v-else>按量通道已生效，可在市场被选用。</template>
       </p>
       <div class="rounded-[14px] bg-[#fafafa] p-4 text-left text-[14px] leading-relaxed">
-        <div>上游 <b>#{{ upstream?.id }}</b> · 挂单 <b>#{{ listing?.id }}</b></div>
+        <div>上游 <b>#{{ upstream?.id }}</b><template v-if="upstream?.account_email">（{{ upstream.account_email }}）</template> · 挂单 <b>#{{ listing?.id }}</b></div>
         <div>
           形态：
           <b>{{ sku === 'pack' ? '额度包' : sku === 'buyback' ? '平台回收' : '按量通道' }}</b>

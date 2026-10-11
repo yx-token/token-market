@@ -96,6 +96,7 @@ type Upstream struct {
 	ProxyID            *int64     `json:"proxy_id,omitempty"`
 	ProbeGroupID       *int64     `json:"-"`
 	Tier               *string    `json:"tier,omitempty"`
+	AccountEmail       *string    `json:"account_email,omitempty"` // 官方账号邮箱，授权或导入时从令牌信息中识别
 	PrivacyOK          *bool      `json:"privacy_ok,omitempty"`
 	SelfReservePercent int        `json:"self_reserve_percent"`
 	// 自动用卡（仅 Codex）：卖家授权后，窗口用量达到阈值时由平台使用重置卡；阈值为空表示跟随暂停线
@@ -110,13 +111,13 @@ type Upstream struct {
 }
 
 const upstreamColumns = `id, seller_id, platform, auth_type, is_reference, status, health, health_reason, health_changed_at,
-	sub2api_account_id, proxy_id, probe_group_id, tier, privacy_ok, self_reserve_percent,
+	sub2api_account_id, proxy_id, probe_group_id, tier, account_email, privacy_ok, self_reserve_percent,
 	auto_reset_enabled, auto_reset_5h_percent, auto_reset_7d_percent, auto_reset_authorized_at, grade, failure_reason, created_at, updated_at`
 
 func scanUpstream(row pgx.Row) (*Upstream, error) {
 	var u Upstream
 	err := row.Scan(&u.ID, &u.SellerID, &u.Platform, &u.AuthType, &u.IsReference, &u.Status, &u.Health, &u.HealthReason,
-		&u.HealthChangedAt, &u.Sub2APIAccountID, &u.ProxyID, &u.ProbeGroupID, &u.Tier, &u.PrivacyOK,
+		&u.HealthChangedAt, &u.Sub2APIAccountID, &u.ProxyID, &u.ProbeGroupID, &u.Tier, &u.AccountEmail, &u.PrivacyOK,
 		&u.SelfReservePercent, &u.AutoResetEnabled, &u.AutoReset5hPercent, &u.AutoReset7dPercent, &u.AutoResetAuthorizedAt,
 		&u.Grade, &u.FailureReason, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {

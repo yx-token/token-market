@@ -40,6 +40,8 @@
   → 调 sub2api 换取 token → 创建 sub2api 账号：
       名称 tm-u-<id>，分组只有 tm-probe-<id>，notes 写 tm:upstream:<id>
   → 补充信息：订阅档位从令牌信息读取（plan_type / tier_id / subscription_tier）；
+      官方账号邮箱同样从令牌信息读取（与 sub2api 账号列表一致：Claude 为 email_address，
+      OpenAI / Antigravity / Grok 为 email），作为卖家和管理员看到的账号名称；Gemini 拿不到邮箱；
       OpenAI、Antigravity 的 OAuth 账号调 set-privacy 关闭训练数据使用（sub2api 只支持这两类）
   → 上架检测（必做，不受厂商检测开关影响；见决策 D18）
   → 卖家选择挂单模式 → 确认价格 → 挂单生效
@@ -55,6 +57,8 @@
       查不到窗口数据 → 判定不是订阅 key，删除账号，拒绝上架
   → 后续同 OAuth 类
 ```
+
+Coding Plan key 查不到账号邮箱，控制台按上游编号展示。
 
 **base_url 不允许卖家填写**：国内站使用 sub2api 按 `account_mode` 选择的官方默认地址，国际站使用本系统内置的固定官方地址，卖家只能选择站点。否则卖家可以拿中转站的 key 冒充 Coding Plan。
 

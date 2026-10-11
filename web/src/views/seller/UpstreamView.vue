@@ -16,7 +16,7 @@ import ReportDetail from '@/components/ReportDetail.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
 import ResetCreditsPanel from '@/components/ResetCreditsPanel.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
-import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
+import { authTypeText, isKeyAuthType, label, upstreamName } from '@/utils/labels'
 import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
 
@@ -249,8 +249,8 @@ const appealable = (r: Report) => r.verdict === 'degraded' || r.verdict === 'una
 <template>
   <div v-if="u">
     <PageHeader
-      :title="`上游 #${u.id}`"
-      :description="`${label('platform', u.platform).text} · ${authTypeText(u.platform, u.auth_type)}`"
+      :title="u.account_email ? upstreamName(u) : `上游 #${u.id}`"
+      :description="`${u.account_email ? `上游 #${u.id} · ` : ''}${label('platform', u.platform).text} · ${authTypeText(u.platform, u.auth_type)}`"
       :back-to="backNav.to"
       :back-label="backNav.label"
     >

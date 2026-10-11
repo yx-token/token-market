@@ -90,6 +90,7 @@ upstreams (
   proxy_id             bigint references proxies,
   probe_group_id       bigint,             -- sub2api tm-probe-<id>
   tier                 text,               -- 订阅档位，如 pro / max_5x / max_20x
+  account_email        text,               -- 官方账号邮箱，授权或导入时识别，作为控制台中的账号名称
   privacy_ok           boolean,
   self_reserve_percent smallint not null default 0,   -- 卖家自留比例，换算成 sub2api 窗口阈值
   created_at           timestamptz not null default now(),

@@ -354,8 +354,9 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 	// 卖家 1：寄售 0.5 倍
 	seller1 := e.newUser("seller1@market.test")
 	var up1 struct {
-		ID     int64  `json:"id"`
-		Status string `json:"status"`
+		ID           int64   `json:"id"`
+		Status       string  `json:"status"`
+		AccountEmail *string `json:"account_email"`
 	}
 	seller1.must("POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"}, &up1)
 	var start struct {
@@ -369,6 +370,10 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 	// 即使厂商关闭了检测，首次配置也必须先通过上架检测
 	if up1.Status != "verifying" {
 		t.Fatalf("new upstream must be verified before listing: %+v", up1)
+	}
+	// 授权时识别官方账号邮箱，作为上游在本系统中的名称
+	if up1.AccountEmail == nil || *up1.AccountEmail != "alice@example.test" {
+		t.Fatalf("account email not recognized: %+v", up1)
 	}
 	seller1.expect(409, "POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up1.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}})
 	e.passOnboarding(up1.ID)
@@ -412,7 +417,16 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 	seller2.must("POST", fmt.Sprintf("/api/seller/listings/%d/accept-quote", bb.Listing.ID), nil, nil)
 
 	// 调度：两个账号进入默认分组，回收卖家优先级更高
+	// 本功能上线前接入的上游没有记录邮箱，调度器从 sub2api 账号 extra 中补齐
+	if _, err := e.app.DB.Exec(e.ctx, "UPDATE upstreams SET account_email = NULL WHERE id = $1", up2.ID); err != nil {
+		t.Fatal(err)
+	}
 	e.schedule()
+	var email2 *string
+	mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT account_email FROM upstreams WHERE id = $1", up2.ID), &email2)
+	if email2 == nil || *email2 != "bob@example.test" {
+		t.Fatalf("account email not backfilled: %v", email2)
+	}
 	// 先入账上架检测的探测流量（卖家照常获得收益，记为平台探测成本），后面只看买家流量带来的变化
 	e.ingestAll()
 	var base1 struct {

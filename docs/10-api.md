@@ -101,7 +101,7 @@
 | POST | `/api/seller/upstreams/:id/import` | 导入授权信息：`data` 为 sub2api v1 导出文件、账号数组、单个账号或纯凭证对象；`account_index` 可选，默认 0。每次导入一个账号。上游已绑定代理时沿用该代理、忽略文件中的代理；未绑定时按账号的 `proxy_key` 取文件 `proxies` 中的代理，登记到自己的代理列表（同一地址复用原记录）并实测连通，失败返回 `IMPORT_PROXY_UNREACHABLE`，文件缺少引用的代理返回 `IMPORT_PROXY_NOT_FOUND`，代理已被占用或停用返回 `PROXY_IN_USE`。仍执行隐私设置、订阅额度校验与上架检测 |
 | POST | `/api/seller/upstreams/:id/reauthorize` | 授权失效后重新授权：返回新的授权链接，之后同样用 `oauth/complete` 提交；必须是同一个官方账号；可选 `project_id` 同上 |
 | POST | `/api/seller/upstreams/:id/retry-verification` | 上架检测失败后重新检测 |
-| GET | `/api/seller/upstreams` | 上游列表 |
+| GET | `/api/seller/upstreams` | 上游列表。`account_email` 是授权或导入时识别的官方账号邮箱，控制台用它作为账号名称（Gemini 与 Coding Plan 没有邮箱，按上游编号展示）；不向买家展示 |
 | GET | `/api/seller/upstreams/:id` | 详情：状态、健康状态、档位、等级、当前挂单与报价、近 24 小时服务情况（请求数、收益、首字延迟、成功率）、能否使用重置卡与授权自动用卡（`reset_credits_supported`、`auto_reset_supported`）及自动用卡设置 |
 | PUT | `/api/seller/upstreams/:id/settings` | 修改自留比例：`self_reserve_percent`（0–90，仅支持窗口阈值的厂商） |
 | GET | `/api/seller/upstreams/:id/quota` | 账号的官方订阅额度：各窗口（5 小时、7 天、Sonnet / Opus 7 天、30 天、Gemini 每日、Antigravity 各模型、Coding Plan 各窗口）的使用率、重置时间与窗口内经平台的请求数 / token / 官方价费用，以及授权失效、封禁等提示和自留比例。Claude 默认读 sub2api 的响应头采样快照（不访问官方）；`refresh=1` 向官方查询（同一上游至少间隔 2 分钟，其余 1 分钟内复用结果） |

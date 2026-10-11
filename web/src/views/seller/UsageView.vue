@@ -11,7 +11,7 @@ import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import UsageChart from '@/components/UsageChart.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
-import { label } from '@/utils/labels'
+import { label, upstreamName } from '@/utils/labels'
 import { dateTime, money, ms, tokens, usd } from '@/utils/format'
 
 const route = useRoute()
@@ -62,6 +62,7 @@ function reload() {
   loadRecords()
 }
 
+const nameOf = computed(() => new Map((upstreams.data.value ?? []).map((u) => [u.id, upstreamName(u)])))
 const connected = computed(() => (upstreams.data.value ?? []).filter((u) => !['draft', 'authorizing', 'removed'].includes(u.status)))
 const t = computed(() => usage.data.value?.totals)
 const today = computed(() => usage.data.value?.today)
@@ -75,11 +76,11 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
       title="用量"
       description="你的账号经本平台被调用的情况。数据来自已入账的用量记录，约有 2 分钟延迟；不包含买家身份与请求内容。"
       :back-to="upstreamID ? `/seller/upstreams/${upstreamID}?from=usage` : undefined"
-      :back-label="upstreamID ? `上游 #${upstreamID}` : undefined"
+      :back-label="upstreamID ? `上游 ${nameOf.get(upstreamID) ?? `#${upstreamID}`}` : undefined"
     >
       <select v-model.number="upstreamID" class="input w-48" aria-label="上游">
         <option :value="0">全部上游</option>
-        <option v-for="u in connected" :key="u.id" :value="u.id">#{{ u.id }} {{ label('platform', u.platform).text }}</option>
+        <option v-for="u in connected" :key="u.id" :value="u.id">{{ upstreamName(u) }} {{ label('platform', u.platform).text }}</option>
       </select>
       <select v-model.number="days" class="input w-32" aria-label="时间范围">
         <option :value="7">近 7 天</option>
@@ -153,7 +154,7 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
           :loading="usage.loading.value"
           row-key="upstream_id"
         >
-          <template #cell-upstream_id="{ row }">#{{ row.upstream_id }} {{ label('platform', row.platform).text }}</template>
+          <template #cell-upstream_id="{ row }">{{ nameOf.get(row.upstream_id) ?? `#${row.upstream_id}` }} {{ label('platform', row.platform).text }}</template>
           <template #cell-tokens="{ row }">{{ tokens(allTokens(row)) }}</template>
           <template #cell-payout="{ row }">{{ money(row.payout) }}</template>
           <template #cell-actions="{ row }">
@@ -194,7 +195,7 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
       >
         <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
         <template #cell-upstream_id="{ row }">
-          <RouterLink :to="`/seller/upstreams/${row.upstream_id}?from=usage`" class="font-bold underline underline-offset-2">#{{ row.upstream_id }} →</RouterLink>
+          <RouterLink :to="`/seller/upstreams/${row.upstream_id}?from=usage`" class="font-bold underline underline-offset-2">{{ nameOf.get(row.upstream_id) ?? `#${row.upstream_id}` }} →</RouterLink>
         </template>
         <template #cell-channel="{ row }"><StatusBadge kind="channel" :value="row.channel" /></template>
         <template #cell-tokens="{ row }">

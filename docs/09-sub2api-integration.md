@@ -67,7 +67,7 @@ sub2api 的 Admin API 不能替用户创建 key，只能用影子用户的登录
 | 表 | 使用的列 | 用途 |
 |---|---|---|
 | `usage_logs` | id、request_id、created_at、user_id、api_key_id、account_id、group_id、model、各类 token、total_cost、actual_cost、account_rate_multiplier、first_token_ms、duration_ms、upstream_response_model、upstream_model_mismatch | 用量入账、逐次尝试对账、被动指标 |
-| `accounts` | id、name、platform、type、status、error_message、schedulable、priority、concurrency、load_factor、rate_multiplier、rate_limit_reset_at、overload_until、temp_unschedulable_until、temp_unschedulable_reason、extra 中的窗口与配额键、重置卡快照与自动用卡配置、deleted_at | 健康信号、状态对账 |
+| `accounts` | id、name、platform、type、status、error_message、schedulable、priority、concurrency、load_factor、rate_multiplier、rate_limit_reset_at、overload_until、temp_unschedulable_until、temp_unschedulable_reason、extra 中的窗口与配额键、邮箱（`email_address` / `email`）及重置卡快照与自动用卡配置、deleted_at | 健康信号、状态对账；为记录邮箱之前接入的上游补齐账号邮箱 |
 | `account_groups` | account_id、group_id | 状态对账 |
 | `groups` | id、name、platform、rate_multiplier、is_exclusive、利润控制字段 | 状态对账 |
 | `users`、`api_keys` | id、email、balance、status；id、user_id、group_id、status | 对账 |

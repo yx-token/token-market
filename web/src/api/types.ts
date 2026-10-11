@@ -285,6 +285,8 @@ export interface Upstream {
   health_reason?: string
   health_changed_at?: string
   tier?: string
+  /** 官方账号邮箱，授权或导入时识别；Gemini 与 Coding Plan 没有 */
+  account_email?: string
   privacy_ok?: boolean
   self_reserve_percent: number
   /** 已授权平台自动用卡（仅 Codex） */

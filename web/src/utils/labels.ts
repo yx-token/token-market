@@ -239,6 +239,11 @@ export function authTypeText(platform: string | null | undefined, authType: stri
   return authTypeNames[`${platform}:${authType}`] ?? label('authType', authType).text
 }
 
+/** 上游在控制台中的名称：识别到官方账号邮箱时用邮箱（与 sub2api 账号列表一致），否则用上游编号 */
+export function upstreamName(u: { id: number; account_email?: string | null }): string {
+  return u.account_email || `#${u.id}`
+}
+
 /** 用 key 接入的订阅（Coding Plan、OpenCode Go），其余接入方式走 OAuth 授权 */
 export function isKeyAuthType(authType: string | null | undefined): boolean {
   return authType === 'coding' || authType === 'coding-intl' || authType === 'go'

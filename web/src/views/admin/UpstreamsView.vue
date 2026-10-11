@@ -8,7 +8,7 @@ import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { authTypeText, label, options } from '@/utils/labels'
+import { authTypeText, label, options, upstreamName } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
 
 const { queryParams, resetQuery, handleQuery } = useListQuery({
@@ -29,7 +29,7 @@ onMounted(upstreams.load)
 const filtered = computed(() => {
   let rows = upstreams.data.value ?? []
   if (queryParams.platform) rows = rows.filter((u) => u.platform === queryParams.platform)
-  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'seller_id', 'platform', 'failure_reason', 'health_reason'] as (keyof Upstream)[])
+  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'seller_id', 'account_email', 'platform', 'failure_reason', 'health_reason'] as (keyof Upstream)[])
   rows = filterByDateField(rows, 'created_at', queryParams.startDate, queryParams.endDate)
   return rows
 })
@@ -64,7 +64,7 @@ function remove(u: Upstream) {
       <div class="filter-item">
         <label class="filter-label">关键字</label>
         <div class="relative w-full flex-1">
-          <input v-model="queryParams.keyword" class="filter-input w-full" placeholder="ID / 卖家 / 原因" @keyup.enter="search" />
+          <input v-model="queryParams.keyword" class="filter-input w-full" placeholder="ID / 邮箱 / 卖家 / 原因" @keyup.enter="search" />
         </div>
       </div>
       <div class="filter-item">
@@ -95,7 +95,7 @@ function remove(u: Upstream) {
 
     <DataTable
       :columns="[
-        { key: 'id', label: '上游' },
+        { key: 'id', label: '账号' },
         { key: 'seller_id', label: '卖家' },
         { key: 'platform', label: '厂商' },
         { key: 'status', label: '状态' },
@@ -110,7 +110,10 @@ function remove(u: Upstream) {
       row-key="id"
       empty="没有符合条件的上游"
     >
-      <template #cell-id="{ row }">#{{ row.id }}<span v-if="row.is_reference" class="ml-1 text-xs text-sky-700">基线</span></template>
+      <template #cell-id="{ row }">
+        {{ upstreamName(row) }}<span v-if="row.is_reference" class="ml-1 text-xs text-sky-700">基线</span>
+        <div v-if="row.account_email" class="text-xs text-ink-500">#{{ row.id }}</div>
+      </template>
       <template #cell-platform="{ row }">{{ label('platform', row.platform).text }} · {{ authTypeText(row.platform, row.auth_type) }}</template>
       <template #cell-status="{ row }">
         <StatusBadge kind="upstreamStatus" :value="row.status" />

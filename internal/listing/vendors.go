@@ -299,6 +299,17 @@ func field(key string) func(map[string]any) string {
 
 func none(map[string]any) string { return "" }
 
+// AccountEmail 返回令牌信息或账号 extra 中的官方账号邮箱，取值顺序与 sub2api 账号列表一致：
+// Claude 为 email_address，OpenAI、Antigravity、Grok 为 email；Gemini 与 Coding Plan 没有邮箱。
+func AccountEmail(m map[string]any) string {
+	for _, k := range []string{"email_address", "email"} {
+		if v := strings.TrimSpace(str(m, k)); strings.Contains(v, "@") && len(v) <= 320 {
+			return v
+		}
+	}
+	return ""
+}
+
 func str(m map[string]any, key string) string {
 	switch v := m[key].(type) {
 	case string:

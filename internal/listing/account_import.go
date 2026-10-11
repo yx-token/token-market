@@ -251,10 +251,8 @@ func (s *Service) ImportAccount(ctx context.Context, sellerID, upstreamID int64,
 	if err := s.claimIdentity(ctx, u.ID, u.Platform+":"+identity); err != nil {
 		return nil, err
 	}
-	if tier := spec.tier(tok); tier != "" {
-		if _, err := s.DB.Exec(ctx, "UPDATE upstreams SET tier = $2 WHERE id = $1", u.ID, tier); err != nil {
-			return nil, err
-		}
+	if err := s.saveAccountProfile(ctx, u.ID, spec, tok); err != nil {
+		return nil, err
 	}
 	proxyID, err := s.proxySub2APIID(ctx, u)
 	if err != nil {

@@ -32,7 +32,7 @@ func TestAccountImportOnboarding(t *testing.T) {
 	path := fmt.Sprintf("/api/seller/upstreams/%d/import", u.ID)
 	account := map[string]any{"name": "exported account", "platform": "anthropic", "type": "oauth",
 		"credentials": map[string]any{"access_token": "import-secret-access", "refresh_token": "import-secret-refresh", "base_url": "http://untrusted.test", "account_scheduling_threshold": 1},
-		"extra":       map[string]any{"account_uuid": "export-account-1", "model_mapping": map[string]any{"claude": "other"}},
+		"extra":       map[string]any{"account_uuid": "export-account-1", "email_address": "exported@example.test", "model_mapping": map[string]any{"claude": "other"}},
 		"group_ids":   []int{123}, "proxy_id": 999, "priority": 0, "concurrency": 999, "rate_multiplier": 99}
 	body := map[string]any{"data": map[string]any{"type": "sub2api-data", "version": 1, "proxies": []any{}, "accounts": []any{nil, account}}, "account_index": 1}
 	other.expect(404, "POST", path, body)
@@ -43,6 +43,9 @@ func TestAccountImportOnboarding(t *testing.T) {
 	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d", u.ID), nil, &u)
 	if u.Status != listing.StatusVerifying {
 		t.Fatalf("import bypassed verification: %s", u.Status)
+	}
+	if u.AccountEmail == nil || *u.AccountEmail != "exported@example.test" {
+		t.Fatalf("imported account email not recognized: %v", u.AccountEmail)
 	}
 	var accountID int64
 	mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT sub2api_account_id FROM upstreams WHERE id = $1", u.ID), &accountID)
@@ -83,9 +86,10 @@ func TestAccountImportOnboarding(t *testing.T) {
 	}
 
 	openai := create("openai", "oauth", 5)
-	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/import", openai.ID), map[string]any{"data": map[string]any{"platform": "openai", "type": "oauth", "credentials": map[string]any{"access_token": "oa-access", "refresh_token": "oa-refresh", "chatgpt_account_id": "oa-id", "plan_type": "plus"}}}, &openai)
-	if openai.PrivacyOK == nil || !*openai.PrivacyOK || openai.Status != listing.StatusVerifying || openai.Tier == nil || *openai.Tier != "plus" {
-		t.Fatal("OpenAI import must apply privacy and plan metadata")
+	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/import", openai.ID), map[string]any{"data": map[string]any{"platform": "openai", "type": "oauth", "credentials": map[string]any{"access_token": "oa-access", "refresh_token": "oa-refresh", "chatgpt_account_id": "oa-id", "plan_type": "plus", "email": "oa@example.test"}}}, &openai)
+	if openai.PrivacyOK == nil || !*openai.PrivacyOK || openai.Status != listing.StatusVerifying || openai.Tier == nil || *openai.Tier != "plus" ||
+		openai.AccountEmail == nil || *openai.AccountEmail != "oa@example.test" {
+		t.Fatal("OpenAI import must apply privacy, plan and email metadata")
 	}
 
 	k := create("kimi", "coding", 6)

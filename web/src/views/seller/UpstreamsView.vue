@@ -8,7 +8,7 @@ import RefreshButton from '@/components/RefreshButton.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
-import { authTypeText, label } from '@/utils/labels'
+import { authTypeText, label, upstreamName } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
 
 const upstreams = useLoader(() => seller.upstreams(), [] as Upstream[] | null)
@@ -47,7 +47,7 @@ function openResume(u: Upstream) {
     <div class="card">
       <DataTable
         :columns="[
-          { key: 'id', label: '上游' },
+          { key: 'id', label: '账号' },
           { key: 'platform', label: '厂商' },
           { key: 'auth_type', label: '接入方式' },
           { key: 'proxy_id', label: '代理 IP' },
@@ -64,8 +64,9 @@ function openResume(u: Upstream) {
         empty="还没有上游，点击右上角接入"
       >
         <template #cell-id="{ row }">
-          <span class="font-semibold">#{{ row.id }}</span>
+          <span class="font-semibold">{{ upstreamName(row) }}</span>
           <span v-if="row.is_reference" class="ml-1 text-xs text-violet-600">基线</span>
+          <div v-if="row.account_email" class="text-xs text-ink-500">#{{ row.id }}</div>
         </template>
         <template #cell-platform="{ row }">{{ label('platform', row.platform).text }}</template>
         <template #cell-auth_type="{ row }">{{ authTypeText(row.platform, row.auth_type) }}</template>

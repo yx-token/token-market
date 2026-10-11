@@ -162,6 +162,9 @@ func (r *Runner) Cycle(ctx context.Context) (*CycleResult, error) {
 		return nil, err
 	}
 	r.syncAutoResetAudits(ctx, ups)
+	if err := r.backfillAccountEmails(ctx, actual); err != nil {
+		r.Log.Warn("backfill account emails", "err", err)
+	}
 	removed, removalOps, err := r.processRemovals(ctx, actual, pending)
 	if err != nil {
 		return nil, err
@@ -378,6 +381,37 @@ func (r *Runner) completeRemoval(ctx context.Context, upstreamID int64) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// backfillAccountEmails 为 0019 之前接入的上游补上官方账号邮箱：授权时本系统已把邮箱写进 sub2api 账号的 extra
+// （Claude 为 email_address，OpenAI、Grok 为 email）。Antigravity、Gemini 与 Coding Plan 的 extra 中没有邮箱，保持为空。
+func (r *Runner) backfillAccountEmails(ctx context.Context, actual Actual) error {
+	rows, err := r.DB.Query(ctx, `SELECT id, sub2api_account_id FROM upstreams
+		WHERE account_email IS NULL AND sub2api_account_id IS NOT NULL AND status <> 'removed'`)
+	if err != nil {
+		return err
+	}
+	emails := map[int64]string{}
+	for rows.Next() {
+		var id, accountID int64
+		if err := rows.Scan(&id, &accountID); err != nil {
+			rows.Close()
+			return err
+		}
+		if email := listing.AccountEmail(actual.Accounts[accountID].Extra); email != "" {
+			emails[id] = email
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for id, email := range emails {
+		if _, err := r.DB.Exec(ctx, "UPDATE upstreams SET account_email = $2 WHERE id = $1 AND account_email IS NULL", id, email); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // reportOrphans 记录 sub2api 中存在、但本系统没有记录的 tm- 账号，不自动删除。
