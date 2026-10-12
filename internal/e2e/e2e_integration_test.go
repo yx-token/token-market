@@ -60,28 +60,41 @@ type env struct {
 // setup 准备一套完整环境；opts 可以在构建前调整配置（例如接入支付渠道替身）。
 func setup(t *testing.T, opts ...func(cfg *config.Config)) *env {
 	t.Helper()
+	return setupWithDatabaseMode(t, false, opts...)
+}
+
+// 日常场景各自克隆迁移模板；完整市场流程仍从空库执行两套迁移，
+// 防止模板路径掩盖首次启动或迁移顺序的问题。
+func setupWithDatabaseMode(t *testing.T, fromScratch bool, opts ...func(cfg *config.Config)) *env {
+	t.Helper()
 	repo := os.Getenv("TM_SUB2API_REPO")
 	redisAddr := os.Getenv("TM_TEST_REDIS_ADDR")
 	if repo == "" || redisAddr == "" {
 		t.Skip("TM_SUB2API_REPO and TM_TEST_REDIS_ADDR are required")
 	}
 	ctx := context.Background()
-	marketDSN, _ := testutil.NewDatabase(t)
-	replicaDSN, replicaPool := testutil.NewDatabase(t)
-
-	// sub2api 真实表结构
-	set, err := compat.LoadGitMigrations(ctx, repo, "v0.2.14")
-	if err != nil {
-		t.Fatal(err)
+	var marketDSN, replicaDSN string
+	var replicaPool *pgxpool.Pool
+	if fromScratch {
+		marketDSN, _ = testutil.NewDatabase(t)
+		replicaDSN, replicaPool = testutil.NewDatabase(t)
+		set, err := testutil.LoadGitMigrations(ctx, repo, "v0.2.14")
+		if err != nil {
+			t.Fatal(err)
+		}
+		conn, err := pgx.Connect(ctx, replicaDSN)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := compat.ApplySub2APIMigrations(ctx, conn, set); err != nil {
+			_ = conn.Close(ctx)
+			t.Fatal(err)
+		}
+		_ = conn.Close(ctx)
+	} else {
+		marketDSN, _ = testutil.NewMarketDatabase(t)
+		replicaDSN, replicaPool = testutil.NewSub2APIDatabase(t, repo, "v0.2.14")
 	}
-	conn, err := pgx.Connect(ctx, replicaDSN)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := compat.ApplySub2APIMigrations(ctx, conn, set); err != nil {
-		t.Fatal(err)
-	}
-	_ = conn.Close(ctx)
 
 	rdb := redis.NewClient(&redis.Options{Addr: redisAddr, DB: 9})
 	if err := rdb.FlushDB(ctx).Err(); err != nil {
@@ -339,7 +352,7 @@ func approx(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
 // ---- 测试 ----
 
 func TestMarketplaceEndToEnd(t *testing.T) {
-	e := setup(t)
+	e := setupWithDatabaseMode(t, true)
 	ctx := e.ctx
 	admin := e.login("admin@market.test", "admin-password-1")
 
