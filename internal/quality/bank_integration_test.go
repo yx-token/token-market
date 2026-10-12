@@ -14,7 +14,7 @@ func TestInspectionBuiltinSyncAndLegacySelection(t *testing.T) {
 	pool, _, _ := inspectionDB(t)
 	ctx := context.Background()
 	created, err := SeedDefaultItems(ctx, pool)
-	if err != nil || created != 22+len(inspectionBuiltinItems()) {
+	if err != nil || created != 21+len(inspectionBuiltinItems()) {
 		t.Fatalf("启动同步失败：%d %v", created, err)
 	}
 	old, err := selectItems(ctx, pool, "anthropic", "claude-sonnet-4-5", []string{"iq", "reasoning", "long_context", "inspection_capability", "inspection_context"})
