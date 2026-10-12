@@ -13,19 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DueGin/token-market/internal/platform/db"
 	"github.com/DueGin/token-market/internal/testutil"
-	"github.com/DueGin/token-market/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func inspectionDB(t *testing.T) (*pgxpool.Pool, runRow, runRow) {
 	t.Helper()
 	ctx := context.Background()
-	_, pool := testutil.NewDatabase(t)
-	if _, err := db.Migrate(ctx, pool, migrations.FS); err != nil {
-		t.Fatal(err)
-	}
+	_, pool := testutil.NewMarketDatabase(t)
 	var seller, u1, u2, r1, r2 int64
 	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash) VALUES ('inspection@test','unused') RETURNING id`).Scan(&seller); err != nil {
 		t.Fatal(err)
