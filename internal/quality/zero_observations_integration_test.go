@@ -16,6 +16,7 @@ import (
 )
 
 func TestUnobservedRunDoesNotVerifyOrResolve(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		trigger, health, errorClass, body string
 		status                            int

@@ -6,6 +6,7 @@ import (
 )
 
 func TestBankRevisionPreservesVersionOne(t *testing.T) {
+	t.Parallel()
 	seed := strings.Repeat("0123456789abcdef", 4)
 	for _, template := range []string{"zebra", "constraints"} {
 		old, err := generateBankProbe(generatorDefinition{TemplateID: template, Version: "1"}, seed)

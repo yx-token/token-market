@@ -14,6 +14,7 @@ import (
 )
 
 func TestInspectionLongRetryIsSavedWithoutWaiting(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -47,6 +48,7 @@ func TestInspectionLongRetryIsSavedWithoutWaiting(t *testing.T) {
 }
 
 func TestInspectionLegacyActualBudgetOnlyWarns(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

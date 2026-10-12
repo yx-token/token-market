@@ -13,6 +13,7 @@ import (
 )
 
 func TestInspectionRecoveryRequiresFreshCoverage(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
 	e := Engine{DB: pool}
@@ -56,6 +57,7 @@ func TestInspectionRecoveryRequiresFreshCoverage(t *testing.T) {
 }
 
 func TestInspectionProductionAvailabilityAttributionAndThreshold(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)
@@ -120,6 +122,7 @@ func TestInspectionProductionAvailabilityAttributionAndThreshold(t *testing.T) {
 }
 
 func TestInspectionCacheRequiresBothCompleteStepsAndUsage(t *testing.T) {
+	t.Parallel()
 	pool, run, ref := inspectionDB(t)
 	ctx := context.Background()
 	e := Engine{DB: pool}

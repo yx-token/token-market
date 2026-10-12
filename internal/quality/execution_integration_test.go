@@ -45,6 +45,7 @@ func inspectionDB(t *testing.T) (*pgxpool.Pool, runRow, runRow) {
 }
 
 func TestInspectionSnapshotPairAndResume(t *testing.T) {
+	t.Parallel()
 	pool, run, ref := inspectionDB(t)
 	ctx := context.Background()
 	e := Engine{DB: pool, Keyring: testInspectionKeyring(t)}
@@ -136,6 +137,7 @@ func TestInspectionSnapshotPairAndResume(t *testing.T) {
 }
 
 func TestInspectionMigrationLegacyCompatibility(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
 	var itID int64
@@ -182,6 +184,7 @@ func TestInspectionMigrationLegacyCompatibility(t *testing.T) {
 }
 
 func TestInspectionNewOrphanKeepsDeadline(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
 	deadline := time.Now().Add(time.Minute)
@@ -201,6 +204,7 @@ func TestInspectionNewOrphanKeepsDeadline(t *testing.T) {
 }
 
 func TestInspectionMultistepRealToolsAndResume(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
 	e := Engine{DB: pool, Keyring: testInspectionKeyring(t)}
