@@ -1500,16 +1500,22 @@ html:not(.is-console) .console-tp-card {
 .yh-modal-panel--wide {
   max-width: 48rem;
 }
-/* 超大弹层（检测明细等数据密集场景）：约 min(1280px, 95vw) × 90vh，头/脚固定，内容区内部滚动 */
+/* 超大弹层（检测明细等数据密集场景）：上下居中，宽约 min(1680px, 视口 - 2rem)、高 92vh；
+   头/脚固定，内容区只纵向滚动，内容自行折行，不出现横向滚动条 */
+.yh-modal-mask--xl {
+  align-items: center;
+  padding-top: 1rem;
+}
 .yh-modal-panel--xl {
   display: flex;
   flex-direction: column;
-  max-width: min(1280px, 95vw);
-  max-height: 90vh;
+  max-width: min(1680px, calc(100vw - 2rem));
+  max-height: 92vh;
 }
 .yh-modal-panel--xl .yh-modal-body {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
 }

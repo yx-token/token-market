@@ -135,7 +135,7 @@ func TestExpectedAnswerOnlyInAdminRunDetail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, leaked := range []string{"expected_answer", "grader", "results", "instance_hash"} {
+	for _, leaked := range []string{"expected_answer", "instance_prompt", "grader", "results", "instance_hash"} {
 		if strings.Contains(string(rawSeller), leaked) {
 			t.Fatalf("卖家报告响应泄露管理员字段 %q：%s", leaked, rawSeller)
 		}
@@ -149,3 +149,44 @@ func TestExpectedAnswerOnlyInAdminRunDetail(t *testing.T) {
 }
 
 func boolp(v bool) *bool { return &v }
+
+// 参数化题每个实例题面不同，明细要能区分；长题面截断，题库轮换后不拿旧快照冒充。
+func TestFillFromSnapshotInstancePrompt(t *testing.T) {
+	long := strings.Repeat("字", maxInstancePrompt+5)
+	raw := snapshotWithInstances(t,
+		plannedInstance{ItemID: 7, InstanceIdx: 0, Hash: "h0", Steps: []plannedStep{{Step: 0, Request: ProbeRequest{Prompt: "五座房子，红房子在绿房子左边。"}, Answer: "1"}}},
+		plannedInstance{ItemID: 7, InstanceIdx: 1, Hash: "h1", Steps: []plannedStep{{Step: 0, Request: ProbeRequest{Messages: []ProbeMessage{
+			{Role: "user", Content: []ProbeContent{{Type: "text", Text: "旧问题"}}},
+			{Role: "assistant", Content: []ProbeContent{{Type: "text", Text: "旧回答"}}},
+			{Role: "user", Content: []ProbeContent{{Type: "text", Text: "第二问"}, {Type: "text", Text: "补充条件"}}},
+		}}}}},
+		plannedInstance{ItemID: 7, InstanceIdx: 2, Hash: "h2", Steps: []plannedStep{{Step: 0, Request: ProbeRequest{Prompt: long}}}},
+	)
+	id := int64(7)
+	results := []RunResult{
+		{ItemID: &id, InstanceIdx: 0, InstanceHash: "h0"},
+		{ItemID: &id, InstanceIdx: 1, InstanceHash: "h1"},
+		{ItemID: &id, InstanceIdx: 2, InstanceHash: "h2"},
+		{ItemID: &id, InstanceIdx: 0, InstanceHash: "rotated"},
+		{ItemID: nil},
+	}
+	fillFromSnapshot(results, raw)
+	if results[0].InstancePrompt != "五座房子，红房子在绿房子左边。" || results[0].ExpectedAnswer != "1" {
+		t.Fatalf("实例题面与答案应取自快照：%+v", results[0])
+	}
+	if results[1].InstancePrompt != "第二问\n补充条件" {
+		t.Fatalf("消息题应取最后一条用户消息：%q", results[1].InstancePrompt)
+	}
+	if !strings.HasPrefix(results[2].InstancePrompt, strings.Repeat("字", maxInstancePrompt)) || !strings.Contains(results[2].InstancePrompt, "仅显示前") {
+		t.Fatalf("长题面应截断并注明：%q", results[2].InstancePrompt[len(results[2].InstancePrompt)-60:])
+	}
+	if results[3].InstancePrompt != "" || results[3].ExpectedAnswer != "" {
+		t.Fatalf("哈希对不上时不能展示旧快照题面：%+v", results[3])
+	}
+	if results[4].InstancePrompt != "" {
+		t.Fatal("没有题号的记录不应有题面")
+	}
+	if results[0].InstancePrompt == results[1].InstancePrompt {
+		t.Fatal("同一道题的不同实例题面应可区分")
+	}
+}

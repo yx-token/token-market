@@ -44,7 +44,7 @@ onUnmounted(release)
     <Transition name="yh-modal">
       <div
         v-if="open"
-        :class="['yh-modal-mask', isConsole ? 'yh-modal-mask--console' : 'yh-modal-mask--market']"
+        :class="['yh-modal-mask', isConsole ? 'yh-modal-mask--console' : 'yh-modal-mask--market', size === 'xl' ? 'yh-modal-mask--xl' : '']"
         @click.self="open = false"
       >
         <div
