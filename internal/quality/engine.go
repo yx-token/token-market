@@ -743,7 +743,12 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, tim
 	}
 	enabledItems := make([]Item, 0, len(items))
 	for _, it := range items {
-		definition, known := inspection.Effective(it.CheckKey, st)
+		key := it.CheckKey
+		// 试运行仍执行原旧题；关闭展示项不能改变旧判定的题目集合。
+		if st.Mode == "formal" {
+			key = inspectionItemKey(it)
+		}
+		definition, known := inspection.Effective(key, st)
 		if known && !definition.Enabled {
 			continue
 		}

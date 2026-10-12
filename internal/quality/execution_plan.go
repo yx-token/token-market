@@ -202,7 +202,7 @@ itemsLoop:
 		}
 		steps := req.Steps
 		req.Steps = nil
-		instance := plannedInstance{Item: Item{ID: it.ID, Suite: it.Suite, Category: it.Category, Version: it.Version}, ItemID: it.ID, CheckKey: it.CheckKey, GeneratorVersion: "static-1", Seed: seed, Needle: needle, Parameters: map[string]any{}, Steps: []plannedStep{{Request: req, Expected: it.Grader, Answer: staticAnswer(it.Grader)}}}
+		instance := plannedInstance{Item: Item{ID: it.ID, Suite: it.Suite, Category: it.Category, Version: it.Version}, ItemID: it.ID, CheckKey: inspectionItemKey(it), GeneratorVersion: "static-1", Seed: seed, Needle: needle, Parameters: map[string]any{}, Steps: []plannedStep{{Request: req, Expected: it.Grader, Answer: staticAnswer(it.Grader)}}}
 		for i, step := range steps {
 			next := req
 			if step.Request != nil {

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"reflect"
 	"strings"
@@ -34,6 +35,7 @@ type inspectionPricingFixture struct {
 	upstreamID int64
 	listingID  int64
 	onboarding int64
+	scopedItem int64
 	transport  *inspectionPricingTransport
 }
 
@@ -103,6 +105,11 @@ func (tr *inspectionPricingTransport) RoundTrip(req *http.Request) (*http.Respon
 // 数学题维持有效智力配对和等级。默认题库的全部模板由正式上架场景覆盖。
 func newInspectionPricingFixture(t *testing.T, builtinKeys ...string) *inspectionPricingFixture {
 	t.Helper()
+	return newInspectionPricingModelFixture(t, "claude-sonnet-4-5", builtinKeys...)
+}
+
+func newInspectionPricingModelFixture(t *testing.T, model string, builtinKeys ...string) *inspectionPricingFixture {
+	t.Helper()
 	e := setup(t)
 	admin := e.login("admin@market.test", "admin-password-1")
 	var defaults inspection.Settings
@@ -112,7 +119,15 @@ func newInspectionPricingFixture(t *testing.T, builtinKeys ...string) *inspectio
 	}
 	admin.must("PUT", "/api/admin/vendors/anthropic", map[string]any{"enabled": true, "default_concurrency": 2, "appraisal_base": map[string]float64{"default": .3}}, nil)
 	admin.must("POST", "/api/admin/proxies", map[string]any{"name": "正式质检离线代理", "protocol": "socks5", "host": "10.0.0.4", "port": 2083}, nil)
-	admin.must("PUT", "/api/admin/detection-policies/anthropic", map[string]any{"enabled": true, "scheduled_enabled": false, "item_parallelism": 8}, nil)
+	var originalSuites []string
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT suites FROM detection_policies WHERE platform='anthropic' AND auth_type=''`), &originalSuites)
+	policy := map[string]any{"enabled": true, "scheduled_enabled": false, "item_parallelism": 8, "models": []string{model}}
+	if model == "gpt-6-astra" {
+		// 糖果题属于 reasoning；基础夹具默认仅启用 availability/latency/iq。
+		// 只在这次型号专测中补上该套件，保留所有原有启用项。
+		policy["suites"] = append(append([]string(nil), originalSuites...), "reasoning")
+	}
+	admin.must("PUT", "/api/admin/detection-policies/anthropic", policy, nil)
 	admin.must("POST", "/api/admin/pools", map[string]any{"name": "tm-pool-正式质检保障池", "platform": "anthropic", "sell_multiplier": .8}, nil)
 
 	// 基线先通过旧流程；仅在独立测试数据库中登记运营确认的健康状态。
@@ -142,6 +157,9 @@ func newInspectionPricingFixture(t *testing.T, builtinKeys ...string) *inspectio
 	if legacy != 22 {
 		t.Fatalf("旧内置题夹具应保留 22 道，得到 %d", legacy)
 	}
+	var scopedItem int64
+	var scopedPrompt string
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT id,prompt FROM probe_items WHERE suite='reasoning' AND models=ARRAY['gpt-6-astra']::text[]`), &scopedItem, &scopedPrompt)
 	if len(builtinKeys) > 0 {
 		selectInspectionItems(t, e, append([]string{"inspection/aime_math/1"}, builtinKeys...)...)
 		// 定级仍满足 D07 的默认 20 个有效配对，改由廉价数学模板提供，
@@ -185,6 +203,11 @@ func newInspectionPricingFixture(t *testing.T, builtinKeys ...string) *inspectio
 		tr.rows[sha256.Sum256(instance.WireBody)] = instance.CheckKey
 		tr.mu.Unlock()
 		response := fakesub2api.GatewayResponse{Text: instance.Answer, ToolCalls: []fakesub2api.GatewayToolCall{}}
+		// 糖果题沿用线上 regex 判分，没有可由 grader.Answer 读取的答案。
+		// 仅为这个已识别题面的离线冻结请求登记标准答案。
+		if instance.Request.Prompt == scopedPrompt {
+			response.Text = "21"
+		}
 		for _, call := range instance.Grader.Expect {
 			response.ToolCalls = append(response.ToolCalls, fakesub2api.GatewayToolCall{Name: call.Name, Arguments: call.Args})
 		}
@@ -212,7 +235,7 @@ func newInspectionPricingFixture(t *testing.T, builtinKeys ...string) *inspectio
 	var groupID, onboarding int64
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT probe_group_id FROM upstreams WHERE id=$1`, upstream.ID), &groupID)
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT id FROM probe_runs WHERE upstream_id=$1 AND trigger='onboarding' ORDER BY id DESC LIMIT 1`, upstream.ID), &onboarding)
-	f := &inspectionPricingFixture{e: e, admin: admin, seller: seller, upstreamID: upstream.ID, onboarding: onboarding, transport: tr}
+	f := &inspectionPricingFixture{e: e, admin: admin, seller: seller, upstreamID: upstream.ID, onboarding: onboarding, scopedItem: scopedItem, transport: tr}
 	f.execute(t, onboarding)
 	var encrypted []byte
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT key_enc FROM system_keys WHERE sub2api_group_id=$1`, groupID), &encrypted)
@@ -322,13 +345,16 @@ func (f *inspectionPricingFixture) marketItem(t *testing.T) *market.Item {
 }
 
 func TestInspectionPricingFormalOnboardingQuickAndAppraisal(t *testing.T) {
-	f := newInspectionPricingFixture(t)
+	// 复用默认完整轮验证 gpt-6-astra 专用糖果题；后续既有快检切回
+	// 其他型号验证选择隔离，不增加一整轮质检或独立测试环境。
+	f := newInspectionPricingModelFixture(t, "gpt-6-astra")
 	e := f.e
 	var full, generated, bad, legacy int
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT count(*),count(*) FILTER (WHERE generator_version<>''),count(*) FILTER (WHERE passed IS NOT TRUE OR input_tokens IS NULL OR input_tokens<=0),count(*) FILTER (WHERE suite NOT LIKE 'inspection_%') FROM probe_results WHERE run_id=$1`, f.onboarding), &full, &generated, &bad, &legacy)
-	if full != 90 || generated != full || bad != 0 || legacy != 0 {
-		t.Fatalf("完整质检应为 90 次新题请求：总数=%d 版本=%d 错误=%d 旧题=%d", full, generated, bad, legacy)
+	if full != 91 || generated != full || bad != 0 || legacy != 1 {
+		t.Fatalf("完整质检应为 90 次新题与 1 次型号专用旧题请求：总数=%d 版本=%d 错误=%d 旧题=%d", full, generated, bad, legacy)
 	}
+	assertInspectionModelScopedStaticEvidence(t, f)
 	// 同时承接影子生命周期原来的完整模板判分覆盖：逐个稳定内置键均须有
 	// 成功证据，并精确验证全部生成器版本（含静态多步与上下文边界探针）。
 	var builtinItems, missingItems int
@@ -371,12 +397,106 @@ func TestInspectionPricingFormalOnboardingQuickAndAppraisal(t *testing.T) {
 	// 全题完整轮已经验证默认难度；快检保留默认 25 请求与所有判定断言，
 	// 只把重复斑马题面的维度缩小。
 	compactInspectionItems(t, e, f.admin)
+	// 继续启用 reasoning，使糖果题缺席真正验证型号匹配；旧普通题仍由
+	// 正式选择器排除，原快检的 25 请求、判定和 Q 回归断言保持不变。
+	f.admin.must("PUT", "/api/admin/detection-policies/anthropic", map[string]any{"models": []string{"claude-sonnet-4-5"}}, nil)
 	quickID, summary := f.run(t, "scheduled")
 	var mode string
 	var quick int
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT r.mode,(SELECT count(*) FROM probe_results WHERE run_id=r.id) FROM probe_runs r WHERE id=$1`, quickID), &mode, &quick)
 	if mode != "quick" || quick != 25 || summary.Verdict != "normal" || summary.QualityFactor == nil || !approx(*summary.QualityFactor, 1) {
 		t.Fatalf("正式快检应为 25 次请求：模式=%s 数量=%d 摘要=%+v", mode, quick, summary)
+	}
+	var otherModel, unexpected bool
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT model='claude-sonnet-4-5',EXISTS(SELECT 1 FROM probe_results pr JOIN probe_runs r ON r.id=pr.run_id WHERE r.batch_id=target.batch_id AND pr.item_id=$2) FROM probe_runs target WHERE target.id=$1`, quickID, f.scopedItem), &otherModel, &unexpected)
+	if !otherModel || unexpected {
+		t.Fatal("其他型号的被测及同批基线不应执行 gpt-6-astra 专用糖果题")
+	}
+}
+
+func assertInspectionModelScopedStaticEvidence(t *testing.T, f *inspectionPricingFixture) {
+	t.Helper()
+	var detail quality.RunDetail
+	f.admin.must("GET", fmt.Sprintf("/api/admin/probe-runs/%d", f.onboarding), nil, &detail)
+	find := func(rows []quality.RunResult) *quality.RunResult {
+		var result *quality.RunResult
+		for i := range rows {
+			if rows[i].ItemID != nil && *rows[i].ItemID == f.scopedItem {
+				if result != nil {
+					t.Fatal("型号专用静态题被重复执行或生成了 D06 锚点")
+				}
+				result = &rows[i]
+			}
+		}
+		return result
+	}
+	target, reference := find(detail.Results), find(detail.RefResults)
+	for _, row := range []*quality.RunResult{target, reference} {
+		if row == nil || row.Suite != "reasoning" || row.CheckKey != "D07" || row.InstanceIdx != 0 || row.Step != 0 || row.GeneratorVersion != "static-1" || len(row.InstanceHash) != 64 || row.Passed == nil || !*row.Passed || row.Excerpt == nil || *row.Excerpt != "21" || !strings.Contains(row.Prompt, "糖果") || !reflect.DeepEqual(row.Models, []string{"gpt-6-astra"}) {
+			t.Fatalf("静态糖果题应保留题面、套件与型号，并产生成功 D07 逐题证据：%+v", row)
+		}
+	}
+	if detail.Run.Model != "gpt-6-astra" || detail.Reference == nil || detail.Reference.BatchID != detail.Run.BatchID || detail.Reference.Model != detail.Run.Model || target.InstanceHash != reference.InstanceHash {
+		t.Fatal("静态题被测与基线的型号、批次或冻结配对元数据不一致")
+	}
+	var summary inspectionPricingSummary
+	if err := json.Unmarshal(detail.Run.Summary, &summary); err != nil {
+		t.Fatal(err)
+	}
+	parameterPairs, anchors := 0, 0
+	for _, row := range detail.Results {
+		if strings.HasPrefix(row.Suite, "inspection_") && row.CheckKey == "D07" {
+			parameterPairs++
+		}
+		if row.CheckKey == "D06" {
+			anchors++
+		}
+	}
+	d07, d06 := summary.Checks["D07"], summary.Checks["D06"]
+	if parameterPairs < 20 || d07.Samples.Paired != parameterPairs+1 || d07.Samples.Observed != parameterPairs+1 || d07.Samples.Excluded != 0 || d07.Status != "pass" || d07.Evidence.Source != "paired_probe" || d07.Factor == nil || !approx(*d07.Factor, 1) || anchors != 10 || d06.Samples.Observed != anchors {
+		t.Fatalf("糖果题应计入 D07 同组配对，且不进入 D06 推理量样本：参数化=%d 锚点=%d D07=%+v D06=%+v", parameterPairs, anchors, d07, d06)
+	}
+	var unchanged bool
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT check_key='' AND suite='reasoning' AND generator='{}'::jsonb AND status='active' FROM probe_items WHERE id=$1`, f.scopedItem), &unchanged)
+	if !unchanged {
+		t.Fatal("默认归入 D07 不应改写管理员的题目数据")
+	}
+	var stats []quality.ItemStat
+	f.admin.must("GET", "/api/admin/probe-item-stats?platform=anthropic&model=gpt-6-astra", nil, &stats)
+	seen := false
+	for _, stat := range stats {
+		if stat.ItemID == f.scopedItem {
+			seen = stat.Suite == "reasoning" && strings.Contains(stat.Prompt, "糖果") && reflect.DeepEqual(stat.Models, []string{"gpt-6-astra"}) && stat.Asked == 1 && stat.Passed == 1 && stat.RefAsked == 1 && stat.RefPassed == 1
+		}
+	}
+	if !seen {
+		t.Fatalf("后台按题统计丢失型号专用题或原套件：%+v", stats)
+	}
+	var results []quality.ItemResult
+	f.admin.must("GET", fmt.Sprintf("/api/admin/probe-items/%d/results", f.scopedItem), nil, &results)
+	if len(results) != 2 {
+		t.Fatalf("后台逐题结果应包含同批被测和基线：%+v", results)
+	}
+	for _, result := range results {
+		if result.Model != "gpt-6-astra" || result.CheckKey != "D07" || result.InstanceHash != target.InstanceHash || result.Excerpt == nil || *result.Excerpt != "21" {
+			t.Fatalf("后台逐题结果的 D07 证据不完整：%+v", result)
+		}
+	}
+	var reportID int64
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT id FROM test_reports WHERE run_id=$1`, f.onboarding), &reportID)
+	var report quality.Report
+	status, raw := f.seller.call("GET", fmt.Sprintf("/api/seller/reports/%d", reportID), nil, &report)
+	if status != http.StatusOK || strings.Contains(raw, "糖果") || strings.Contains(raw, "五角星") || strings.Contains(raw, "\"prompt\"") || strings.Contains(raw, "\"answer\"") || strings.Contains(raw, "\"excerpt\"") || strings.Contains(raw, "\"instance_hash\"") {
+		t.Fatalf("卖家报告泄露题面、答案或内部逐题定位：%s", raw)
+	}
+	var public struct {
+		Checks map[string]inspection.Check `json:"checks"`
+	}
+	if err := json.Unmarshal(report.Summary, &public); err != nil {
+		t.Fatal(err)
+	}
+	if public.Checks["D07"].Samples.Paired != d07.Samples.Paired || len(public.Checks["D07"].Metrics) != 0 || public.Checks["D07"].Evidence.Code != "" {
+		t.Fatalf("卖家应能看到 D07 聚合结果且沿用现有脱敏：%s", report.Summary)
 	}
 }
 
@@ -506,6 +626,10 @@ func TestInspectionPricingTrialAutomaticallySamplesWithoutApplying(t *testing.T)
 			t.Fatal("试运行夹具不应显式启用新套件")
 		}
 	}
+	// 在现有 12 道旧题中限定一题的适用型号，保持旧题数量、题面与判分，
+	// 用原 full/quick 两轮同时验证新 D07 展示与旧流程隔离。
+	var scopedItem int64
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `UPDATE probe_items SET models=ARRAY['claude-sonnet-4-5']::text[] WHERE id=(SELECT id FROM probe_items WHERE suite='iq' ORDER BY id LIMIT 1) RETURNING id`), &scopedItem)
 	for _, check := range []string{"D07", "D09", "D08"} {
 		calibrateInspectionPricingCheck(t, admin, check)
 	}
@@ -581,6 +705,11 @@ func TestInspectionPricingTrialAutomaticallySamplesWithoutApplying(t *testing.T)
 			if status != "done" || mode != tc.mode || summary.Mode != "trial" || newRequests != tc.newRequests || oldRequests != 12 || summary.QualityFactor == nil || !approx(*summary.QualityFactor, tc.q) || summary.Appraisal.Multiplier == nil || !approx(*summary.Appraisal.Multiplier, .3*tc.q) || !summary.Appraisal.Provisional {
 				t.Fatalf("默认试运行应自动采新题并展示暂估价：状态=%s 模式=%s 新题=%d 旧题=%d 摘要=%s", status, mode, newRequests, oldRequests, raw)
 			}
+			var parameterPairs, staticPairs int
+			mustScan(t, e.app.DB.QueryRow(ctx, `SELECT count(*) FILTER(WHERE check_key='D07' AND suite LIKE 'inspection_%'),count(*) FILTER(WHERE item_id=$2 AND check_key='D07' AND suite='iq' AND generator_version='static-1' AND passed IS TRUE) FROM probe_results WHERE run_id=$1`, id, scopedItem), &parameterPairs, &staticPairs)
+			if staticPairs != 1 || summary.Checks["D07"].Samples.Paired != parameterPairs+1 {
+				t.Fatalf("试运行展示应把型号专用旧题与参数化题一并计入 D07：参数化=%d 静态=%d D07=%+v", parameterPairs, staticPairs, summary.Checks["D07"])
+			}
 			for _, check := range summary.Checks {
 				if check.Applied || !strings.Contains(check.Impact, "试运行") {
 					t.Fatalf("试运行项不得应用或丢失局限声明：%+v", check)
@@ -643,6 +772,24 @@ func TestInspectionPricingTrialAutomaticallySamplesWithoutApplying(t *testing.T)
 			seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d", upstreamID), nil, &upstream)
 			if upstream.Appraisal.Multiplier == nil || !approx(*upstream.Appraisal.Multiplier, .3*tc.q) || !upstream.Appraisal.Provisional || upstream.InspectionMode != "trial" {
 				t.Fatalf("卖家缺少试运行暂估价：%+v", upstream.InspectionView)
+			}
+			vendor, err := listing.GetVendor(ctx, e.app.DB, upstream.Platform)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tier := ""
+			if upstream.Tier != nil {
+				tier = *upstream.Tier
+			}
+			wantQuote := vendor.BuybackBaseFor(tier) * platformSettings.GradeCoefficient(legacy.Grade)
+			if cap, ok, err := listing.PoolCap(ctx, e.app.DB, upstream.Platform); err != nil {
+				t.Fatal(err)
+			} else if ok {
+				wantQuote = min(wantQuote, cap)
+			}
+			quoteGrade, quote, err := e.app.Listings.QuoteFor(ctx, &upstream)
+			if err != nil || quoteGrade != legacy.Grade || !approx(quote, math.Round(wantQuote*1e4)/1e4) {
+				t.Fatalf("试运行 D07 展示不得改变旧回收报价：等级=%s 倍率=%g 旧期望=%g 错误=%v", quoteGrade, quote, wantQuote, err)
 			}
 		})
 	}

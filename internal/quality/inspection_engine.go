@@ -14,12 +14,21 @@ import (
 
 var inspectionSuites = []string{"inspection_authenticity", "inspection_capability", "inspection_context", "inspection_function", "inspection_output", "inspection_performance"}
 
-// 正式模式只跳过仍与原定义一致的旧内置题，保留管理员新建或改写的题目。
+// 限定型号的旧智力题在新流程中默认计入 D07，管理员显式归类优先。
+// 只派生运行时归类，不改题库数据或旧套件，保留试运行的原判定与执行语义。
+func inspectionItemKey(it Item) string {
+	if it.CheckKey == "" && len(it.Models) > 0 && (it.Suite == "iq" || it.Suite == "reasoning") {
+		return "D07"
+	}
+	return it.CheckKey
+}
+
+// 正式模式只跳过未限定型号且仍与原定义一致的旧内置题。
 func formalItems(items []Item) []Item {
 	result := make([]Item, 0, len(items))
 	for _, it := range items {
 		legacy := false
-		if !strings.HasPrefix(it.Suite, "inspection_") {
+		if len(it.Models) == 0 && !strings.HasPrefix(it.Suite, "inspection_") {
 			for _, old := range defaultItems() {
 				if it.Suite == old.Suite && it.Prompt == old.Prompt {
 					legacy = true
