@@ -15,7 +15,7 @@ import ProbeRunDetail from '@/components/ProbeRunDetail.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import TabBar from '@/components/TabBar.vue'
 import { authTypeText, label, options } from '@/utils/labels'
-import { probeSuiteText } from '@/utils/inspection'
+import { probeFlagText, probeSuiteText } from '@/utils/inspection'
 import { dateTime, ms, percent } from '@/utils/format'
 
 const tab = ref<'runs' | 'items'>('runs')
@@ -364,7 +364,7 @@ async function openItem(s: ProbeItemStat) {
                 {{ r.passed === null ? '—' : r.passed ? '通过' : '未通过' }}
                 <div v-if="r.error_class" class="text-slate-500">{{ r.error_class }}{{ r.http_status ? ` · ${r.http_status}` : '' }}</div>
                 <div v-if="r.stop_reason || r.effort" class="text-slate-500">{{ r.stop_reason || '—' }} · {{ r.effort || '—' }}</div>
-                <div v-if="r.flags?.length" class="text-slate-500">{{ r.flags.join('、') }}</div>
+                <div v-if="r.flags?.length" class="text-slate-500" :title="r.flags.join(', ')">{{ r.flags.map(probeFlagText).join('、') }}</div>
               </td>
               <td class="num p-2 text-right whitespace-nowrap">{{ ms(r.ttft_ms) }} / {{ ms(r.duration_ms) }}</td>
               <td class="num p-2 text-right whitespace-nowrap">

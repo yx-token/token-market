@@ -124,3 +124,98 @@ describe('检测明细：套件分组、答案列与失败行', () => {
     expect(running.text()).toContain('检测尚未完成')
   })
 })
+
+describe('检测明细：同一道题的多条记录折叠', () => {
+  const zebra = (instance_idx: number, extra: Partial<ProbeRunResult> = {}): ProbeRunResult => ({
+    ...base,
+    item_id: 12,
+    category: '斑马谜题',
+    prompt: '斑马谜题（现场参数化生成，仅输出最终答案）',
+    check_key: 'D07',
+    generator_version: 'zebra/2',
+    instance_idx,
+    step: 0,
+    instance_prompt: `第 ${instance_idx} 份谜题`,
+    ...extra,
+  })
+  const results = [
+    zebra(0),
+    zebra(1, { passed: false }),
+    zebra(2),
+    zebra(1000, { check_key: 'D06', effort: 'low', instance_prompt: '第 0 份谜题' }),
+    { ...base, item_id: 30, category: '工具', instance_idx: 0, step: 0 },
+  ]
+
+  it('多条记录的题折叠成一行汇总，展开后显示各条', async () => {
+    const wrapper = mount(ProbeRunDetail, { props: { detail: detail(results), showAnswer: true } })
+    const groups = wrapper.findAll('[data-item-group]')
+    expect(groups).toHaveLength(1)
+    expect(groups[0].text()).toContain('4 条记录：4 个实例')
+    expect(groups[0].text()).toContain('含低推理档对照 1 条')
+    expect(groups[0].text()).toContain('D07 / D06')
+    expect(groups[0].text()).toContain('通过 3 / 4')
+    expect(wrapper.text()).toContain('（2 题 · 5 条记录）')
+
+    const nested = () => wrapper.findAll('[data-result-key^="12:"]')
+    expect(nested()).toHaveLength(4)
+    expect(nested().every((tr) => (tr.element as HTMLElement).style.display === 'none')).toBe(true)
+    // 只有一条记录的题直接显示，不折叠
+    expect((wrapper.get('[data-result-key="30:0:0"]').element as HTMLElement).style.display).toBe('')
+
+    await groups[0].get('button').trigger('click')
+    expect(groups[0].get('button').attributes('aria-expanded')).toBe('true')
+    expect(nested().every((tr) => (tr.element as HTMLElement).style.display === '')).toBe(true)
+    expect(wrapper.get('[data-result-key="12:1:0"]').text()).toContain('第 1 份谜题')
+    expect(wrapper.get('[data-result-key="12:1000:0"]').text()).toContain('低推理档对照 · 实例 0')
+  })
+
+  it('全部展开 / 全部收起', async () => {
+    const wrapper = mount(ProbeRunDetail, { props: { detail: detail(results) } })
+    const toggle = wrapper.findAll('button').find((b) => b.text() === '全部展开')!
+    await toggle.trigger('click')
+    expect((wrapper.get('[data-result-key="12:2:0"]').element as HTMLElement).style.display).toBe('')
+    expect(toggle.text()).toBe('全部收起')
+    await toggle.trigger('click')
+    expect((wrapper.get('[data-result-key="12:2:0"]').element as HTMLElement).style.display).toBe('none')
+  })
+
+  it('实际题面与标准答案一样，只在管理员上下文显示', async () => {
+    const sellerSide = mount(ProbeRunDetail, { props: { detail: detail(results) } })
+    await sellerSide.findAll('button').find((b) => b.text() === '全部展开')!.trigger('click')
+    expect(sellerSide.text()).not.toContain('第 1 份谜题')
+    expect(sellerSide.text()).not.toContain('实际题面')
+  })
+})
+
+describe('检测明细：截图反馈', () => {
+  it('同一道题的记录按实例、步骤排序，而不是完成先后', async () => {
+    const order = [2, 3, 0, 5, 1].map((instance_idx) => ({ ...base, item_id: 23, instance_idx, step: 0 }))
+    const wrapper = mount(ProbeRunDetail, { props: { detail: detail(order) } })
+    const keys = wrapper.findAll('[data-result-key^="23:"]').map((tr) => tr.attributes('data-result-key'))
+    expect(keys).toEqual(['23:0:0', '23:1:0', '23:2:0', '23:3:0', '23:5:0'])
+  })
+
+  it('只有达到 500 字上限的模型输出才标「已截断」', () => {
+    const short = mount(ProbeRunDetail, { props: { detail: detail([{ ...base, excerpt: '颜色：黄，白，蓝' }]) } })
+    expect(short.text()).not.toContain('已截断')
+    const full = mount(ProbeRunDetail, { props: { detail: detail([{ ...base, excerpt: '答'.repeat(500) }]) } })
+    expect(full.text()).toContain('已截断')
+  })
+
+  it('套件与结果标记显示中文名，悬停可见原始代码', () => {
+    const wrapper = mount(ProbeRunDetail, {
+      props: { detail: detail([{ ...base, suite: 'inspection_authenticity', flags: ['stop_normal', 'window_available', 'mystery_flag'] }]) },
+    })
+    expect(wrapper.text()).toContain('真实性质检')
+    const flags = wrapper.get('[title="stop_normal, window_available, mystery_flag"]')
+    expect(flags.text()).toBe('正常结束、额度窗口可用、mystery_flag')
+  })
+
+  it('逐题表只随弹窗纵向滚动，不自带滚动，也不设最小宽度撑出横向滚动条', () => {
+    const wrapper = mount(ProbeRunDetail, { props: { detail: detail([{ ...base }]) } })
+    const table = wrapper.get('[data-testid="probe-run-results"]')
+    expect(table.element.parentElement!.className).not.toMatch(/max-h-|overflow-/)
+    expect(table.classes()).toContain('table-fixed')
+    expect(table.classes().some((c) => c.startsWith('min-w-'))).toBe(false)
+  })
+})

@@ -1,8 +1,10 @@
 package quality
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // 标准答案只面向管理员明细接口：题库私有且定期轮换，卖家/买家侧的响应不能携带这些值。
@@ -59,30 +61,84 @@ func resolveExpectedAnswer(step plannedStep, instanceNeedle string) string {
 	return answer
 }
 
-// expectedAnswersFromSnapshot 从 probe_runs.execution_snapshot 解析每个（题，实例，步骤）的标准答案。
-// 快照缺失或不是预期结构时返回空表，由调用方回退到判分器摘要。
-func expectedAnswersFromSnapshot(raw []byte) map[answerKey]string {
-	out := map[answerKey]string{}
+// maxInstancePrompt 限制明细里展示的实例题面长度；长上下文题面可达数十万字符。
+const maxInstancePrompt = 2000
+
+// snapshotIndex 是一次检测执行快照按（题，实例，步骤）建立的索引，快照只解析一次。
+type snapshotIndex struct {
+	answers map[answerKey]string
+	hashes  map[answerKey]string
+	prompts map[answerKey]string
+}
+
+// indexSnapshot 解析 probe_runs.execution_snapshot；快照缺失或不是预期结构时返回空索引，由调用方回退。
+func indexSnapshot(raw []byte) snapshotIndex {
+	idx := snapshotIndex{answers: map[answerKey]string{}, hashes: map[answerKey]string{}, prompts: map[answerKey]string{}}
 	if len(raw) == 0 || string(raw) == "{}" {
-		return out
+		return idx
 	}
 	var plan executionSnapshot
 	if err := decodeInspectionJSON(raw, &plan); err != nil {
-		return out
+		return idx
 	}
 	for _, instance := range plan.Instances {
 		for _, step := range instance.Steps {
-			answer := resolveExpectedAnswer(step, instance.Needle)
-			if answer == "" {
+			key := answerKey{itemID: instance.ItemID, instanceIdx: instance.InstanceIdx, step: step.Step}
+			if _, ok := idx.hashes[key]; ok {
 				continue
 			}
-			key := answerKey{itemID: instance.ItemID, instanceIdx: instance.InstanceIdx, step: step.Step}
-			if _, ok := out[key]; !ok {
-				out[key] = answer
+			idx.hashes[key] = instance.Hash
+			if answer := resolveExpectedAnswer(step, instance.Needle); answer != "" {
+				idx.answers[key] = answer
+			}
+			if prompt := stepPrompt(step.Request); prompt != "" {
+				idx.prompts[key] = prompt
 			}
 		}
 	}
-	return out
+	return idx
+}
+
+// stepPrompt 取一步请求实际发出的题面：优先 prompt，否则取最后一条用户消息的文本；超长时截断并注明总长。
+func stepPrompt(req ProbeRequest) string {
+	text := strings.TrimSpace(req.Prompt)
+	for i := len(req.Messages) - 1; text == "" && i >= 0; i-- {
+		if req.Messages[i].Role != "user" {
+			continue
+		}
+		var parts []string
+		for _, c := range req.Messages[i].Content {
+			if c.Text != "" {
+				parts = append(parts, c.Text)
+			}
+		}
+		text = strings.TrimSpace(strings.Join(parts, "\n"))
+	}
+	if total := utf8.RuneCountInString(text); total > maxInstancePrompt {
+		return truncateStr(text, maxInstancePrompt) + fmt.Sprintf("\n…（题面共 %d 字，仅显示前 %d 字）", total, maxInstancePrompt)
+	}
+	return text
+}
+
+// lookup 按三元组取快照里的值；结果行的实例哈希与快照对不上（题库已轮换）时视为不可用。
+func (idx snapshotIndex) lookup(values map[answerKey]string, itemID *int64, instanceIdx, step int, instanceHash string) (string, bool) {
+	if itemID == nil {
+		return "", false
+	}
+	key := answerKey{itemID: *itemID, instanceIdx: instanceIdx, step: step}
+	value, ok := values[key]
+	if !ok {
+		return "", false
+	}
+	if h, hashed := idx.hashes[key]; hashed && h != "" && instanceHash != "" && h != instanceHash {
+		return "", true
+	}
+	return value, true
+}
+
+// expectedAnswersFromSnapshot 从执行快照解析每个（题，实例，步骤）的标准答案。
+func expectedAnswersFromSnapshot(raw []byte) map[answerKey]string {
+	return indexSnapshot(raw).answers
 }
 
 // expectedAnswerFor 按（题，实例，步骤）查找标准答案；实例哈希与快照对不上时判定为不可读，不回落判分器。
@@ -91,13 +147,8 @@ func expectedAnswerFor(answers, hashes map[answerKey]string, itemID *int64, inst
 	if itemID == nil {
 		return ""
 	}
-	key := answerKey{itemID: *itemID, instanceIdx: instanceIdx, step: step}
-	if answer, ok := answers[key]; ok {
-		h, hashed := hashes[key]
-		if !hashed || instanceHash == "" || h == instanceHash {
-			return answer
-		}
-		return ""
+	if answer, found := (snapshotIndex{hashes: hashes}).lookup(answers, itemID, instanceIdx, step, instanceHash); found {
+		return answer
 	}
 	// 没有快照的旧检测：从题目判分器推出可读答案
 	if answer := readableGraderAnswer(grader); answer != "" && !strings.Contains(answer, "{{") {
@@ -108,21 +159,15 @@ func expectedAnswerFor(answers, hashes map[answerKey]string, itemID *int64, inst
 
 // snapshotAnswerHashes 返回快照里每个（题，实例，步骤）所属的实例哈希，用于核对结果行与快照是否同一代题库。
 func snapshotAnswerHashes(raw []byte) map[answerKey]string {
-	out := map[answerKey]string{}
-	if len(raw) == 0 || string(raw) == "{}" {
-		return out
+	return indexSnapshot(raw).hashes
+}
+
+// fillFromSnapshot 为明细行补标准答案与实例题面，二者都只随管理员明细返回。
+func fillFromSnapshot(results []RunResult, raw []byte) {
+	idx := indexSnapshot(raw)
+	for i := range results {
+		r := &results[i]
+		r.ExpectedAnswer = expectedAnswerFor(idx.answers, idx.hashes, r.ItemID, r.InstanceIdx, r.Step, r.InstanceHash, r.Grader)
+		r.InstancePrompt, _ = idx.lookup(idx.prompts, r.ItemID, r.InstanceIdx, r.Step, r.InstanceHash)
 	}
-	var plan executionSnapshot
-	if err := decodeInspectionJSON(raw, &plan); err != nil {
-		return out
-	}
-	for _, instance := range plan.Instances {
-		for _, step := range instance.Steps {
-			key := answerKey{itemID: instance.ItemID, instanceIdx: instance.InstanceIdx, step: step.Step}
-			if _, ok := out[key]; !ok {
-				out[key] = instance.Hash
-			}
-		}
-	}
-	return out
 }

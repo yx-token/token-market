@@ -395,6 +395,8 @@ type RunResult struct {
 	Excerpt         *string  `json:"excerpt,omitempty"`
 	// ExpectedAnswer 是该题的标准答案，仅管理员明细接口返回；卖家/买家侧接口永不携带。
 	ExpectedAnswer string `json:"expected_answer,omitempty"`
+	// InstancePrompt 是参数化实例实际发出的题面（取自执行快照，超长截断），同样仅管理员明细返回。
+	InstancePrompt string `json:"instance_prompt,omitempty"`
 	// Grader 为判分器原文快照，仅用于解析标准答案，不出现在接口响应里。
 	Grader Grader `json:"-"`
 }
@@ -459,12 +461,7 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 	if out.Results, err = runResults(ctx, db, runID); err != nil {
 		return nil, err
 	}
-	answers := expectedAnswersFromSnapshot(target[0].executionSnapshot)
-	hashes := snapshotAnswerHashes(target[0].executionSnapshot)
-	for i := range out.Results {
-		r := &out.Results[i]
-		r.ExpectedAnswer = expectedAnswerFor(answers, hashes, r.ItemID, r.InstanceIdx, r.Step, r.InstanceHash, r.Grader)
-	}
+	fillFromSnapshot(out.Results, target[0].executionSnapshot)
 	if out.Run.Trigger == "reference" {
 		return out, nil
 	}
@@ -491,12 +488,7 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 		if out.RefResults, err = runResults(ctx, db, refs[0].ID); err != nil {
 			return nil, err
 		}
-		refAnswers := expectedAnswersFromSnapshot(refs[0].executionSnapshot)
-		refHashes := snapshotAnswerHashes(refs[0].executionSnapshot)
-		for i := range out.RefResults {
-			r := &out.RefResults[i]
-			r.ExpectedAnswer = expectedAnswerFor(refAnswers, refHashes, r.ItemID, r.InstanceIdx, r.Step, r.InstanceHash, r.Grader)
-		}
+		fillFromSnapshot(out.RefResults, refs[0].executionSnapshot)
 	}
 	return out, nil
 }

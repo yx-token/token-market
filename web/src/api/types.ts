@@ -884,6 +884,8 @@ export interface ProbeRunResult {
   error_body?: string
   /** 标准答案，仅管理员明细接口返回；卖家 / 买家侧响应不携带 */
   expected_answer?: string
+  /** 参数化实例实际发出的题面（超长截断），仅管理员明细接口返回 */
+  instance_prompt?: string
 }
 
 export interface InspectionAppraisal {

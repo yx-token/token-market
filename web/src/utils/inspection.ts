@@ -44,10 +44,34 @@ export const probeSuiteNames: Record<string, string> = {
   inspection_capability: '能力质检',
   inspection_context: '上下文质检',
   inspection_function: '功能质检',
+  inspection_authenticity: '真实性质检',
+  inspection_output: '输出质检',
+  inspection_performance: '性能质检',
   availability: '可用性',
   latency: '延迟',
 }
 
 export function probeSuiteText(suite: string): string {
   return probeSuiteNames[suite] ?? suite
+}
+
+// 逐题结果标记的中文名；未知标记保留原值
+export const probeFlagNames: Record<string, string> = {
+  stop_normal: '正常结束',
+  stop_error: '异常结束',
+  unknown_stop_reason: '结束原因未知',
+  truncated: '输出被截断',
+  refusal: '拒答',
+  reasoning_estimated: '推理量为估算',
+  platform: '平台侧错误',
+  rate_limited: '限流',
+  abnormal_rate_limited: '异常限流',
+  configuration: '配置错误',
+  expected_reject: '预期拒绝',
+  window_available: '额度窗口可用',
+  window_unknown: '额度窗口未知',
+}
+
+export function probeFlagText(flag: string): string {
+  return probeFlagNames[flag] ?? flag
 }
