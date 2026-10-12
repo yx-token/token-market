@@ -13,7 +13,7 @@ import (
 
 func contextRNG(seed uint64) *rand.Rand { return rand.New(rand.NewPCG(seed, seed+1)) }
 
-func contextHash(t *testing.T, value generatedProbe) [32]byte {
+func contextHash(t testing.TB, value generatedProbe) [32]byte {
 	t.Helper()
 	raw, err := json.Marshal(value)
 	if err != nil {
@@ -23,6 +23,7 @@ func contextHash(t *testing.T, value generatedProbe) [32]byte {
 }
 
 func TestBankConstraintsLegacyIndependentUniqueSolution(t *testing.T) {
+	t.Parallel()
 	for _, lang := range []string{"zh", "en"} {
 		t.Run(lang, func(t *testing.T) {
 			for seed := uint64(0); seed < 40; seed++ {
@@ -119,7 +120,7 @@ type parsedContextRecord struct {
 }
 
 // 验算器从渲染行解析字段，再根据渲染问题扫描查表，不使用生成器内存中的记录。
-func solveContextText(t *testing.T, prompt string) string {
+func solveContextText(t testing.TB, prompt string) string {
 	t.Helper()
 	pattern := regexp.MustCompile(`(?m)^\[(R\d+)\] Name: [^|]+ \| Dept: (\w+) \| Manager: (R\d+) \| Office: ([A-G]-\d+) \| Joined: (\d+) \| Badge: (\d+) \| Code: (C\d+)$`)
 	matches := pattern.FindAllStringSubmatch(prompt, -1)
@@ -193,38 +194,46 @@ func solveContextText(t *testing.T, prompt string) string {
 	return ""
 }
 
+var bankContextTestTargets = []int{8192, 32768, 131072}
+var bankContextTestVariants = []string{"multi_needle", "multi_hop", "aggregate", "edges", "associative"}
+
+// 每个长度与变体组合保留一个固定 seed；原三个 seed 见 LongContextIndependentSolutionsStress benchmark。
 func TestBankLongContextIndependentSolutions(t *testing.T) {
-	for _, target := range []int{8192, 32768, 131072} {
-		for _, variant := range []string{"multi_needle", "multi_hop", "aggregate", "edges", "associative"} {
+	t.Parallel()
+	for _, target := range bankContextTestTargets {
+		for _, variant := range bankContextTestVariants {
 			t.Run(fmt.Sprintf("%s/%d", variant, target), func(t *testing.T) {
-				for seed := uint64(0); seed < 3; seed++ {
-					params := map[string]any{"target_tokens": target, "variant": variant}
-					probe, err := generateLongContext(contextRNG(seed), params)
-					if err != nil {
-						t.Fatal(err)
-					}
-					answer := "ANSWER: " + solveContextText(t, probe.Request.Prompt)
-					if answer != probe.Answer {
-						t.Fatalf("seed %d：独立求解不一致：%s / %s", seed, answer, probe.Answer)
-					}
-					tokens := probe.Parameters["estimated_input_tokens"].(int)
-					if tokens < target || tokens >= target+128 || probe.Parameters["token_estimator"] != "lexical_subword_v1" {
-						t.Fatalf("词元估算不在目标附近：%+v", probe.Parameters)
-					}
-					if tokens == len(probe.Request.Prompt) {
-						t.Fatal("不能将字节数作为词元数")
-					}
-					result, err := gradeResult(probe.Grader, ProbeResult{Text: answer, HTTPStatus: 200}, "")
-					if err != nil || !result.Pass {
-						t.Fatalf("独立答案没有通过：%+v %v", result, err)
-					}
-					duplicate, err := generateLongContext(contextRNG(seed), params)
-					if err != nil || contextHash(t, probe) != contextHash(t, duplicate) {
-						t.Fatalf("同 seed 哈希不一致：%v", err)
-					}
-				}
+				assertBankLongContextIndependentSolution(t, target, variant, 0)
 			})
 		}
+	}
+}
+
+func assertBankLongContextIndependentSolution(t testing.TB, target int, variant string, seed uint64) {
+	t.Helper()
+	params := map[string]any{"target_tokens": target, "variant": variant}
+	probe, err := generateLongContext(contextRNG(seed), params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer := "ANSWER: " + solveContextText(t, probe.Request.Prompt)
+	if answer != probe.Answer {
+		t.Fatalf("seed %d：独立求解不一致：%s / %s", seed, answer, probe.Answer)
+	}
+	tokens := probe.Parameters["estimated_input_tokens"].(int)
+	if tokens < target || tokens >= target+128 || probe.Parameters["token_estimator"] != "lexical_subword_v1" {
+		t.Fatalf("词元估算不在目标附近：%+v", probe.Parameters)
+	}
+	if tokens == len(probe.Request.Prompt) {
+		t.Fatal("不能将字节数作为词元数")
+	}
+	result, err := gradeResult(probe.Grader, ProbeResult{Text: answer, HTTPStatus: 200}, "")
+	if err != nil || !result.Pass {
+		t.Fatalf("独立答案没有通过：%+v %v", result, err)
+	}
+	duplicate, err := generateLongContext(contextRNG(seed), params)
+	if err != nil || contextHash(t, probe) != contextHash(t, duplicate) {
+		t.Fatalf("同 seed 哈希不一致：%v", err)
 	}
 }
 

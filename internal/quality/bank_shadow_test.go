@@ -33,6 +33,7 @@ func TestInspectionShadowDoesNotChangeLegacyAssessment(t *testing.T) {
 }
 
 func TestInspectionBuiltinDefinitions(t *testing.T) {
+	t.Parallel()
 	keys := map[string]bool{}
 	if len(defaultItems()) != 22 {
 		t.Fatal("旧题数量改变")

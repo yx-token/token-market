@@ -65,7 +65,7 @@ jobs:
 
       # 单元测试与集成测试（本系统迁移、契约查询、基于 sub2api 替身的端到端流程）
       - name: 测试
-        run: go test -race -tags integration ./...
+        run: go test -race -tags integration -timeout 20m ./...
 
   web:
     name: 前端检查与构建

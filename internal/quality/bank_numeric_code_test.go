@@ -2,6 +2,7 @@ package quality
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -50,26 +51,57 @@ func TestBankCodeIndependentGoSolvers(t *testing.T) {
 }
 
 func TestBankCodePythonCrossCheck(t *testing.T) {
+	t.Parallel()
 	python, err := exec.LookPath("python3")
 	if err != nil {
 		t.Skip("本机没有 python3，跳过自产程序的解释器交叉验证")
 	}
+	type sample struct {
+		kind  string
+		seed  uint64
+		probe generatedProbe
+	}
+	var samples []sample
+	var programs []string
 	for _, kind := range []string{"A", "B", "D", "G"} {
-		t.Run(kind, func(t *testing.T) {
-			for seed := uint64(0); seed < 12; seed++ {
-				got, err := generateCode(bankNumericTestRNG(seed), map[string]any{"kind": kind})
-				if err != nil {
-					t.Fatal(err)
-				}
-				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-				// 只执行本生成器产生的固定程序，不接受第三方源码或模型返回代码。
-				output, err := exec.CommandContext(ctx, python, "-I", "-c", bankGeneratedProgram(t, got)).CombinedOutput()
-				cancel()
-				if err != nil {
-					t.Fatalf("自产程序运行失败：%v %s", err, output)
-				}
-				bankNumericVerifyAnswer(t, got, strings.TrimSuffix(string(output), "\n"))
+		for seed := uint64(0); seed < 12; seed++ {
+			got, err := generateCode(bankNumericTestRNG(seed), map[string]any{"kind": kind})
+			if err != nil {
+				t.Fatal(err)
 			}
+			samples = append(samples, sample{kind, seed, got})
+			programs = append(programs, bankGeneratedProgram(t, got))
+		}
+	}
+	raw, err := json.Marshal(programs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 只执行本生成器产生的固定程序；每个程序用独立命名空间，避免可变默认参数跨样本污染。
+	const batch = `import contextlib, io, json, sys
+outputs = []
+for program in json.load(sys.stdin):
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        exec(compile(program, "<generated>", "exec"), {})
+    outputs.append(output.getvalue())
+print(json.dumps(outputs))
+`
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, python, "-I", "-c", batch)
+	command.Stdin = strings.NewReader(string(raw))
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("自产程序运行失败：%v %s", err, output)
+	}
+	var answers []string
+	if err := json.Unmarshal(output, &answers); err != nil || len(answers) != len(samples) {
+		t.Fatalf("批量解释器未返回全部 %d 个程序输出：%v %s", len(samples), err, output)
+	}
+	for i, sample := range samples {
+		t.Run(fmt.Sprintf("%s/%d", sample.kind, sample.seed), func(t *testing.T) {
+			bankNumericVerifyAnswer(t, sample.probe, strings.TrimSuffix(answers[i], "\n"))
 		})
 	}
 }

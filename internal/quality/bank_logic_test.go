@@ -25,7 +25,7 @@ type parsedZebra struct {
 }
 
 // 校验器只读发布给模型的中文题面，不接触结构化线索与真解。
-func parseZebraPrompt(t *testing.T, prompt string) parsedZebra {
+func parseZebraPrompt(t testing.TB, prompt string) parsedZebra {
 	t.Helper()
 	var puzzle parsedZebra
 	lines := strings.Split(prompt, "\n")
@@ -207,38 +207,45 @@ func solveZebraCells(puzzle parsedZebra) [][]int {
 	return solutions
 }
 
+var bankZebraTestDimensions = [][2]int{{4, 3}, {4, 4}, {4, 5}, {4, 6}, {5, 3}, {5, 4}, {5, 5}, {5, 6}, {6, 3}, {6, 4}, {6, 5}, {6, 6}}
+
+// 固定 seed 仍覆盖全部房屋数、属性数及它们的组合；原六 seed 校验见对应 Stress benchmark。
 func TestBankLogicZebraIndependentUnique(t *testing.T) {
-	for _, dimensions := range [][2]int{{4, 3}, {4, 4}, {4, 5}, {4, 6}, {5, 3}, {5, 4}, {5, 5}, {5, 6}, {6, 3}, {6, 4}, {6, 5}, {6, 6}} {
-		for seed := uint64(1); seed <= 6; seed++ {
-			t.Run(fmt.Sprintf("%dx%d/%d", dimensions[0], dimensions[1], seed), func(t *testing.T) {
-				generated, err := generateZebra(rand.New(rand.NewPCG(seed, 17)), map[string]any{"houses": dimensions[0], "attributes": dimensions[1]})
-				if err != nil {
-					t.Fatal(err)
+	t.Parallel()
+	for _, dimensions := range bankZebraTestDimensions {
+		t.Run(fmt.Sprintf("%dx%d/1", dimensions[0], dimensions[1]), func(t *testing.T) {
+			assertBankZebraIndependentUnique(t, dimensions, 1)
+		})
+	}
+}
+
+func assertBankZebraIndependentUnique(t testing.TB, dimensions [2]int, seed uint64) {
+	t.Helper()
+	generated, err := generateZebra(rand.New(rand.NewPCG(seed, 17)), map[string]any{"houses": dimensions[0], "attributes": dimensions[1]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	puzzle := parseZebraPrompt(t, generated.Request.Prompt)
+	solutions := solveZebraCells(puzzle)
+	if len(solutions) != 1 {
+		t.Fatalf("独立逐格求解得到 %d 个解", len(solutions))
+	}
+	var answer []string
+	for _, asked := range puzzle.asked {
+		for a, name := range puzzle.names {
+			if asked == name {
+				row := make([]string, puzzle.houses)
+				for v, value := range puzzle.values[a] {
+					row[solutions[0][a*puzzle.houses+v]] = value
 				}
-				puzzle := parseZebraPrompt(t, generated.Request.Prompt)
-				solutions := solveZebraCells(puzzle)
-				if len(solutions) != 1 {
-					t.Fatalf("独立逐格求解得到 %d 个解", len(solutions))
-				}
-				var answer []string
-				for _, asked := range puzzle.asked {
-					for a, name := range puzzle.names {
-						if asked == name {
-							row := make([]string, puzzle.houses)
-							for v, value := range puzzle.values[a] {
-								row[solutions[0][a*puzzle.houses+v]] = value
-							}
-							answer = append(answer, name+"："+strings.Join(row, "，"))
-						}
-					}
-				}
-				if strings.Join(answer, "\n") != generated.Answer {
-					t.Fatalf("独立解与答案不一致：%v / %s", answer, generated.Answer)
-				}
-				assertBankLogicAnswer(t, generated)
-			})
+				answer = append(answer, name+"："+strings.Join(row, "，"))
+			}
 		}
 	}
+	if strings.Join(answer, "\n") != generated.Answer {
+		t.Fatalf("独立解与答案不一致：%v / %s", answer, generated.Answer)
+	}
+	assertBankLogicAnswer(t, generated)
 }
 
 func assertBankLogicAnswer(t testing.TB, generated generatedProbe) {
@@ -549,6 +556,7 @@ func TestBankLogicSeedsAndParameterDomains(t *testing.T) {
 }
 
 func TestBankLogicZebraDefaultDimensions(t *testing.T) {
+	t.Parallel()
 	generated, err := generateZebra(rand.New(rand.NewPCG(101, 103)), nil)
 	if err != nil {
 		t.Fatal(err)

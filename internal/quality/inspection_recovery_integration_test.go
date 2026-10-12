@@ -12,6 +12,7 @@ import (
 )
 
 func TestRecoverySamplesAccumulateOnlyLatestTwoRoundsAfterGate(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
 	st := calibratedInspectionSettings()

@@ -46,9 +46,38 @@ func inspectionProbeAccount(t *testing.T, e *env) (upstreamID, accountID int64, 
 	return upstream.ID, accountID, plain
 }
 
-func TestInspectionProbeConcurrentBatches(t *testing.T) {
+// 三个协议与并发场景共享数据库、Redis、替身和账号；子测试名保留原用例的映射。
+func TestInspectionProbeCapabilities(t *testing.T) {
 	e := setup(t)
-	upstreamID, accountID, _ := inspectionProbeAccount(t, e)
+	upstreamID, accountID, key := inspectionProbeAccount(t, e)
+	resetInspectionProbeFake(e, accountID)
+	t.Run("TestInspectionProbeConcurrentBatches", func(t *testing.T) {
+		resetInspectionProbeFake(e, accountID)
+		testInspectionProbeConcurrentBatches(t, e, upstreamID, accountID)
+	})
+	t.Run("TestInspectionProbeGatewayConcurrencyIsPlatform", func(t *testing.T) {
+		resetInspectionProbeFake(e, accountID)
+		testInspectionProbeGatewayConcurrencyIsPlatform(t, e, upstreamID, key)
+	})
+	t.Run("TestInspectionProbeUsageStopsAndTools", func(t *testing.T) {
+		resetInspectionProbeFake(e, accountID)
+		testInspectionProbeUsageStopsAndTools(t, e, accountID, key)
+		resetInspectionProbeFake(e, accountID)
+	})
+}
+
+func resetInspectionProbeFake(e *env, accountID int64) {
+	e.fake.SetAccountDelay(accountID, 0)
+	e.fake.SetAccountUsage(accountID, nil)
+	e.fake.SetAccountStopReason(accountID, "")
+	e.fake.SetAccountToolCalls(accountID, nil)
+	e.fake.SetGatewayResponder(nil)
+	// setup 的基础题要求返回题面中的 PONGn；每个协议专测之间恢复它，
+	// 否则共享账号的并发批次会把默认回答 "ok" 判成失败。
+	e.fake.SetResponder(func(_ int64, prompt string) string { return "The code is " + pongRe.FindString(prompt) })
+}
+
+func testInspectionProbeConcurrentBatches(t *testing.T, e *env, upstreamID, accountID int64) {
 	e.fake.SetAccountDelay(accountID, 15*time.Millisecond)
 	ctx, cancel := context.WithTimeout(e.ctx, time.Minute)
 	defer cancel()
@@ -91,9 +120,7 @@ func TestInspectionProbeConcurrentBatches(t *testing.T) {
 	}
 }
 
-func TestInspectionProbeGatewayConcurrencyIsPlatform(t *testing.T) {
-	e := setup(t)
-	upstreamID, _, key := inspectionProbeAccount(t, e)
+func testInspectionProbeGatewayConcurrencyIsPlatform(t *testing.T, e *env, upstreamID int64, key string) {
 	occupied, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	unblock := func() { once.Do(func() { close(release) }) }
@@ -141,9 +168,7 @@ func TestInspectionProbeGatewayConcurrencyIsPlatform(t *testing.T) {
 	}
 }
 
-func TestInspectionProbeUsageStopsAndTools(t *testing.T) {
-	e := setup(t)
-	_, accountID, key := inspectionProbeAccount(t, e)
+func testInspectionProbeUsageStopsAndTools(t *testing.T, e *env, accountID int64, key string) {
 	e.fake.SetAccountUsage(accountID, &fakesub2api.GatewayUsage{
 		InputTokens: 11, OutputTokens: 23, ReasoningTokens: 7, CacheReadInputTokens: 3, CacheCreationInputTokens: 5,
 	})

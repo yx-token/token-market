@@ -10,6 +10,7 @@ import (
 )
 
 func TestInspectionBuiltinSyncAndLegacySelection(t *testing.T) {
+	t.Parallel()
 	pool, _, _ := inspectionDB(t)
 	ctx := context.Background()
 	created, err := SeedDefaultItems(ctx, pool)
@@ -55,6 +56,7 @@ func TestInspectionBuiltinSyncAndLegacySelection(t *testing.T) {
 }
 
 func TestInspectionGeneratedSnapshotIsFrozen(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
 	var selected Item
@@ -96,6 +98,7 @@ func TestInspectionGeneratedSnapshotIsFrozen(t *testing.T) {
 }
 
 func TestInspectionShadowInvalidConfigurationDoesNotBlockOldPlan(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
 	legacy := Item{ID: 1, Suite: "iq", Prompt: "旧题", MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}}
@@ -112,6 +115,7 @@ func TestInspectionShadowInvalidConfigurationDoesNotBlockOldPlan(t *testing.T) {
 }
 
 func TestInspectionShadowExpansionLimitPreservesOldPlan(t *testing.T) {
+	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
 	items := []Item{{ID: 999, Suite: "iq", Prompt: "旧题", MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}}}

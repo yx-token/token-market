@@ -99,7 +99,9 @@ func (tr *inspectionPricingTransport) RoundTrip(req *http.Request) (*http.Respon
 	return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(bytes.NewReader(encoded)), Request: req}, nil
 }
 
-func newInspectionPricingFixture(t *testing.T, compact ...bool) *inspectionPricingFixture {
+// 不指定题目时保留默认题库；其余生命周期只抽测其断言所需的项，
+// 数学题维持有效智力配对和等级。默认题库的全部模板由正式上架场景覆盖。
+func newInspectionPricingFixture(t *testing.T, builtinKeys ...string) *inspectionPricingFixture {
 	t.Helper()
 	e := setup(t)
 	admin := e.login("admin@market.test", "admin-password-1")
@@ -140,15 +142,14 @@ func newInspectionPricingFixture(t *testing.T, compact ...bool) *inspectionPrici
 	if legacy != 22 {
 		t.Fatalf("旧内置题夹具应保留 22 道，得到 %d", legacy)
 	}
-	// 生命周期测试保留题量和判定断言，使用轻量难度与 8K 草堆；全规格由专门场景覆盖。
-	if len(compact) > 0 && compact[0] {
-		if _, err := e.app.DB.Exec(e.ctx, `UPDATE probe_items SET generator=jsonb_set(generator,'{parameters}','{"houses":4,"attributes":3}'::jsonb) WHERE generator->>'template_id'='zebra'`); err != nil {
+	if len(builtinKeys) > 0 {
+		selectInspectionItems(t, e, append([]string{"inspection/aime_math/1"}, builtinKeys...)...)
+		// 定级仍满足 D07 的默认 20 个有效配对，改由廉价数学模板提供，
+		// 避免为了保留等级断言重复生成其余能力题。
+		if _, err := e.app.DB.Exec(e.ctx, `UPDATE probe_items SET generator=jsonb_set(generator,'{instances,full}','20'::jsonb) WHERE builtin_key='inspection/aime_math/1'`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := e.app.DB.Exec(e.ctx, `UPDATE probe_items SET generator=jsonb_set(generator,'{parameters,target_tokens}','8192'::jsonb) WHERE generator->>'template_id'='long_context'`); err != nil {
-			t.Fatal(err)
-		}
-		admin.must("PUT", "/api/admin/inspection/checks/A05", map[string]any{"thresholds": map[string]float64{"probe_tokens": 8192}}, nil)
+		compactInspectionItems(t, e, admin)
 	}
 	e.app.Quality.Wait = func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
 	var before, after []byte
@@ -233,6 +234,32 @@ func newInspectionPricingFixture(t *testing.T, compact ...bool) *inspectionPrici
 	return f
 }
 
+// 仅调整独立测试库中的题面规模及 A05 边界探针输入长度，保留采样数和判定门槛。
+// 128K 及上下文边界的默认大载荷由正式上架完整轮统一覆盖，生产默认设置不变。
+func compactInspectionItems(t *testing.T, e *env, admin *client) {
+	t.Helper()
+	if _, err := e.app.DB.Exec(e.ctx, `UPDATE probe_items SET generator=jsonb_set(generator,'{parameters}','{"houses":4,"attributes":3}'::jsonb) WHERE generator->>'template_id'='zebra'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.app.DB.Exec(e.ctx, `UPDATE probe_items SET generator=jsonb_set(generator,'{parameters,target_tokens}','8192'::jsonb) WHERE generator->>'template_id'='long_context'`); err != nil {
+		t.Fatal(err)
+	}
+	admin.must("PUT", "/api/admin/inspection/checks/A05", map[string]any{"thresholds": map[string]float64{"probe_tokens": 8192}}, nil)
+}
+
+// 下线无关题而保留题库记录；旧题、检测规则与恢复采样设置均继续走真实实现。
+func selectInspectionItems(t *testing.T, e *env, builtinKeys ...string) {
+	t.Helper()
+	if _, err := e.app.DB.Exec(e.ctx, `UPDATE probe_items SET status='retired' WHERE suite LIKE 'inspection_%' AND NOT (builtin_key=ANY($1))`, builtinKeys); err != nil {
+		t.Fatal(err)
+	}
+	var active int
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT count(*) FROM probe_items WHERE suite LIKE 'inspection_%' AND status='active' AND builtin_key=ANY($1)`, builtinKeys), &active)
+	if active != len(builtinKeys) {
+		t.Fatalf("定向质检题缺失：期望 %v，实际 %d 道", builtinKeys, active)
+	}
+}
+
 func calibrateInspectionPricingCheck(t *testing.T, admin *client, key string) {
 	t.Helper()
 	// 只为离线夹具激活计算路径；这不是上线所需的真实 A/A、阳性对照校准。
@@ -241,7 +268,7 @@ func calibrateInspectionPricingCheck(t *testing.T, admin *client, key string) {
 
 func (f *inspectionPricingFixture) execute(t *testing.T, id int64) inspectionPricingSummary {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(f.e.ctx, 90*time.Second)
+	ctx, cancel := context.WithTimeout(f.e.ctx, 3*time.Minute)
 	defer cancel()
 	var batch string
 	mustScan(t, f.e.app.DB.QueryRow(ctx, `SELECT batch_id FROM probe_runs WHERE id=$1`, id), &batch)
@@ -302,6 +329,16 @@ func TestInspectionPricingFormalOnboardingQuickAndAppraisal(t *testing.T) {
 	if full != 90 || generated != full || bad != 0 || legacy != 0 {
 		t.Fatalf("完整质检应为 90 次新题请求：总数=%d 版本=%d 错误=%d 旧题=%d", full, generated, bad, legacy)
 	}
+	// 同时承接影子生命周期原来的完整模板判分覆盖：逐个稳定内置键均须有
+	// 成功证据，并精确验证全部生成器版本（含静态多步与上下文边界探针）。
+	var builtinItems, missingItems int
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT count(*),count(*) FILTER (WHERE NOT EXISTS(SELECT 1 FROM probe_results pr WHERE pr.run_id=$1 AND pr.item_id=i.id AND pr.passed IS TRUE)) FROM probe_items i WHERE i.suite LIKE 'inspection_%' AND i.status='active' AND i.builtin_key IS NOT NULL`, f.onboarding), &builtinItems, &missingItems)
+	var versions []string
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT array_agg(DISTINCT generator_version ORDER BY generator_version) FROM probe_results WHERE run_id=$1`, f.onboarding), &versions)
+	wantVersions := []string{"aime_math/1", "code_output/1", "constraints/2", "context_boundary/1", "knights_knaves/1", "long_context/1", "register_machine/1", "static-1", "string_date/1", "zebra/2"}
+	if builtinItems != 31 || missingItems != 0 || !reflect.DeepEqual(versions, wantVersions) {
+		t.Fatalf("默认内置题覆盖不完整：内置键=%d 缺失=%d 版本=%v", builtinItems, missingItems, versions)
+	}
 	var same, singleSnapshot bool
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT v.checks=r.summary->'checks', (SELECT count(*)=1 FROM probe_runs p WHERE p.batch_id=r.batch_id AND p.execution_snapshot<>'{}'::jsonb) FROM quality_verdicts v JOIN probe_runs r ON r.id=v.run_id WHERE v.run_id=$1`, f.onboarding), &same, &singleSnapshot)
 	if !same || !singleSnapshot {
@@ -331,6 +368,9 @@ func TestInspectionPricingFormalOnboardingQuickAndAppraisal(t *testing.T) {
 	if upstream.Appraisal.Configured || upstream.Appraisal.Multiplier != nil {
 		t.Fatal("未配置 appraisal_base 时不应提供估价")
 	}
+	// 全题完整轮已经验证默认难度；快检保留默认 25 请求与所有判定断言，
+	// 只把重复斑马题面的维度缩小。
+	compactInspectionItems(t, e, f.admin)
 	quickID, summary := f.run(t, "scheduled")
 	var mode string
 	var quick int
@@ -341,7 +381,7 @@ func TestInspectionPricingFormalOnboardingQuickAndAppraisal(t *testing.T) {
 }
 
 func TestInspectionPricingPermissionGateAndEffectiveRecovery(t *testing.T) {
-	f := newInspectionPricingFixture(t, true)
+	f := newInspectionPricingFixture(t, "inspection/model-permission/1")
 	f.transport.setBad("A04")
 	_, failed := f.run(t, "admin")
 	confirmed := false
@@ -394,7 +434,8 @@ func TestInspectionPricingPermissionGateAndEffectiveRecovery(t *testing.T) {
 }
 
 func TestInspectionPricingDiscountAppealAndQuickHistory(t *testing.T) {
-	f := newInspectionPricingFixture(t, true)
+	// D09 默认要求三个配对；保留三种 8K 题和完整输出项，不降低门槛。
+	f := newInspectionPricingFixture(t, "inspection/output/2", "inspection/context/0/1", "inspection/context/1/1", "inspection/context/2/1")
 	f.transport.setBad("D08")
 	_, uncalibrated := f.run(t, "admin")
 	if uncalibrated.Checks["D08"].Status != "fail" || uncalibrated.Checks["D08"].Applied || uncalibrated.QualityFactor == nil || !approx(*uncalibrated.QualityFactor, 1) {
@@ -455,6 +496,9 @@ func TestInspectionPricingTrialAutomaticallySamplesWithoutApplying(t *testing.T)
 	if _, err := quality.SyncInspectionItems(e.ctx, e.app.DB); err != nil {
 		t.Fatal(err)
 	}
+	// 试运行仍执行所有内置项及默认 90/25 请求；大载荷与默认难度已由
+	// 正式上架完整轮验证，这里只验证试运行隔离、旧判定、暂估价与规划器。
+	compactInspectionItems(t, e, admin)
 	var policySuites []string
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT suites FROM detection_policies WHERE platform='anthropic' AND auth_type=''`), &policySuites)
 	for _, suite := range policySuites {
@@ -517,7 +561,7 @@ func TestInspectionPricingTrialAutomaticallySamplesWithoutApplying(t *testing.T)
 			}
 			var batch string
 			mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT batch_id FROM probe_runs WHERE id=$1`, id), &batch)
-			ctx, cancel := context.WithTimeout(e.ctx, 90*time.Second)
+			ctx, cancel := context.WithTimeout(e.ctx, 3*time.Minute)
 			defer cancel()
 			if err := e.app.Quality.ExecuteBatch(ctx, batch); err != nil {
 				t.Fatal(err)
@@ -675,7 +719,7 @@ func inspectionPricingLegacySuites(a quality.Assessment) map[string]any {
 }
 
 func TestInspectionPricingProductionAvailabilityGateAndRecovery(t *testing.T) {
-	f := newInspectionPricingFixture(t, true)
+	f := newInspectionPricingFixture(t, "inspection/model-permission/1")
 	calibrateInspectionPricingCheck(t, f.admin, "D13")
 	st, err := inspection.Load(f.e.ctx, f.e.app.DB)
 	if err != nil {
@@ -714,7 +758,8 @@ func TestInspectionPricingProductionAvailabilityGateAndRecovery(t *testing.T) {
 		var mode string
 		mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT r.mode,count(pr.*),count(*) FILTER(WHERE pr.check_key='D13' AND pr.instance_idx>=2000),count(*) FILTER(WHERE pr.check_key='D13' AND pr.instance_idx>=2000 AND (pr.http_status<>200 OR pr.passed IS NOT TRUE)) FROM probe_runs r JOIN probe_results pr ON pr.run_id=r.id WHERE r.id=$1 GROUP BY r.mode`, id), &mode, &requests, &shortRequests, &shortFailures)
 		fresh := recovered.Checks["D13"]
-		if mode != "full" || requests != 110 || shortRequests != 20 || shortFailures != 0 || recovered.Verdict != "normal" || fresh.Status != "pass" || fresh.Evidence.Source != "recovery_probe" || fresh.Samples.Paired != 20*attempt {
+		// 31 个定向常规请求（20 数学、10 低档锚点、1 权限）及默认 20 个恢复样本。
+		if mode != "full" || requests != 51 || shortRequests != 20 || shortFailures != 0 || recovered.Verdict != "normal" || fresh.Status != "pass" || fresh.Evidence.Source != "recovery_probe" || fresh.Samples.Paired != 20*attempt {
 			t.Fatalf("恢复须累计最近两轮每次 20 个被测新样本，旧生产窗口不得覆盖：模式=%s 请求=%d 短题=%d 失败=%d 摘要=%+v", mode, requests, shortRequests, shortFailures, recovered)
 		}
 		var referenceExtras int

@@ -18,7 +18,7 @@ import (
 func TestInspectionBankShadowLifecycle(t *testing.T) {
 	e := setup(t)
 	upstreamID, accountID, _ := inspectionProbeAccount(t, e)
-	// 四轮质检包含参数化题目生成，为 CI 的 race 运行预留整体时限。
+	// 四轮检查影子隔离，保留宽裕的 CI race 时限。
 	ctx, cancel := context.WithTimeout(e.ctx, 4*time.Minute)
 	defer cancel()
 	admin := e.login("admin@market.test", "admin-password-1")
@@ -37,6 +37,10 @@ func TestInspectionBankShadowLifecycle(t *testing.T) {
 	if n, err := quality.SyncInspectionItems(ctx, e.app.DB); err != nil || n == 0 {
 		t.Fatalf("同步题目失败：%d %v", n, err)
 	}
+	// 完整默认题库的全部内置键和生成器判分由正式上架完整轮验证。
+	// 影子隔离只需代表性能力题、三种 8K 上下文、两步工具与完整输出，
+	// 仍同时走参数化、静态、多步及低档推理锚点路径。
+	selectInspectionItems(t, e, "inspection/aime_math/1", "inspection/context/0/1", "inspection/context/1/1", "inspection/context/2/1", "inspection/tools/1", "inspection/output/2")
 	e.app.Quality.RegisterInstance = func(instance quality.ProbeRegistration) {
 		if instance.CheckKey == "" {
 			return
@@ -85,7 +89,7 @@ func TestInspectionBankShadowLifecycle(t *testing.T) {
 	fullID, healthy := run()
 	var count, failed, actualTokens, versions int
 	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT count(*),count(*) FILTER (WHERE passed IS NOT TRUE),count(*) FILTER (WHERE input_tokens>0),count(DISTINCT generator_version) FROM probe_results WHERE run_id=$1 AND suite LIKE 'inspection_%'`, fullID), &count, &failed, &actualTokens, &versions)
-	if count < 70 || failed != 0 || actualTokens != count || versions < 9 {
+	if count != 22 || failed != 0 || actualTokens != count || versions != 3 {
 		rows, err := e.app.DB.Query(ctx, `SELECT item_id,step,passed,COALESCE(error_class,''),error_body,raw_excerpt FROM probe_results WHERE run_id=$1 AND suite LIKE 'inspection_%' AND passed IS NOT TRUE LIMIT 25`, fullID)
 		if err == nil {
 			defer rows.Close()
@@ -96,6 +100,11 @@ func TestInspectionBankShadowLifecycle(t *testing.T) {
 		}
 		t.Logf("摘要：%+v", healthy)
 		t.Fatalf("生成或静态题未正确作答：结果=%d 错误=%d 用量=%d 版本=%d", count, failed, actualTokens, versions)
+	}
+	var missing int
+	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT count(*) FROM probe_items i WHERE i.suite LIKE 'inspection_%' AND i.status='active' AND NOT EXISTS(SELECT 1 FROM probe_results pr WHERE pr.run_id=$1 AND pr.item_id=i.id AND pr.passed IS TRUE)`, fullID), &missing)
+	if missing != 0 {
+		t.Fatalf("代表性影子题缺少判分证据：%d", missing)
 	}
 	if healthy["shadow"].(map[string]any)["applied"] != false {
 		t.Fatal("新题参与正式判定")
