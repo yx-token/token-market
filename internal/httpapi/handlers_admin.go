@@ -466,6 +466,11 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, items)
 }
 
+// probeGeneratorTemplates 返回题库生成器模板注册表，供管理界面做选项与提示
+func (s *Server) probeGeneratorTemplates(w http.ResponseWriter, _ *http.Request) error {
+	return ok(w, quality.GeneratorTemplates())
+}
+
 func (s *Server) createItem(w http.ResponseWriter, r *http.Request) error {
 	var in quality.Item
 	if err := httpx.Decode(r, &in); err != nil {

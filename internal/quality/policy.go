@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DueGin/token-market/internal/inspection"
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/platform/httpx"
 	"github.com/DueGin/token-market/internal/quality/thirdparty"
@@ -452,6 +453,12 @@ func validateItem(it Item) error {
 	case "iq", "reasoning", "long_context", "inspection_authenticity", "inspection_capability", "inspection_context", "inspection_function", "inspection_output", "inspection_performance":
 	default:
 		return httpx.BadRequest("INVALID_SUITE", "item suite must be iq, reasoning or long_context")
+	}
+	// 质检项键须为注册表已知项；拼错的键不会被任何判定读取，题目会被静默忽略。
+	if it.CheckKey != "" {
+		if _, ok := inspection.Lookup(it.CheckKey); !ok {
+			return httpx.BadRequest("INVALID_CHECK_KEY", "未知质检项："+it.CheckKey)
+		}
 	}
 	d, err := parseGenerator(it.Generator)
 	if err != nil {

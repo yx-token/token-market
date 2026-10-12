@@ -85,9 +85,16 @@ describe('逐题实例配对', () => {
     const base = { item_id: 7, suite: 'inspection_function', category: 'tools', prompt: '题面', models: [], passed: true, ttft_ms: 12, duration_ms: 24, output_tokens: 3, reasoning_tokens: 4 }
     const detail: RunDetail = { run, reference: { ...run, id: 2, upstream_id: 3 }, results: [{ ...base, instance_idx: 0, step: 0 }, { ...base, instance_idx: 0, step: 1 }, { ...base, instance_idx: 1, step: 0 }], reference_results: [{ ...base, instance_idx: 1, step: 0, passed: true }, { ...base, instance_idx: 0, step: 1, passed: false }, { ...base, instance_idx: 0, step: 0, passed: true }] }
     const wrapper = mount(ProbeRunDetail, { props: { detail } })
-    expect(wrapper.get('[data-result-key="7:0:0"]').findAll('td')[3].text()).toBe('通过')
-    expect(wrapper.get('[data-result-key="7:0:1"]').findAll('td')[3].text()).toBe('未通过')
-    expect(wrapper.get('[data-result-key="7:1:0"]').findAll('td')[3].text()).toBe('通过')
+    // 原断言依赖列下标，把「套件 / 类别」列并进「题目」列后就读到了耗时列；
+    // 改为在逐题表内按表头文本定位「基线」列，断言强度不变（仍校验配对后的基线结果）。
+    const detailTable = wrapper.get('[data-testid="probe-run-results"]')
+    const headers = detailTable.findAll('thead th').map((th) => th.text())
+    const refCol = headers.indexOf('基线')
+    expect(refCol).toBeGreaterThan(0)
+    const refText = (key: string) => detailTable.get(`[data-result-key="${key}"]`).findAll('td')[refCol].text()
+    expect(refText('7:0:0')).toBe('通过')
+    expect(refText('7:0:1')).toBe('未通过')
+    expect(refText('7:1:0')).toBe('通过')
     expect(probeResultKey({ item_id: 7 })).toBe('7:0:0')
   })
 })

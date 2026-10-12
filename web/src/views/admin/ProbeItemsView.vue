@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { admin, seller } from '@/api'
-import type { Grader, ProbeGenerator, ProbeItem, ProbeRequest, Upstream, VendorConfig, VendorView } from '@/api/types'
+import type { GeneratorTemplate, Grader, InspectionCheckDefinition, ProbeGenerator, ProbeItem, ProbeRequest, Upstream, VendorConfig, VendorView } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { filterByKeyword, useClientPage, useListQuery } from '@/composables/useListQuery'
 import { useToast } from '@/stores/toast'
 import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
 import DataTable from '@/components/DataTable.vue'
+import SearchSelect from '@/components/common/SearchSelect.vue'
+import type { SelectOption } from '@/components/common/searchSelect'
 import TabBar from '@/components/TabBar.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
@@ -32,11 +34,22 @@ const { queryParams, resetQuery, handleQuery } = useListQuery({
 
 const items = useLoader(() => admin.items(queryParams.status), [] as ProbeItem[] | null)
 const refs = useLoader(() => admin.references(), [] as Upstream[] | null)
+const checks = ref<InspectionCheckDefinition[]>([])
+// 质检项来自后端注册表；已存题目若引用了未注册的键，仍保留为选项以便看清并改正。
+const checkOptions = computed(() => {
+  const list = checks.value.map((c) => ({ value: c.key, text: `${c.key} · ${c.name}` }))
+  if (form.checkKey && !list.some((o) => o.value === form.checkKey)) list.unshift({ value: form.checkKey, text: `${form.checkKey}（未注册）` })
+  return list
+})
 const { busy, run } = useAction()
 const editing = ref<ProbeItem | null>(null)
 const show = ref(false)
 function initialForm() {
-  return { suite: 'iq', category: '', prompt: '', grader: '{"type": "exact", "answer": ""}', platforms: '', models: '', maxTokens: 1024, effort: '', checkKey: '', request: '{}', generator: '{}', modes: [] as ('full' | 'quick')[], weight: 1 }
+  return {
+    suite: 'iq', category: '', prompt: '', grader: '{"type": "exact", "answer": ""}',
+    platforms: [] as string[], models: [] as string[], maxTokens: 1024, effort: '', checkKey: '',
+    request: '{}', generator: '{}', modes: [] as ('full' | 'quick')[], weight: 1,
+  }
 }
 const form = reactive(initialForm())
 const suiteOptions = [
@@ -58,6 +71,13 @@ const resume = ref<Upstream | null>(null)
 const vendors = ref<VendorView[]>([])
 // 基线账号不受厂商开放状态限制，接入方式从本系统已实现的全部方式中选
 const allVendors = ref<VendorConfig[]>([])
+// 模型与厂商选项来自注册表；已存数据里不在表中的值由 SearchSelect 保留并标注
+const priceModels = ref<string[]>([])
+const templates = ref<GeneratorTemplate[]>([])
+const platformOptions = computed<SelectOption[]>(() =>
+  allVendors.value.map((v) => ({ value: v.platform, text: `${label('platform', v.platform).text}（${v.platform}）` })),
+)
+const modelOptions = computed<SelectOption[]>(() => priceModels.value.map((m) => ({ value: m, text: m })))
 const refAuthTypes = computed(() => allVendors.value.find((v) => v.platform === newRef.platform)?.supported_auth_types ?? [])
 watch(refAuthTypes, (ts) => {
   if (ts.length && !ts.includes(newRef.authType)) newRef.authType = ts[0]
@@ -70,6 +90,11 @@ onMounted(async () => {
   refs.load()
   vendors.value = (await seller.vendors().catch(() => null)) ?? []
   allVendors.value = (await admin.vendors().catch(() => null)) ?? []
+  checks.value = (await admin.inspectionChecks().catch(() => null)) ?? []
+  // 选项接口失败时降级为空列表，SearchSelect 允许手动录入，不阻塞保存
+  const st = await admin.settings().catch(() => null)
+  priceModels.value = st?.price_models ?? []
+  templates.value = (await admin.probeGeneratorTemplates().catch(() => null)) ?? []
 })
 
 const filtered = computed(() => {
@@ -108,8 +133,8 @@ function openEdit(it: ProbeItem) {
     category: it.category,
     prompt: it.prompt,
     grader: JSON.stringify(it.grader),
-    platforms: it.platforms.join(', '),
-    models: it.models.join(', '),
+    platforms: [...it.platforms],
+    models: [...it.models],
     maxTokens: it.max_tokens,
     effort: it.reasoning_effort ?? '',
     checkKey: it.check_key ?? '',
@@ -147,8 +172,8 @@ async function save() {
     category: form.category,
     prompt: form.prompt,
     grader,
-    platforms: form.platforms.split(/[,\s]+/).filter(Boolean),
-    models: form.models.split(/[,\s]+/).filter(Boolean),
+    platforms: [...form.platforms],
+    models: [...form.models],
     max_tokens: Number(form.maxTokens),
     reasoning_effort: form.effort || undefined,
     status: editing.value?.status ?? 'active',
@@ -358,7 +383,10 @@ async function removeRef(u: Upstream) {
     <div class="grid grid-cols-3 gap-3">
       <div>
         <label class="label" for="icheck">质检项键</label>
-        <input id="icheck" v-model="form.checkKey" class="input" placeholder="D07 / D09 / A11.tools" />
+        <select id="icheck" v-model="form.checkKey" class="input">
+          <option value="">不关联（旧题）</option>
+          <option v-for="o in checkOptions" :key="o.value" :value="o.value">{{ o.text }}</option>
+        </select>
       </div>
       <div>
         <label class="label" for="iweight">题族权重</label>
@@ -390,15 +418,18 @@ async function removeRef(u: Upstream) {
       <label class="label" for="igenerator">生成器定义（JSON）</label>
       <textarea id="igenerator" v-model="form.generator" class="input font-mono" rows="5" />
       <p class="hint">静态题填 {}；生成题包含 template_id、version、parameters 和 instances，例如 {"template_id":"register_machine","version":"1","parameters":{"operations":[30,60]},"instances":{"full":8,"quick":4}}。模板版本不可省略；参数域不接受代码。</p>
+      <p v-if="templates.length" class="hint">
+        已注册模板：<code v-for="t in templates" :key="t.id" class="mr-2">{{ t.id }}（版本 {{ t.versions.join(' / ') }}）</code>
+      </p>
     </div>
     <div class="grid grid-cols-3 gap-3">
       <div>
         <label class="label" for="iplat">适用平台（留空为全部）</label>
-        <input id="iplat" v-model="form.platforms" class="input" placeholder="anthropic, openai" />
+        <SearchSelect id="iplat" v-model="form.platforms" :options="platformOptions" multiple placeholder="选择厂商" />
       </div>
       <div>
         <label class="label" for="imodels">适用模型（留空为全部）</label>
-        <input id="imodels" v-model="form.models" class="input" placeholder="gpt-6-astra" />
+        <SearchSelect id="imodels" v-model="form.models" :options="modelOptions" multiple placeholder="选择模型" />
       </div>
       <div>
         <label class="label" for="ieff">推理强度（可选）</label>

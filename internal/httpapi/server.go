@@ -215,6 +215,7 @@ func (s *Server) Handler() http.Handler {
 		{"GET /api/admin/probe-item-stats", s.adminProbeItemStats},
 		{"GET /api/admin/probe-items/{id}/results", s.adminProbeItemResults},
 		{"GET /api/admin/probe-items", s.listItems},
+		{"GET /api/admin/probe-generator-templates", s.probeGeneratorTemplates},
 		{"POST /api/admin/probe-items", s.createItem},
 		{"PUT /api/admin/probe-items/{id}", s.updateItem},
 		{"POST /api/admin/probe-items/{id}/retire", s.retireItem},

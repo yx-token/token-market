@@ -35,3 +35,19 @@ export function inspectionSummary(checks?: Record<string, InspectionCheckResult>
 export function probeResultKey(result: Pick<ProbeRunResult, 'item_id' | 'instance_idx' | 'step'>): string {
   return `${result.item_id ?? ''}:${result.instance_idx ?? 0}:${result.step ?? 0}`
 }
+
+// 检测套件代码的中文名；未知套件保留原值
+export const probeSuiteNames: Record<string, string> = {
+  iq: '智力',
+  reasoning: '推理',
+  long_context: '长上下文',
+  inspection_capability: '能力质检',
+  inspection_context: '上下文质检',
+  inspection_function: '功能质检',
+  availability: '可用性',
+  latency: '延迟',
+}
+
+export function probeSuiteText(suite: string): string {
+  return probeSuiteNames[suite] ?? suite
+}

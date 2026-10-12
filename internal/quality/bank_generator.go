@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -89,6 +90,36 @@ func bankInt(p map[string]any, key string, fallback, low, high int, rng *rand.Ra
 
 var bankGenerators = map[string]func(*rand.Rand, map[string]any) (generatedProbe, error){}
 
+// 模板的合法参数域；parseGenerator 依它拒绝未注册参数，管理界面依它提示可填参数
+var bankGeneratorParams = map[string]string{
+	"zebra": " houses attributes ", "knights_knaves": " people ", "register_machine": " operations ",
+	"aime_math":   " kind n modulus remainder digit_modulus excluded_multiple base exponent_base exponent_power length ones run_limit width height blocked_count ",
+	"code_output": " kind cases ", "string_date": " kind length shift year start_day business_days elapsed_hours holiday_count ",
+	"constraints": " lang ", "long_context": " target_tokens variant ",
+}
+
+// GeneratorTemplate 是一个生成器模板及其可用版本、参数域，供管理界面选项展示
+type GeneratorTemplate struct {
+	ID         string   `json:"id"`
+	Versions   []string `json:"versions"`
+	Parameters []string `json:"parameters"`
+}
+
+// GeneratorTemplates 列出已注册的生成器模板；与 parseGenerator 使用同一注册表，避免两边漂移
+func GeneratorTemplates() []GeneratorTemplate {
+	out := make([]GeneratorTemplate, 0, len(bankGenerators))
+	for id := range bankGenerators {
+		versions := []string{"1"}
+		if bankGeneratorVersion(id, "2") {
+			versions = append(versions, "2")
+		}
+		out = append(out, GeneratorTemplate{ID: id, Versions: versions,
+			Parameters: strings.Fields(bankGeneratorParams[id])})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
 func parseGenerator(raw json.RawMessage) (*generatorDefinition, error) {
 	if len(raw) == 0 || string(raw) == "{}" {
 		return nil, nil
@@ -100,12 +131,7 @@ func parseGenerator(raw json.RawMessage) (*generatorDefinition, error) {
 	if !bankGeneratorVersion(d.TemplateID, d.Version) || bankGenerators[d.TemplateID] == nil {
 		return nil, errors.New("生成器模板或版本未注册")
 	}
-	allowed := map[string]string{
-		"zebra": " houses attributes ", "knights_knaves": " people ", "register_machine": " operations ",
-		"aime_math":   " kind n modulus remainder digit_modulus excluded_multiple base exponent_base exponent_power length ones run_limit width height blocked_count ",
-		"code_output": " kind cases ", "string_date": " kind length shift year start_day business_days elapsed_hours holiday_count ",
-		"constraints": " lang ", "long_context": " target_tokens variant ",
-	}
+	allowed := bankGeneratorParams
 	for key := range d.Parameters {
 		if !strings.Contains(allowed[d.TemplateID], " "+key+" ") {
 			return nil, fmt.Errorf("生成器 %s 未注册参数 %s", d.TemplateID, key)

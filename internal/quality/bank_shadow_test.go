@@ -141,3 +141,17 @@ func TestInspectionGeneratorValidation(t *testing.T) {
 		t.Fatalf("合法生成题不应要求静态题面：%v", err)
 	}
 }
+
+func TestValidateItemCheckKey(t *testing.T) {
+	item := Item{Suite: "inspection_capability", MaxTokens: 32, Prompt: "题面", Grader: Grader{Type: "exact", Answer: "1"}, Generator: json.RawMessage(`{}`)}
+	for _, key := range []string{"", "D07", "A11.tools"} {
+		item.CheckKey = key
+		if err := validateItem(item); err != nil {
+			t.Fatalf("合法质检项 %q 被拒绝：%v", key, err)
+		}
+	}
+	item.CheckKey = "D7"
+	if err := validateItem(item); err == nil {
+		t.Fatal("未注册质检项未被拒绝")
+	}
+}

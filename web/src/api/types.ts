@@ -882,6 +882,8 @@ export interface ProbeRunResult {
   effort?: string
   flags?: string[]
   error_body?: string
+  /** 标准答案，仅管理员明细接口返回；卖家 / 买家侧响应不携带 */
+  expected_answer?: string
 }
 
 export interface InspectionAppraisal {
@@ -1040,6 +1042,13 @@ export interface ProbeGenerator {
   version?: string
   parameters?: Record<string, unknown>
   instances?: { full?: number; quick?: number }
+}
+
+/** 题库生成器模板的注册信息（GET /api/admin/probe-generator-templates） */
+export interface GeneratorTemplate {
+  id: string
+  versions: string[]
+  parameters: string[]
 }
 
 export interface ProbeItem {

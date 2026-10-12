@@ -10,7 +10,7 @@ import VendorsView from '@/views/admin/VendorsView.vue'
 import DetectionView from '@/views/admin/DetectionView.vue'
 import type { InspectionCheckDefinition, InspectionSettings, Policy, VendorConfig } from '@/api/types'
 
-vi.mock('@/api', () => ({ admin: { inspectionSettings: vi.fn(), updateInspectionSettings: vi.fn(), inspectionChecks: vi.fn(), updateInspectionCheck: vi.fn(), vendors: vi.fn(), updateVendor: vi.fn(), policies: vi.fn(), providers: vi.fn(), upsertPolicy: vi.fn() } }))
+vi.mock('@/api', () => ({ admin: { inspectionSettings: vi.fn(), updateInspectionSettings: vi.fn(), inspectionChecks: vi.fn(), updateInspectionCheck: vi.fn(), vendors: vi.fn(), updateVendor: vi.fn(), policies: vi.fn(), providers: vi.fn(), upsertPolicy: vi.fn(), settings: vi.fn(), upstreams: vi.fn(), probeGeneratorTemplates: vi.fn() } }))
 const settings: InspectionSettings = { mode: 'trial', check_overrides: {}, grade_thresholds: { S: 1.02, A: 0.93, B: 0.82, C: 0.65 }, grade_hysteresis: 0.02, downgrade_confirmations: 2, s_requirements: { gate_free_days: 30, availability_days: 7, min_availability: 0.995 }, scheduling: { enabled: false, minimum_grade: 'B', strategy: 'quality_adjusted' }, timeouts: { full_minutes: 75, quick_minutes: 20 }, limits: { account_parallelism: 2, global_parallelism: 32 }, token_budgets: { full: { input_tokens_per_side: 1300000, output_tokens_per_side: 640000 }, quick: { input_tokens_per_side: 80000, output_tokens_per_side: 160000 } }, future_setting: { preserved: true } }
 const definition: InspectionCheckDefinition = { key: 'A15', name: '参数行为指纹', category: 'authenticity', role: 'gate', factor_group: null, enabled: false, calibrated: false, coefficients: {}, thresholds: { min_samples: 10 }, advice: '先做 A/A 校准。', calibration_note: '' }
 const dialog = defineComponent({ props: ['open'], template: '<section v-if="open"><slot /><slot name="footer" /></section>' })
@@ -97,12 +97,35 @@ describe('质检后台设置', () => {
     vi.mocked(admin.policies).mockResolvedValue([policy])
     vi.mocked(admin.providers).mockResolvedValue([])
     vi.mocked(admin.upsertPolicy).mockResolvedValue(policy)
+    vi.mocked(admin.settings).mockResolvedValue({ price_models: [] } as any)
+    vi.mocked(admin.upstreams).mockResolvedValue([])
+    vi.mocked(admin.vendors).mockResolvedValue([])
+    vi.mocked(admin.probeGeneratorTemplates).mockResolvedValue([])
     const wrapper = await adminPage(DetectionView)
     await wrapper.findAll('button').find((button) => button.text() === '编辑')!.trigger('click')
-    expect(wrapper.text()).toContain('inspection_context')
-    expect(wrapper.text()).toContain('inspection_performance')
+    // 套件选项来自后端 validSuites；打开面板可见全部质检套件
+    const suiteTrigger = wrapper.get('#ps')
+    await suiteTrigger.trigger('click')
+    await flushPromises()
+    const panel = document.body.querySelector('#ps-listbox')!
+    expect(panel.textContent).toContain('inspection_context')
+    expect(panel.textContent).toContain('inspection_performance')
+    // 关闭套件面板后继续填写其余字段
+    await suiteTrigger.trigger('keydown', { key: 'Escape' })
+    await flushPromises()
     await wrapper.get('#policy-parallelism').setValue(2)
-    await wrapper.get('#policy-full-triggers').setValue('onboarding, appeal')
+    // 触发类型是多选 SearchSelect：编辑时预填了 onboarding/admin/appeal，取消 admin 后保存
+    const trigTrigger = wrapper.get('#policy-full-triggers')
+    await trigTrigger.trigger('click')
+    await flushPromises()
+    const trigPanel = document.body.querySelector('#policy-full-triggers-listbox')!
+    const trigOpts = [...trigPanel.querySelectorAll<HTMLElement>('.ss-opt')]
+    trigOpts.find((li) => li.textContent?.includes('平台检测'))!.click()
+    await flushPromises()
+    ;[...trigPanel.querySelectorAll<HTMLElement>('.ss-opt')].find((li) => li.textContent?.includes('恢复复测'))!.click()
+    await flushPromises()
+    await trigTrigger.trigger('keydown', { key: 'Escape' })
+    await flushPromises()
     await wrapper.get('#policy-token-budgets').setValue('{"quick":{"input_tokens_per_side":80000,"output_tokens_per_side":160000}}')
     await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
     await flushPromises()

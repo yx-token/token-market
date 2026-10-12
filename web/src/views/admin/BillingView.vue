@@ -11,6 +11,8 @@ import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import JsonView from '@/components/JsonView.vue'
+import SearchSelect from '@/components/common/SearchSelect.vue'
+import type { SelectOption } from '@/components/common/searchSelect'
 import { anomalyRules } from '@/utils/labels'
 import { dateTime, money } from '@/utils/format'
 
@@ -27,6 +29,21 @@ const { busy, run } = useAction()
 const viewing = ref<Anomaly | null>(null)
 const showAdjust = ref(false)
 const adj = reactive({ user: '', amount: '', reason: '', anomaly: '' })
+// 调账目标买家：按邮箱 / ID 远程搜索，失败时降级为空，SearchSelect 仍可选中已预填值
+const userLoading = ref(false)
+async function searchUsers(q: string): Promise<SelectOption[]> {
+  userLoading.value = true
+  try {
+    const list = (await admin.orgUsers(q)) ?? []
+    return list.map((u) => ({
+      value: String(u.id),
+      text: `#${u.id} · ${u.email}${u.status && u.status !== 'active' ? ` · ${u.status}` : ''}`,
+      keywords: `${u.id} ${u.email}`,
+    }))
+  } finally {
+    userLoading.value = false
+  }
+}
 onMounted(anomalies.load)
 
 const filtered = computed(() => {
@@ -162,8 +179,15 @@ async function adjust() {
   <ModalDialog v-model:open="showAdjust" title="人工调账">
     <div class="grid grid-cols-2 gap-3">
       <div>
-        <label class="label" for="au">买家用户 ID</label>
-        <input id="au" v-model="adj.user" class="input" inputmode="numeric" />
+        <label class="label" for="au">买家用户</label>
+        <SearchSelect
+          id="au"
+          v-model="adj.user"
+          :options="[]"
+          :remote="searchUsers"
+          :loading="userLoading"
+          placeholder="搜索邮箱或用户 ID"
+        />
       </div>
       <div>
         <label class="label" for="aa">金额（正数加、负数扣）</label>
