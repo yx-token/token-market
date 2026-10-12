@@ -16,7 +16,7 @@ func assessFormal(outcomes []Outcome, th Thresholds, configurations ...Inspectio
 		if o.Target.HTTPStatus == 0 && o.Target.ErrorClass == "" {
 			continue
 		}
-		if !strings.HasPrefix(o.Suite, "inspection_") {
+		if o.CheckKey == "" && !strings.HasPrefix(o.Suite, "inspection_") {
 			o.RefHistRate = nil
 			if !eligiblePair(o) {
 				o.Suite = "availability"
@@ -298,7 +298,8 @@ func inspectReasoning(c *inspection.Check, rows []Outcome, d inspection.Effectiv
 		}
 	}
 	for _, o := range rows {
-		if o.CheckKey != "D07" || o.InstanceIdx >= 1000 {
+		// 旧套件的型号专用静态题只比较答题能力，没有参数化 high/low 锚点。
+		if o.CheckKey != "D07" || o.InstanceIdx >= 1000 || !strings.HasPrefix(o.Suite, "inspection_") {
 			continue
 		}
 		if len(anchors) > 0 && !anchors[fmtInspectionKey(o.ItemID, o.InstanceIdx)] {
@@ -355,7 +356,7 @@ func inspectReasoning(c *inspection.Check, rows []Outcome, d inspection.Effectiv
 	high, low := map[string]Outcome{}, map[string]Outcome{}
 	for _, o := range rows {
 		key := fmtInspectionKey(o.ItemID, o.InstanceIdx%1000)
-		if o.CheckKey == "D07" {
+		if o.CheckKey == "D07" && strings.HasPrefix(o.Suite, "inspection_") {
 			high[key] = o
 		}
 		if o.CheckKey == "D06" {
