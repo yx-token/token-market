@@ -8,6 +8,8 @@ import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import DataTable from '@/components/DataTable.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
+import SearchSelect from '@/components/common/SearchSelect.vue'
+import type { SelectOption } from '@/components/common/searchSelect'
 import { dateTime } from '@/utils/format'
 
 const { queryParams, resetQuery, handleQuery } = useListQuery({
@@ -20,6 +22,21 @@ const kyc = useLoader(() => admin.pendingKYC(), [] as KYCItem[] | null)
 const { busy, run } = useAction()
 const showFreeze = ref(false)
 const userId = ref('')
+// 冻结 / 解冻目标用户：按邮箱 / ID 远程搜索；KYC 列表点按钮会预填
+const userLoading = ref(false)
+async function searchUsers(q: string): Promise<SelectOption[]> {
+  userLoading.value = true
+  try {
+    const list = (await admin.orgUsers(q)) ?? []
+    return list.map((u) => ({
+      value: String(u.id),
+      text: `#${u.id} · ${u.email}${u.status && u.status !== 'active' ? ` · ${u.status}` : ''}`,
+      keywords: `${u.id} ${u.email}`,
+    }))
+  } finally {
+    userLoading.value = false
+  }
+}
 onMounted(kyc.load)
 
 const filtered = computed(() => {
@@ -124,10 +141,17 @@ async function setStatus(status: string) {
   </ConsoleListPage>
 
   <ModalDialog v-model:open="showFreeze" title="冻结 / 解冻账号">
-    <p class="text-sm text-gray-500">输入用户 ID，冻结后无法登录与调用 API；解冻后恢复正常。</p>
+    <p class="text-sm text-gray-500">选择用户，冻结后无法登录与调用 API；解冻后恢复正常。</p>
     <div>
-      <label class="label" for="uid">用户 ID</label>
-      <input id="uid" v-model="userId" class="input" inputmode="numeric" placeholder="例如 42" @keyup.enter="setStatus('frozen')" />
+      <label class="label" for="uid">用户</label>
+      <SearchSelect
+        id="uid"
+        v-model="userId"
+        :options="[]"
+        :remote="searchUsers"
+        :loading="userLoading"
+        placeholder="搜索邮箱或用户 ID"
+      />
     </div>
     <template #footer>
       <button type="button" class="btn btn-secondary" @click="showFreeze = false">取消</button>

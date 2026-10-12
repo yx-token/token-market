@@ -359,6 +359,9 @@ type RunSummary struct {
 	Passed     int             `json:"passed"`
 	QueuedAt   time.Time       `json:"queued_at"`
 	FinishedAt *time.Time      `json:"finished_at,omitempty"`
+
+	// executionSnapshot 是冻结的执行快照原文，仅在 GetRunDetail 内部用于解析标准答案，不随响应返回。
+	executionSnapshot []byte
 }
 
 // RunResult 是一次检测中一道题的结果，包含题目与回答片段，仅管理员可见。
@@ -390,6 +393,10 @@ type RunResult struct {
 	ReasoningTokens int      `json:"reasoning_tokens"`
 	ResponseModel   *string  `json:"response_model,omitempty"`
 	Excerpt         *string  `json:"excerpt,omitempty"`
+	// ExpectedAnswer 是该题的标准答案，仅管理员明细接口返回；卖家/买家侧接口永不携带。
+	ExpectedAnswer string `json:"expected_answer,omitempty"`
+	// Grader 为判分器原文快照，仅用于解析标准答案，不出现在接口响应里。
+	Grader Grader `json:"-"`
 }
 
 // RunDetail 是一次检测的逐题明细；有基线对照时一并返回基线账号同批次的检测。
@@ -426,31 +433,56 @@ func UpstreamRuns(ctx context.Context, db DB, upstreamID int64, limit int) ([]Ru
 }
 
 // GetRunDetail 返回一次检测的逐题结果；被测上游的检测附带同批次基线账号的结果。
+// 标准答案从该次检测冻结的执行快照读取，没有快照的旧检测回退到题目判分器摘要。
 func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
-	rows, err := db.Query(ctx, "SELECT "+runSummaryColumns+" FROM probe_runs r WHERE r.id = $1", runID)
+	rows, err := db.Query(ctx, "SELECT "+runSummaryColumns+", r.execution_snapshot FROM probe_runs r WHERE r.id = $1", runID)
 	if err != nil {
 		return nil, err
 	}
-	runs, err := pgx.CollectRows(rows, scanRunSummary)
+	target, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunSummary, error) {
+		var s RunSummary
+		var summary, snapshot []byte
+		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &snapshot)
+		if len(summary) > 0 {
+			s.Summary = summary
+		}
+		s.executionSnapshot = snapshot
+		return s, err
+	})
 	if err != nil {
 		return nil, err
 	}
-	if len(runs) == 0 {
+	if len(target) == 0 {
 		return nil, httpx.NotFound("RUN_NOT_FOUND", "probe run not found")
 	}
-	out := &RunDetail{Run: runs[0]}
+	out := &RunDetail{Run: target[0]}
 	if out.Results, err = runResults(ctx, db, runID); err != nil {
 		return nil, err
+	}
+	answers := expectedAnswersFromSnapshot(target[0].executionSnapshot)
+	hashes := snapshotAnswerHashes(target[0].executionSnapshot)
+	for i := range out.Results {
+		r := &out.Results[i]
+		r.ExpectedAnswer = expectedAnswerFor(answers, hashes, r.ItemID, r.InstanceIdx, r.Step, r.InstanceHash, r.Grader)
 	}
 	if out.Run.Trigger == "reference" {
 		return out, nil
 	}
-	rows, err = db.Query(ctx, "SELECT "+runSummaryColumns+` FROM probe_runs r
+	rows, err = db.Query(ctx, "SELECT "+runSummaryColumns+`, r.execution_snapshot FROM probe_runs r
 		WHERE r.batch_id = $1 AND r.trigger = 'reference' ORDER BY r.id LIMIT 1`, out.Run.BatchID)
 	if err != nil {
 		return nil, err
 	}
-	refs, err := pgx.CollectRows(rows, scanRunSummary)
+	refs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunSummary, error) {
+		var s RunSummary
+		var summary, snapshot []byte
+		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &snapshot)
+		if len(summary) > 0 {
+			s.Summary = summary
+		}
+		s.executionSnapshot = snapshot
+		return s, err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -459,12 +491,19 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 		if out.RefResults, err = runResults(ctx, db, refs[0].ID); err != nil {
 			return nil, err
 		}
+		refAnswers := expectedAnswersFromSnapshot(refs[0].executionSnapshot)
+		refHashes := snapshotAnswerHashes(refs[0].executionSnapshot)
+		for i := range out.RefResults {
+			r := &out.RefResults[i]
+			r.ExpectedAnswer = expectedAnswerFor(refAnswers, refHashes, r.ItemID, r.InstanceIdx, r.Step, r.InstanceHash, r.Grader)
+		}
 	}
 	return out, nil
 }
 
 func runResults(ctx context.Context, db DB, runID int64) ([]RunResult, error) {
 	rows, err := db.Query(ctx, `SELECT pr.item_id, pr.suite, COALESCE(i.category, ''), COALESCE(i.prompt, ''), COALESCE(i.models, '{}'),
+			COALESCE(i.grader, '{}'::jsonb),
 			pr.passed, pr.http_status, pr.error_class, COALESCE(pr.ttft_ms, 0), COALESCE(pr.duration_ms, 0),
 			COALESCE(pr.output_tokens, 0), COALESCE(pr.reasoning_tokens, 0), pr.response_model, pr.raw_excerpt, pr.check_key, pr.instance_idx, pr.step, pr.instance_hash, pr.generator_version, pr.input_tokens, pr.cache_read_tokens, pr.cache_creation_tokens, pr.stop_reason, pr.effort, pr.flags, pr.error_body
 		FROM probe_results pr LEFT JOIN probe_items i ON i.id = pr.item_id
@@ -474,8 +513,13 @@ func runResults(ctx context.Context, db DB, runID int64) ([]RunResult, error) {
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunResult, error) {
 		var r RunResult
-		err := row.Scan(&r.ItemID, &r.Suite, &r.Category, &r.Prompt, &r.Models, &r.Passed, &r.HTTPStatus, &r.ErrorClass,
+		var grader []byte
+		err := row.Scan(&r.ItemID, &r.Suite, &r.Category, &r.Prompt, &r.Models, &grader,
+			&r.Passed, &r.HTTPStatus, &r.ErrorClass,
 			&r.TTFTMs, &r.DurationMs, &r.OutputTokens, &r.ReasoningTokens, &r.ResponseModel, &r.Excerpt, &r.CheckKey, &r.InstanceIdx, &r.Step, &r.InstanceHash, &r.GeneratorVersion, &r.InputTokens, &r.CacheReadTokens, &r.CacheCreationTokens, &r.StopReason, &r.Effort, &r.Flags, &r.ErrorBody)
+		if err == nil && len(grader) > 0 {
+			err = decodeInspectionJSON(grader, &r.Grader)
+		}
 		return r, err
 	})
 	if out == nil {

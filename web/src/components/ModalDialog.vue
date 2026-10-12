@@ -8,7 +8,7 @@ import { computed, onUnmounted, watch } from 'vue'
 import { documentIsConsole, useIsConsole } from '@/composables/useIsConsole'
 import ConsoleIcon from '@/components/icons/ConsoleIcon.vue'
 
-defineProps<{ title: string; wide?: boolean }>()
+defineProps<{ title: string; wide?: boolean; size?: 'default' | 'wide' | 'xl' }>()
 const open = defineModel<boolean>('open', { default: false })
 const routeIsConsole = useIsConsole()
 /** Teleport 到 body 后仍以 html 类为准，避免串成市场账本弹层 */
@@ -51,7 +51,7 @@ onUnmounted(release)
           :class="[
             'yh-modal-panel',
             isConsole ? 'yh-modal-panel--console' : 'yh-modal-panel--market',
-            wide ? 'yh-modal-panel--wide' : '',
+            size === 'xl' ? 'yh-modal-panel--xl' : wide || size === 'wide' ? 'yh-modal-panel--wide' : '',
           ]"
           role="dialog"
           aria-modal="true"

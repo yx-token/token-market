@@ -272,6 +272,9 @@ func TestAPISurface(t *testing.T) {
 	admin.must("POST", fmt.Sprintf("/api/admin/upstreams/%d/unsuspend", upC.ID), nil, nil)
 	admin.must("POST", "/api/admin/adjustments", map[string]any{"buyer_user_id": userID(t, e, "buyer@market.test"), "amount": 1.5, "reason": "compensation"}, nil)
 	admin.expect(400, "POST", "/api/admin/adjustments", map[string]any{"buyer_user_id": userID(t, e, "buyer@market.test"), "amount": 1})
+	// 不存在的买家用户应被拒绝，避免 Shadow.Ensure 凭空建孤儿账户
+	admin.expect(400, "POST", "/api/admin/adjustments", map[string]any{"buyer_user_id": 99999999, "amount": 1, "reason": "no such user"})
+	admin.expect(400, "POST", "/api/admin/adjustments", map[string]any{"buyer_user_id": 0, "amount": 1, "reason": "zero id"})
 	e.drain()
 	sellerC.must("POST", "/api/me/kyc", map[string]string{"real_name": "Carl", "id_number": "110101199001019999"}, nil)
 	var pending []map[string]any

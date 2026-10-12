@@ -624,6 +624,18 @@ func (f *Funds) Adjust(ctx context.Context, adminID, buyerUserID int64, amount f
 	if reason == "" {
 		return httpx.BadRequest("REASON_REQUIRED", "adjustment reason is required")
 	}
+	if buyerUserID <= 0 {
+		return httpx.BadRequest("INVALID_USER", "buyer_user_id must be a positive integer")
+	}
+	// 调账前确认买家用户真实存在；Shadow.Ensure 会为任意 ownerID 自动建影子账户，
+	// 不校验会凭空产生孤儿账户与余额变动
+	var exists bool
+	if err := f.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`, buyerUserID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return httpx.BadRequest("USER_NOT_FOUND", "buyer user not found")
+	}
 	amt, err := ValidAmount(math.Abs(amount))
 	if err != nil {
 		return err

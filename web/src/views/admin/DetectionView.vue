@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { admin } from '@/api'
-import type { DetectionProvider, Policy, ThirdPartyCheck } from '@/api/types'
+import type { DetectionProvider, Policy, ThirdPartyCheck, Upstream, VendorConfig } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { filterByDateField, filterByKeyword, useClientPage, useListQuery } from '@/composables/useListQuery'
 import { useToast } from '@/stores/toast'
@@ -9,9 +9,11 @@ import ConsoleListPage from '@/components/console/ConsoleListPage.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import DateTimeField from '@/components/common/DateTimeField.vue'
 import DataTable from '@/components/DataTable.vue'
+import SearchSelect from '@/components/common/SearchSelect.vue'
+import type { SelectOption } from '@/components/common/searchSelect'
 import TabBar from '@/components/TabBar.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
-import { authTypeText, label, options } from '@/utils/labels'
+import { authTypeText, label, options, upstreamName } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
 
 const toast = useToast()
@@ -34,6 +36,36 @@ const { queryParams, resetQuery, handleQuery } = useListQuery({
 const policies = useLoader(() => admin.policies(), [] as Policy[] | null)
 const providers = useLoader(() => admin.providers(), [] as DetectionProvider[] | null)
 const triggerOptions = options('trigger')
+// 套件与后端 validSuites 保持一致；未知套件在保存时被 INVALID_SUITE 拒绝
+const suiteOptions = [
+  'availability',
+  'latency',
+  'iq',
+  'reasoning',
+  'long_context',
+  'inspection_authenticity',
+  'inspection_capability',
+  'inspection_context',
+  'inspection_function',
+  'inspection_output',
+  'inspection_performance',
+].map((value) => ({ value, text: value }))
+// 模型 / 厂商 / 上游选项来自注册表；已存值不在表中时由 SearchSelect 保留并标注
+const priceModels = ref<string[]>([])
+const vendors = ref<VendorConfig[]>([])
+const upstreams = ref<Upstream[]>([])
+const modelOptions = computed<SelectOption[]>(() => priceModels.value.map((m) => ({ value: m, text: m })))
+const vendorOptions = computed<SelectOption[]>(() =>
+  vendors.value.map((v) => ({ value: v.platform, text: `${label('platform', v.platform).text}（${v.platform}）` })),
+)
+const upstreamOptions = computed<SelectOption[]>(() =>
+  upstreams.value.map((u) => ({
+    value: String(u.id),
+    text: `${upstreamName(u)} · ${label('platform', u.platform).text}`,
+    keywords: `${u.id} ${u.platform} ${u.account_email ?? ''}`,
+  })),
+)
+const createAuthTypes = computed(() => vendors.value.find((v) => v.platform === newAuth.platform)?.supported_auth_types ?? [])
 type TPForm = { enabled: boolean; triggers: string[]; model: string; format: string; onMismatch: string; onSubmodel: string }
 const thirdParty = reactive<Record<string, TPForm>>({})
 const { busy, run } = useAction()
@@ -43,8 +75,8 @@ const form = reactive({
   scheduled: false,
   interval: 360,
   jitter: 30,
-  suites: '',
-  models: '',
+  suites: [] as string[],
+  models: [] as string[],
   budget: 1,
   h0: 0.9,
   h1: 0.7,
@@ -53,14 +85,19 @@ const form = reactive({
   autoPause: true,
   grade: 'B',
   parallelism: 2,
-  fullTriggers: 'onboarding, admin, appeal, recovery',
+  fullTriggers: [] as string[],
   tokenBudgets: '{}',
 })
 const newAuth = reactive({ platform: '', authType: '' })
 const override = reactive({ upstream: '', mode: 'on', scheduled: '', expires: '', reason: '' })
-onMounted(() => {
+onMounted(async () => {
   policies.load()
   providers.load()
+  // 选项接口失败时降级为空列表，表单仍可保存（SearchSelect 支持手动录入）
+  vendors.value = (await admin.vendors().catch(() => null)) ?? []
+  const st = await admin.settings().catch(() => null)
+  priceModels.value = st?.price_models ?? []
+  upstreams.value = (await admin.upstreams().catch(() => null)) ?? []
 })
 
 const filtered = computed(() => {
@@ -92,8 +129,8 @@ function edit(p: Policy) {
     scheduled: p.scheduled_enabled,
     interval: p.interval_minutes,
     jitter: p.jitter_minutes,
-    suites: p.suites.join(', '),
-    models: p.models.join(', '),
+    suites: [...p.suites],
+    models: [...p.models],
     budget: p.daily_budget_usd,
     h0: p.thresholds.h0,
     h1: p.thresholds.h1,
@@ -102,7 +139,7 @@ function edit(p: Policy) {
     autoPause: p.auto_pause,
     grade: p.default_grade,
     parallelism: p.item_parallelism ?? 2,
-    fullTriggers: (p.full_triggers ?? ['onboarding', 'admin', 'appeal', 'recovery']).join(', '),
+    fullTriggers: [...(p.full_triggers ?? ['onboarding', 'admin', 'appeal', 'recovery'])],
     tokenBudgets: JSON.stringify(p.token_budgets ?? {}, null, 2),
   })
   for (const pr of providers.data.value ?? []) {
@@ -122,8 +159,6 @@ function providerName(name: string) {
   return providers.data.value?.find((p) => p.name === name)?.label ?? name
 }
 
-const split = (s: string) => s.split(/[,\s]+/).filter(Boolean)
-
 async function save() {
   const p = editing.value
   if (!p) return
@@ -140,14 +175,14 @@ async function save() {
     scheduled_enabled: form.enabled && form.scheduled,
     interval_minutes: Number(form.interval),
     jitter_minutes: Number(form.jitter),
-    suites: split(form.suites),
-    models: split(form.models),
+    suites: [...form.suites],
+    models: [...form.models],
     daily_budget_usd: Number(form.budget),
     thresholds: { h0: Number(form.h0), h1: Number(form.h1), alpha: Number(form.alpha), beta: Number(form.beta) },
     auto_pause: form.autoPause,
     default_grade: form.grade,
     item_parallelism: Number(form.parallelism),
-    full_triggers: split(form.fullTriggers),
+    full_triggers: [...form.fullTriggers],
     token_budgets: tokenBudgets,
     third_party: Object.entries(thirdParty)
       .filter(([, t]) => t.enabled)
@@ -194,7 +229,7 @@ async function createAuthPolicy() {
 async function setOverride() {
   const id = Number(override.upstream)
   if (!id) {
-    toast.error('请输入上游 ID')
+    toast.error('请选择上游')
     return
   }
   const body: Record<string, unknown> = { enabled: override.mode === 'on', reason: override.reason }
@@ -316,8 +351,8 @@ async function probe() {
       </p>
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
-          <label class="label" for="ou">上游 ID</label>
-          <input id="ou" v-model="override.upstream" class="input" inputmode="numeric" placeholder="例如 42" />
+          <label class="label" for="ou">上游</label>
+          <SearchSelect id="ou" v-model="override.upstream" :options="upstreamOptions" placeholder="搜索上游 ID / 厂商 / 邮箱" />
         </div>
         <div>
           <label class="label" for="om">检测</label>
@@ -363,11 +398,17 @@ async function probe() {
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <div>
         <label class="label" for="np">厂商</label>
-        <input id="np" v-model="newAuth.platform" class="input" placeholder="anthropic" />
+        <SearchSelect id="np" v-model="newAuth.platform" :options="vendorOptions" placeholder="选择厂商" @update:model-value="newAuth.authType = ''" />
       </div>
       <div>
         <label class="label" for="na">接入方式</label>
-        <input id="na" v-model="newAuth.authType" class="input" placeholder="setup-token" />
+        <SearchSelect
+          id="na"
+          v-model="newAuth.authType"
+          :options="createAuthTypes.map((t) => ({ value: t, text: authTypeText(newAuth.platform, t) }))"
+          :disabled="!newAuth.platform"
+          placeholder="选择接入方式"
+        />
       </div>
     </div>
     <template #footer>
@@ -398,18 +439,18 @@ async function probe() {
     </div>
     <div class="grid grid-cols-2 gap-3">
       <div>
-        <label class="label" for="pm">模型（逗号分隔，多个时轮换）</label>
-        <input id="pm" v-model="form.models" class="input" />
+        <label class="label" for="pm">模型（多个时轮换）</label>
+        <SearchSelect id="pm" v-model="form.models" :options="modelOptions" multiple placeholder="选择模型" />
       </div>
       <div>
         <label class="label" for="ps">套件</label>
-        <input id="ps" v-model="form.suites" class="input" />
-        <p class="hint">旧套件：availability, latency, iq, reasoning, long_context；质检套件：inspection_authenticity, inspection_capability, inspection_context, inspection_function, inspection_output, inspection_performance。试运行新题仅记录；正式模式只使用质检题。</p>
+        <SearchSelect id="ps" v-model="form.suites" :options="suiteOptions" multiple placeholder="选择套件" />
+        <p class="hint">试运行新题仅记录；正式模式只使用质检题。未注册的套件保存时会被拒绝。</p>
       </div>
     </div>
     <div class="grid grid-cols-2 gap-3">
       <div><label class="label" for="policy-parallelism">题目并行上界</label><input id="policy-parallelism" v-model.number="form.parallelism" class="input" type="number" min="1" /><p class="hint">实际取策略、质检设置与账号当前下发并发的最小值；被测与基线各自限流。</p></div>
-      <div><label class="label" for="policy-full-triggers">执行完整质检的触发类型</label><input id="policy-full-triggers" v-model="form.fullTriggers" class="input" /><p class="hint">逗号分隔：onboarding、admin、appeal、recovery、scheduled、append。</p></div>
+      <div><label class="label" for="policy-full-triggers">执行完整质检的触发类型</label><SearchSelect id="policy-full-triggers" v-model="form.fullTriggers" :options="triggerOptions" multiple placeholder="选择触发类型" /><p class="hint">未知触发类型保存时会被拒绝。</p></div>
       <div class="col-span-2"><label class="label" for="policy-token-budgets">每侧 token 预算覆盖（JSON）</label><textarea id="policy-token-budgets" v-model="form.tokenBudgets" class="input font-mono" /><p class="hint">{} 使用质检设置；可按 full/quick 配 input_tokens_per_side 与 output_tokens_per_side。</p></div>
     </div>
     <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -456,7 +497,7 @@ async function probe() {
             <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
               <div>
                 <label class="label" :for="`tp-model-${pr.name}`">检测模型</label>
-                <input :id="`tp-model-${pr.name}`" v-model="thirdParty[pr.name].model" class="input" placeholder="默认同平台探测" />
+                <SearchSelect :id="`tp-model-${pr.name}`" v-model="thirdParty[pr.name].model" :options="modelOptions" placeholder="默认同平台探测" />
               </div>
               <div>
                 <label class="label" :for="`tp-format-${pr.name}`">协议</label>

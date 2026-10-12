@@ -172,6 +172,7 @@ export const admin = {
   probeItemStats: (q?: Query) => http.get<T.ProbeItemStat[] | null>('/api/admin/probe-item-stats', q),
   probeItemResults: (itemId: number, q?: Query) => http.get<T.ProbeItemResult[] | null>(`/api/admin/probe-items/${itemId}/results`, q),
   items: (status?: string) => http.get<T.ProbeItem[] | null>('/api/admin/probe-items', { status }),
+  probeGeneratorTemplates: () => http.get<T.GeneratorTemplate[]>('/api/admin/probe-generator-templates'),
   createItem: (body: Partial<T.ProbeItem>) => http.post<T.ProbeItem>('/api/admin/probe-items', body),
   updateItem: (id: number, body: Partial<T.ProbeItem>) => http.put<T.ProbeItem>(`/api/admin/probe-items/${id}`, body),
   retireItem: (id: number) => http.post<Ok>(`/api/admin/probe-items/${id}/retire`),

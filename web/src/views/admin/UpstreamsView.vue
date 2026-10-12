@@ -150,5 +150,5 @@ function openRuns(u: Upstream) {
     </template>
   </ConsoleListPage>
 
-  <ProbeRunsDialog v-model:open="showRuns" :upstream="runsOf" />
+  <ProbeRunsDialog v-model:open="showRuns" :upstream="runsOf" show-answer />
 </template>
