@@ -10,11 +10,13 @@ import (
 
 func TestFormalItemsRetainModelScopedLegacy(t *testing.T) {
 	items := defaultItems()
-	got := formalItems(items)
-	if len(got) != 1 || !reflect.DeepEqual(got[0], modelScopedCandyItem()) {
-		t.Fatalf("正式模式应仅保留型号专用糖果题：%+v", got)
+	if got := formalItems(items); len(got) != 0 {
+		t.Fatalf("其余 21 道旧内置题仍应全部跳过：%+v", got)
 	}
-	unscoped := modelScopedCandyItem()
+	if got := formalItems([]Item{modelScopedLegacyItem()}); len(got) != 1 || !reflect.DeepEqual(got[0], modelScopedLegacyItem()) {
+		t.Fatalf("正式模式应保留管理员限定型号旧题：%+v", got)
+	}
+	unscoped := modelScopedLegacyItem()
 	unscoped.Models = nil
 	if len(formalItems([]Item{unscoped})) != 0 {
 		t.Fatal("未限定型号的旧内置题仍须跳过")
@@ -31,13 +33,14 @@ func TestFormalItemsRetainModelScopedLegacy(t *testing.T) {
 	}
 }
 
-func modelScopedCandyItem() Item {
+func modelScopedLegacyItem() Item {
 	for _, it := range defaultItems() {
-		if it.Category == "pigeonhole" {
+		if it.Suite == "reasoning" {
+			it.Models = []string{"gpt-6-astra"}
 			return it
 		}
 	}
-	panic("内置糖果题缺失")
+	panic("旧推理题缺失")
 }
 
 func TestInspectionItemKeyDefaultsAndOverrides(t *testing.T) {
@@ -67,7 +70,7 @@ func TestInspectionItemKeyDefaultsAndOverrides(t *testing.T) {
 }
 
 func scopedStaticOutcome() Outcome {
-	it := modelScopedCandyItem()
+	it := modelScopedLegacyItem()
 	o := pairedInspectionOutcome(inspectionItemKey(it), false, true)
 	o.Suite, o.ItemID, o.GeneratorVersion = it.Suite, 22, "static-1"
 	return o
@@ -185,13 +188,19 @@ func TestModelScopedStaticDoesNotEnterD06(t *testing.T) {
 			t.Fatalf("有/无低档锚点时静态题污染 D06：%+v", c)
 		}
 	}
-	// 本次只排除旧套件静态题，保留已有新套件 D07 的推理量观测口径。
+	// 迁移后的糖果题和其他静态 D07 题在有/无 low 锚点时都不能混入 D06。
 	for i := range static {
-		static[i].Suite = "inspection_capability"
+		static[i].Suite = astraCandyItem().Suite
 	}
-	checks, _ = Inspect(static, st, time.Now())
-	if c := checks["D06"]; c.Samples.Paired != 12 || c.Status != "fail" {
-		t.Fatalf("旧套件过滤不应扩大到已有新套件静态观测：%+v", c)
+	for _, anchors := range [][]Outcome{nil, low} {
+		checks, _ = Inspect(append(append([]Outcome(nil), static...), anchors...), st, time.Now())
+		if c := checks["D06"]; c.Samples.Observed != 0 || c.Samples.Paired != 0 || c.Factor != nil {
+			t.Fatalf("新套件静态 D07 不应进入推理量观测：%+v", c)
+		}
+		checks, _ = Inspect(append(append(append([]Outcome(nil), static...), generated...), anchors...), st, time.Now())
+		if c := checks["D06"]; c.Samples.Paired != 12 || c.Status != "pass" || *c.Metrics["reasoning_ratio"].Value != 1 {
+			t.Fatalf("糖果静态题污染参数化推理量观测：%+v", c)
+		}
 	}
 }
 

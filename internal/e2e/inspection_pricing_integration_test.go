@@ -121,12 +121,11 @@ func newInspectionPricingModelFixture(t *testing.T, model string, builtinKeys ..
 	admin.must("POST", "/api/admin/proxies", map[string]any{"name": "正式质检离线代理", "protocol": "socks5", "host": "10.0.0.4", "port": 2083}, nil)
 	var originalSuites []string
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT suites FROM detection_policies WHERE platform='anthropic' AND auth_type=''`), &originalSuites)
-	policy := map[string]any{"enabled": true, "scheduled_enabled": false, "item_parallelism": 8, "models": []string{model}}
-	if model == "gpt-6-astra" {
-		// 糖果题属于 reasoning；基础夹具默认仅启用 availability/latency/iq。
-		// 只在这次型号专测中补上该套件，保留所有原有启用项。
-		policy["suites"] = append(append([]string(nil), originalSuites...), "reasoning")
+	if !reflect.DeepEqual(originalSuites, []string{"availability", "latency", "iq"}) {
+		t.Fatalf("基础策略默认 suites 改变：%v", originalSuites)
 	}
+	policy := map[string]any{"enabled": true, "scheduled_enabled": false, "item_parallelism": 8, "models": []string{model}}
+	// 保留仅含旧套件的策略，验证执行时自动加入能力质检。
 	admin.must("PUT", "/api/admin/detection-policies/anthropic", policy, nil)
 	admin.must("POST", "/api/admin/pools", map[string]any{"name": "tm-pool-正式质检保障池", "platform": "anthropic", "sell_multiplier": .8}, nil)
 
@@ -154,12 +153,12 @@ func newInspectionPricingModelFixture(t *testing.T, model string, builtinKeys ..
 	}
 	var legacy int
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT count(*) FROM probe_items WHERE suite NOT LIKE 'inspection_%'`), &legacy)
-	if legacy != 22 {
-		t.Fatalf("旧内置题夹具应保留 22 道，得到 %d", legacy)
+	if legacy != 21 {
+		t.Fatalf("旧内置题夹具应保留 21 道，得到 %d", legacy)
 	}
 	var scopedItem int64
 	var scopedPrompt string
-	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT id,prompt FROM probe_items WHERE suite='reasoning' AND models=ARRAY['gpt-6-astra']::text[]`), &scopedItem, &scopedPrompt)
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT id,prompt FROM probe_items WHERE builtin_key='inspection/pigeonhole/astra/1'`), &scopedItem, &scopedPrompt)
 	if len(builtinKeys) > 0 {
 		selectInspectionItems(t, e, append([]string{"inspection/aime_math/1"}, builtinKeys...)...)
 		// 定级仍满足 D07 的默认 20 个有效配对，改由廉价数学模板提供，
@@ -351,8 +350,13 @@ func TestInspectionPricingFormalOnboardingQuickAndAppraisal(t *testing.T) {
 	e := f.e
 	var full, generated, bad, legacy int
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT count(*),count(*) FILTER (WHERE generator_version<>''),count(*) FILTER (WHERE passed IS NOT TRUE OR input_tokens IS NULL OR input_tokens<=0),count(*) FILTER (WHERE suite NOT LIKE 'inspection_%') FROM probe_results WHERE run_id=$1`, f.onboarding), &full, &generated, &bad, &legacy)
-	if full != 91 || generated != full || bad != 0 || legacy != 1 {
-		t.Fatalf("完整质检应为 90 次新题与 1 次型号专用旧题请求：总数=%d 版本=%d 错误=%d 旧题=%d", full, generated, bad, legacy)
+	if full != 91 || generated != full || bad != 0 || legacy != 0 {
+		t.Fatalf("完整质检应为 91 次质检请求（含能力质检糖果题），无旧题：总数=%d 版本=%d 错误=%d 旧题=%d", full, generated, bad, legacy)
+	}
+	var savedSuites []string
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT suites FROM detection_policies WHERE platform='anthropic' AND auth_type=''`), &savedSuites)
+	if !reflect.DeepEqual(savedSuites, []string{"availability", "latency", "iq"}) {
+		t.Fatalf("执行时添加新套件不应改已保存默认策略：%v", savedSuites)
 	}
 	assertInspectionModelScopedStaticEvidence(t, f)
 	// 同时承接影子生命周期原来的完整模板判分覆盖：逐个稳定内置键均须有
@@ -362,7 +366,7 @@ func TestInspectionPricingFormalOnboardingQuickAndAppraisal(t *testing.T) {
 	var versions []string
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT array_agg(DISTINCT generator_version ORDER BY generator_version) FROM probe_results WHERE run_id=$1`, f.onboarding), &versions)
 	wantVersions := []string{"aime_math/1", "code_output/1", "constraints/2", "context_boundary/1", "knights_knaves/1", "long_context/1", "register_machine/1", "static-1", "string_date/1", "zebra/2"}
-	if builtinItems != 31 || missingItems != 0 || !reflect.DeepEqual(versions, wantVersions) {
+	if builtinItems != 32 || missingItems != 0 || !reflect.DeepEqual(versions, wantVersions) {
 		t.Fatalf("默认内置题覆盖不完整：内置键=%d 缺失=%d 版本=%v", builtinItems, missingItems, versions)
 	}
 	var same, singleSnapshot bool
@@ -397,8 +401,8 @@ func TestInspectionPricingFormalOnboardingQuickAndAppraisal(t *testing.T) {
 	// 全题完整轮已经验证默认难度；快检保留默认 25 请求与所有判定断言，
 	// 只把重复斑马题面的维度缩小。
 	compactInspectionItems(t, e, f.admin)
-	// 继续启用 reasoning，使糖果题缺席真正验证型号匹配；旧普通题仍由
-	// 正式选择器排除，原快检的 25 请求、判定和 Q 回归断言保持不变。
+	// 继续使用只含旧套件的策略，快检自动加入新题；糖果题仅因型号不匹配而缺席。
+	// 原快检的 25 请求、判定和 Q 回归断言保持不变。
 	f.admin.must("PUT", "/api/admin/detection-policies/anthropic", map[string]any{"models": []string{"claude-sonnet-4-5"}}, nil)
 	quickID, summary := f.run(t, "scheduled")
 	var mode string
@@ -432,7 +436,7 @@ func assertInspectionModelScopedStaticEvidence(t *testing.T, f *inspectionPricin
 	}
 	target, reference := find(detail.Results), find(detail.RefResults)
 	for _, row := range []*quality.RunResult{target, reference} {
-		if row == nil || row.Suite != "reasoning" || row.CheckKey != "D07" || row.InstanceIdx != 0 || row.Step != 0 || row.GeneratorVersion != "static-1" || len(row.InstanceHash) != 64 || row.Passed == nil || !*row.Passed || row.Excerpt == nil || *row.Excerpt != "21" || !strings.Contains(row.Prompt, "糖果") || !reflect.DeepEqual(row.Models, []string{"gpt-6-astra"}) {
+		if row == nil || row.Suite != "inspection_capability" || row.CheckKey != "D07" || row.InstanceIdx != 0 || row.Step != 0 || row.GeneratorVersion != "static-1" || len(row.InstanceHash) != 64 || row.Passed == nil || !*row.Passed || row.Excerpt == nil || *row.Excerpt != "21" || !strings.Contains(row.Prompt, "糖果") || !reflect.DeepEqual(row.Models, []string{"gpt-6-astra"}) {
 			t.Fatalf("静态糖果题应保留题面、套件与型号，并产生成功 D07 逐题证据：%+v", row)
 		}
 	}
@@ -445,7 +449,7 @@ func assertInspectionModelScopedStaticEvidence(t *testing.T, f *inspectionPricin
 	}
 	parameterPairs, anchors := 0, 0
 	for _, row := range detail.Results {
-		if strings.HasPrefix(row.Suite, "inspection_") && row.CheckKey == "D07" {
+		if strings.HasPrefix(row.Suite, "inspection_") && row.CheckKey == "D07" && (row.ItemID == nil || *row.ItemID != f.scopedItem) {
 			parameterPairs++
 		}
 		if row.CheckKey == "D06" {
@@ -457,20 +461,31 @@ func assertInspectionModelScopedStaticEvidence(t *testing.T, f *inspectionPricin
 		t.Fatalf("糖果题应计入 D07 同组配对，且不进入 D06 推理量样本：参数化=%d 锚点=%d D07=%+v D06=%+v", parameterPairs, anchors, d07, d06)
 	}
 	var unchanged bool
-	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT check_key='' AND suite='reasoning' AND generator='{}'::jsonb AND status='active' FROM probe_items WHERE id=$1`, f.scopedItem), &unchanged)
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT check_key='D07' AND suite='inspection_capability' AND builtin_key='inspection/pigeonhole/astra/1' AND modes=ARRAY['full','quick']::text[] AND models=ARRAY['gpt-6-astra']::text[] AND max_tokens=8192 AND reasoning_effort='high' AND generator='{}'::jsonb AND status='active' FROM probe_items WHERE id=$1`, f.scopedItem), &unchanged)
 	if !unchanged {
-		t.Fatal("默认归入 D07 不应改写管理员的题目数据")
+		t.Fatal("能力质检糖果题的落库定义错误")
+	}
+	var bank []quality.Item
+	f.admin.must("GET", "/api/admin/probe-items", nil, &bank)
+	found := false
+	for _, it := range bank {
+		if it.ID == f.scopedItem {
+			found = it.Suite == "inspection_capability" && it.CheckKey == "D07" && it.BuiltinKey != nil && *it.BuiltinKey == "inspection/pigeonhole/astra/1"
+		}
+	}
+	if !found {
+		t.Fatal("后台题库未展示能力质检/D07 的稳定内置题")
 	}
 	var stats []quality.ItemStat
 	f.admin.must("GET", "/api/admin/probe-item-stats?platform=anthropic&model=gpt-6-astra", nil, &stats)
 	seen := false
 	for _, stat := range stats {
 		if stat.ItemID == f.scopedItem {
-			seen = stat.Suite == "reasoning" && strings.Contains(stat.Prompt, "糖果") && reflect.DeepEqual(stat.Models, []string{"gpt-6-astra"}) && stat.Asked == 1 && stat.Passed == 1 && stat.RefAsked == 1 && stat.RefPassed == 1
+			seen = stat.Suite == "inspection_capability" && strings.Contains(stat.Prompt, "糖果") && reflect.DeepEqual(stat.Models, []string{"gpt-6-astra"}) && stat.Asked == 1 && stat.Passed == 1 && stat.RefAsked == 1 && stat.RefPassed == 1
 		}
 	}
 	if !seen {
-		t.Fatalf("后台按题统计丢失型号专用题或原套件：%+v", stats)
+		t.Fatalf("后台按题统计丢失型号专用能力题：%+v", stats)
 	}
 	var results []quality.ItemResult
 	f.admin.must("GET", fmt.Sprintf("/api/admin/probe-items/%d/results", f.scopedItem), nil, &results)

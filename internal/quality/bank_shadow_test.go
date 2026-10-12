@@ -35,7 +35,7 @@ func TestInspectionShadowDoesNotChangeLegacyAssessment(t *testing.T) {
 func TestInspectionBuiltinDefinitions(t *testing.T) {
 	t.Parallel()
 	keys := map[string]bool{}
-	if len(defaultItems()) != 22 {
+	if len(defaultItems()) != 21 {
 		t.Fatal("旧题数量改变")
 	}
 	for _, it := range inspectionBuiltinItems() {
@@ -50,6 +50,10 @@ func TestInspectionBuiltinDefinitions(t *testing.T) {
 			continue
 		}
 		text := staticAnswer(it.Grader)
+		// 这道迁移题保留旧 regex，不通过生产答案字段暗改判分。
+		if *it.BuiltinKey == "inspection/pigeonhole/astra/1" {
+			text = "21"
+		}
 		calls := []ProbeToolCall{}
 		for _, expected := range it.Grader.Expect {
 			calls = append(calls, ProbeToolCall{Name: expected.Name, Arguments: expected.Args})

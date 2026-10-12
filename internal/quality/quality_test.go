@@ -1,6 +1,8 @@
 package quality
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -45,37 +47,21 @@ func TestGraders(t *testing.T) {
 }
 
 func TestDefaultItems(t *testing.T) {
-	var pigeonhole *Item
-	for _, it := range defaultItems() {
+	items := defaultItems()
+	if len(items) != 21 {
+		t.Fatalf("旧内置题应为 21 道，得到 %d", len(items))
+	}
+	for _, it := range items {
 		if err := validateItem(it); err != nil {
 			t.Errorf("default item %q invalid: %v", it.Category, err)
 		}
-		if it.Category == "pigeonhole" {
-			pigeonhole = &it
+		if it.Category == "pigeonhole" || strings.Contains(it.Prompt, "糖果") {
+			t.Fatal("糖果题仍在旧内置定义中")
 		}
 	}
-	if pigeonhole == nil || len(pigeonhole.Models) != 1 || pigeonhole.Models[0] != "gpt-6-astra" {
-		t.Fatalf("pigeonhole item should target gpt-6-astra: %+v", pigeonhole)
-	}
-	// 回答中出现独立的 21 即通过：前后不能紧挨数字或小数点（句末的句点除外）
-	cases := []struct {
-		text string
-		want bool
-	}{
-		{"最少需要取出 21 个糖果。", true},
-		{"答案：**21**", true},
-		{"21", true},
-		{"so the answer is 21.", true},
-		{"至少要取 29 个", false},
-		{"共 121 颗", false},
-		{"210", false},
-		{"21.5", false},
-		{"0.21", false},
-	}
-	for _, c := range cases {
-		if got, err := grade(pigeonhole.Grader, c.text, ""); err != nil || got != c.want {
-			t.Errorf("pigeonhole grade(%q) = %v, %v; want %v", c.text, got, err, c.want)
-		}
+	// 从 2663df8 的 defaultItems 排除糖果题后冻结，覆盖其余题的字段与顺序。
+	if got := fmt.Sprintf("%x", sha256.Sum256(mustJSON(items))); got != "80ad0879904ca22006332176c3a5296f4826ba515bd9add7bab7c7b5823b08ac" {
+		t.Fatalf("其余 21 道旧题定义或顺序改变：%s", got)
 	}
 }
 
