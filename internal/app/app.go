@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DueGin/token-market/internal/account"
+	"github.com/DueGin/token-market/internal/iam"
 	"github.com/DueGin/token-market/internal/billing"
 	"github.com/DueGin/token-market/internal/buyer"
 	"github.com/DueGin/token-market/internal/edgecfg"
@@ -49,6 +50,7 @@ type App struct {
 	Settings    func(ctx context.Context) (settings.Settings, error)
 
 	Accounts   *account.Service
+	IAM        *iam.Service
 	Listings   *listing.Service
 	Proxies    *listing.ProxyService
 	Pools      *scheduling.PoolService
@@ -137,6 +139,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 	edgeStore := edgecfg.Store{Redis: a.Redis}
 
 	a.Accounts = account.NewService(a.DB, a.Keyring, a.Issuer)
+	a.IAM = iam.New(a.DB)
 	a.Risk = &risk.Service{DB: a.DB, Settings: a.Settings}
 	a.Proxies = &listing.ProxyService{DB: a.DB, Admin: a.Admin, Keyring: a.Keyring}
 	a.Pools = &scheduling.PoolService{DB: a.DB, Prov: a.Prov}

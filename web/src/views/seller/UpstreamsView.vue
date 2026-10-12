@@ -2,7 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { seller } from '@/api'
 import type { Upstream, VendorView } from '@/api/types'
-import { useLoader } from '@/composables/useAsync'
+import { useAction, useLoader } from '@/composables/useAsync'
 import PageHeader from '@/components/PageHeader.vue'
 import RefreshButton from '@/components/RefreshButton.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -15,6 +15,7 @@ const upstreams = useLoader(() => seller.upstreams(), [] as Upstream[] | null)
 const vendors = ref<VendorView[]>([])
 const wizard = ref(false)
 const resume = ref<Upstream | null>(null)
+const { busy, run } = useAction()
 
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(async () => {
@@ -35,14 +36,19 @@ function openResume(u: Upstream) {
   resume.value = u
   wizard.value = true
 }
+
+async function removeUpstream(u: Upstream) {
+  if (!confirm(`删除上游 ${upstreamName(u)}？关联商品会关闭，账号在进行中的请求结束后从平台移除。`)) return
+  if (await run(() => seller.removeUpstream(u.id), '已删除上游')) await upstreams.load()
+}
 </script>
 
 <template>
   <div>
-    <PageHeader title="我的上游" description="一个上游是一个官方订阅账号或一个 Coding Plan key。首次接入需要通过上架检测才能挂单。">
+    <PageHeader title="我的上游" description="一个上游是一个官方订阅账号或一个 Coding Plan key。首次接入需要通过上架检测才能发布商品。">
       <RefreshButton :loading="upstreams.loading.value" @click="upstreams.load()" />
-      <RouterLink to="/seller/publish" class="xm-btn xm-btn-dark">＋ 发布供给</RouterLink>
-      <button type="button" class="xm-btn xm-btn-ghost" @click="openNew">仅接入上游</button>
+      <RouterLink to="/seller/publish" class="xm-btn xm-btn-dark">＋ 发布闲置TOKEN</RouterLink>
+      <button type="button" class="xm-btn xm-btn-ghost" @click="openNew">接入上游</button>
     </PageHeader>
     <div class="card">
       <DataTable
@@ -61,7 +67,7 @@ function openResume(u: Upstream) {
         :rows="upstreams.data.value"
         :loading="upstreams.loading.value"
         row-key="id"
-        empty="还没有上游，点击右上角接入"
+        empty="还没有上游，点击右上角接入或发布闲置TOKEN"
       >
         <template #cell-id="{ row }">
           <span class="font-semibold">{{ upstreamName(row) }}</span>
@@ -90,6 +96,18 @@ function openResume(u: Upstream) {
               class="xm-btn xm-btn-ghost xm-btn-sm"
               @click="openResume(row)"
             >继续授权</button>
+            <RouterLink
+              v-if="row.status === 'ready' || row.status === 'listed'"
+              :to="`/seller/publish?upstream=${row.id}`"
+              class="xm-btn xm-btn-ghost xm-btn-sm"
+            >发布闲置TOKEN</RouterLink>
+            <button
+              v-if="!row.is_reference && row.status !== 'removed'"
+              type="button"
+              class="xm-btn xm-btn-ghost xm-btn-sm text-red-600"
+              :disabled="busy"
+              @click="removeUpstream(row)"
+            >删除</button>
           </div>
         </template>
       </DataTable>

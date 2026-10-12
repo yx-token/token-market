@@ -153,6 +153,27 @@
   background: rgb(236 253 245 / 85%);
   color: #047857;
 }
+.lg-chip.is-off {
+  background: rgb(248 250 252 / 90%);
+  color: #64748b;
+  border-color: rgb(226 232 240 / 90%);
+}
+.lg-chip.is-warn {
+  background: rgb(255 251 235 / 90%);
+  color: #b45309;
+}
+.lg-chip.is-danger {
+  background: rgb(254 242 242 / 90%);
+  color: #b91c1c;
+}
+.lg-chip.is-info {
+  background: rgb(239 246 255 / 90%);
+  color: #1d4ed8;
+}
+.lg-chip.is-violet {
+  background: rgb(245 243 255 / 90%);
+  color: #6d28d9;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .lg-card,

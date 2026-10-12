@@ -47,9 +47,9 @@ const canCreateListing = computed(() => u.value?.status === 'ready' && (!u.value
 /** 按来源返回上一级，避免钻进去出不来 */
 const backNav = computed(() => {
   const from = typeof route.query.from === 'string' ? route.query.from : ''
-  if (from === 'listings') return { to: '/seller/listings', label: '挂单列表' }
+  if (from === 'listings') return { to: '/seller/listings', label: '我的闲置TOKEN' }
   if (from === 'usage') return { to: `/seller/usage?upstream=${upstreamId.value}`, label: '用量' }
-  if (from === 'publish') return { to: '/seller/publish', label: '发布供给' }
+  if (from === 'publish') return { to: '/seller/publish', label: '发布闲置TOKEN' }
   return { to: '/seller/upstreams', label: '我的上游' }
 })
 
@@ -69,9 +69,7 @@ onMounted(async () => {
   ])
   vendors.value = v ?? []
   categoryOpts.value = cats ?? []
-  if (categoryOpts.value.length && !categories.value.some((id) => categoryOpts.value.some((c) => c.id === id))) {
-    categories.value = categoryOpts.value[0] ? [categoryOpts.value[0].id] : []
-  }
+  categories.value = []
   timer = setInterval(() => {
     if (u.value?.status === 'verifying') reload()
   }, 10000)
@@ -87,7 +85,7 @@ const stock = ref('3')
 const minAmount = ref('0')
 const listTitle = ref('')
 const listDesc = ref('')
-const categories = ref<string[]>(['featured'])
+const categories = ref<string[]>([])
 const categoryOpts = ref<ListingCategoryOption[]>([])
 const metaTitle = ref('')
 const metaDesc = ref('')
@@ -316,7 +314,7 @@ const appealable = appealableReport
     </div>
 
     <div class="card mt-5">
-      <h2 class="card-title">挂单</h2>
+      <h2 class="card-title">商品</h2>
       <template v-if="u.listing && u.listing.status !== 'closed'">
         <div class="flex flex-wrap items-center gap-3 text-sm">
           <StatusBadge kind="mode" :value="u.listing.mode" />
@@ -356,7 +354,7 @@ const appealable = appealableReport
           </template>
           <button v-if="u.listing.status === 'active'" class="btn-secondary btn-sm" :disabled="busy" @click="listingAction(() => seller.pause(u!.listing!.id), '已暂停')">暂停</button>
           <button v-if="u.listing.status === 'paused'" class="btn-secondary btn-sm" :disabled="busy" @click="listingAction(() => seller.resume(u!.listing!.id), '已恢复')">恢复</button>
-          <button class="btn-ghost btn-sm text-red-600" :disabled="busy" @click="listingAction(() => seller.close(u!.listing!.id), '挂单已关闭')">关闭挂单</button>
+          <button class="btn-ghost btn-sm text-red-600" :disabled="busy" @click="listingAction(() => seller.close(u!.listing!.id), '商品已下架')">下架商品</button>
         </div>
       </template>
       <template v-else-if="needsAuth">
@@ -397,14 +395,15 @@ const appealable = appealableReport
           </div>
         </div>
         <p v-else class="mt-3 text-sm text-slate-500">平台按质量等级和订阅档位报出回收倍率，你确认后生效，按实际用量结算。不进市场目录，只进保障池。</p>
-        <div v-if="mode === 'consignment' || mode === 'pack'" class="mt-3">
-          <p class="label mb-1">市场分类（至少选一个）</p>
+        <div v-if="mode === 'consignment' || mode === 'pack'" class="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p class="label mb-1">市场分类（必选，至少选一个）</p>
+          <p class="mb-2 text-xs text-amber-800">未选分类不能上架；分类决定市场专场与侧栏归类。</p>
           <div class="flex flex-wrap gap-3 text-sm">
             <label v-for="c in categoryOpts" :key="c.id" class="flex items-center gap-1">
               <input type="checkbox" :checked="categories.includes(c.id)" @change="toggleCategory(c.id)" />
               {{ c.path || c.name }}
             </label>
-            <span v-if="!categoryOpts.length" class="text-slate-400">暂无可选分类，请联系管理员在控制台配置</span>
+            <span v-if="!categoryOpts.length" class="text-amber-700">暂无可选分类，请联系管理员在控制台开启「卖家可选」</span>
           </div>
         </div>
         <div class="mt-3 grid max-w-xl gap-3">
@@ -417,15 +416,20 @@ const appealable = appealableReport
             <textarea id="list-desc" v-model="listDesc" class="input" rows="2" placeholder="给买家看的说明" />
           </div>
         </div>
-        <button type="button" class="xm-btn xm-btn-primary mt-3" :disabled="busy" @click="createListing">
-          {{ mode === 'buyback' ? '获取报价' : mode === 'pack' ? '上架额度包' : '挂单' }}
+        <button
+          type="button"
+          class="xm-btn xm-btn-primary mt-3"
+          :disabled="busy || ((mode === 'consignment' || mode === 'pack') && (!categories.length || !categoryOpts.length))"
+          @click="createListing"
+        >
+          {{ mode === 'buyback' ? '获取报价' : mode === 'pack' ? '上架额度包' : '上架商品' }}
         </button>
         <p class="mt-2 text-[12px] text-[#888]">
           推荐走完整向导：
-          <RouterLink class="xm-btn xm-btn-primary xm-btn-sm" :to="`/seller/publish?upstream=${u.id}`">发布供给 →</RouterLink>
+          <RouterLink class="xm-btn xm-btn-primary xm-btn-sm" :to="`/seller/publish?upstream=${u.id}`">发布闲置TOKEN →</RouterLink>
         </p>
       </template>
-      <p v-else class="text-sm text-slate-500">上游通过上架检测后才能挂单。</p>
+      <p v-else class="text-sm text-slate-500">上游通过上架检测后才能发布商品。</p>
     </div>
 
     <div class="card mt-5">

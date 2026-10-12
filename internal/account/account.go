@@ -53,8 +53,23 @@ func normalizeEmail(email string) (string, error) {
 	return email, nil
 }
 
-// Register 创建普通用户。
+// Register 前台自助注册：只创建 C 端普通用户（is_admin 恒为 false，不挂任何组织角色）。
+// 控制台员工须由超管在后台创建或授权，不能走本接口。
 func (s *Service) Register(ctx context.Context, email, password, ip string) (*User, error) {
+	u, err := s.createUser(ctx, email, password)
+	if err != nil {
+		return nil, err
+	}
+	s.RecordIP(ctx, u.ID, ip, "register")
+	return u, nil
+}
+
+// CreateUserByAdmin 超管在控制台开户：同样是普通 users 行（非超管），随后由 IAM 挂组织角色才成为员工。
+func (s *Service) CreateUserByAdmin(ctx context.Context, email, password string) (*User, error) {
+	return s.createUser(ctx, email, password)
+}
+
+func (s *Service) createUser(ctx context.Context, email, password string) (*User, error) {
 	email, err := normalizeEmail(email)
 	if err != nil {
 		return nil, err
@@ -74,7 +89,6 @@ func (s *Service) Register(ctx context.Context, email, password, ip string) (*Us
 		return nil, err
 	}
 	u.KYCStatus = "none"
-	s.RecordIP(ctx, u.ID, ip, "register")
 	return &u, nil
 }
 

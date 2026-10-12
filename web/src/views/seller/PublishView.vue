@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 发布供给：对齐 docs/prototypes/seller-publish.html
+ * 发布闲置TOKEN：对齐 docs/prototypes/seller-publish.html
  * 代理 → 接入 → 检测 → 商品形态 → 定价上架 → 完成（全部走真实 API）
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -48,7 +48,7 @@ const faceValue = ref('100')
 const stock = ref('3')
 const title = ref('')
 const description = ref('')
-const categories = ref<string[]>(['featured'])
+const categories = ref<string[]>([])
 const categoryOpts = ref<ListingCategoryOption[]>([])
 const quote = ref<Quote | null>(null)
 const listing = ref<Listing | null>(null)
@@ -86,9 +86,7 @@ onMounted(async () => {
   proxies.value = ps ?? []
   requireSellerProxy.value = conf?.require_seller_proxy ?? true
   categoryOpts.value = cats ?? []
-  if (categoryOpts.value.length && !categories.value.some((id) => categoryOpts.value.some((c) => c.id === id))) {
-    categories.value = categoryOpts.value[0] ? [categoryOpts.value[0].id] : []
-  }
+  categories.value = []
   const busyUpstream = new Set(
     (ls ?? []).filter((l) => l.status !== 'closed').map((l) => l.upstream_id),
   )
@@ -322,7 +320,7 @@ function resetWizard() {
   authURL.value = ''
   title.value = ''
   description.value = ''
-  categories.value = ['featured']
+  categories.value = []
   resumeUpstreamID.value = ''
 }
 
@@ -339,7 +337,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
       <span class="xm-page-back__ico" aria-hidden="true">←</span>
       {{ (resumeUpstreamID || upstream?.id) ? `上游 #${resumeUpstreamID || upstream?.id}` : '我的上游' }}
     </RouterLink>
-    <h1 class="text-[28px] font-extrabold tracking-tight text-[#1f1f1f]">发布闲置供给</h1>
+    <h1 class="text-[28px] font-extrabold tracking-tight text-[#1f1f1f]">发布闲置TOKEN</h1>
     <p class="mt-2 mb-6 max-w-3xl text-[15px] leading-relaxed text-[#666]">
       授权订阅账号 → 上架检测 → 挂「按量通道」或「额度包」。不是上架实物，是开放可调度额度。
     </p>
@@ -613,9 +611,10 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
         </div>
       </template>
 
-      <div v-if="sku === 'consignment' || sku === 'pack'" class="mt-4">
-        <label class="xm-field-label">市场分类（至少选一个）</label>
-        <div class="mt-2 flex flex-col gap-2">
+      <div v-if="sku === 'consignment' || sku === 'pack'" class="mt-4 rounded-[14px] border border-[#f0c000]/40 bg-[#fffbeb] p-4">
+        <label class="xm-field-label !mb-1">市场分类（必选，至少选一个）</label>
+        <p class="xm-hint !mt-0 !mb-3">决定出现在市场侧栏与四宫格专场；未选分类不能上架。</p>
+        <div v-if="categoryOpts.length" class="flex flex-col gap-2">
           <label
             v-for="c in categoryOpts"
             :key="c.id"
@@ -633,6 +632,8 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
             </div>
           </label>
         </div>
+        <p v-else class="text-[13px] text-[#b45309]">暂无可选分类，请联系管理员在控制台开启「卖家可选」分类。</p>
+        <p v-if="categories.length" class="mt-2 text-[12px] text-[#666]">已选 {{ categories.length }} 个</p>
       </div>
 
       <div class="mt-4">
@@ -646,7 +647,14 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
 
       <div class="xm-pub-actions">
         <button type="button" class="xm-btn xm-btn-ghost" @click="step = 3">上一步</button>
-        <button type="button" class="xm-btn xm-btn-primary" :disabled="busy" @click="publish">确认上架</button>
+        <button
+          type="button"
+          class="xm-btn xm-btn-primary"
+          :disabled="busy || ((sku === 'consignment' || sku === 'pack') && (!categories.length || !categoryOpts.length))"
+          @click="publish"
+        >
+          确认上架
+        </button>
       </div>
     </section>
 
@@ -671,11 +679,15 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
         <div v-else-if="sku === 'consignment'">
           倍率 {{ multiplier(Number(mult)) }} · 买家价 {{ buyerPrice ? multiplier(buyerPrice) : '—' }} · M=¥{{ minAmount || 0 }}
         </div>
+        <div v-if="categories.length">
+          分类：
+          <b>{{ categories.map((id) => categoryOpts.find((c) => c.id === id)?.name || id).join('、') }}</b>
+        </div>
         <div v-if="title">标题：{{ title }}</div>
       </div>
       <div class="mt-5 flex flex-wrap justify-center gap-2.5">
         <RouterLink v-if="listing && sku !== 'buyback'" class="xm-btn xm-btn-primary" :to="`/market/listings/${listing.id}`">去市场看看</RouterLink>
-        <RouterLink class="xm-btn xm-btn-ghost" to="/seller/listings">回挂单列表</RouterLink>
+        <RouterLink class="xm-btn xm-btn-ghost" to="/seller/listings">回我的闲置TOKEN</RouterLink>
         <button type="button" class="xm-btn xm-btn-ghost" @click="resetWizard">再发一条</button>
       </div>
     </section>

@@ -62,7 +62,11 @@ async function setStatus(status: string) {
 </script>
 
 <template>
-  <ConsoleListPage id="console-users-page" title="用户与实名" description="审核实名申请；按用户 ID 冻结 / 解冻账号。">
+  <ConsoleListPage
+    id="console-users-page"
+    title="用户与实名"
+    description="管理 C 端用户（买家/卖家）：实名审核、冻结/解冻。控制台员工请到「组织管理 → 员工授权」。"
+  >
     <template #actions>
       <button type="button" class="btn btn-secondary" @click="openFreeze()">冻结 / 解冻</button>
     </template>

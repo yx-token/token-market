@@ -250,7 +250,7 @@ const createdSample = computed(() =>
     </div>
 
     <div v-if="keys.loading.value && !keys.data.value?.length" class="py-10 text-center text-[#888]">加载中…</div>
-    <div v-else-if="!keys.data.value?.length" class="xm-key-card py-10 text-center text-[#888]">还没有 Key，先创建一个或去市场选用供给。</div>
+    <div v-else-if="!keys.data.value?.length" class="xm-key-card py-10 text-center text-[#888]">还没有 Key，先创建一个或去市场选用闲置TOKEN。</div>
     <div v-else class="xm-card-list">
       <div v-for="k in keys.data.value ?? []" :key="k.id" class="xm-key-card">
         <div class="xm-key-top">

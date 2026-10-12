@@ -88,7 +88,7 @@ function hotOn(action: MarketAction) {
         <a
           class="header-link"
           href="/seller/publish"
-          title="发布闲置供给"
+          title="发布闲置TOKEN"
           @click.prevent="auth.loggedIn ? router.push('/seller/publish') : loginModal.show({ redirect: '/seller/publish' })"
         >
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -98,7 +98,7 @@ function hotOn(action: MarketAction) {
           </svg>
           <span>我要卖闲置<span class="sell-extra"> TOKEN</span></span>
         </a>
-        <RouterLink v-if="auth.isAdmin" class="header-link admin" to="/console" title="运营控制台">控制台</RouterLink>
+        <RouterLink v-if="auth.canConsole" class="header-link admin" to="/console" title="运营控制台">控制台</RouterLink>
         <div v-if="auth.loggedIn" class="user-menu">
           <button class="user-chip" type="button" :aria-expanded="false" aria-haspopup="menu">
             <span class="avatar" aria-hidden="true">{{ initial }}</span>

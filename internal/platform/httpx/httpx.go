@@ -145,11 +145,75 @@ func Authenticate(iss *auth.Issuer, check UserChecker, next http.Handler) http.H
 	})
 }
 
-// RequireAdmin 要求当前用户是管理员，必须套在 Authenticate 内层。
+// RequireAdmin 要求当前用户是超管（users.is_admin），必须套在 Authenticate 内层。
 func RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if c, ok := UserFrom(r.Context()); !ok || !c.IsAdmin {
 			WriteError(w, r, Forbidden("FORBIDDEN", "admin only"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ConsoleAccessChecker 判断用户是否具备控制台访问权（超管或 IAM 角色资源）。
+type ConsoleAccessChecker func(ctx context.Context, userID int64, isAdmin bool) (bool, error)
+
+// RequireConsoleStaff 允许超管或已授权控制台员工；必须套在 Authenticate 内层。
+func RequireConsoleStaff(check ConsoleAccessChecker, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, ok := UserFrom(r.Context())
+		if !ok {
+			WriteError(w, r, Forbidden("FORBIDDEN", "console staff only"))
+			return
+		}
+		if c.IsAdmin {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if check == nil {
+			WriteError(w, r, Forbidden("FORBIDDEN", "console staff only"))
+			return
+		}
+		allowed, err := check(r.Context(), c.UserID, c.IsAdmin)
+		if err != nil {
+			WriteError(w, r, err)
+			return
+		}
+		if !allowed {
+			WriteError(w, r, Forbidden("FORBIDDEN", "console staff only"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ResourceChecker 判断用户是否拥有任一资源码。
+type ResourceChecker func(ctx context.Context, userID int64, isAdmin bool, resourceIDs ...string) (bool, error)
+
+// RequireAnyResource 要求超管或拥有给定资源码之一。
+func RequireAnyResource(check ResourceChecker, resourceIDs []string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, ok := UserFrom(r.Context())
+		if !ok {
+			WriteError(w, r, Forbidden("FORBIDDEN", "permission denied"))
+			return
+		}
+		if c.IsAdmin {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if check == nil {
+			WriteError(w, r, Forbidden("FORBIDDEN", "permission denied"))
+			return
+		}
+		allowed, err := check(r.Context(), c.UserID, c.IsAdmin, resourceIDs...)
+		if err != nil {
+			WriteError(w, r, err)
+			return
+		}
+		if !allowed {
+			WriteError(w, r, Forbidden("FORBIDDEN", "permission denied"))
 			return
 		}
 		next.ServeHTTP(w, r)

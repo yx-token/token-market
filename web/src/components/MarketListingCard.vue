@@ -1,32 +1,49 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import type { FeedSku } from '@/market/config'
 import { inspectionSummary } from '@/utils/inspection'
 import { dateTime } from '@/utils/format'
 
-defineProps<{ sku: FeedSku }>()
+const props = defineProps<{ sku: FeedSku; busy?: boolean }>()
+const emit = defineEmits<{ quickOpen: [sku: FeedSku] }>()
+const router = useRouter()
 
-function hrefOf(sku: FeedSku) {
+function detailHref(sku: FeedSku) {
   if (sku.listingId) return `/market/listings/${sku.listingId}`
-  if (sku.pool) return '/buyer/keys'
-  return '/?kind=' + sku.kind
+  return ''
+}
+
+function goDetail() {
+  const href = detailHref(props.sku)
+  if (href) router.push(href)
+  else if (props.sku.pool) emit('quickOpen', props.sku)
+}
+
+function onBuy(e: Event) {
+  e.preventDefault()
+  e.stopPropagation()
+  if (props.sku.kind === 'pack') {
+    goDetail()
+    return
+  }
+  emit('quickOpen', props.sku)
 }
 </script>
 
 <template>
-  <article class="xm-card">
-    <RouterLink class="card-cover" :to="hrefOf(sku)">
+  <article class="xm-card" role="link" tabindex="0" @click="goDetail" @keydown.enter.prevent="goDetail">
+    <div class="card-cover">
       <img :src="`/assets/${sku.img}`" :alt="sku.title" loading="lazy" />
       <div class="shade" />
       <span v-if="sku.badge" class="badge">{{ sku.badge }}</span>
       <span class="plat">{{ sku.plat }}</span>
-    </RouterLink>
+    </div>
     <div class="card-body">
       <span v-if="sku.pool" class="card-kind is-pool">保障池 · 按量</span>
       <span v-else-if="sku.kind === 'pack'" class="card-kind is-pack">额度包</span>
       <span v-else class="card-kind">按量通道</span>
-      <h3 class="card-title">
-        <RouterLink :to="hrefOf(sku)">{{ sku.title }}</RouterLink>
-      </h3>
+      <h3 class="card-title">{{ sku.title }}</h3>
+      <p v-if="sku.desc" class="mb-2 line-clamp-2 text-xs leading-relaxed text-slate-500">{{ sku.desc }}</p>
       <div class="card-meta">
         <span class="grade">{{ sku.grade }} 级</span>
         <span>成功率 {{ (sku.success * 100).toFixed(0) }}%</span>
@@ -49,7 +66,9 @@ function hrefOf(sku: FeedSku) {
             <div class="price-sub">{{ sku.min === 0 ? '起步免费开通' : `起步 ¥${sku.min}` }} · 超额扣余额</div>
           </template>
         </div>
-        <RouterLink class="buy" :to="hrefOf(sku)">{{ sku.kind === 'pack' ? '购买额度包' : '选用并开通' }}</RouterLink>
+        <button type="button" class="buy" :disabled="busy" @click="onBuy">
+          {{ busy ? '开通中…' : sku.kind === 'pack' ? '购买额度包' : '选用并开通' }}
+        </button>
       </div>
     </div>
   </article>

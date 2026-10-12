@@ -631,7 +631,16 @@
       transition: box-shadow 0.5s;
     }
     .xm-market .tile:hover .tile-tray { box-shadow: 0 8px 10px 0 rgba(0, 0, 0, 0.08); }
-    .xm-market .thumb { text-align: center; min-width: 0; }
+    .xm-market .thumb {
+      display: block;
+      text-align: center;
+      min-width: 0;
+      color: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .xm-market .thumb--empty { cursor: default; opacity: 0.55; }
+    .xm-market .thumb-pic--empty { background: #f0f0f0; }
     .xm-market .thumb-pic {
       position: relative;
       width: 100%;
@@ -750,8 +759,12 @@
       font-size: 14px;
     }
 
-    /* 货架卡片：液态玻璃 */
+    /* 货架卡片：液态玻璃；整卡可点 */
     .xm-market .xm-card {
+      display: block;
+      color: inherit;
+      text-decoration: none;
+      cursor: pointer;
       border-radius: 18px;
       overflow: hidden;
       background: rgba(255, 255, 255, 0.5);
@@ -835,7 +848,6 @@
       min-height: 2.7em;
       color: #1f1f1f;
     }
-    .xm-market .xm-card .card-title a { color: inherit; }
     .xm-market .xm-card .card-meta {
       display: flex;
       flex-wrap: wrap;
@@ -871,6 +883,9 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      appearance: none;
+      border: none;
+      cursor: pointer;
       background: var(--yellow);
       color: #1f1f1f;
       font-size: 13px;
@@ -881,6 +896,7 @@
       flex-shrink: 0;
     }
     .xm-market .buy:hover { filter: brightness(0.97); }
+    .xm-market .buy:disabled { opacity: 0.6; cursor: wait; }
 
     .xm-market .note {
       margin-top: 40px;

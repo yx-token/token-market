@@ -1,23 +1,29 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { market } from '@/api'
+import { buyer, market } from '@/api'
 import type { MarketCategory, MarketItem, PoolItem, RecommendResult } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
 import MarketListingCard from '@/components/MarketListingCard.vue'
+import ModalDialog from '@/components/ModalDialog.vue'
+import { useAuth } from '@/stores/auth'
+import { useConfig } from '@/stores/config'
+import { useLoginModal } from '@/stores/loginModal'
 import { useMarketDiscovery } from '@/stores/marketDiscovery'
+import { useToast } from '@/stores/toast'
+import { copyText } from '@/utils/clipboard'
+import { sampleRequest } from '@/utils/keySample'
 import {
   apiToPlat,
   catIconSvg,
   categoryToAction,
   coverFor,
-  tileFallbackThumbs,
   tileThemeIcon,
   type FeedSku,
   type MarketAction,
 } from '@/market/config'
 
-type TileThumb = { key: string; img: string; price: string }
+type TileThumb = { key: string; img: string; price: string; href?: string }
 type NavLabel = { text: string; action: MarketAction }
 type NavGroup = {
   id: string
@@ -36,11 +42,52 @@ type DisplayTile = {
 
 const route = useRoute()
 const router = useRouter()
+const auth = useAuth()
+const loginModal = useLoginModal()
+const toast = useToast()
+const appCfg = useConfig()
 const discoveryStore = useMarketDiscovery()
 const recommend = ref<RecommendResult | null>(null)
 const catTree = ref<MarketCategory[]>([])
 const cfg = computed(() => discoveryStore.cfg)
 const banner = computed(() => cfg.value.slots.find((s) => s.id === 'banner' && s.enabled !== false))
+const openingId = ref('')
+const created = ref<{ key: string; platform: string; title: string } | null>(null)
+const edgeBase = computed(() => appCfg.config.edge_url || window.location.origin)
+const createdSample = computed(() =>
+  created.value ? sampleRequest(created.value.platform, edgeBase.value, created.value.key, appCfg.config.price_models ?? []) : null,
+)
+
+async function copy(text: string) {
+  if (await copyText(text)) toast.success('已复制')
+  else toast.error('复制失败，请手动选择后按 Ctrl/⌘+C')
+}
+
+async function quickOpen(sku: FeedSku) {
+  if (sku.kind === 'pack') return
+  if (!auth.loggedIn) {
+    loginModal.show({ redirect: '/' })
+    return
+  }
+  if (openingId.value) return
+  openingId.value = sku.id
+  try {
+    const name = sku.title.slice(0, 64) || (sku.pool ? '平台保障池' : `卖家挂单 #${sku.listingId}`)
+    const body = sku.poolName
+      ? { name, route: { type: 'default' as const, pool: sku.poolName }, limits: {} }
+      : { name, route: { type: 'chain' as const, hops: [{ listing_id: sku.listingId! }] }, limits: {} }
+    const res = await buyer.createKey(body)
+    created.value = {
+      key: res.key,
+      platform: res.detail.platform || sku.apiPlatform || '',
+      title: sku.title,
+    }
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : '开通失败')
+  } finally {
+    openingId.value = ''
+  }
+}
 
 /** 侧栏类目：直接读市场分类树 */
 const groups = computed((): NavGroup[] => {
@@ -65,17 +112,35 @@ const groups = computed((): NavGroup[] => {
   })
 })
 
-/** 四宫格：推荐运营结果 */
-const tiles = computed((): DisplayTile[] =>
-  (recommend.value?.tiles ?? []).slice(0, 4).map((t) => ({
+/** 四宫格：优先推荐接口；不足时用运营位默认补齐到 4 格 */
+const tiles = computed((): DisplayTile[] => {
+  const fromRec = (recommend.value?.tiles ?? []).map((t) => ({
     id: t.id,
     title: t.title,
     desc: t.desc,
     eng: t.eng,
     theme: t.theme || 'deal',
-    action: t.action || {},
-  })),
-)
+    action: (t.action || {}) as MarketAction,
+  }))
+  if (fromRec.length >= 4) return fromRec.slice(0, 4)
+  const seen = new Set(fromRec.map((t) => t.id))
+  const extras: DisplayTile[] = []
+  for (const s of cfg.value.slots) {
+    if (!s.id.startsWith('tile_') || s.enabled === false) continue
+    const id = s.id.replace(/^tile_/, '')
+    if (seen.has(id)) continue
+    extras.push({
+      id,
+      title: s.title || s.name || id,
+      desc: s.desc || '',
+      eng: s.eng || '',
+      theme: s.theme || 'deal',
+      action: s.action || {},
+    })
+    if (fromRec.length + extras.length >= 4) break
+  }
+  return [...fromRec, ...extras].slice(0, 4)
+})
 
 const state = reactive({
   kind: 'all' as string,
@@ -126,6 +191,7 @@ function toSku(it: MarketItem): FeedSku {
   return {
     id: `l-${it.listing_id}`,
     listingId: it.listing_id,
+    apiPlatform: it.platform,
     kind: isPack ? 'pack' : 'channel',
     plat,
     tier: it.tier || '',
@@ -143,6 +209,29 @@ function toSku(it: MarketItem): FeedSku {
     inspectionMode: it.inspection_mode,
     qualityChecks: it.quality_checks,
     lastCheckedAt: it.last_checked_at,
+  }
+}
+
+function toPoolSku(p: PoolItem): FeedSku {
+  const plat = apiToPlat[p.platform] || (p.platform === 'composite' ? '保障池' : p.platform)
+  const base = p.name.replace(/^tm-pool-/, '') || p.name
+  return {
+    id: `pool-${p.id || p.name}`,
+    poolName: p.name,
+    apiPlatform: p.platform,
+    kind: 'channel',
+    plat,
+    tier: '',
+    title: p.market_title || `${base} · 平台保障`,
+    desc: p.market_description || undefined,
+    img: coverFor(plat === '保障池' ? 'Claude' : plat, p.id || p.name),
+    mult: p.price,
+    min: 0,
+    grade: 'S',
+    success: 0.99,
+    ttft: 320,
+    pool: true,
+    badge: '平台官方',
   }
 }
 
@@ -172,7 +261,7 @@ function matchAction(skus: FeedSku[], action: MarketAction): FeedSku[] {
   }
   if (action.q) {
     const q = action.q.toLowerCase()
-    list = list.filter((s) => (s.plat + ' ' + s.tier + ' ' + s.title).toLowerCase().includes(q))
+    list = list.filter((s) => (s.plat + ' ' + s.tier + ' ' + s.title + ' ' + (s.desc ?? '')).toLowerCase().includes(q))
   }
   return list
 }
@@ -186,37 +275,62 @@ function priceLabel(s: FeedSku): string {
   return `${Number(s.mult).toFixed(2)}×`
 }
 
-const allSkus = computed(() => (listings.data.value ?? []).map(toSku))
+const allSkus = computed(() => {
+  const listingSkus = (listings.data.value ?? []).map(toSku)
+  const poolSkus = (pools.data.value ?? []).filter((p) => p.market_published).map(toPoolSku)
+  return [...poolSkus, ...listingSkus]
+})
 
-/** 四宫格右侧三图：推荐 items，不足再本地匹配/占位 */
+function skuHref(s: FeedSku): string {
+  if (s.listingId) return `/market/listings/${s.listingId}`
+  if (s.pool) return '/buyer/keys'
+  return '/#feed'
+}
+
+function pushThumb(picks: TileThumb[], s: FeedSku) {
+  if (picks.length >= 3 || picks.some((x) => x.key === s.id)) return
+  picks.push({ key: s.id, img: assetUrl(s.img), price: priceLabel(s), href: skuHref(s) })
+}
+
+/** 四宫格右侧三图：只展示真实挂单/保障池；本专场不足则用其它在售补齐 */
 const tileThumbs = computed(() => {
   const map: Record<string, TileThumb[]> = {}
   for (const t of tiles.value) {
-    const theme = t.theme || 'deal'
     const picks: TileThumb[] = []
     const recItems = recommend.value?.tiles?.find((r) => r.id === t.id)?.items
 
     if (recItems?.length) {
       for (const it of recItems.slice(0, 3)) {
         const plat = apiToPlat[it.plat] || it.plat
+        const key = it.key
+        if (picks.some((x) => x.key === key)) continue
+        const href = it.listing_id
+          ? `/market/listings/${it.listing_id}`
+          : it.pool
+            ? '/buyer/keys'
+            : undefined
         picks.push({
-          key: it.key,
+          key,
           img: assetUrl(coverFor(plat, it.listing_id ?? it.key)),
           price: it.price,
+          href,
         })
       }
     }
 
     if (picks.length < 3 && t.action.plat === '保障池') {
-      for (const [i, p] of (pools.data.value ?? []).slice(0, 3).entries()) {
+      const published = (pools.data.value ?? []).filter((p) => p.market_published)
+      const poolList = published.length ? published : (pools.data.value ?? [])
+      for (const [i, p] of poolList.entries()) {
         if (picks.length >= 3) break
         const plat = apiToPlat[p.platform] || p.platform
-        const key = `pool-${p.platform}-${i}`
+        const key = `pool-${p.id || p.name}`
         if (picks.some((x) => x.key === key)) continue
         picks.push({
           key,
-          img: assetUrl(coverFor(plat, i)),
+          img: assetUrl(coverFor(plat, p.id || i)),
           price: `${Number(p.price).toFixed(2)}×`,
+          href: '/buyer/keys',
         })
       }
     }
@@ -226,18 +340,14 @@ const tileThumbs = computed(() => {
       if (t.action.tag === 'low_rate') matched.sort((a, b) => a.mult - b.mult)
       else if (t.action.kindTab === 'pack') matched.sort((a, b) => (a.face ?? 0) - (b.face ?? 0))
       else matched.sort((a, b) => b.success - a.success)
-      for (const s of matched) {
-        if (picks.length >= 3) break
-        if (picks.some((x) => x.key === s.id)) continue
-        picks.push({ key: s.id, img: assetUrl(s.img), price: priceLabel(s) })
-      }
+      for (const s of matched) pushThumb(picks, s)
     }
 
-    const fallbacks = tileFallbackThumbs[theme] || tileFallbackThumbs.deal
-    for (const [i, f] of fallbacks.entries()) {
-      if (picks.length >= 3) break
-      picks.push({ key: `${t.id}-fb-${i}`, img: f.img, price: f.price })
+    if (picks.length < 3) {
+      const rest = [...allSkus.value].sort((a, b) => b.success - a.success)
+      for (const s of rest) pushThumb(picks, s)
     }
+
     map[t.id] = picks
   }
   return map
@@ -258,7 +368,7 @@ const feedSkus = computed(() => {
   else if (state.tag) list = list.filter((s) => hasCat(s, state.tag))
   if (state.q) {
     const q = state.q.toLowerCase()
-    list = list.filter((s) => (s.plat + ' ' + s.tier + ' ' + s.title).toLowerCase().includes(q))
+    list = list.filter((s) => (s.plat + ' ' + s.tier + ' ' + s.title + ' ' + (s.desc ?? '')).toLowerCase().includes(q))
   }
   if (state.sort === 'price') list.sort((a, b) => (a.kind === 'pack' ? (a.face ?? 0) : a.mult) - (b.kind === 'pack' ? (b.face ?? 0) : b.mult))
   else if (state.sort === 'success') list.sort((a, b) => b.success - a.success)
@@ -268,7 +378,7 @@ const feedSkus = computed(() => {
 })
 
 const feedTitle = computed(() => {
-  const kindText = state.kind === 'pack' ? '额度包' : state.kind === 'channel' ? '按量通道' : '在售供给'
+  const kindText = state.kind === 'pack' ? '额度包' : state.kind === 'channel' ? '按量通道' : '在售闲置TOKEN'
   return state.plat ? `${state.plat} · ${kindText}` : kindText
 })
 
@@ -368,9 +478,21 @@ watch(
             <img :src="tileThemeIcon[t.theme || 'deal']" alt="" />
           </div>
           <div class="tile-tray">
-            <div v-for="th in tileThumbs[t.id]" :key="th.key" class="thumb">
-              <div class="thumb-pic"><img :src="th.img" alt="" /></div>
-              <div class="thumb-price">{{ th.price }}</div>
+            <template v-if="tileThumbs[t.id]?.length">
+              <RouterLink
+                v-for="th in tileThumbs[t.id]"
+                :key="th.key"
+                class="thumb"
+                :to="th.href || '#feed'"
+                @click.stop
+              >
+                <div class="thumb-pic"><img :src="th.img" alt="" /></div>
+                <div class="thumb-price">{{ th.price }}</div>
+              </RouterLink>
+            </template>
+            <div v-else class="thumb thumb--empty">
+              <div class="thumb-pic thumb-pic--empty" />
+              <div class="thumb-price">暂无</div>
             </div>
           </div>
         </a>
@@ -402,14 +524,20 @@ watch(
         <option value="success">成功率</option>
         <option value="ttft">更快</option>
       </select>
-      <span class="facet-hint">{{ feedSkus.length }} 个真实供给</span>
+      <span class="facet-hint">{{ feedSkus.length }} 个闲置TOKEN</span>
     </div>
 
     <div class="feed">
-      <MarketListingCard v-for="sku in feedSkus" :key="sku.id" :sku="sku" />
+      <MarketListingCard
+        v-for="sku in feedSkus"
+        :key="sku.id"
+        :sku="sku"
+        :busy="openingId === sku.id"
+        @quick-open="quickOpen"
+      />
       <div v-if="!feedSkus.length && !listings.loading.value" class="feed-empty">
-        暂无在售供给。
-        <RouterLink to="/seller/publish" class="ml-1 font-bold underline underline-offset-2">去发布</RouterLink>
+        暂无在售闲置TOKEN。
+        <RouterLink to="/seller/publish" class="ml-1 font-bold underline underline-offset-2">去发布闲置TOKEN</RouterLink>
       </div>
       <div v-else-if="!feedSkus.length" class="feed-empty">加载中…</div>
     </div>
@@ -417,8 +545,27 @@ watch(
     <p class="note-wrap">
       <span class="note">
         货架只展示真实挂单。卖家完成检测并上架后会出现在这里。
-        <RouterLink to="/seller/publish">发布供给</RouterLink>
+        <RouterLink to="/seller/publish">发布闲置TOKEN</RouterLink>
       </span>
     </p>
+
+    <ModalDialog :open="!!created" title="Key 已创建" @update:open="(v: boolean) => !v && (created = null)">
+      <p class="text-sm text-emerald-700">「{{ created?.title }}」已开通，可立即调用。</p>
+      <p class="text-sm text-amber-700">稍后也可以在买家中心再次查看和复制这个 Key。</p>
+      <div class="flex items-center gap-2">
+        <code class="flex-1 break-all rounded-xl border border-black/10 !bg-[#fafafa] !px-3 !py-2 text-sm">{{ created?.key }}</code>
+        <button type="button" class="btn-secondary btn-sm" @click="copy(created!.key)">复制</button>
+      </div>
+      <div v-if="createdSample">
+        <div class="label">调用示例 · {{ createdSample.label }}</div>
+        <pre class="codeblock">{{ createdSample.code }}</pre>
+        <button type="button" class="btn-secondary btn-sm" @click="copy(createdSample.code)">复制示例</button>
+        <p class="hint">{{ createdSample.note }}</p>
+      </div>
+      <template #footer>
+        <RouterLink class="btn-secondary" to="/buyer/keys" @click="created = null">去买家中心</RouterLink>
+        <button type="button" class="btn-primary" @click="created = null">知道了</button>
+      </template>
+    </ModalDialog>
   </div>
 </template>

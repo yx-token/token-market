@@ -17,13 +17,13 @@ const route = useRoute()
 const router = useRouter()
 const page = useConsolePage()
 const collapsed = ref(false)
-
-onMounted(() => {
+onMounted(async () => {
   try {
     collapsed.value = localStorage.getItem(STORAGE_KEY) === '1'
   } catch {
     /* ignore */
   }
+  if (!auth.consoleAccess) await auth.loadConsoleAccess()
 })
 
 watch(collapsed, (v) => {
@@ -54,7 +54,7 @@ const navItems: NavNode[] = [
   },
   {
     key: 'supply',
-    text: '供给',
+    text: '闲置TOKEN',
     icon: 'server',
     children: [
       { key: 'upstreams', text: '上游', to: '/console/upstreams', icon: 'server' },
@@ -107,10 +107,40 @@ const navItems: NavNode[] = [
       { key: 'audit', text: '审计日志', to: '/console/audit', icon: 'scroll-text' },
     ],
   },
+  {
+    key: 'org',
+    text: '组织管理',
+    icon: 'users',
+    children: [
+      { key: 'org-units', text: '组织架构', to: '/console/org/units', icon: 'building-2' },
+      { key: 'org-roles', text: '角色管理', to: '/console/org/roles', icon: 'shield' },
+      { key: 'org-staff', text: '员工授权', to: '/console/org/staff', icon: 'users' },
+    ],
+  },
 ]
 
 const email = computed(() => auth.user?.email ?? '')
 const initial = computed(() => (email.value || '?').slice(0, 1).toUpperCase())
+
+/** 超管看全部；否则只保留 menu_paths 命中的叶子（及仍有子项的目录） */
+function filterNav(nodes: NavNode[], paths: Set<string>): NavNode[] {
+  const out: NavNode[] = []
+  for (const n of nodes) {
+    if (n.children?.length) {
+      const kids = filterNav(n.children, paths)
+      if (kids.length) out.push({ ...n, children: kids })
+      continue
+    }
+    if (n.to && paths.has(n.to)) out.push(n)
+  }
+  return out
+}
+
+const visibleNav = computed(() => {
+  const a = auth.consoleAccess
+  if (!a || a.is_admin || auth.isAdmin) return navItems
+  return filterNav(navItems, new Set(a.menu_paths ?? []))
+})
 
 function titleFromNav(nodes: NavNode[], path: string): string {
   for (const n of nodes) {
@@ -125,7 +155,7 @@ function titleFromNav(nodes: NavNode[], path: string): string {
   return ''
 }
 
-const headerTitle = computed(() => page.title.value || titleFromNav(navItems, route.path) || '控制台')
+const headerTitle = computed(() => page.title.value || titleFromNav(visibleNav.value, route.path) || '控制台')
 const headerDesc = computed(() => page.description.value)
 
 function logout() {
@@ -143,7 +173,7 @@ function logout() {
         <div class="console-brand-name">{{ collapsed ? 'C' : 'Console' }}</div>
         <div v-if="!collapsed" class="console-brand-sub">运营控制台</div>
       </div>
-      <ConsoleNav :items="navItems" :collapsed="collapsed" />
+      <ConsoleNav :items="visibleNav" :collapsed="collapsed" />
       <div class="console-side-foot">
         <button
           type="button"
@@ -186,7 +216,7 @@ function logout() {
             </div>
           </div>
         </div>
-        <ConsolePageTabs :nav-items="navItems" />
+        <ConsolePageTabs :nav-items="visibleNav" />
       </header>
       <main class="console-body">
         <RouterView v-slot="{ Component, route: r }">

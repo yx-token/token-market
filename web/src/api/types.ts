@@ -59,9 +59,13 @@ export interface MarketItem {
 }
 
 export interface PoolItem {
+  id: number
   name: string
   platform: string
   price: number
+  market_published?: boolean
+  market_title?: string
+  market_description?: string
 }
 
 export interface Price {
@@ -741,6 +745,9 @@ export interface Pool {
   min_margin: number
   safety_buffer: number
   enabled: boolean
+  market_published: boolean
+  market_title: string
+  market_description: string
   created_at: string
   updated_at: string
 }
@@ -1281,4 +1288,56 @@ export interface SystemUpdateCheck {
     published_at: string
     compatible: boolean
   }
+}
+
+/** 组织权限（IAM） */
+export interface OrgUnit {
+  id: number
+  parent_id?: number | null
+  name: string
+  code: string
+  sort: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface IAMResource {
+  id: string
+  parent_id?: string | null
+  name: string
+  kind: 'dir' | 'menu' | 'action'
+  path: string
+  icon: string
+  sort: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface IAMRole {
+  id: number
+  code: string
+  name: string
+  description: string
+  is_system: boolean
+  member_count?: number
+  created_at: string
+  updated_at: string
+}
+
+export interface IAMStaff {
+  id: number
+  email: string
+  is_admin: boolean
+  status: string
+  created_at: string
+  roles?: IAMRole[]
+  org_units?: OrgUnit[]
+}
+
+export interface ConsoleAccess {
+  is_admin: boolean
+  resource_ids: string[]
+  menu_paths: string[]
 }

@@ -9,6 +9,7 @@ export const auth = {
   login: (email: string, password: string) => http.post<T.LoginResult>('/api/auth/login', { email, password }),
   refresh: () => http.post<T.LoginResult>('/api/auth/refresh'),
   me: () => http.get<T.User>('/api/me'),
+  consoleAccess: () => http.get<T.ConsoleAccess>('/api/me/console-access'),
   submitKYC: (real_name: string, id_number: string) => http.post<Ok>('/api/me/kyc', { real_name, id_number }),
 }
 
@@ -58,6 +59,8 @@ export const buyer = {
 export const seller = {
   proxies: () => http.get<T.Proxy[] | null>('/api/seller/proxies'),
   createProxy: (body: T.CreateProxyInput) => http.post<T.Proxy>('/api/seller/proxies', body),
+  updateProxy: (id: number, body: T.CreateProxyInput) => http.put<T.Proxy>(`/api/seller/proxies/${id}`, body),
+  deleteProxy: (id: number) => http.del<Ok>(`/api/seller/proxies/${id}`),
   syncProxy: (id: number) => http.post<T.Proxy>(`/api/seller/proxies/${id}/sync`),
   testProxy: (id: number) => http.post<T.Proxy>(`/api/seller/proxies/${id}/test`),
   checkProxyQuality: (id: number) => http.post<T.Proxy>(`/api/seller/proxies/${id}/quality-check`, {}, 190000),
@@ -212,4 +215,33 @@ export const admin = {
   ledger: () => http.get<T.PlatformLedger>('/api/admin/ledger'),
   sub2apiStatus: () => http.get<T.Sub2APIStatus>('/api/admin/sub2api/status'),
   auditLogs: (q?: Query) => http.get<T.AuditLog[] | null>('/api/admin/audit-logs', q),
+  orgUnits: () => http.get<T.OrgUnit[] | null>('/api/admin/org/units'),
+  createOrgUnit: (body: Record<string, unknown>) => http.post<T.OrgUnit>('/api/admin/org/units', body),
+  updateOrgUnit: (id: number, body: Record<string, unknown>) => http.put<T.OrgUnit>(`/api/admin/org/units/${id}`, body),
+  deleteOrgUnit: (id: number) => http.del<Ok>(`/api/admin/org/units/${id}`),
+  orgResources: () => http.get<T.IAMResource[] | null>('/api/admin/org/resources'),
+  updateOrgResource: (id: string, body: Record<string, unknown>) =>
+    http.put<T.IAMResource>(`/api/admin/org/resources/${encodeURIComponent(id)}`, body),
+  orgRoles: () => http.get<T.IAMRole[] | null>('/api/admin/org/roles'),
+  createOrgRole: (body: Record<string, unknown>) => http.post<T.IAMRole>('/api/admin/org/roles', body),
+  updateOrgRole: (id: number, body: Record<string, unknown>) => http.put<T.IAMRole>(`/api/admin/org/roles/${id}`, body),
+  deleteOrgRole: (id: number) => http.del<Ok>(`/api/admin/org/roles/${id}`),
+  orgRoleResources: (id: number) => http.get<{ resource_ids: string[] }>(`/api/admin/org/roles/${id}/resources`),
+  setOrgRoleResources: (id: number, resource_ids: string[]) =>
+    http.put<Ok>(`/api/admin/org/roles/${id}/resources`, { resource_ids }),
+  orgRoleMembers: (id: number) =>
+    http.get<{ user_ids: number[]; members: T.IAMStaff[] }>(`/api/admin/org/roles/${id}/members`),
+  setOrgRoleMembers: (id: number, user_ids: number[]) =>
+    http.put<Ok>(`/api/admin/org/roles/${id}/members`, { user_ids }),
+  orgStaff: (q?: string) => http.get<T.IAMStaff[] | null>('/api/admin/org/staff', q ? { q } : undefined),
+  createOrgStaff: (body: {
+    email: string
+    password: string
+    role_ids: number[]
+    org_unit_ids: number[]
+    primary_org_id?: number
+  }) => http.post<T.IAMStaff>('/api/admin/org/staff', body),
+  orgUsers: (q?: string) => http.get<T.IAMStaff[] | null>('/api/admin/org/users', q ? { q } : undefined),
+  assignOrgStaff: (id: number, body: { role_ids: number[]; org_unit_ids: number[]; primary_org_id?: number }) =>
+    http.put<T.IAMStaff>(`/api/admin/org/staff/${id}`, body),
 }

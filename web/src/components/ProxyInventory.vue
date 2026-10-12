@@ -27,11 +27,13 @@ const { queryParams, resetQuery, handleQuery } = useListQuery({
 const proxies = useLoader(() => api.proxies(), [] as Proxy[] | null)
 const { busy, run } = useAction()
 const show = ref(false)
+const editing = ref<Proxy | null>(null)
 const reportProxy = ref<Proxy | null>(null)
 const reportOpen = ref(false)
 const checking = ref<{ id: number; quality: boolean } | null>(null)
 const form = reactive({ name: '', protocol: 'socks5', host: '', port: '', username: '', password: '', region: '' })
 const valid = computed(() => !!form.name.trim() && !!form.host.trim() && Number.isInteger(Number(form.port)) && Number(form.port) > 0 && Number(form.port) <= 65535)
+const modalTitle = computed(() => (editing.value ? `编辑代理 · #${editing.value.id}` : '添加代理 IP'))
 const columns = computed(() => [
   { key: 'name', label: '代理' },
   ...(!isSeller.value ? [{ key: 'owner', label: '来源' }] : []),
@@ -63,15 +65,56 @@ function onReset() {
   proxies.load()
 }
 
-async function create() {
+function resetForm() {
+  Object.assign(form, { name: '', protocol: 'socks5', host: '', port: '', username: '', password: '', region: '' })
+  editing.value = null
+}
+
+function openCreate() {
+  resetForm()
+  show.value = true
+}
+
+function openEdit(p: Proxy) {
+  editing.value = p
+  Object.assign(form, {
+    name: p.name,
+    protocol: p.protocol,
+    host: p.host,
+    port: String(p.port),
+    username: p.username ?? '',
+    password: '',
+    region: p.region ?? '',
+  })
+  show.value = true
+}
+
+async function save() {
   if (!valid.value) return
-  const saved = await run(() => api.createProxy({ ...form, port: Number(form.port) }), '代理 IP 已添加')
-  if (saved) {
-    show.value = false
-    Object.assign(form, { name: '', host: '', port: '', username: '', password: '', region: '' })
+  const body = { ...form, port: Number(form.port) }
+  if (editing.value) {
+    if (!isSeller.value) return
+    const saved = await run(() => seller.updateProxy(editing.value!.id, body), '代理已更新')
+    if (saved) {
+      show.value = false
+      resetForm()
+    }
+  } else {
+    const saved = await run(() => api.createProxy(body), '代理 IP 已添加')
+    if (saved) {
+      show.value = false
+      resetForm()
+    }
   }
   // 同步失败时代理仍已保存，可在列表重试。
   await proxies.load()
+}
+
+async function removeProxy(p: Proxy) {
+  if (!isSeller.value) return
+  if (p.assigned_upstream_id) return
+  if (!confirm(`删除代理「${p.name}」？此操作不可恢复。`)) return
+  if (await run(() => seller.deleteProxy(p.id), '已删除')) await proxies.load()
 }
 
 async function act(fn: () => Promise<unknown>, msg: string) {
@@ -104,7 +147,7 @@ async function check(p: Proxy, quality: boolean) {
   >
     <template #actions>
       <RefreshButton :loading="proxies.loading.value" @click="proxies.load()" />
-      <button type="button" :class="isSeller ? 'xm-btn xm-btn-primary' : 'btn btn-primary'" @click="show = true">添加代理 IP</button>
+      <button type="button" :class="isSeller ? 'xm-btn xm-btn-primary' : 'btn btn-primary'" @click="openCreate">添加代理 IP</button>
     </template>
 
     <template #filters>
@@ -173,8 +216,10 @@ async function check(p: Proxy, quality: boolean) {
           <button type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, true)">质量检测</button>
           <button v-if="row.connection_report || row.quality_report" type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" @click="viewReport(row)">查看报告</button>
           <button v-if="!row.sub2api_proxy_id" type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy" @click="act(() => api.syncProxy(row.id), '连接配置已就绪')">重试连接</button>
+          <button v-if="isSeller && !row.assigned_upstream_id" type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="busy" @click="openEdit(row)">编辑</button>
           <button v-if="row.status !== 'disabled'" type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy || !!row.assigned_upstream_id" @click="act(() => api.setProxyDisabled(row.id, true), '已停用')">停用</button>
           <button v-else type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy" @click="act(() => api.setProxyDisabled(row.id, false), '已启用')">启用</button>
+          <button v-if="isSeller && !row.assigned_upstream_id" type="button" class="xm-btn xm-btn-ghost xm-btn-sm text-red-600" :disabled="busy" @click="removeProxy(row)">删除</button>
         </div>
       </template>
     </DataTable>
@@ -197,8 +242,8 @@ async function check(p: Proxy, quality: boolean) {
     </template>
   </component>
 
-  <ModalDialog v-model:open="show" title="添加代理 IP">
-    <form id="proxy-form" class="grid grid-cols-1 gap-3 sm:grid-cols-2" @submit.prevent="create">
+  <ModalDialog v-model:open="show" :title="modalTitle" @update:open="(v: boolean) => !v && resetForm()">
+    <form id="proxy-form" class="grid grid-cols-1 gap-3 sm:grid-cols-2" @submit.prevent="save">
       <div class="sm:col-span-2">
         <label class="label" for="proxy-name">名称</label>
         <input id="proxy-name" v-model="form.name" class="input" required placeholder="例如 美国固定 IP 01" />
@@ -227,13 +272,13 @@ async function check(p: Proxy, quality: boolean) {
         <input id="proxy-user" v-model="form.username" class="input" autocomplete="off" />
       </div>
       <div>
-        <label class="label" for="proxy-password">密码（可选）</label>
+        <label class="label" for="proxy-password">密码{{ editing ? '（留空不改）' : '（可选）' }}</label>
         <input id="proxy-password" v-model="form.password" class="input" type="password" autocomplete="new-password" />
       </div>
     </form>
     <template #footer>
-      <button :class="isSeller ? 'xm-btn xm-btn-ghost' : 'btn-secondary'" :disabled="busy" @click="show = false">取消</button>
-      <button type="submit" form="proxy-form" :class="isSeller ? 'xm-btn xm-btn-primary' : 'btn-primary'" :disabled="busy || !valid">添加</button>
+      <button :class="isSeller ? 'xm-btn xm-btn-ghost' : 'btn-secondary'" :disabled="busy" @click="show = false; resetForm()">取消</button>
+      <button type="submit" form="proxy-form" :class="isSeller ? 'xm-btn xm-btn-primary' : 'btn-primary'" :disabled="busy || !valid">{{ editing ? '保存' : '添加' }}</button>
     </template>
   </ModalDialog>
   <ModalDialog v-model:open="reportOpen" :title="`代理检测报告 · ${reportProxy?.name ?? ''}`" wide>

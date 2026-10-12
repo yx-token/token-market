@@ -149,7 +149,7 @@ func setupWithDatabaseMode(t *testing.T, fromScratch bool, opts ...func(cfg *con
 	opshandlers.Register(sender, a.Admin)
 
 	srv := &httpapi.Server{
-		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools,
+		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, IAM: a.IAM, Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools,
 		Keys: a.Keys, Funds: a.Funds, Payments: a.Payments, Market: a.Market, Quality: a.Quality, Risk: a.Risk, Kicker: a.Kicker, Log: log,
 	}
 	api := httptest.NewServer(srv.Handler())

@@ -561,6 +561,13 @@ func (s *Service) BuildRecommendations(ctx context.Context, pools []PoolItem) (*
 			continue
 		}
 		skus := pickSKUsForProfile(cfg, tile, prof, items, pools, now)
+		need := prof.PerTileSKU
+		if need < 1 {
+			need = 3
+		}
+		if len(skus) < need {
+			skus = padTileSKUs(skus, items, need)
+		}
 		tileScore := float64(100-tile.Sort) * math.Max(tile.Boost, 0.01)
 		if len(skus) > 0 {
 			sum := 0.0
@@ -608,43 +615,105 @@ func pickSKUsForProfile(cfg RecommendConfig, tile HomeTile, prof RecommendProfil
 		it    Item
 		score float64
 	}
-	var rows []row
+	var matched, rest []row
 	for _, it := range items {
-		if !matchProfile(prof, it) {
-			continue
+		r := row{it: it, score: scoreItemWithProfile(cfg, tile, prof, it, now)}
+		if matchProfile(prof, it) {
+			matched = append(matched, r)
+		} else {
+			rest = append(rest, r)
 		}
-		rows = append(rows, row{it: it, score: scoreItemWithProfile(cfg, tile, prof, it, now)})
 	}
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].score > rows[j].score })
+	sort.SliceStable(matched, func(i, j int) bool { return matched[i].score > matched[j].score })
+	sort.SliceStable(rest, func(i, j int) bool { return rest[i].score > rest[j].score })
 	perPlat := map[string]int{}
-	limit := prof.PerTileSKU
-	out := make([]TileSKURec, 0, limit)
-	for _, r := range rows {
-		if len(out) >= limit {
-			break
-		}
-		if prof.Diversity > 0 && perPlat[r.it.Platform] >= prof.Diversity {
-			continue
-		}
-		perPlat[r.it.Platform]++
-		out = append(out, toSKURec(r.it, r.score))
-	}
-	return out
-}
-
-func pickPools(prof RecommendProfile, pools []PoolItem) []TileSKURec {
-	sort.SliceStable(pools, func(i, j int) bool { return pools[i].Price < pools[j].Price })
 	limit := prof.PerTileSKU
 	if limit < 1 {
 		limit = 3
 	}
 	out := make([]TileSKURec, 0, limit)
-	for i, p := range pools {
+	seen := map[int64]bool{}
+	appendRows := func(rows []row, enforceDiversity bool) {
+		for _, r := range rows {
+			if len(out) >= limit {
+				return
+			}
+			if seen[r.it.ListingID] {
+				continue
+			}
+			if enforceDiversity && prof.Diversity > 0 && perPlat[r.it.Platform] >= prof.Diversity {
+				continue
+			}
+			seen[r.it.ListingID] = true
+			perPlat[r.it.Platform]++
+			out = append(out, toSKURec(r.it, r.score))
+		}
+	}
+	appendRows(matched, true)
+	// 本专场不够时用其它在售真实挂单补齐，避免四宫格假占位
+	appendRows(rest, false)
+	return out
+}
+
+// padTileSKUs 用其它在售挂单补齐专场空位（仅真实数据，不含演示占位）。
+func padTileSKUs(have []TileSKURec, items []Item, limit int) []TileSKURec {
+	if limit < 1 {
+		limit = 3
+	}
+	seenListing := map[int64]bool{}
+	seenKey := map[string]bool{}
+	out := make([]TileSKURec, 0, limit)
+	for _, x := range have {
+		out = append(out, x)
+		if x.ListingID > 0 {
+			seenListing[x.ListingID] = true
+		}
+		seenKey[x.Key] = true
+	}
+	for _, it := range items {
 		if len(out) >= limit {
 			break
 		}
+		if seenListing[it.ListingID] {
+			continue
+		}
+		rec := toSKURec(it, 0)
+		if seenKey[rec.Key] {
+			continue
+		}
+		seenListing[it.ListingID] = true
+		seenKey[rec.Key] = true
+		out = append(out, rec)
+	}
+	return out
+}
+
+func pickPools(prof RecommendProfile, pools []PoolItem) []TileSKURec {
+	published := make([]PoolItem, 0, len(pools))
+	for _, p := range pools {
+		if p.MarketPublished {
+			published = append(published, p)
+		}
+	}
+	if len(published) == 0 {
+		published = pools
+	}
+	sort.SliceStable(published, func(i, j int) bool { return published[i].Price < published[j].Price })
+	limit := prof.PerTileSKU
+	if limit < 1 {
+		limit = 3
+	}
+	out := make([]TileSKURec, 0, limit)
+	for i, p := range published {
+		if len(out) >= limit {
+			break
+		}
+		title := p.MarketTitle
+		if title == "" {
+			title = p.Name
+		}
 		out = append(out, TileSKURec{
-			Key: "pool-" + p.Platform + "-" + p.Name, Title: p.Name, Plat: p.Platform,
+			Key: "pool-" + p.Platform + "-" + p.Name, Title: title, Plat: p.Platform,
 			Price: formatMult(p.Price), Score: float64(100 - i), Pool: true, Kind: "channel", Mult: p.Price,
 		})
 	}

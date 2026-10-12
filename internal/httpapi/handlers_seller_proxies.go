@@ -55,3 +55,32 @@ func (s *Server) setSellerProxyDisabled(disabled bool) httpx.Handler {
 		return ok(w, p)
 	}
 }
+
+func (s *Server) updateSellerProxy(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in listing.CreateProxyInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	p, err := s.Proxies.UpdateSeller(r.Context(), httpx.MustUser(r).UserID, id, in)
+	if err != nil {
+		return err
+	}
+	s.audit(r, "seller_proxy.update", fmt.Sprintf("proxy:%d", p.ID), map[string]any{"host": p.Host, "port": p.Port})
+	return ok(w, p)
+}
+
+func (s *Server) deleteSellerProxy(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	if err := s.Proxies.DeleteSeller(r.Context(), httpx.MustUser(r).UserID, id); err != nil {
+		return err
+	}
+	s.audit(r, "seller_proxy.delete", fmt.Sprintf("proxy:%d", id), nil)
+	return ok(w, map[string]bool{"ok": true})
+}

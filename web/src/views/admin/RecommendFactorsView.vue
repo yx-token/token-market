@@ -33,7 +33,7 @@ async function onSave() {
 }
 
 const groupLabel: Record<string, string> = {
-  supply: '供给侧',
+  supply: '闲置TOKEN侧',
   demand: '需求侧',
   platform: '平台目标',
 }

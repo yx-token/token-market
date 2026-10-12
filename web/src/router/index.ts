@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuth } from '@/stores/auth'
 import { useLoginModal } from '@/stores/loginModal'
+import { resourcesForConsolePath } from '@/router/consolePerms'
 
 const adminMeta = { auth: true, admin: true } as const
 
@@ -36,6 +37,10 @@ const consoleChildren: RouteRecordRaw[] = [
   { path: 'billing', name: 'console-billing', component: () => import('@/views/admin/BillingView.vue') },
   { path: 'risk', name: 'console-risk', component: () => import('@/views/admin/RiskView.vue') },
   { path: 'audit', name: 'console-audit', component: () => import('@/views/admin/AuditView.vue') },
+  { path: 'org/units', name: 'console-org-units', component: () => import('@/views/admin/OrgUnitsView.vue') },
+  { path: 'org/roles', name: 'console-org-roles', component: () => import('@/views/admin/OrgRolesView.vue') },
+  { path: 'org/menus', redirect: '/console/org/roles' },
+  { path: 'org/staff', name: 'console-org-staff', component: () => import('@/views/admin/OrgStaffView.vue') },
 ]
 
 // meta.auth：需要登录；meta.admin：需要管理员
@@ -121,6 +126,21 @@ router.beforeEach(async (to, from) => {
     return false
   }
 
-  if (to.meta.admin && !auth.isAdmin) return { name: 'market' }
+  if (to.meta.admin && !auth.canConsole) return { name: 'market' }
+
+  // 控制台子页：无对应菜单资源则跳到首个有权限页（避免仅藏侧栏仍可直链）
+  if (
+    to.path.startsWith('/console') &&
+    auth.canConsole &&
+    !auth.isAdmin &&
+    !auth.consoleAccess?.is_admin
+  ) {
+    const need = resourcesForConsolePath(to.path)
+    if (need && !auth.canAccessConsolePath(to.path, need)) {
+      const fallback = auth.consoleAccess?.menu_paths?.[0] || '/console'
+      if (fallback !== to.path) return fallback
+      return { name: 'market' }
+    }
+  }
   return true
 })

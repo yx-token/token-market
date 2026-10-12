@@ -188,12 +188,16 @@ func (s *Service) listOne(ctx context.Context, listingID int64) ([]Item, error) 
 }
 
 type PoolItem struct {
-	Name     string  `json:"name"`
-	Platform string  `json:"platform"`
-	Price    float64 `json:"price"`
+	ID                int64   `json:"id"`
+	Name              string  `json:"name"`
+	Platform          string  `json:"platform"`
+	Price             float64 `json:"price"`
+	MarketPublished   bool    `json:"market_published"`
+	MarketTitle       string  `json:"market_title,omitempty"`
+	MarketDescription string  `json:"market_description,omitempty"`
 }
 
-// Pools 返回可选的默认分组及售价。
+// Pools 返回可选的默认分组及售价（含市场推销字段；买家路由仍可用全部已同步分组）。
 func (s *Service) Pools(ctx context.Context) ([]PoolItem, error) {
 	pools, err := scheduling.ListPools(ctx, s.DB, true)
 	if err != nil {
@@ -202,7 +206,15 @@ func (s *Service) Pools(ctx context.Context) ([]PoolItem, error) {
 	out := make([]PoolItem, 0, len(pools))
 	for _, p := range pools {
 		if p.Sub2APIGroupID != nil {
-			out = append(out, PoolItem{Name: p.Name, Platform: p.Platform, Price: p.SellMultiplier})
+			out = append(out, PoolItem{
+				ID:                p.ID,
+				Name:              p.Name,
+				Platform:          p.Platform,
+				Price:             p.SellMultiplier,
+				MarketPublished:   p.MarketPublished,
+				MarketTitle:       p.MarketTitle,
+				MarketDescription: p.MarketDescription,
+			})
 		}
 	}
 	return out, nil

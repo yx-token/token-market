@@ -16,6 +16,7 @@ import (
 	"github.com/DueGin/token-market/internal/account"
 	"github.com/DueGin/token-market/internal/billing"
 	"github.com/DueGin/token-market/internal/buyer"
+	"github.com/DueGin/token-market/internal/iam"
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/market"
 	"github.com/DueGin/token-market/internal/payment/merchants"
@@ -36,6 +37,7 @@ type Server struct {
 	DB       *pgxpool.Pool
 	Issuer   *auth.Issuer
 	Accounts *account.Service
+	IAM      *iam.Service
 	Listings *listing.Service
 	Proxies  *listing.ProxyService
 	Pools    *scheduling.PoolService
@@ -93,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 	user := []route{
 		{"POST /api/auth/refresh", s.refreshToken},
 		{"GET /api/me", s.me},
+		{"GET /api/me/console-access", s.myConsoleAccess},
 		{"POST /api/me/kyc", s.submitKYC},
 
 		{"GET /api/buyer/wallet", s.wallet},
@@ -121,6 +124,8 @@ func (s *Server) Handler() http.Handler {
 		{"GET /api/seller/listing-categories", s.listingCategories},
 		{"GET /api/seller/proxies", s.listSellerProxies},
 		{"POST /api/seller/proxies", s.createSellerProxy},
+		{"PUT /api/seller/proxies/{id}", s.updateSellerProxy},
+		{"DELETE /api/seller/proxies/{id}", s.deleteSellerProxy},
 		{"POST /api/seller/proxies/{id}/sync", s.syncSellerProxy},
 		{"POST /api/seller/proxies/{id}/test", s.checkProxy(true, false)},
 		{"POST /api/seller/proxies/{id}/quality-check", s.checkProxy(true, true)},
@@ -249,6 +254,24 @@ func (s *Server) Handler() http.Handler {
 		{"GET /api/admin/ledger", s.platformLedger},
 		{"GET /api/admin/sub2api/status", s.sub2apiStatus},
 		{"GET /api/admin/audit-logs", s.auditLogs},
+		{"GET /api/admin/org/units", s.listOrgUnits},
+		{"POST /api/admin/org/units", s.createOrgUnit},
+		{"PUT /api/admin/org/units/{id}", s.updateOrgUnit},
+		{"DELETE /api/admin/org/units/{id}", s.deleteOrgUnit},
+		{"GET /api/admin/org/resources", s.listIAMResources},
+		{"PUT /api/admin/org/resources/{id}", s.updateIAMResource},
+		{"GET /api/admin/org/roles", s.listIAMRoles},
+		{"POST /api/admin/org/roles", s.createIAMRole},
+		{"PUT /api/admin/org/roles/{id}", s.updateIAMRole},
+		{"DELETE /api/admin/org/roles/{id}", s.deleteIAMRole},
+		{"GET /api/admin/org/roles/{id}/resources", s.getIAMRoleResources},
+		{"PUT /api/admin/org/roles/{id}/resources", s.setIAMRoleResources},
+		{"GET /api/admin/org/roles/{id}/members", s.getIAMRoleMembers},
+		{"PUT /api/admin/org/roles/{id}/members", s.setIAMRoleMembers},
+		{"GET /api/admin/org/staff", s.listIAMStaff},
+		{"POST /api/admin/org/staff", s.createIAMStaff},
+		{"GET /api/admin/org/users", s.searchIAMUsers},
+		{"PUT /api/admin/org/staff/{id}", s.assignIAMStaff},
 	}
 	for _, r := range public {
 		mux.Handle(r.pattern, r.h)
@@ -259,7 +282,16 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle(r.pattern, httpx.Authenticate(s.Issuer, s.Accounts.CheckActive, r.h))
 	}
 	for _, r := range admin {
-		mux.Handle(r.pattern, httpx.Authenticate(s.Issuer, s.Accounts.CheckActive, httpx.RequireAdmin(r.h)))
+		h := http.Handler(r.h)
+		// 组织写操作仅超管；其余按菜单资源码细粒度鉴权，未映射则退回「有控制台权限即可」
+		if isOrgMutating(r.pattern) {
+			h = httpx.RequireAdmin(h)
+		} else if ids := adminRouteResources(r.pattern); len(ids) > 0 {
+			h = httpx.RequireAnyResource(s.resourceOK, ids, h)
+		} else {
+			h = httpx.RequireConsoleStaff(s.consoleStaffOK, h)
+		}
+		mux.Handle(r.pattern, httpx.Authenticate(s.Issuer, s.Accounts.CheckActive, h))
 	}
 	mux.Handle("/api/", httpx.Handler(func(http.ResponseWriter, *http.Request) error {
 		return httpx.NotFound("NOT_FOUND", "endpoint not found")
@@ -308,6 +340,32 @@ func ok(w http.ResponseWriter, v any) error {
 func created(w http.ResponseWriter, v any) error {
 	httpx.WriteJSON(w, http.StatusCreated, v)
 	return nil
+}
+
+func (s *Server) consoleStaffOK(ctx context.Context, userID int64, isAdmin bool) (bool, error) {
+	if s.IAM == nil {
+		return isAdmin, nil
+	}
+	return s.IAM.HasConsoleAccess(ctx, userID, isAdmin)
+}
+
+func (s *Server) resourceOK(ctx context.Context, userID int64, isAdmin bool, resourceIDs ...string) (bool, error) {
+	if s.IAM == nil {
+		return isAdmin, nil
+	}
+	return s.IAM.HasAnyResource(ctx, userID, isAdmin, resourceIDs...)
+}
+
+// isOrgMutating 组织权限写操作仅超管可做（读仍走员工闸）。
+func isOrgMutating(pattern string) bool {
+	switch {
+	case strings.HasPrefix(pattern, "POST /api/admin/org/"),
+		strings.HasPrefix(pattern, "PUT /api/admin/org/"),
+		strings.HasPrefix(pattern, "DELETE /api/admin/org/"):
+		return true
+	default:
+		return false
+	}
 }
 
 // spaHandler 提供前端静态文件；找不到的路径返回 index.html，由前端路由处理。

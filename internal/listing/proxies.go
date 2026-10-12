@@ -276,6 +276,84 @@ func (s *ProxyService) SetDisabled(ctx context.Context, id int64, disabled bool)
 	return s.Get(ctx, id)
 }
 
+// UpdateSeller 更新卖家未绑定账号的代理（名称/地区/账号密码；改主机端口会清掉 sub2api 同步以便重试）。
+func (s *ProxyService) UpdateSeller(ctx context.Context, sellerID, id int64, in CreateProxyInput) (*Proxy, error) {
+	p, err := s.GetSeller(ctx, sellerID, id)
+	if err != nil {
+		return nil, err
+	}
+	if p.AssignedUpstreamID != nil {
+		return nil, httpx.Conflict("PROXY_IN_USE", "proxy is assigned to an upstream")
+	}
+	in, err = normalizeProxyInput(in)
+	if err != nil {
+		return nil, err
+	}
+	var passEnc []byte
+	if in.Password != "" {
+		passEnc, err = s.Keyring.SealString(in.Password, fmt.Sprintf("proxy:%d", id))
+		if err != nil {
+			return nil, err
+		}
+	}
+	var user any
+	if in.Username != "" {
+		user = in.Username
+	}
+	var region any
+	if in.Region != "" {
+		region = in.Region
+	}
+	hostChanged := !strings.EqualFold(p.Host, in.Host) || p.Port != in.Port || p.Protocol != in.Protocol
+	if in.Password != "" {
+		_, err = s.DB.Exec(ctx, `UPDATE proxies SET name=$2, protocol=$3, host=$4, port=$5, username=$6, region=$7, password_enc=$8,
+			sub2api_proxy_id = CASE WHEN $9 THEN NULL ELSE sub2api_proxy_id END
+			WHERE id=$1 AND seller_id=$10 AND assigned_upstream_id IS NULL`,
+			id, in.Name, in.Protocol, in.Host, in.Port, user, region, passEnc, hostChanged, sellerID)
+	} else {
+		_, err = s.DB.Exec(ctx, `UPDATE proxies SET name=$2, protocol=$3, host=$4, port=$5, username=$6, region=$7,
+			sub2api_proxy_id = CASE WHEN $8 THEN NULL ELSE sub2api_proxy_id END
+			WHERE id=$1 AND seller_id=$9 AND assigned_upstream_id IS NULL`,
+			id, in.Name, in.Protocol, in.Host, in.Port, user, region, hostChanged, sellerID)
+	}
+	if err != nil {
+		if isUnique(err) {
+			return nil, httpx.Conflict("PROXY_EXISTS", "proxy address already registered")
+		}
+		return nil, err
+	}
+	out, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if out.Sub2APIProxyID == nil {
+		_, _ = s.Sync(ctx, id) // 尽力同步；失败可在列表重试
+	}
+	return s.Get(ctx, id)
+}
+
+// DeleteSeller 删除卖家未绑定账号的代理，并尽量清理 sub2api 侧记录。
+func (s *ProxyService) DeleteSeller(ctx context.Context, sellerID, id int64) error {
+	p, err := s.GetSeller(ctx, sellerID, id)
+	if err != nil {
+		return err
+	}
+	if p.AssignedUpstreamID != nil {
+		return httpx.Conflict("PROXY_IN_USE", "proxy is assigned to an upstream")
+	}
+	if p.Sub2APIProxyID != nil {
+		_ = s.Admin.DeleteProxy(ctx, *p.Sub2APIProxyID)
+	}
+	tag, err := s.DB.Exec(ctx, `DELETE FROM proxies WHERE id = $1 AND seller_id = $2 AND assigned_upstream_id IS NULL`, id, sellerID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return httpx.Conflict("PROXY_IN_USE", "proxy is assigned to an upstream or does not exist")
+	}
+	return nil
+}
+
 func isUnique(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"

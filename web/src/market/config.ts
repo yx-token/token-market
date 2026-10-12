@@ -137,12 +137,12 @@ export const marketConfigDefaults: MarketDiscoveryConfig = {
       ],
       sections: [
         {
-          title: '供给类型',
+          title: '闲置TOKEN类型',
           items: [
             { text: '按量通道', action: { kindTab: 'channel' } },
             { text: '额度包', action: { kindTab: 'pack' } },
             { text: '保障池', action: { plat: '保障池' } },
-            { text: '全部供给', action: { kindTab: 'all' } },
+            { text: '全部闲置TOKEN', action: { kindTab: 'all' } },
           ],
         },
         {
@@ -179,7 +179,7 @@ export const marketConfigDefaults: MarketDiscoveryConfig = {
         {
           title: '快捷入口',
           items: [
-            { text: '发布供给', action: { href: '/seller/publish' } },
+            { text: '发布闲置TOKEN', action: { href: '/seller/publish' } },
             { text: '我的 Key', action: { href: '/buyer/keys' } },
           ],
         },
@@ -311,10 +311,15 @@ export const apiToPlat: Record<string, string> = Object.fromEntries(
 export type FeedSku = {
   id: string
   listingId?: number
+  /** 平台保障池分组名（route.pool） */
+  poolName?: string
+  /** 上游平台标识，用于调用示例 */
+  apiPlatform?: string
   kind: 'channel' | 'pack'
   plat: string
   tier: string
   title: string
+  desc?: string
   img: string
   mult: number
   min?: number

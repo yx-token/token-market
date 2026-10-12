@@ -106,12 +106,12 @@ window.MarketConfigDefaults = {
       ],
       sections: [
         {
-          title: "供给类型",
+          title: "闲置TOKEN类型",
           items: [
             { text: "按量通道", action: { kindTab: "channel" } },
             { text: "额度包", action: { kindTab: "pack" } },
             { text: "保障池", action: { plat: "保障池" } },
-            { text: "全部供给", action: { kindTab: "all" } },
+            { text: "全部闲置TOKEN", action: { kindTab: "all" } },
           ],
         },
         {
@@ -148,7 +148,7 @@ window.MarketConfigDefaults = {
         {
           title: "快捷入口",
           items: [
-            { text: "我要挂供给", action: { href: "seller-center.html" } },
+            { text: "我要发布闲置TOKEN", action: { href: "seller-center.html" } },
             { text: "市场配置", action: { href: "console.html#market" } },
           ],
         },

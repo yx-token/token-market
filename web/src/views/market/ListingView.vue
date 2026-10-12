@@ -5,10 +5,14 @@ import { buyer, market } from '@/api'
 import type { MarketItem, RechargeOrder } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
 import { useAuth } from '@/stores/auth'
+import { useConfig } from '@/stores/config'
 import { useLoginModal } from '@/stores/loginModal'
 import { useToast } from '@/stores/toast'
+import ModalDialog from '@/components/ModalDialog.vue'
 import QrCode from '@/components/QrCode.vue'
 import { apiToPlat, coverFor } from '@/market/config'
+import { copyText } from '@/utils/clipboard'
+import { sampleRequest } from '@/utils/keySample'
 import { authTypeText, label } from '@/utils/labels'
 import { dateTime, percent } from '@/utils/format'
 import { inspectionSummary } from '@/utils/inspection'
@@ -18,11 +22,22 @@ const auth = useAuth()
 const loginModal = useLoginModal()
 const router = useRouter()
 const toast = useToast()
+const appCfg = useConfig()
 const item = useLoader(() => market.listing(Number(props.id)), null as MarketItem | null)
 const busy = ref(false)
 const issuedKey = ref('')
+const created = ref<{ key: string; platform: string; title: string } | null>(null)
 const payWay = ref<'balance' | 'alipay' | 'wechat'>('balance')
 const payOrder = ref<RechargeOrder | null>(null)
+const edgeBase = computed(() => appCfg.config.edge_url || window.location.origin)
+const createdSample = computed(() =>
+  created.value ? sampleRequest(created.value.platform, edgeBase.value, created.value.key, appCfg.config.price_models ?? []) : null,
+)
+
+async function copy(text: string) {
+  if (await copyText(text)) toast.success('已复制')
+  else toast.error('复制失败，请手动选择后按 Ctrl/⌘+C')
+}
 
 const isPack = computed(() => {
   const it = item.data.value
@@ -152,7 +167,24 @@ async function checkout() {
     }
     return
   }
-  router.push({ path: '/buyer/keys', query: { listing: String(it.listing_id) } })
+  busy.value = true
+  try {
+    const name = (it.title || title.value || `卖家挂单 #${it.listing_id}`).slice(0, 64)
+    const res = await buyer.createKey({
+      name,
+      route: { type: 'chain', hops: [{ listing_id: it.listing_id }] },
+      limits: {},
+    })
+    created.value = {
+      key: res.key,
+      platform: res.detail.platform || it.platform,
+      title: name,
+    }
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : '开通失败')
+  } finally {
+    busy.value = false
+  }
 }
 
 async function cancelPay() {
@@ -273,7 +305,7 @@ async function cancelPay() {
             :disabled="busy || (isPack && stockLeft === 0)"
             @click="checkout"
           >
-            {{ busy ? '处理中…' : isPack ? (stockLeft === 0 ? '已售罄' : '支付并购买额度包') : '支付并开通通道' }}
+            {{ busy ? '处理中…' : isPack ? (stockLeft === 0 ? '已售罄' : '支付并购买额度包') : '选用并开通' }}
           </button>
         </template>
         <div class="rules">
@@ -292,5 +324,24 @@ async function cancelPay() {
 
     <p v-else-if="item.loading.value" class="sku-empty">加载中…</p>
     <p v-else class="sku-empty">挂单不存在或已下架 · <RouterLink to="/">回市场</RouterLink></p>
+
+    <ModalDialog :open="!!created" title="Key 已创建" @update:open="(v: boolean) => !v && (created = null)">
+      <p class="text-sm text-emerald-700">「{{ created?.title }}」已开通，可立即调用。</p>
+      <p class="text-sm text-amber-700">稍后也可以在买家中心再次查看和复制这个 Key。</p>
+      <div class="flex items-center gap-2">
+        <code class="flex-1 break-all rounded-xl border border-black/10 !bg-[#fafafa] !px-3 !py-2 text-sm">{{ created?.key }}</code>
+        <button type="button" class="btn-secondary btn-sm" @click="copy(created!.key)">复制</button>
+      </div>
+      <div v-if="createdSample">
+        <div class="label">调用示例 · {{ createdSample.label }}</div>
+        <pre class="codeblock">{{ createdSample.code }}</pre>
+        <button type="button" class="btn-secondary btn-sm" @click="copy(createdSample.code)">复制示例</button>
+        <p class="hint">{{ createdSample.note }}</p>
+      </div>
+      <template #footer>
+        <RouterLink class="btn-secondary" to="/buyer/keys" @click="created = null">去买家中心</RouterLink>
+        <button type="button" class="btn-primary" @click="created = null">知道了</button>
+      </template>
+    </ModalDialog>
   </div>
 </template>

@@ -25,16 +25,19 @@ type DB interface {
 }
 
 type Pool struct {
-	ID             int64     `json:"id"`
-	Name           string    `json:"name"`
-	Platform       string    `json:"platform"`
-	Sub2APIGroupID *int64    `json:"sub2api_group_id,omitempty"`
-	SellMultiplier float64   `json:"sell_multiplier"`
-	MinMargin      float64   `json:"min_margin"`
-	SafetyBuffer   float64   `json:"safety_buffer"`
-	Enabled        bool      `json:"enabled"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ID                int64     `json:"id"`
+	Name              string    `json:"name"`
+	Platform          string    `json:"platform"`
+	Sub2APIGroupID    *int64    `json:"sub2api_group_id,omitempty"`
+	SellMultiplier    float64   `json:"sell_multiplier"`
+	MinMargin         float64   `json:"min_margin"`
+	SafetyBuffer      float64   `json:"safety_buffer"`
+	Enabled           bool      `json:"enabled"`
+	MarketPublished   bool      `json:"market_published"`
+	MarketTitle       string    `json:"market_title"`
+	MarketDescription string    `json:"market_description"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // Cap 返回进入该默认分组的倍率上限 D × (1 − 最低毛利 − 安全缓冲)，与 sub2api 利润控制同一公式。
@@ -47,11 +50,11 @@ func (p Pool) Accepts(platform string) bool {
 	return p.Enabled && (p.Platform == platform || p.Platform == "composite")
 }
 
-const poolColumns = `id, name, platform, sub2api_group_id, sell_multiplier, min_margin, safety_buffer, enabled, created_at, updated_at`
+const poolColumns = `id, name, platform, sub2api_group_id, sell_multiplier, min_margin, safety_buffer, enabled, market_published, market_title, market_description, created_at, updated_at`
 
 func scanPool(row pgx.Row) (*Pool, error) {
 	var p Pool
-	err := row.Scan(&p.ID, &p.Name, &p.Platform, &p.Sub2APIGroupID, &p.SellMultiplier, &p.MinMargin, &p.SafetyBuffer, &p.Enabled, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Platform, &p.Sub2APIGroupID, &p.SellMultiplier, &p.MinMargin, &p.SafetyBuffer, &p.Enabled, &p.MarketPublished, &p.MarketTitle, &p.MarketDescription, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -97,13 +100,28 @@ var poolPlatforms = map[string]bool{
 	"kimi": true, "zhipu": true, "minimax": true, "opencode_go": true, "composite": true,
 }
 
+// defaultMarketTitle 从上架时的分组名生成市场展示标题。
+func defaultMarketTitle(name, platform string) string {
+	title := strings.TrimPrefix(name, "tm-pool-")
+	if title == "" || title == name {
+		title = name
+	}
+	if platform == "composite" {
+		return title + " · 平台保障池"
+	}
+	return title + " · 平台保障"
+}
+
 type PoolInput struct {
-	Name           string   `json:"name"`
-	Platform       string   `json:"platform"`
-	SellMultiplier *float64 `json:"sell_multiplier"`
-	MinMargin      *float64 `json:"min_margin"`
-	SafetyBuffer   *float64 `json:"safety_buffer"`
-	Enabled        *bool    `json:"enabled"`
+	Name              string   `json:"name"`
+	Platform          string   `json:"platform"`
+	SellMultiplier    *float64 `json:"sell_multiplier"`
+	MinMargin         *float64 `json:"min_margin"`
+	SafetyBuffer      *float64 `json:"safety_buffer"`
+	Enabled           *bool    `json:"enabled"`
+	MarketPublished   *bool    `json:"market_published"`
+	MarketTitle       *string  `json:"market_title"`
+	MarketDescription *string  `json:"market_description"`
 }
 
 type PoolService struct {
@@ -202,11 +220,31 @@ func (s *PoolService) Update(ctx context.Context, id int64, in PoolInput) (*Pool
 	if in.Enabled != nil {
 		p.Enabled = *in.Enabled
 	}
+	if in.MarketPublished != nil {
+		p.MarketPublished = *in.MarketPublished
+	}
+	if in.MarketTitle != nil {
+		p.MarketTitle = strings.TrimSpace(*in.MarketTitle)
+	}
+	if in.MarketDescription != nil {
+		p.MarketDescription = strings.TrimSpace(*in.MarketDescription)
+	}
+	if !p.Enabled {
+		p.MarketPublished = false
+	}
+	if p.MarketPublished {
+		if p.Sub2APIGroupID == nil {
+			return nil, httpx.BadRequest("POOL_NOT_SYNCED", "sync pool to sub2api before publishing to market")
+		}
+		if p.MarketTitle == "" {
+			p.MarketTitle = defaultMarketTitle(p.Name, p.Platform)
+		}
+	}
 	if p.MinMargin < 0 || p.SafetyBuffer < 0 || p.MinMargin+p.SafetyBuffer >= 1 {
 		return nil, httpx.BadRequest("INVALID_MARGIN", "min_margin and safety_buffer must be >= 0 and sum to less than 1")
 	}
-	if _, err := s.DB.Exec(ctx, `UPDATE pools SET sell_multiplier = $2, min_margin = $3, safety_buffer = $4, enabled = $5, updated_at = now() WHERE id = $1`,
-		p.ID, p.SellMultiplier, p.MinMargin, p.SafetyBuffer, p.Enabled); err != nil {
+	if _, err := s.DB.Exec(ctx, `UPDATE pools SET sell_multiplier = $2, min_margin = $3, safety_buffer = $4, enabled = $5, market_published = $6, market_title = $7, market_description = $8, updated_at = now() WHERE id = $1`,
+		p.ID, p.SellMultiplier, p.MinMargin, p.SafetyBuffer, p.Enabled, p.MarketPublished, p.MarketTitle, p.MarketDescription); err != nil {
 		return nil, err
 	}
 	if p.Sub2APIGroupID != nil {

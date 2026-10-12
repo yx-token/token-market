@@ -29,10 +29,10 @@ const sections: Record<string, { title: string; items: NavItem[] }> = {
   seller: {
     title: '卖家中心',
     items: [
-      { to: '/seller/publish', text: '发布供给' },
+      { to: '/seller/publish', text: '发布闲置TOKEN' },
+      { to: '/seller/listings', text: '我的闲置TOKEN' },
       { to: '/seller/upstreams', text: '我的上游' },
       { to: '/seller/proxies', text: '代理 IP' },
-      { to: '/seller/listings', text: '挂单' },
       { to: '/seller/usage', text: '用量' },
       { to: '/seller/earnings', text: '收益与提现' },
     ],
