@@ -92,11 +92,11 @@ func (s *Service) ListOrgUnits(ctx context.Context) ([]OrgUnit, error) {
 }
 
 type OrgUnitInput struct {
-	ParentID *int64  `json:"parent_id"`
-	Name     string  `json:"name"`
-	Code     string  `json:"code"`
-	Sort     *int    `json:"sort"`
-	Enabled  *bool   `json:"enabled"`
+	ParentID *int64 `json:"parent_id"`
+	Name     string `json:"name"`
+	Code     string `json:"code"`
+	Sort     *int   `json:"sort"`
+	Enabled  *bool  `json:"enabled"`
 }
 
 func (s *Service) CreateOrgUnit(ctx context.Context, in OrgUnitInput) (*OrgUnit, error) {
