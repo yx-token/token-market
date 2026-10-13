@@ -76,11 +76,34 @@ describe('质检报告与估价', () => {
     expect(intelligence.text()).toContain('的结果')
     const identity = wrapper.get('[data-flow="identity"]')
     expect(identity.findAll('[data-check-key]')).toHaveLength(11)
+    expect(identity.find('[data-testid="idle-checks"]').exists()).toBe(false)
     expect(identity.text()).toContain('来源：第三方检测')
     expect(identity.text()).toContain('家族与具体型号都与声明一致')
     expect(identity.text()).toContain('沿用 2026-10-11')
     expect(wrapper.findAllComponents({ name: 'ThirdPartyResult' })).toHaveLength(1)
     expect(wrapper.text()).not.toContain('试运行，不影响价格')
+  })
+
+  it('身份来源为第三方时，未执行的自有检测项收起，只保留第三方结论', () => {
+    const idle = (key: string, name: string): InspectionCheckResult => ({ ...check, key, name, status: 'not_run', role: 'display', factor: null, impact: '' })
+    const value = report({
+      flows: ['intelligence', 'identity'], identity_source: 'third_party', models: ['gpt-6-astra'],
+      intelligence: { status: 'pass', inherited_at: null, models: [{ model: 'gpt-6-astra', status: 'pass' }] },
+      identity: { source: 'third_party', status: 'pass', inherited_at: null },
+      checks: {
+        D07: { ...check, key: 'D07', name: '智力测试', status: 'pass', role: 'factor', factor: null, impact: '' },
+        A02: idle('A02', '响应型号一致'),
+        A11_tools: idle('A11.tools', '工具调用'),
+        third_party: { ...check, key: 'third_party', name: '第三方身份核验', status: 'pass', role: 'gate', factor: null, impact: '' },
+      },
+      third_party: [{ provider: 'bazaarlink', status: 'completed', verdict: 'normal', model: 'gpt-6-astra', summary: { verdict_status: 'clean_match' } }],
+    })
+    const identity = mount(ReportDetail, { props: { report: value } }).get('[data-flow="identity"]')
+    expect(identity.findAll('[data-check-key]').map((row) => row.attributes('data-check-key'))).toEqual(['third_party'])
+    const folded = identity.get('[data-testid="idle-checks"]')
+    expect(folded.element.hasAttribute('open')).toBe(false)
+    expect(folded.text()).toContain('本次未执行的检测项（2 项）')
+    expect(folded.get('[data-idle-keys]').attributes('data-idle-keys')).toBe('A02,A11.tools')
   })
 
   it('自有题库报告展示身份与功能结果，只有已生效的扣价显示系数', () => {
@@ -175,7 +198,7 @@ describe('质检报告与估价', () => {
     expect(wrapper.text()).not.toContain('未启用扣价，估价为试算')
     expect(wrapper.text()).not.toContain('本次检测覆盖不足')
     expect(wrapper.text()).not.toContain('试运行，不影响价格')
-    expect(wrapper.text()).not.toContain('等级、回收报价与调度沿用现有判定')
+    expect(wrapper.text()).not.toContain('等级与回收报价沿用现有判定')
     value.summary.checks!.D06.impact = ''
     const fallback = mount(ReportDetail, { props: { report: value } })
     expect(fallback.get('[data-check-key="D06"]').text()).toContain('本项已用于扣价。')
@@ -198,7 +221,7 @@ describe('质检报告与估价', () => {
     expect(appraisalDeviation(1, { ...appraisal, multiplier: null })).toBe('—')
     const wrapper = mount(InspectionAppraisal, { props: { grade: 'A', appraisal, qualityFactor: 0.85, inspectionMode: 'trial', price: 1.53 } })
     expect(wrapper.text()).toContain('+20.0%')
-    expect(wrapper.text()).toContain('等级、回收报价与调度沿用现有判定')
+    expect(wrapper.text()).toContain('等级与回收报价沿用现有判定')
   })
 
   it('市场卡片显示关键项、检测时间与抽样局限', async () => {

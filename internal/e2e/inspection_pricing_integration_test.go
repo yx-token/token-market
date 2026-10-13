@@ -346,10 +346,12 @@ func TestInspectionPricingFormalOnboardingQuickAndAppraisal(t *testing.T) {
 	// 其他型号验证选择隔离，不增加一整轮质检或独立测试环境。
 	f := newInspectionPricingModelFixture(t, "gpt-6-astra")
 	e := f.e
-	var full, generated, bad, legacy int
-	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT count(*),count(*) FILTER (WHERE generator_version<>''),count(*) FILTER (WHERE passed IS NOT TRUE OR input_tokens IS NULL OR input_tokens<=0),count(*) FILTER (WHERE suite NOT LIKE 'inspection_%') FROM probe_results WHERE run_id=$1`, f.onboarding), &full, &generated, &bad, &legacy)
-	if full != 91 || generated != full || bad != 0 || legacy != 0 {
-		t.Fatalf("完整质检应为 91 次质检请求（含能力质检糖果题），无旧题：总数=%d 版本=%d 错误=%d 旧题=%d", full, generated, bad, legacy)
+	var full, generated, bad, legacy, permission, whitelisted int
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT count(*),count(*) FILTER (WHERE generator_version<>''),count(*) FILTER (WHERE passed IS NOT TRUE OR input_tokens IS NULL OR input_tokens<=0),count(*) FILTER (WHERE suite NOT LIKE 'inspection_%'),count(*) FILTER (WHERE check_key='A04') FROM probe_results WHERE run_id=$1`, f.onboarding), &full, &generated, &bad, &legacy, &permission)
+	// 型号权限按挂售白名单逐个确认，其余题量固定为 90 次（含能力质检糖果题）。
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT COALESCE(cardinality(model_whitelist),0) FROM upstreams WHERE id=$1`, f.upstreamID), &whitelisted)
+	if whitelisted == 0 || permission != whitelisted || full-permission != 90 || generated != full || bad != 0 || legacy != 0 {
+		t.Fatalf("完整质检应为 90 次质检请求加每个挂售模型一次型号权限，无旧题：总数=%d 型号权限=%d 白名单=%d 版本=%d 错误=%d 旧题=%d", full, permission, whitelisted, generated, bad, legacy)
 	}
 	var savedSuites []string
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT suites FROM detection_policies WHERE platform='anthropic' AND auth_type=''`), &savedSuites)

@@ -28,10 +28,11 @@ const flowSections = computed(() => {
     { key: 'common', name: '可用与性能', status: undefined, inheritedAt: undefined },
     { key: 'intelligence', name: '测智', status: props.report.summary.intelligence?.status ?? 'not_run', inheritedAt: props.report.summary.intelligence?.inherited_at },
     { key: 'identity', name: '身份与功能核验', status: props.report.summary.identity?.status ?? 'not_run', inheritedAt: props.report.summary.identity?.inherited_at },
-  ].map((section) => ({
-    ...section,
-    checks: checks.filter((check) => checkFlow(check) === section.key).sort((a, b) => section.key === 'common' ? commonOrder.indexOf(a.key) - commonOrder.indexOf(b.key) : a.key.localeCompare(b.key)),
-  }))
+  ].map((section) => {
+    const own = checks.filter((check) => checkFlow(check) === section.key).sort((a, b) => section.key === 'common' ? commonOrder.indexOf(a.key) - commonOrder.indexOf(b.key) : a.key.localeCompare(b.key))
+    // 未执行的项（例如身份来源为第三方时的自有检测项）收起显示，避免整屏「未测」淹没结论
+    return { ...section, checks: own, shown: own.filter((check) => check.status !== 'not_run'), idle: own.filter((check) => check.status === 'not_run') }
+  })
 })
 
 function visibleMetrics(check: InspectionCheckResult) {
@@ -104,7 +105,7 @@ const suggestionText: Record<string, string> = {
           />
           <p v-if="!report.summary.third_party?.length" class="text-slate-500">暂无第三方检测结果</p>
         </div>
-        <div v-for="check in section.checks" :key="check.key" class="border-b border-slate-100 p-3 last:border-b-0" :data-check-key="check.key">
+        <div v-for="check in section.shown" :key="check.key" class="border-b border-slate-100 p-3 last:border-b-0" :data-check-key="check.key">
           <div class="flex flex-wrap items-center gap-2">
             <strong>{{ check.name }}</strong>
             <span class="rounded px-2 py-0.5 text-xs" :class="statusTone(check.status)">{{ inspectionStatuses[check.status] ?? check.status }}</span>
@@ -116,6 +117,10 @@ const suggestionText: Record<string, string> = {
           <p class="mt-1 text-slate-600">{{ check.impact || (check.applied && check.factor !== null && check.factor < 1 ? '本项已用于扣价。' : '本项未影响价格与调度。') }}</p>
           <p v-if="check.advice" class="mt-1 text-slate-600">建议：{{ check.advice }}</p>
         </div>
+        <details v-if="section.idle.length" class="px-3 py-2 text-slate-500" data-testid="idle-checks">
+          <summary class="cursor-pointer text-xs">本次未执行的检测项（{{ section.idle.length }} 项）</summary>
+          <p class="mt-1 text-xs" :data-idle-keys="section.idle.map((check) => check.key).join(',')">{{ section.idle.map((check) => check.name).join('、') }}</p>
+        </details>
         <p v-if="!section.checks.length && section.key === 'common'" class="p-3 text-slate-500">暂无可用与性能检测结果</p>
         <p v-else-if="!section.checks.length && section.key === 'intelligence' && !report.summary.intelligence?.models?.length" class="p-3 text-slate-500">{{ section.status === 'not_applicable' ? '挂售模型未配置测智' : '暂无测智检测结果' }}</p>
         <p v-else-if="!section.checks.length && section.key === 'identity' && identitySource !== 'third_party'" class="p-3 text-slate-500">暂无身份与功能核验结果</p>

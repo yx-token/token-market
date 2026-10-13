@@ -131,7 +131,8 @@ func legacyPolicyFlows(p *Policy) PolicyFlows {
 		}
 	}
 	return PolicyFlows{
-		Intelligence: IntelligenceFlowPolicy{FlowPolicy: FlowPolicy{Enabled: p.Enabled, ScheduledEnabled: p.ScheduledEnabled,
+		// 测智流程默认启用；总开关 p.Enabled 只管上架以外的检测，上架始终测智。
+		Intelligence: IntelligenceFlowPolicy{FlowPolicy: FlowPolicy{Enabled: true, ScheduledEnabled: p.ScheduledEnabled,
 			IntervalMinutes: interval, Triggers: append([]string{}, all...), FullTriggers: full}, Models: models},
 		Identity: IdentityFlowPolicy{FlowPolicy: FlowPolicy{Enabled: len(p.ThirdParty) > 0,
 			ScheduledEnabled: p.ScheduledEnabled && containsTrigger(identityTriggers, "scheduled"), IntervalMinutes: interval,

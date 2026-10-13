@@ -46,7 +46,7 @@ describe('质检题库编辑', () => {
     vi.mocked(admin.updateItem).mockResolvedValue(generated)
     vi.mocked(admin.createItem).mockResolvedValue(generated)
     vi.mocked(admin.inspectionChecks).mockResolvedValue([
-      { key: 'D07', name: '智力配对', category: 'capability', role: 'factor', factor_group: 'capability', enabled: true, calibrated: false, coefficients: {}, thresholds: {}, advice: '', calibration_note: '' },
+      { key: 'D07', name: '智力测试', category: 'capability', role: 'factor', factor_group: 'capability', enabled: true, calibrated: false, coefficients: {}, thresholds: {}, advice: '', calibration_note: '' },
       { key: 'D09', name: '上下文深度', category: 'capability', role: 'factor', factor_group: 'capability', enabled: true, calibrated: false, coefficients: {}, thresholds: {}, advice: '', calibration_note: '' },
     ])
     vi.mocked(admin.settings).mockResolvedValue({ price_models: [] } as any)
@@ -77,7 +77,7 @@ describe('质检题库编辑', () => {
     expect(wrapper.get<HTMLTextAreaElement>('#igenerator').element.value).toContain('register_machine')
     expect(wrapper.get<HTMLSelectElement>('#icheck').element.value).toBe('A09')
     expect(wrapper.get('#icheck').text()).toContain('A09（未注册）')
-    expect(wrapper.get('#icheck').text()).toContain('D07 · 智力配对')
+    expect(wrapper.get('#icheck').text()).toContain('D07 · 智力测试')
     await wrapper.get('#icat').setValue('logic')
     await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
     await flushPromises()

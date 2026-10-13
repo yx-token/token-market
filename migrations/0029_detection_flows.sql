@@ -1,10 +1,12 @@
 -- 测智与身份核验分别配置和调度，旧字段保留以兼容历史报告及回退版本。
+-- 测智流程默认启用：厂商「是否检测」总开关仍只管上架以外的检测，上架检测始终测智（决策 D18），
+-- 不能把旧总开关的关闭状态带进流程开关，否则未开检测的厂商上架时会跳过测智。
 ALTER TABLE detection_policies ADD COLUMN flows jsonb NOT NULL DEFAULT '{}';
 
 UPDATE detection_policies AS policy
 SET flows = jsonb_build_object(
     'intelligence', jsonb_build_object(
-        'enabled', policy.enabled,
+        'enabled', true,
         'scheduled_enabled', policy.scheduled_enabled,
         'interval_minutes', policy.interval_minutes,
         'triggers', jsonb_build_array('onboarding', 'scheduled', 'recovery', 'seller_manual', 'admin', 'adaptive', 'appeal'),

@@ -92,6 +92,14 @@ func TestDetectionFlowsMigrationPreservesLegacyHistory(t *testing.T) {
 		!reflect.DeepEqual(p.Flows.Identity.Triggers, []string{"admin", "appeal", "scheduled"}) {
 		t.Fatalf("身份来源和检测站触发并集迁移错误：%+v", p.Flows.Identity)
 	}
+	// 未开检测的厂商：测智流程仍启用，保证上架检测会测智；定时与身份核验保持关闭。
+	disabled, err := scanPolicy(pool.QueryRow(ctx, "SELECT "+policyColumns+" FROM detection_policies WHERE platform='anthropic' AND auth_type=''"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disabled.Enabled || !disabled.Flows.Intelligence.Enabled || disabled.Flows.Intelligence.ScheduledEnabled || disabled.Flows.Identity.Enabled {
+		t.Fatalf("未开检测的厂商迁移后上架须仍测智：总开关=%t %+v %+v", disabled.Enabled, disabled.Flows.Intelligence.FlowPolicy, disabled.Flows.Identity.FlowPolicy)
+	}
 	for i, old := range items {
 		moved, err := scanItem(pool.QueryRow(ctx, "SELECT "+itemColumns+" FROM probe_items WHERE id=$1", old.id))
 		if err != nil {

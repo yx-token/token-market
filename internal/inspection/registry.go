@@ -72,7 +72,7 @@ func init() {
 	add("D05", "额度窗口", "display", "display", "availability", "关注账号窗口余量；未知余量不阻塞上架、申诉或管理员检测。", nil, nil)
 	add("D06", "推理强度兑现", "capability", "factor", "capability", "检查推理档位及用量观测，修复后与同期基线复检。",
 		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_samples": 10, "severe_ratio": 0.6, "warning_ratio": 0.8, "ci_upper": 0.8, "absolute_high_low_ratio": 1.3})
-	add("D07", "智力配对", "capability", "factor", "capability", "检查模型路由与接入配置，修复后完成配对复检。",
+	add("D07", "智力测试", "capability", "factor", "capability", "检查模型路由与接入配置，修复后复检。",
 		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 20, "alpha": 0.05, "severe_relative": 0.7, "warning_relative": 0.85, "expected_pass_rate": 0.9})
 	add("D07.honesty", "诚实与弃权", "capability", "factor", "capability", "在信息不足时准确说明无法确定，修复后复检。",
 		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 20, "alpha": 0.05, "severe_relative": 0.7, "warning_relative": 0.85, "expected_pass_rate": 0.9})

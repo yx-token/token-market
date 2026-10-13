@@ -103,7 +103,7 @@ func TestInspectionViewRemovesInternalEvidence(t *testing.T) {
 	q := 0.8
 	at := time.Now()
 	in := inspectionViewInput{Factor: &q, AppraisedAt: &at, Checks: map[string]inspection.Check{
-		"D07": {Key: "D07", Name: "智力配对", Category: "capability", Status: "fail", Role: "factor", Factor: &q,
+		"D07": {Key: "D07", Name: "智力测试", Category: "capability", Status: "fail", Role: "factor", Factor: &q,
 			Reason: "基线账号 secret-account 从 192.0.2.10 返回答案 secret-answer；阈值 0.87654321", Advice: "查看题面 secret-prompt",
 			Metrics: map[string]inspection.Metric{"internal_threshold": {Value: &q}}, Evidence: inspection.Evidence{Code: "secret-code", Source: "paired_probe"}},
 	}}

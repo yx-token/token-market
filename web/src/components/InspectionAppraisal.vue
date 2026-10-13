@@ -14,8 +14,8 @@ defineProps<{ appraisal?: InspectionAppraisal; grade?: string; qualityFactor?: n
       <span v-if="qualityFactor !== undefined">质量系数 Q {{ qualityFactor === null ? '无法判定' : qualityFactor.toFixed(3) }}</span>
       <span v-if="price !== undefined">你的倍率相对估价偏离 {{ appraisalDeviation(price, appraisal) }}</span>
     </div>
-    <p v-if="inspectionMode === 'trial'" class="mt-2 text-amber-800">试运行，不影响价格。等级、回收报价与调度沿用现有判定。</p>
-    <p v-else-if="appraisal?.provisional" class="mt-2 text-amber-800">估价仅供参考，本次检测覆盖不足。</p>
+    <p v-if="inspectionMode === 'trial'" class="mt-2 text-amber-800">试运行：等级与回收报价沿用现有判定；管理员开启「用于扣价」的检测项照常影响估价与调度排序。</p>
+    <p v-if="appraisal?.provisional" class="mt-2 text-amber-800">尚未启用扣价或本次检测覆盖不足，估价仅供参考。</p>
     <p class="mt-1 text-xs text-slate-500">估价为卖家侧倍率，不含抽佣；可自主定价。{{ appraisal?.checked_at ? `上次检测 ${dateTime(appraisal.checked_at)}` : '尚无估价检测时间' }}</p>
   </div>
 </template>
