@@ -10,7 +10,7 @@ import VendorsView from '@/views/admin/VendorsView.vue'
 import DetectionView from '@/views/admin/DetectionView.vue'
 import type { InspectionCheckDefinition, InspectionSettings, Policy, VendorConfig } from '@/api/types'
 
-vi.mock('@/api', () => ({ admin: { inspectionSettings: vi.fn(), updateInspectionSettings: vi.fn(), inspectionChecks: vi.fn(), updateInspectionCheck: vi.fn(), vendors: vi.fn(), updateVendor: vi.fn(), policies: vi.fn(), providers: vi.fn(), upsertPolicy: vi.fn(), settings: vi.fn(), upstreams: vi.fn(), probeGeneratorTemplates: vi.fn() } }))
+vi.mock('@/api', () => ({ admin: { inspectionSettings: vi.fn(), updateInspectionSettings: vi.fn(), inspectionChecks: vi.fn(), updateInspectionCheck: vi.fn(), vendors: vi.fn(), updateVendor: vi.fn(), policies: vi.fn(), providers: vi.fn(), upsertPolicy: vi.fn(), settings: vi.fn(), upstreams: vi.fn(), items: vi.fn(), probeGeneratorTemplates: vi.fn() } }))
 const settings: InspectionSettings = { mode: 'trial', check_overrides: {}, grade_thresholds: { S: 1.02, A: 0.93, B: 0.82, C: 0.65 }, grade_hysteresis: 0.02, downgrade_confirmations: 2, s_requirements: { gate_free_days: 30, availability_days: 7, min_availability: 0.995 }, scheduling: { enabled: false, minimum_grade: 'B', strategy: 'quality_adjusted' }, timeouts: { full_minutes: 75, quick_minutes: 20 }, limits: { account_parallelism: 2, global_parallelism: 32 }, token_budgets: { full: { input_tokens_per_side: 1300000, output_tokens_per_side: 640000 }, quick: { input_tokens_per_side: 80000, output_tokens_per_side: 160000 } }, future_setting: { preserved: true } }
 const definition: InspectionCheckDefinition = { key: 'A15', name: '参数行为指纹', category: 'authenticity', role: 'gate', factor_group: null, enabled: false, calibrated: false, coefficients: {}, thresholds: { min_samples: 10 }, advice: '先做 A/A 校准。', calibration_note: '' }
 const dialog = defineComponent({ props: ['open'], template: '<section v-if="open"><slot /><slot name="footer" /></section>' })
@@ -31,6 +31,7 @@ describe('质检后台设置', () => {
     vi.mocked(admin.updateInspectionSettings).mockImplementation(async (body) => body)
     vi.mocked(admin.inspectionChecks).mockResolvedValue([definition])
     vi.mocked(admin.updateInspectionCheck).mockResolvedValue({ ...definition, enabled: true })
+    vi.mocked(admin.items).mockResolvedValue([])
   })
 
   it('独立保存 inspection，不丢预算、校准覆盖与兼容字段', async () => {

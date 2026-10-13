@@ -71,13 +71,13 @@ const resume = ref<Upstream | null>(null)
 const vendors = ref<VendorView[]>([])
 // 基线账号不受厂商开放状态限制，接入方式从本系统已实现的全部方式中选
 const allVendors = ref<VendorConfig[]>([])
-// 模型与厂商选项来自注册表；已存数据里不在表中的值由 SearchSelect 保留并标注
+// 模型以价目列表为建议并允许自定义；厂商仍按注册表选择，未知已存值保留并标注。
 const priceModels = ref<string[]>([])
 const templates = ref<GeneratorTemplate[]>([])
 const platformOptions = computed<SelectOption[]>(() =>
   allVendors.value.map((v) => ({ value: v.platform, text: `${label('platform', v.platform).text}（${v.platform}）` })),
 )
-const modelOptions = computed<SelectOption[]>(() => priceModels.value.map((m) => ({ value: m, text: m })))
+const modelOptions = computed<SelectOption[]>(() => [...new Set(priceModels.value)].map((m) => ({ value: m, text: m })))
 const refAuthTypes = computed(() => allVendors.value.find((v) => v.platform === newRef.platform)?.supported_auth_types ?? [])
 watch(refAuthTypes, (ts) => {
   if (ts.length && !ts.includes(newRef.authType)) newRef.authType = ts[0]
@@ -429,7 +429,7 @@ async function removeRef(u: Upstream) {
       </div>
       <div>
         <label class="label" for="imodels">适用模型（留空为全部）</label>
-        <SearchSelect id="imodels" v-model="form.models" :options="modelOptions" multiple placeholder="选择模型" />
+        <SearchSelect id="imodels" v-model="form.models" :options="modelOptions" multiple creatable placeholder="选择模型" />
       </div>
       <div>
         <label class="label" for="ieff">推理强度（可选）</label>

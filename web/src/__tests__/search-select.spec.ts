@@ -30,6 +30,7 @@ function select(props: {
   placeholder?: string
   disabled?: boolean
   loading?: boolean
+  creatable?: boolean
   panelWidth?: number
   id?: string
   remote?: (q: string) => Promise<SelectOption[]>
@@ -379,6 +380,96 @@ describe('SearchSelect', () => {
     await flushPromises()
     // 选项正常加载时拒绝录入不存在的值
     expect(wrapper.emitted('update:modelValue')).toBeFalsy()
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('creatable=%s 时单选只按显式规则录入未知值', async (creatable) => {
+    const wrapper = select({ options: opts, creatable })
+    await open(wrapper)
+    const search = panel()!.querySelector<HTMLInputElement>('.ss-search')!
+    search.value = '  custom-model  '
+    search.dispatchEvent(new Event('input'))
+    await flushPromises()
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual(creatable ? [['custom-model']] : undefined)
+    expect(Boolean(panel())).toBe(!creatable)
+    wrapper.unmount()
+  })
+
+  it('开放多选回车添加完整 ID，不误选同前缀模型，也不重复添加已有选项', async () => {
+    const wrapper = select({
+      options: [{ value: 'gpt-6-astra', text: 'gpt-6-astra' }], multiple: true, creatable: true, modelValue: [],
+    })
+    await open(wrapper)
+    const search = panel()!.querySelector<HTMLInputElement>('.ss-search')!
+    search.value = 'gpt-6'
+    search.dispatchEvent(new Event('input'))
+    await flushPromises()
+    expect(panelItems()[0]!.textContent).toContain('gpt-6（自定义）')
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([['gpt-6']])
+    expect(panel()).toBeTruthy()
+    await wrapper.setProps({ modelValue: ['gpt-6'] })
+    search.value = 'gpt-6-astra'
+    search.dispatchEvent(new Event('input'))
+    await flushPromises()
+    expect(panelItems()).toHaveLength(1)
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([['gpt-6', 'gpt-6-astra']])
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('creatable=%s 时多选也遵守自由输入开关', async (creatable) => {
+    const wrapper = select({ options: opts, multiple: true, modelValue: ['openai'], creatable })
+    await open(wrapper)
+    const search = panel()!.querySelector<HTMLInputElement>('.ss-search')!
+    search.value = 'new-model'
+    search.dispatchEvent(new Event('input'))
+    await flushPromises()
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual(creatable ? [[['openai', 'new-model']]] : undefined)
+    wrapper.unmount()
+  })
+
+  it('开放字段的未知已存值标为自定义，不显示警告样式', async () => {
+    const wrapper = select({ options: opts, modelValue: ['gpt-6-astra'], multiple: true, creatable: true })
+    expect(wrapper.get('.ss-tag').text()).toContain('gpt-6-astra（自定义）')
+    expect(wrapper.find('.is-stale').exists()).toBe(false)
+    await open(wrapper)
+    expect(panelItems().find((item) => item.textContent?.includes('gpt-6-astra'))?.classList.contains('is-stale')).toBe(false)
+    expect(panel()!.textContent).not.toContain('未注册')
+    expect(panel()!.querySelector('.ss-note')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('默认远程搜索无结果时不能回车录入任意用户 ID', async () => {
+    const wrapper = select({ options: [], remote: async () => [] })
+    await open(wrapper)
+    const search = panel()!.querySelector<HTMLInputElement>('.ss-search')!
+    search.value = '987654'
+    search.dispatchEvent(new Event('input'))
+    await flushPromises()
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(panel()!.textContent).not.toContain('回车可直接录入')
+    wrapper.unmount()
+  })
+
+  it('开放字段加载期间也不会把输入误录入', async () => {
+    const wrapper = select({ options: [], creatable: true, loading: true })
+    await open(wrapper)
+    const search = panel()!.querySelector<HTMLInputElement>('.ss-search')!
+    search.value = 'new-model'
+    search.dispatchEvent(new Event('input'))
+    await flushPromises()
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     wrapper.unmount()
   })
 
