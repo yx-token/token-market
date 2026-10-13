@@ -5,6 +5,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/DueGin/token-market/internal/inspection"
 )
 
 func TestPublicInspectionReportRemovesReferenceErrorsAndPrivateWarnings(t *testing.T) {
@@ -76,5 +79,30 @@ func TestPublicInspectionWarningsKeepSafeOperationalAdvice(t *testing.T) {
 	}
 	if got := publicInspectionWarnings(warnings); !reflect.DeepEqual(got, want) {
 		t.Fatalf("安全告警映射或去重错误：%v", got)
+	}
+}
+
+func TestPublicItemReportDoesNotExposeCapabilitiesOrThresholds(t *testing.T) {
+	st := calibratedInspectionSettings()
+	checks, gates := Inspect(itemRows("D07", 100, 40), st, time.Time{})
+	raw := mustJSON(map[string]any{
+		"checks": checks, "gates": gates, "inspection_settings": st,
+		"model_capability_defaults": inspection.CapabilityDefaults(),
+		"model_capabilities":        []inspection.ModelCapability{{Platform: "openai", Model: "私有型号登记"}},
+	})
+	safe := publicReportSummary(raw)
+	for _, secret := range []string{"expected_pass_rate", "relative_score", "target_pass_rate", "model_capabilit", "inspection_settings", "私有型号登记", "item_pass_rate_low", "0.9", "0.7"} {
+		if strings.Contains(string(safe), secret) {
+			t.Fatalf("卖家接口泄露 %s：%s", secret, safe)
+		}
+	}
+	var report struct {
+		Checks map[string]inspection.Check `json:"checks"`
+	}
+	if err := json.Unmarshal(safe, &report); err != nil {
+		t.Fatal(err)
+	}
+	if c := report.Checks["D07"]; c.Status != "fail" || c.Evidence.Source != "item_probe" || c.Factor != nil {
+		t.Fatalf("卖家接口丢失安全结论或泄露系数：%+v", c)
 	}
 }

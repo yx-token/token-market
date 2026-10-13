@@ -57,6 +57,10 @@ func buildCapabilityDefaults() []ModelCapability {
 		if model == "gpt-5.5" || model == "gpt-5.4" || model == "gpt-5.3-codex" || model == "gpt-5.2" {
 			efforts = efforts[:len(efforts)-1]
 		}
+		// 档位表登记 API 与 Codex 的官方取值并集，具体入口限制仍须查来源。
+		if model == "gpt-6-astra" || model == "gpt-6.1-sol" || model == "gpt-6-sol" || model == "gpt-5.6-sol" || model == "gpt-5.6-terra" {
+			efforts = append(efforts, "ultra")
+		}
 		window := 1050000
 		if model == "gpt-5.3-codex" || model == "gpt-5.2" {
 			window = 400000
@@ -209,7 +213,7 @@ func validateCapabilityOverrides(overrides []ModelCapabilityOverride) error {
 		}
 		for auth, window := range c.ContextWindowByAuth {
 			switch auth {
-			case "oauth", "apikey", "setup-token", "coding", "coding-intl", "google_one", "subscription":
+			case "oauth", "apikey", "setup-token", "coding", "coding-intl", "google_one", "go":
 			default:
 				return fmt.Errorf("模型官方能力 %s 的认证类型无效：%s", key, auth)
 			}

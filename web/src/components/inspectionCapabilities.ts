@@ -10,7 +10,7 @@ function match(pattern: string, model: string): number {
 export function effectiveCapability(platform: string, model: string, defaults: ModelCapability[], overrides: ModelCapabilityOverride[]): ModelCapability {
   const base = defaults.filter((c) => c.platform === platform && match(c.model, model) > 0)
     .sort((a, b) => match(b.model, model) - match(a.model, model))[0]
-  let result: ModelCapability = base ? { ...base, context_window_by_auth: { ...base.context_window_by_auth } } : {
+  let result: ModelCapability = base ? { ...base, context_window_by_auth: base.context_window_by_auth === null ? null : { ...base.context_window_by_auth } } : {
     platform, model, context_window: 0, context_window_by_auth: null, max_output: 0, max_output_unlimited: null,
     tools: null, json_schema: null, image: null, pdf: null, multiturn: null, thinking: null, prompt_cache: null, efforts: null, source: '',
   }

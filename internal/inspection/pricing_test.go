@@ -234,3 +234,34 @@ func TestPublicChecksRedaction(t *testing.T) {
 		t.Fatal("白名单脱敏或输入隔离失败")
 	}
 }
+
+func TestPublicItemChecksRedactionAndAdvice(t *testing.T) {
+	for _, tt := range []struct{ code, status, reason string }{
+		{"item_pass", "pass", "本次抽样观测通过。"},
+		{"item_pass_rate_low", "warning", "本次抽样观测发现需要关注的差异。"},
+		{"item_function_failed", "fail", "本次抽样观测未通过，建议修复后复检。"},
+		{"capability_unsupported", "not_applicable", "本次检测条件不适用。"},
+		{"capability_unknown", "inconclusive", "模型官方能力尚未登记，暂时无法判定此项。"},
+		{"needs_baseline", "inconclusive", "该项需要基线账号对照，暂时无法判定。"},
+	} {
+		t.Run(tt.code, func(t *testing.T) {
+			c := sample("D07", .7)
+			c.Status, c.Reason = tt.status, "私有题面、判分器和期望阈值"
+			c.Evidence.Source, c.Evidence.Code = "item_probe", tt.code
+			c.Metrics["expected_pass_rate"] = Metric{Value: number(.9), Unit: "fraction"}
+			public := PublicChecks(map[string]Check{"D07": c})["D07"]
+			if public.Evidence.Source != "item_probe" || public.Evidence.Code != "" || len(public.Metrics) != 0 || public.Factor != nil || public.Reason != tt.reason {
+				t.Fatalf("卖家摘要未脱敏或丢失安全说明：%+v", public)
+			}
+			raw, _ := json.Marshal(public)
+			for _, secret := range []string{tt.code, "expected_pass_rate", "私有题面", "判分器", "0.9", "0.7"} {
+				if strings.Contains(string(raw), secret) {
+					t.Fatalf("卖家摘要泄露 %s：%s", secret, raw)
+				}
+			}
+			if c.Factor == nil || len(c.Metrics) != 1 {
+				t.Fatal("脱敏改写内部证据")
+			}
+		})
+	}
+}

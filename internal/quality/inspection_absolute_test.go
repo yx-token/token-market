@@ -1,6 +1,7 @@
 package quality
 
 import (
+	"encoding/json"
 	"math"
 	"reflect"
 	"strings"
@@ -324,5 +325,45 @@ func TestPairedOptionsDoNotChangeResults(t *testing.T) {
 	}
 	if got := assessFormal(rows, th, st); got.Samples != 1 || !got.Baseline {
 		t.Fatal("正式模式混合批次绕过配对")
+	}
+}
+
+func TestItemMissingObservationsAndFrozenProbeMetadata(t *testing.T) {
+	for _, tt := range []struct {
+		key    string
+		change func(*Outcome)
+	}{
+		{"A02", func(o *Outcome) { o.Target.ResponseModel = "" }},
+		{"A12", func(o *Outcome) { o.Target.ErrorClass = "network"; o.Target.HTTPStatus = 0 }},
+		{"A11.tools", func(o *Outcome) { o.Target.ErrorClass = "platform"; o.Target.HTTPStatus = 503 }},
+	} {
+		o := itemOutcome(tt.key, false)
+		tt.change(&o)
+		checks, _ := Inspect([]Outcome{o}, calibratedInspectionSettings(), time.Time{})
+		if c := checks[tt.key]; c.Status != "inconclusive" || c.Factor != nil {
+			t.Fatalf("缺失证据不能断言失败：%+v", c)
+		}
+	}
+	for _, feature := range []string{"image", "pdf"} {
+		media := "image/png"
+		if feature == "pdf" {
+			media = "application/pdf"
+		}
+		it := plannedInstance{ItemID: 1, CheckKey: "A11.image_pdf", Parameters: map[string]any{"target_tokens": 300000}, Steps: []plannedStep{{Request: ProbeRequest{Model: "gpt-6-astra", Attachments: []ProbeAttachment{{MediaType: media}}}, Answer: "完整输出"}}}
+		// 快照从 JSON 读回时，参数是 float64；不能丢失实际探针长度。
+		var restored plannedInstance
+		if err := json.Unmarshal(mustJSON(it), &restored); err != nil {
+			t.Fatal(err)
+		}
+		o := instanceOutcome(restored)
+		if o.ProbeFeature != feature || o.ProbeTokens != 300000 || o.ProbeOutputTokens <= 0 {
+			t.Fatalf("冻结探针元数据缺失：%+v", o)
+		}
+	}
+	o := itemOutcome("A05", true)
+	o.ProbeTokens = 300000
+	checks, _ := Inspect([]Outcome{o}, calibratedInspectionSettings(), time.Time{}, InspectOptions{Capability: &inspection.ModelCapability{ContextWindow: 272000}})
+	if checks["A05"].Status != "not_applicable" {
+		t.Fatal("不能用新设置的默认探针长度覆盖执行快照")
 	}
 }

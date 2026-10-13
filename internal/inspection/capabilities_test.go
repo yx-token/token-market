@@ -103,3 +103,28 @@ func TestCapabilityOverrideValidation(t *testing.T) {
 		t.Fatal("重复型号被接受")
 	}
 }
+
+func TestCapabilityReadOnlyDefaultsAndThresholdValidation(t *testing.T) {
+	db := &memoryDB{}
+	if _, err := Update(context.Background(), db, []byte(`{"model_capability_defaults":[{"platform":"openai","model":"*","thinking":false}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	var saved map[string]json.RawMessage
+	_ = json.Unmarshal(db.raw, &saved)
+	if _, present := saved["model_capability_defaults"]; present {
+		t.Fatal("只读默认表被保存")
+	}
+	for _, patch := range []string{
+		`{"check_overrides":{"D07":{"thresholds":{"expected_pass_rate":0}}}}`,
+		`{"check_overrides":{"D09":{"thresholds":{"expected_pass_rate":1.1}}}}`,
+		`{"check_overrides":{"D07.honesty":{"thresholds":{"expected_pass_rate":-1}}}}`,
+		`{"check_overrides":{"D06":{"thresholds":{"absolute_high_low_ratio":0}}}}`,
+	} {
+		if _, err := Update(context.Background(), &memoryDB{}, []byte(patch)); err == nil {
+			t.Fatalf("无效新阈值被接受：%s", patch)
+		}
+	}
+	if _, err := Update(context.Background(), &memoryDB{}, []byte(`{"check_overrides":{"D06":{"thresholds":{"absolute_high_low_ratio":1.3}}}}`)); err != nil {
+		t.Fatalf("自身档位倍率不能按比例拒绝：%v", err)
+	}
+}

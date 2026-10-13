@@ -135,6 +135,10 @@ func (e *Engine) inspectionAssessment(ctx context.Context, run runRow, ref *runR
 }
 
 func (e *Engine) inspectCache(ctx context.Context, run runRow, ref *runRow, plan executionSnapshot, st InspectionSettings, checks map[string]inspection.Check, capabilities ...inspection.ModelCapability) error {
+	return inspectCacheChecks(ctx, run, ref, plan, st, checks, e.cacheTwoSteps, capabilities...)
+}
+
+func inspectCacheChecks(ctx context.Context, run runRow, ref *runRow, plan executionSnapshot, st InspectionSettings, checks map[string]inspection.Check, load func(context.Context, int64, plannedInstance) (*[2]int64, error), capabilities ...inspection.ModelCapability) error {
 	c, ok := checks["D12"]
 	if !ok {
 		return nil
@@ -148,7 +152,7 @@ func (e *Engine) inspectCache(ctx context.Context, run runRow, ref *runRow, plan
 			continue
 		}
 		if ref == nil {
-			t, err := e.cacheTwoSteps(ctx, run.id, it)
+			t, err := load(ctx, run.id, it)
 			if err != nil {
 				return err
 			}
@@ -164,11 +168,11 @@ func (e *Engine) inspectCache(ctx context.Context, run runRow, ref *runRow, plan
 			checks["D12"] = c
 			continue
 		}
-		t, err := e.cacheTwoSteps(ctx, run.id, it)
+		t, err := load(ctx, run.id, it)
 		if err != nil {
 			return err
 		}
-		r, err := e.cacheTwoSteps(ctx, ref.id, it)
+		r, err := load(ctx, ref.id, it)
 		if err != nil {
 			return err
 		}
