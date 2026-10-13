@@ -977,7 +977,13 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 		if !ok {
 			continue
 		}
-		if !containsAny(run.flows, d.Flow) && d.Flow != "common" && !containsAny(failedChecks, key) {
+		if d.Flow == "intelligence" && containsAny(run.flows, "intelligence") && len(run.models) == 0 {
+			continue
+		}
+		c, observed := a.Checks[key]
+		repaired := (containsAny(run.flows, d.Flow) || d.Flow == "common") && observed && (c.Status == "pass" || c.Status == "not_applicable") && c.Evidence.Source != "history"
+		// 未观察到的新结果不能抹掉待复测项，否则下轮会错误退回快检。
+		if !repaired && !containsAny(failedChecks, key) {
 			failedChecks = append(failedChecks, key)
 		}
 	}
@@ -1012,6 +1018,8 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 					}
 				}
 				st.suspected = remaining
+			} else if containsAny(st.suspected, flow) {
+				nextAdaptive[flow] = e.now().Add(adaptiveBackoff[min(st.adaptive, len(adaptiveBackoff)-1)])
 			}
 		}
 	}

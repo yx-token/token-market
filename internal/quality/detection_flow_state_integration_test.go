@@ -140,6 +140,38 @@ func TestDetectionFlowStateAdaptiveBackoffAndIndependentRecovery(t *testing.T) {
 	}
 }
 
+func TestDetectionFlowStateUnobservedFailureKeepsFullRetestAndBackoff(t *testing.T) {
+	t.Parallel()
+	for _, history := range []bool{false, true} {
+		t.Run(map[bool]string{false: "失败项本次未测", true: "沿用通过不能自证修复"}[history], func(t *testing.T) {
+			pool, e, run, p, st := detectionStateFixture(t)
+			ctx := context.Background()
+			now := time.Now().UTC().Truncate(time.Second)
+			e.Now = func() time.Time { return now }
+			run.flows, run.identitySource = []string{"intelligence"}, ""
+			concludeDetectionState(t, e, run, p, detectionStateAssessment(st, "D09", "fail", now))
+			run = queueDetectionState(t, e, run, "adaptive", "intelligence")
+			a := detectionStateAssessment(st, "D07", "pass", now)
+			c := newInspectionCheck(mustEffective("D09", st), now)
+			if history {
+				c.Status, c.Evidence.Source = "pass", "history"
+			}
+			a.Checks["D09"] = c
+			concludeDetectionState(t, e, run, p, a)
+			var failed, suspected []string
+			var next time.Time
+			var attempts int
+			if err := pool.QueryRow(ctx, `SELECT last_failed_checks,suspected_flows,next_intelligence_at,adaptive_attempts FROM upstream_quality_state WHERE upstream_id=$1`, run.upstreamID).Scan(&failed, &suspected, &next, &attempts); err != nil || !reflect.DeepEqual(failed, []string{"D09"}) || !reflect.DeepEqual(suspected, []string{"intelligence"}) || !next.Equal(now.Add(time.Hour)) || attempts != 2 {
+				t.Fatalf("未重测的失败项须保留并继续退避：失败=%v 疑似=%v 下次=%s 次数=%d 错误=%v", failed, suspected, next, attempts, err)
+			}
+			run = queueDetectionState(t, e, run, "adaptive", "intelligence")
+			if run.mode != "full" {
+				t.Fatalf("未修复 D09 的下轮不能退回快检：%s", run.mode)
+			}
+		})
+	}
+}
+
 func detectionStateAppeal(t *testing.T, pool *pgxpool.Pool, run runRow, status string) int64 {
 	t.Helper()
 	ctx := context.Background()
