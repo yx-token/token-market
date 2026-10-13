@@ -50,7 +50,8 @@ func init() {
 		}
 		flow := FlowIdentity
 		switch key {
-		case "D06", "D07", "D07.honesty", "D09":
+		// A06 推理档位由 D06 的用量观测推出，与测智同属一条流程。
+		case "A06", "D06", "D07", "D07.honesty", "D09":
 			flow = FlowIntelligence
 		case "D13", "D04", "D10", "D05":
 			flow = FlowCommon
