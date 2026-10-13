@@ -55,6 +55,7 @@ const triggerRef = ref<HTMLElement | null>(null)
 const listRef = ref<HTMLElement | null>(null)
 const searchRef = ref<HTMLInputElement | null>(null)
 const { style: panelStyle, update: updatePanel, open: placePanel, close: unplacePanel } = usePopoverPosition(triggerRef, {
+  // 未指定时跟随触发器实测宽度并保底 240px，窄输入框里的选项也能读全；勿传 0（会变成 0px 竖线）
   width: (rect) => props.panelWidth ?? Math.max(rect.width, 240),
   maxHeight: 320,
 })

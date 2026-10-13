@@ -1,5 +1,5 @@
 -- 缓存完整模型目录，并在上架检测前等待卖家选择挂售模型。
--- 白名单列 upstreams.model_whitelist 由 0029_detection_flows.sql 创建。
+-- 白名单列 upstreams.model_whitelist 由 0030_detection_flows.sql 创建。
 ALTER TABLE upstreams
     ADD COLUMN model_catalog text[] NOT NULL DEFAULT '{}',
     ADD COLUMN model_catalog_at timestamptz;

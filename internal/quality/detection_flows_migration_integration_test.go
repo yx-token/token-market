@@ -17,7 +17,7 @@ func TestDetectionFlowsMigrationPreservesLegacyHistory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, pool := testutil.NewDatabase(t)
-	const migration = "0029_detection_flows.sql"
+	const migration = "0030_detection_flows.sql"
 	if _, err := db.Migrate(ctx, pool, migrationsThrough(t, migration, false)); err != nil {
 		t.Fatal(err)
 	}
