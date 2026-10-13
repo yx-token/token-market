@@ -13,7 +13,7 @@ import type { ProbeRunDetail as RunDetail, ProbeRunRecord, ProbeRunResult } from
 
 vi.mock('@/api', () => ({ admin: { probeRecords: vi.fn(), probeItemStats: vi.fn(), probeRun: vi.fn(), probeItemResults: vi.fn() } }))
 
-const run = { id: 1, upstream_id: 2, batch_id: 'batch', trigger: 'admin', model: '模型', status: 'done', items: 2, passed: 1, queued_at: '2026-10-12T04:00:00Z' }
+const run = { id: 1, upstream_id: 2, batch_id: 'batch', trigger: 'admin', model: '模型', status: 'done', items: 2, passed: 1, planned: 3, queued_at: '2026-10-12T04:00:00Z' }
 const base: ProbeRunResult = { item_id: 7, suite: 'inspection_capability', category: 'logic', prompt: '题面', models: [], passed: true, ttft_ms: 12, duration_ms: 24, output_tokens: 3, reasoning_tokens: 4, expected_answer: '42' }
 
 function detail(results: ProbeRunResult[], extra: Partial<RunDetail> = {}): RunDetail {
@@ -313,12 +313,25 @@ describe('检测记录流程字段', () => {
     expect(cells[headers.indexOf('流程')].text()).toBe('测智 / 身份与功能核验')
     expect(cells[headers.indexOf('身份来源')].text()).toBe('第三方检测')
     expect(cells[headers.indexOf('测试模型')].text()).toBe('gpt-6-astra / gpt-6.1-sol')
+    expect(cells[headers.indexOf('答题')].text()).toContain('通过 1 / 已答 2 / 共 3')
+    // 测智列：已结束且无测智结论时显示「—」
+    expect(cells[headers.indexOf('测智')].text()).toBe('—')
     const suites = cells[headers.indexOf('答题')].get('div').findAll('span').map((span) => span.text())
     expect(suites).toEqual(['测智 2/3', '测智·上下文深度 1/1', '身份核验 2/2', '旧智力题（已停用） 1/1'])
     expect(wrapper.get('tbody').text()).not.toContain('inspection_capability')
     await wrapper.get('#pr-keyword').setValue('gpt-6.1-sol')
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
     wrapper.unmount()
+  })
+
+  it('进行中的运行测智列显示检测中，有结论时显示中文状态', async () => {
+    const wrapper = await page([{ ...record, status: 'running', planned: null }])
+    const headers = wrapper.findAll('th').map((cell) => cell.text())
+    expect(wrapper.get('tbody tr').findAll('td')[headers.indexOf('测智')].text()).toBe('检测中')
+    wrapper.unmount()
+    const finished = await page([{ ...record, summary: { verdict: 'suspected', trigger: 'admin', model: '模型', checked_at: '', baseline: false, intelligence: { status: 'warning', models: [] } } }])
+    expect(finished.get('tbody tr').findAll('td')[finished.findAll('th').map((cell) => cell.text()).indexOf('测智')].text()).toBe('偏低（扣价）')
+    finished.unmount()
   })
 
   it('旧记录缺少新字段时以主模型兜底，自有题库来源使用中文', async () => {

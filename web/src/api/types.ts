@@ -600,14 +600,6 @@ export interface ThirdPartyResult {
   summary?: ThirdPartySummary
 }
 
-export interface TrendPoint {
-  day: string
-  relative_score?: number
-  checks: number
-  degraded: number
-  unavailable: number
-}
-
 export interface Appeal {
   id: number
   report_id: number
@@ -908,6 +900,7 @@ export interface ProbeRun {
   summary?: Partial<ReportSummary> & { error?: string }
   items: number
   passed: number
+  planned?: number | null
   queued_at: string
   finished_at?: string
   flows?: DetectionFlow[]
@@ -1069,6 +1062,23 @@ export interface ProbeRunRecord extends ProbeRun {
   account_email?: string
   is_reference: boolean
   suites: Record<string, { items: number; passed: number }>
+}
+
+/** 卖家查看的检测记录，只含进度和脱敏后的状态。 */
+export interface SellerProbeRun {
+  id: number
+  trigger: string
+  status: string
+  flows?: DetectionFlow[]
+  identity_source?: IdentitySource | null
+  models?: string[]
+  queued_at: string
+  started_at?: string | null
+  finished_at?: string | null
+  progress: { answered: number; total: number | null }
+  third_party: { provider: string; status: string }[]
+  report_id: number | null
+  verdict: string | null
 }
 
 /** 一道题在筛选范围内的答题统计，被测上游与基线账号分开统计 */

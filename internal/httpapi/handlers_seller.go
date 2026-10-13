@@ -408,6 +408,19 @@ func (s *Server) sellerReports(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, rs)
 }
 
+func (s *Server) sellerProbeRuns(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	limit, offset := page(r)
+	runs, err := quality.SellerProbeRuns(r.Context(), s.DB, httpx.MustUser(r).UserID, id, limit, offset)
+	if err != nil {
+		return err
+	}
+	return ok(w, runs)
+}
+
 func (s *Server) sellerReport(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathID(r, "id")
 	if err != nil {
@@ -418,18 +431,6 @@ func (s *Server) sellerReport(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return ok(w, rep)
-}
-
-func (s *Server) qualityTrend(w http.ResponseWriter, r *http.Request) error {
-	id, err := httpx.PathID(r, "id")
-	if err != nil {
-		return err
-	}
-	pts, err := quality.QualityTrend(r.Context(), s.DB, httpx.MustUser(r).UserID, id, httpx.QueryInt(r, "days", 30, 1, 180))
-	if err != nil {
-		return err
-	}
-	return ok(w, pts)
 }
 
 func (s *Server) manualRetest(w http.ResponseWriter, r *http.Request) error {

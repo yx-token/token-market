@@ -80,6 +80,15 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 	if len(public.Intelligence.Models) != 1 || len(public.Intelligence.Models[0]) != 2 || public.Intelligence.Models[0]["model"] != "claude-sonnet-4-5" || public.Checks["D07"].Factor == nil || !public.Checks["D07"].Applied {
 		t.Fatalf("卖家测智应仅公开模型状态并保留生效系数：%s", report.Summary)
 	}
+	var sellerRuns []quality.SellerProbeRun
+	status, raw = f.seller.call("GET", fmt.Sprintf("/api/seller/upstreams/%d/probe-runs", f.upstreamID), nil, &sellerRuns)
+	if status != http.StatusOK || len(sellerRuns) == 0 || strings.Contains(raw, "prompt") || strings.Contains(raw, "excerpt") || strings.Contains(raw, "expected") || strings.Contains(raw, "grader") || strings.Contains(raw, "instance_hash") || strings.Contains(raw, "summary") {
+		t.Fatalf("卖家检测记录响应未按要求脱敏：%d %s", status, raw)
+	}
+	other := f.e.newUser("quality-records-other@market.test")
+	if status, _ = other.call("GET", fmt.Sprintf("/api/seller/upstreams/%d/probe-runs", f.upstreamID), nil, nil); status != http.StatusNotFound {
+		t.Fatalf("他人上游检测记录应返回 404，得到 %d", status)
+	}
 	// 只跑身份通过不能清除测智疑似；管理员可显式选择流程。
 	var identityRun struct {
 		RunID int64 `json:"run_id"`

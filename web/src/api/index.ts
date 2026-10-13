@@ -97,7 +97,7 @@ export const seller = {
   quote: (id: number) => http.get<T.Quote | null>(`/api/seller/upstreams/${id}/quote`),
   reports: (id: number) => http.get<T.Report[] | null>(`/api/seller/upstreams/${id}/reports`),
   report: (id: number) => http.get<T.Report>(`/api/seller/reports/${id}`),
-  trend: (id: number, days = 30) => http.get<T.TrendPoint[] | null>(`/api/seller/upstreams/${id}/quality-trend`, { days }),
+  probeRuns: (id: number, q?: Query) => http.get<T.SellerProbeRun[] | null>(`/api/seller/upstreams/${id}/probe-runs`, q),
   retest: (id: number) => http.post<{ run_id: number; note: string }>(`/api/seller/upstreams/${id}/retest`),
   appeal: (reportId: number, reason: string) => http.post<T.Appeal>(`/api/seller/reports/${reportId}/appeal`, { reason }),
   listings: () => http.get<T.Listing[] | null>('/api/seller/listings'),

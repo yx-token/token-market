@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/DueGin/token-market/internal/listing"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -35,6 +36,67 @@ type SuiteCount struct {
 	Passed int `json:"passed"`
 }
 
+// SellerProbeRun 是卖家查看检测进度时使用的脱敏记录，不包含题面、回答或内部判定证据。
+type SellerProbeRun struct {
+	ID             int64                   `json:"id"`
+	Trigger        string                  `json:"trigger"`
+	Status         string                  `json:"status"`
+	Flows          []string                `json:"flows"`
+	IdentitySource *string                 `json:"identity_source"`
+	Models         []string                `json:"models"`
+	QueuedAt       time.Time               `json:"queued_at"`
+	StartedAt      *time.Time              `json:"started_at"`
+	FinishedAt     *time.Time              `json:"finished_at"`
+	Progress       SellerProbeProgress     `json:"progress"`
+	ThirdParty     []SellerThirdPartyState `json:"third_party"`
+	ReportID       *int64                  `json:"report_id"`
+	Verdict        *string                 `json:"verdict"`
+}
+
+type SellerProbeProgress struct {
+	Answered int  `json:"answered"`
+	Total    *int `json:"total"`
+}
+
+type SellerThirdPartyState struct {
+	Provider string `json:"provider"`
+	Status   string `json:"status"`
+}
+
+// SellerProbeRuns 返回卖家某个上游的检测记录，进行中的记录优先且不包含基线运行。
+func SellerProbeRuns(ctx context.Context, db DB, sellerID, upstreamID int64, limit, offset int) ([]SellerProbeRun, error) {
+	if _, err := listing.GetSellerUpstream(ctx, db, sellerID, upstreamID); err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(ctx, `SELECT r.id, r.trigger, r.status, r.flows, r.identity_source, r.models,
+			r.queued_at, r.started_at, r.finished_at,
+			(SELECT count(*) FROM probe_results x WHERE x.run_id = r.id), `+plannedRunColumn+`,
+			(SELECT COALESCE(jsonb_agg(jsonb_build_object('provider', c.provider, 'status', c.status) ORDER BY c.id), '[]'::jsonb)
+				FROM third_party_checks c WHERE c.run_id = r.id),
+			t.id, t.verdict
+		FROM probe_runs r LEFT JOIN test_reports t ON t.run_id = r.id
+		WHERE r.upstream_id = $1 AND r.trigger <> 'reference'
+		ORDER BY CASE WHEN r.status IN ('queued', 'running', 'third_party') THEN 0 ELSE 1 END,
+			r.queued_at DESC, r.id DESC LIMIT $2 OFFSET $3`, upstreamID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (SellerProbeRun, error) {
+		var run SellerProbeRun
+		var total *int
+		var thirdParty []byte
+		if err := row.Scan(&run.ID, &run.Trigger, &run.Status, &run.Flows, &run.IdentitySource, &run.Models,
+			&run.QueuedAt, &run.StartedAt, &run.FinishedAt, &run.Progress.Answered, &total, &thirdParty, &run.ReportID, &run.Verdict); err != nil {
+			return run, err
+		}
+		run.Progress.Total = total
+		if err := json.Unmarshal(thirdParty, &run.ThirdParty); err != nil {
+			return run, err
+		}
+		return run, nil
+	})
+}
+
 // recordWhere 拼接筛选条件，参数从 $1 开始，依次为 RecordFilter 的各字段。
 const recordWhere = `($1 = '' OR u.platform = $1) AND ($2 = 0 OR r.upstream_id = $2) AND ($3 = '' OR r.model = $3)
 	AND (CASE WHEN $4 = '' THEN r.trigger <> 'reference' ELSE r.trigger = $4 END)
@@ -60,7 +122,7 @@ func ListRunRecords(ctx context.Context, db DB, f RecordFilter, limit, offset in
 		var rec RunRecord
 		var summary, suites []byte
 		s := &rec.RunSummary
-		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models,
+		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models,
 			&rec.Platform, &rec.AuthType, &rec.SellerID, &rec.AccountEmail, &rec.IsReference, &suites)
 		if err != nil {
 			return rec, err

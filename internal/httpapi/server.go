@@ -148,7 +148,7 @@ func (s *Server) Handler() http.Handler {
 		{"POST /api/seller/upstreams/{id}/listing", s.createListing},
 		{"GET /api/seller/upstreams/{id}/quote", s.currentQuote},
 		{"GET /api/seller/upstreams/{id}/reports", s.sellerReports},
-		{"GET /api/seller/upstreams/{id}/quality-trend", s.qualityTrend},
+		{"GET /api/seller/upstreams/{id}/probe-runs", s.sellerProbeRuns},
 		{"GET /api/seller/upstreams/{id}/quota", s.upstreamQuota},
 		{"GET /api/seller/upstreams/{id}/reset-credits", s.resetCredits},
 		{"POST /api/seller/upstreams/{id}/reset-credits/redeem", s.redeemResetCredit},
