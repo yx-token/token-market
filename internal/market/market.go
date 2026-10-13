@@ -37,6 +37,7 @@ type Item struct {
 	Title            *string   `json:"title,omitempty"`
 	Description      *string   `json:"description,omitempty"`
 	Categories       []string  `json:"categories,omitempty"`
+	Models           []string  `json:"models"` // 空数组表示存量上游未声明，实际不限制模型
 }
 
 type Filter struct {
@@ -46,6 +47,7 @@ type Filter struct {
 	Kind     string // channel / pack / 空=全部
 	Category string // low_rate / coding / featured / pack
 	Sort     string // price / success / ttft
+	Model    string // 指定挂售模型；存量未声明白名单的上游不限制
 }
 
 type Service struct {
@@ -99,7 +101,7 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 		q = `SELECT l.id, u.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
 			att.success_rate, COALESCE(att.requests, 0), usage.ttft_p50,
 			l.mode, l.sku_kind, l.face_value, l.stock, l.stock_sold, l.min_amount::float8, l.title, l.description,
-			COALESCE(l.categories, '{}')
+			COALESCE(l.categories, '{}'), COALESCE(u.model_whitelist, '{}')
 		FROM listings l
 		JOIN upstreams u ON u.id = l.upstream_id
 		LEFT JOIN LATERAL (
@@ -115,12 +117,13 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 			AND ($1 = '' OR u.platform = $1) AND ($2 = '' OR u.grade = $2) AND l.multiplier <= $3
 			AND ($6 = '' OR l.sku_kind = $6)
 			AND ($7 = '' OR $7 = ANY (COALESCE(l.categories, '{}')))
+			AND ($8 = '' OR u.model_whitelist IS NULL OR $8 = ANY(u.model_whitelist))
 		ORDER BY ` + order + ` LIMIT $4 OFFSET $5`
 	} else {
 		q = `SELECT l.id, u.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
 			NULL::float8, 0, NULL::float8,
 			l.mode, l.sku_kind, l.face_value, l.stock, l.stock_sold, l.min_amount::float8, l.title, l.description,
-			COALESCE(l.categories, '{}')
+			COALESCE(l.categories, '{}'), COALESCE(u.model_whitelist, '{}')
 		FROM listings l
 		JOIN upstreams u ON u.id = l.upstream_id
 		WHERE l.mode IN ('consignment', 'pack') AND l.status = 'active' AND u.status = 'listed' AND u.health NOT IN ('degraded', 'unavailable')
@@ -128,9 +131,10 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 			AND ($1 = '' OR u.platform = $1) AND ($2 = '' OR u.grade = $2) AND l.multiplier <= $3
 			AND ($6 = '' OR l.sku_kind = $6)
 			AND ($7 = '' OR $7 = ANY (COALESCE(l.categories, '{}')))
+			AND ($8 = '' OR u.model_whitelist IS NULL OR $8 = ANY(u.model_whitelist))
 		ORDER BY ` + order + ` LIMIT $4 OFFSET $5`
 	}
-	rows, err := s.DB.Query(ctx, q, f.Platform, f.Grade, maxSeller, limit, offset, kind, f.Category)
+	rows, err := s.DB.Query(ctx, q, f.Platform, f.Grade, maxSeller, limit, offset, kind, f.Category, f.Model)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +142,7 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 		var it Item
 		err := row.Scan(&it.ListingID, &it.UpstreamID, &it.Platform, &it.AuthType, &it.Tier, &it.Grade, &it.Health, &it.SellerMultiplier, &it.ListedSince,
 			&it.SuccessRate24h, &it.Requests24h, &it.TTFTp50Ms,
-			&it.Mode, &it.SKUKind, &it.FaceValue, &it.Stock, &it.StockSold, &it.MinAmount, &it.Title, &it.Description, &it.Categories)
+			&it.Mode, &it.SKUKind, &it.FaceValue, &it.Stock, &it.StockSold, &it.MinAmount, &it.Title, &it.Description, &it.Categories, &it.Models)
 		if it.Categories == nil {
 			it.Categories = []string{}
 		}

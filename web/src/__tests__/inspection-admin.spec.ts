@@ -7,12 +7,11 @@ import { admin } from '@/api'
 import InspectionSettingsPanel from '@/components/InspectionSettingsPanel.vue'
 import InspectionChecksView from '@/views/admin/InspectionChecksView.vue'
 import VendorsView from '@/views/admin/VendorsView.vue'
-import DetectionView from '@/views/admin/DetectionView.vue'
-import type { InspectionCheckDefinition, InspectionSettings, Policy, VendorConfig } from '@/api/types'
+import type { InspectionCheckDefinition, InspectionSettings, VendorConfig } from '@/api/types'
 
-vi.mock('@/api', () => ({ admin: { inspectionSettings: vi.fn(), updateInspectionSettings: vi.fn(), inspectionChecks: vi.fn(), updateInspectionCheck: vi.fn(), vendors: vi.fn(), updateVendor: vi.fn(), policies: vi.fn(), providers: vi.fn(), upsertPolicy: vi.fn(), settings: vi.fn(), upstreams: vi.fn(), probeGeneratorTemplates: vi.fn() } }))
+vi.mock('@/api', () => ({ admin: { inspectionSettings: vi.fn(), updateInspectionSettings: vi.fn(), inspectionChecks: vi.fn(), updateInspectionCheck: vi.fn(), vendors: vi.fn(), updateVendor: vi.fn(), policies: vi.fn(), providers: vi.fn(), upsertPolicy: vi.fn(), settings: vi.fn(), upstreams: vi.fn(), items: vi.fn(), probeGeneratorTemplates: vi.fn() } }))
 const settings: InspectionSettings = { mode: 'trial', check_overrides: {}, grade_thresholds: { S: 1.02, A: 0.93, B: 0.82, C: 0.65 }, grade_hysteresis: 0.02, downgrade_confirmations: 2, s_requirements: { gate_free_days: 30, availability_days: 7, min_availability: 0.995 }, scheduling: { enabled: false, minimum_grade: 'B', strategy: 'quality_adjusted' }, timeouts: { full_minutes: 75, quick_minutes: 20 }, limits: { account_parallelism: 2, global_parallelism: 32 }, token_budgets: { full: { input_tokens_per_side: 1300000, output_tokens_per_side: 640000 }, quick: { input_tokens_per_side: 80000, output_tokens_per_side: 160000 } }, future_setting: { preserved: true } }
-const definition: InspectionCheckDefinition = { key: 'A15', name: '参数行为指纹', category: 'authenticity', role: 'gate', factor_group: null, enabled: false, calibrated: false, coefficients: {}, thresholds: { min_samples: 10 }, advice: '先做 A/A 校准。', calibration_note: '' }
+const definition: InspectionCheckDefinition = { key: 'A15', name: '参数行为指纹', category: 'authenticity', role: 'gate', factor_group: null, enabled: false, calibrated: false, flow: 'identity', pricing: false, default_pricing: false, coefficients: { warning: 0.85, severe: 0.7 }, thresholds: { min_samples: 10 }, advice: '先做 A/A 校准。', calibration_note: '' }
 const dialog = defineComponent({ props: ['open'], template: '<section v-if="open"><slot /><slot name="footer" /></section>' })
 const listPage = defineComponent({ template: '<main><slot name="filters" /><slot /><slot name="footer" /></main>' })
 async function adminPage(component: Parameters<typeof mount>[0]) {
@@ -31,6 +30,7 @@ describe('质检后台设置', () => {
     vi.mocked(admin.updateInspectionSettings).mockImplementation(async (body) => body)
     vi.mocked(admin.inspectionChecks).mockResolvedValue([definition])
     vi.mocked(admin.updateInspectionCheck).mockResolvedValue({ ...definition, enabled: true })
+    vi.mocked(admin.items).mockResolvedValue([])
   })
 
   it('独立保存 inspection，不丢预算、校准覆盖与兼容字段', async () => {
@@ -68,14 +68,78 @@ describe('质检后台设置', () => {
     wrapper.unmount()
   })
 
-  it('启用未校准规则保留 calibrated=false，并展示不扣价提示', async () => {
+  it('未校准规则可独立开启扣价，校准只影响门槛', async () => {
     const wrapper = await adminPage(InspectionChecksView)
-    expect(wrapper.text()).toContain('待运营校准，不扣价')
+    expect(wrapper.text()).toContain('待运营校准')
     await wrapper.findAll('button').find((button) => button.text() === '编辑')!.trigger('click')
+    expect(wrapper.text()).toContain('校准只影响门槛（是否暂停），不影响扣价')
     await wrapper.get('#check-enabled').setValue(true)
+    await wrapper.get('#check-pricing').setValue('true')
     await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
     await flushPromises()
-    expect(admin.updateInspectionCheck).toHaveBeenCalledWith('A15', { enabled: true, calibrated: false, calibration_note: '', coefficients: {}, thresholds: { min_samples: 10 } })
+    expect(admin.updateInspectionCheck).toHaveBeenCalledWith('A15', { enabled: true, pricing: true, calibrated: false, calibration_note: '', coefficients: { warning: 0.85, severe: 0.7 }, thresholds: { min_samples: 10 } })
+    wrapper.unmount()
+  })
+
+  it.each([
+    { label: '开', pricing: true },
+    { label: '关', pricing: false },
+    { label: '恢复默认', pricing: null },
+  ])('用于扣价选择 $label 时按三态契约保存', async ({ label, pricing }) => {
+    const wrapper = await adminPage(InspectionChecksView)
+    await wrapper.findAll('button').find((button) => button.text() === '编辑')!.trigger('click')
+    const option = wrapper.get('#check-pricing').findAll('option').find((item) => item.text() === label)!
+    await wrapper.get('#check-pricing').setValue((option.element as HTMLOptionElement).value)
+    await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
+    await flushPromises()
+    expect(admin.updateInspectionCheck).toHaveBeenCalledWith('A15', expect.objectContaining({ pricing }))
+    wrapper.unmount()
+  })
+
+  it('编辑回填生效扣价状态，并说明恢复默认后的状态', async () => {
+    vi.mocked(admin.inspectionChecks).mockResolvedValue([{ ...definition, pricing: true }])
+    const wrapper = await adminPage(InspectionChecksView)
+    await wrapper.findAll('button').find((button) => button.text() === '编辑')!.trigger('click')
+    expect(wrapper.get<HTMLSelectElement>('#check-pricing').element.value).toBe('true')
+    expect(wrapper.text()).toContain('恢复默认后：关')
+    wrapper.unmount()
+  })
+
+  it('按目录流程展示中文流程列', async () => {
+    vi.mocked(admin.inspectionChecks).mockResolvedValue([
+      { ...definition, key: 'D07', flow: 'intelligence' },
+      definition,
+      { ...definition, key: 'D13', flow: 'common' },
+    ])
+    const wrapper = await adminPage(InspectionChecksView)
+    expect(wrapper.text()).toContain('所属流程')
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows[0]!.text()).toContain('测智')
+    expect(rows[1]!.text()).toContain('身份与功能核验')
+    expect(rows[2]!.text()).toContain('通用')
+    wrapper.unmount()
+  })
+
+  it('数值输入回填并保存两档系数，同时保留已有其他系数', async () => {
+    vi.mocked(admin.inspectionChecks).mockResolvedValue([{ ...definition, key: 'D10', coefficients: { warning: 0.97, severe: 0.93, worst: 0.85, bonus: 1.05 } }])
+    const wrapper = await adminPage(InspectionChecksView)
+    await wrapper.findAll('button').find((button) => button.text() === '编辑')!.trigger('click')
+    expect(wrapper.get<HTMLInputElement>('#check-warning').element.value).toBe('0.97')
+    expect(wrapper.get<HTMLInputElement>('#check-severe').element.value).toBe('0.93')
+    await wrapper.get('#check-warning').setValue(0.9)
+    await wrapper.get('#check-severe').setValue(0.75)
+    await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
+    await flushPromises()
+    expect(admin.updateInspectionCheck).toHaveBeenCalledWith('D10', expect.objectContaining({ coefficients: { warning: 0.9, severe: 0.75, worst: 0.85, bonus: 1.05 } }))
+    wrapper.unmount()
+  })
+
+  it.each(['', '0', '1.06'])('无效系数 %s 不能保存', async (value) => {
+    const wrapper = await adminPage(InspectionChecksView)
+    await wrapper.findAll('button').find((button) => button.text() === '编辑')!.trigger('click')
+    await wrapper.get('#check-warning').setValue(value)
+    await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
+    expect(admin.updateInspectionCheck).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -92,44 +156,4 @@ describe('质检后台设置', () => {
     wrapper.unmount()
   })
 
-  it('检测策略保存并行、完整触发与模式预算，并提示全部新套件', async () => {
-    const policy: Policy = { id: 1, platform: 'anthropic', auth_type: 'oauth', enabled: true, scheduled_enabled: true, interval_minutes: 360, jitter_minutes: 30, suites: ['iq'], models: ['模型'], daily_budget_usd: 1, thresholds: { h0: 0.9, h1: 0.7, alpha: 0.05, beta: 0.1 }, auto_pause: true, default_grade: 'B', third_party: [], version: 1, updated_at: '' }
-    vi.mocked(admin.policies).mockResolvedValue([policy])
-    vi.mocked(admin.providers).mockResolvedValue([])
-    vi.mocked(admin.upsertPolicy).mockResolvedValue(policy)
-    vi.mocked(admin.settings).mockResolvedValue({ price_models: [] } as any)
-    vi.mocked(admin.upstreams).mockResolvedValue([])
-    vi.mocked(admin.vendors).mockResolvedValue([])
-    vi.mocked(admin.probeGeneratorTemplates).mockResolvedValue([])
-    const wrapper = await adminPage(DetectionView)
-    await wrapper.findAll('button').find((button) => button.text() === '编辑')!.trigger('click')
-    // 套件选项来自后端 validSuites；打开面板可见全部质检套件
-    const suiteTrigger = wrapper.get('#ps')
-    await suiteTrigger.trigger('click')
-    await flushPromises()
-    const panel = document.body.querySelector('#ps-listbox')!
-    expect(panel.textContent).toContain('inspection_context')
-    expect(panel.textContent).toContain('inspection_performance')
-    // 关闭套件面板后继续填写其余字段
-    await suiteTrigger.trigger('keydown', { key: 'Escape' })
-    await flushPromises()
-    await wrapper.get('#policy-parallelism').setValue(2)
-    // 触发类型是多选 SearchSelect：编辑时预填了 onboarding/admin/appeal，取消 admin 后保存
-    const trigTrigger = wrapper.get('#policy-full-triggers')
-    await trigTrigger.trigger('click')
-    await flushPromises()
-    const trigPanel = document.body.querySelector('#policy-full-triggers-listbox')!
-    const trigOpts = [...trigPanel.querySelectorAll<HTMLElement>('.ss-opt')]
-    trigOpts.find((li) => li.textContent?.includes('平台检测'))!.click()
-    await flushPromises()
-    ;[...trigPanel.querySelectorAll<HTMLElement>('.ss-opt')].find((li) => li.textContent?.includes('恢复复测'))!.click()
-    await flushPromises()
-    await trigTrigger.trigger('keydown', { key: 'Escape' })
-    await flushPromises()
-    await wrapper.get('#policy-token-budgets').setValue('{"quick":{"input_tokens_per_side":80000,"output_tokens_per_side":160000}}')
-    await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
-    await flushPromises()
-    expect(admin.upsertPolicy).toHaveBeenCalledWith('anthropic', 'oauth', expect.objectContaining({ item_parallelism: 2, full_triggers: ['onboarding', 'appeal'], token_budgets: { quick: { input_tokens_per_side: 80000, output_tokens_per_side: 160000 } }, suites: ['iq'] }))
-    wrapper.unmount()
-  })
 })

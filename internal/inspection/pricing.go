@@ -3,7 +3,6 @@ package inspection
 import (
 	"math"
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -28,26 +27,27 @@ func functionBucket(key string) string {
 }
 
 func Aggregate(checks map[string]Check, gates []Gate, mode string, settings Settings) Aggregation {
-	result := Aggregation{Checks: map[string]Check{}, Gates: append([]Gate{}, gates...), GroupFactors: map[string]float64{"capability": 1, "function": 1, "availability": 1, "performance": 1}, Provisional: mode != ModeFormal}
-	observed, blocked := false, false
+	result := Aggregation{Checks: map[string]Check{}, Gates: append([]Gate{}, gates...), GroupFactors: map[string]float64{"identity": 1, "capability": 1, "function": 1, "availability": 1, "performance": 1}}
+	observed, blocked, pricingEnabled := false, false, false
 	functionFactors := map[string]float64{}
 	performanceObserved := false
 	for i, gate := range result.Gates {
 		definition, known := Effective(gate.CheckKey, settings)
-		validGate := gate.Confirmed && known && definition.Enabled && definition.Calibrated && (gate.Health == "degraded" || gate.Health == "unavailable")
-		blocked = blocked || validGate
+		// 第三方门槛直接使用检测站结论，自有门槛仍须登记校准。
+		validGate := gate.Confirmed && known && definition.Enabled && (definition.Calibrated || gate.CheckKey == "third_party") && (gate.Health == "degraded" || gate.Health == "unavailable")
 		result.Gates[i].Confirmed = validGate && mode == ModeFormal
+		blocked = blocked || result.Gates[i].Confirmed
 	}
 	for key, check := range checks {
 		definition, known := Effective(key, settings)
 		check.Key, check.Applied = key, false
-		if check.Factor != nil && (!finite(*check.Factor) || *check.Factor <= 0 || *check.Factor > 1.05) {
+		invalidFactor := check.Factor != nil && (!finite(*check.Factor) || *check.Factor <= 0 || *check.Factor > 1.05)
+		if invalidFactor {
 			check.Factor = nil
 		}
 		if !known {
 			check.Factor = nil
 			result.Checks[key] = check
-			result.Provisional = true
 			continue
 		}
 		check.Name, check.Category, check.Role = definition.Name, definition.Category, definition.Role
@@ -57,19 +57,29 @@ func Aggregate(checks map[string]Check, gates []Gate, mode string, settings Sett
 			group := definition.FactorGroup
 			check.FactorGroup = &group
 		}
-		valid := definition.Enabled && eligibleStatus(check.Status) && (check.Samples.Observed > 0 || check.Samples.Paired > 0)
-		if !definition.Enabled || !eligibleStatus(check.Status) || definition.Role != "factor" {
+		valid := definition.Enabled && eligibleStatus(check.Status) && (check.Samples.Observed > 0 || check.Samples.Paired > 0) && !invalidFactor
+		if !definition.Enabled || !eligibleStatus(check.Status) {
 			check.Factor = nil
 		}
-		if !valid || !definition.Calibrated {
+		if valid && check.Factor == nil {
+			factor := 1.0
+			switch check.Status {
+			case "warning":
+				factor = definition.Coefficients["warning"]
+			case "fail":
+				factor = definition.Coefficients["severe"]
+			}
+			check.Factor = &factor
+		}
+		if definition.Enabled && definition.Pricing && !valid {
 			result.Provisional = true
 		}
-		if valid && definition.Role == "factor" && check.Factor != nil && finite(*check.Factor) && *check.Factor > 0 && *check.Factor <= 1.05 && definition.Calibrated {
+		if valid && definition.Pricing && check.Factor != nil {
 			observed = true
 			factor := *check.Factor
 			switch definition.FactorGroup {
-			case "capability":
-				result.GroupFactors["capability"] = math.Min(result.GroupFactors["capability"], factor)
+			case "identity", "capability":
+				result.GroupFactors[definition.FactorGroup] = math.Min(result.GroupFactors[definition.FactorGroup], factor)
 			case "function":
 				bucket := functionBucket(key)
 				previous, exists := functionFactors[bucket]
@@ -84,23 +94,30 @@ func Aggregate(checks map[string]Check, gates []Gate, mode string, settings Sett
 				}
 				performanceObserved = true
 			}
-			check.Applied = mode == ModeFormal && !blocked
+			check.Applied = !blocked
 		}
-		if mode == ModeTrial {
-			check.Impact = "试运行，不影响价格与调度。"
-		} else if !definition.Calibrated && (definition.Role == "factor" || definition.Role == "gate") {
-			check.Impact = "规则待运营校准，本项暂不影响价格与调度。"
+		switch {
+		case blocked:
+			check.Impact = "正式健康门槛已确认，暂停期间不计入扣价。"
+		case check.Applied:
+			check.Impact = "本项已计入质量系数，影响估价与调度。"
+		case !definition.Pricing:
+			check.Impact = "本项未开启用于扣价，仅展示检测结果。"
+		default:
+			check.Impact = "本项证据不足，暂未计入质量系数。"
 		}
 		result.Checks[key] = check
 	}
 	for _, definition := range Known() {
 		effective, _ := Effective(definition.Key, settings)
-		if effective.Enabled && definition.Role == "factor" {
+		if effective.Enabled && effective.Pricing {
+			pricingEnabled = true
 			if _, present := checks[definition.Key]; !present {
 				result.Provisional = true
 			}
 		}
 	}
+	result.Provisional = result.Provisional || !pricingEnabled
 	var functionKeys []string
 	for key := range functionFactors {
 		functionKeys = append(functionKeys, key)
@@ -109,25 +126,17 @@ func Aggregate(checks map[string]Check, gates []Gate, mode string, settings Sett
 	for _, key := range functionKeys {
 		result.GroupFactors["function"] *= functionFactors[key]
 	}
+	result.GroupFactors["identity"] = math.Max(0.6, result.GroupFactors["identity"])
 	result.GroupFactors["function"] = math.Max(0.7, result.GroupFactors["function"])
 	result.GroupFactors["availability"] = math.Max(0.6, result.GroupFactors["availability"])
 	result.GroupFactors["performance"] = math.Max(0.85, math.Min(1.05, result.GroupFactors["performance"]))
 	if observed && !blocked {
 		factor := 1.0
-		for _, group := range []string{"capability", "function", "availability", "performance"} {
+		for _, group := range []string{"identity", "capability", "function", "availability", "performance"} {
 			factor *= result.GroupFactors[group]
 		}
 		factor = math.Max(0.5, math.Min(1.05, factor))
 		result.QualityFactor = &factor
-	}
-	for _, gate := range result.Gates {
-		if gate.Confirmed && mode == ModeFormal {
-			check, exists := result.Checks[gate.CheckKey]
-			if exists {
-				check.Applied = true
-				result.Checks[gate.CheckKey] = check
-			}
-		}
 	}
 	return result
 }
@@ -234,9 +243,10 @@ func PublicChecks(checks map[string]Check) map[string]Check {
 		check.Key = key
 		check.Metrics = map[string]Metric{}
 		check.Evidence.GeneratorVersion = nil
+		code := check.Evidence.Code
 		check.Evidence.Code = ""
 		switch check.Evidence.Source {
-		case "paired_probe", "recovery_probe", "production", "account_snapshot", "third_party", "history":
+		case "paired_probe", "item_probe", "recovery_probe", "production", "account_snapshot", "third_party", "history":
 		default:
 			check.Evidence.Source = ""
 		}
@@ -265,14 +275,18 @@ func PublicChecks(checks map[string]Check) map[string]Check {
 		default:
 			check.Status = "inconclusive"
 			check.Reason = "本次证据不足，暂时无法判定。"
+			switch code {
+			case "capability_unknown":
+				check.Reason = "模型官方能力尚未登记，暂时无法判定此项。"
+			case "needs_baseline":
+				check.Reason = "该项需要基线账号对照，暂时无法判定。"
+			}
 		}
-		switch {
-		case strings.Contains(check.Impact, "试运行"):
-			check.Impact = "试运行，不影响价格与调度。"
-		case check.Applied:
-			check.Impact = "本项已计入正式质检结果，可能影响等级、回收报价或调度。"
-		default:
-			check.Impact = "本项暂未影响等级、回收报价或调度。"
+		if check.Applied {
+			check.Impact = "本项已计入质量系数，影响估价与调度。"
+		} else {
+			check.Factor = nil
+			check.Impact = "本项暂未计入质量系数。"
 		}
 		result[key] = check
 	}

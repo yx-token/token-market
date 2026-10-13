@@ -15,7 +15,8 @@ func calibrated(keys ...string) Settings {
 	s := Defaults()
 	s.Mode = ModeFormal
 	for _, key := range keys {
-		s.CheckOverrides[key] = CheckOverride{Calibrated: true, CalibrationNote: "型号：示例型号；入口：同类入口；网关版本：测试版本；样本：100；误报：0；记录标识：测试记录"}
+		pricing := true
+		s.CheckOverrides[key] = CheckOverride{Pricing: &pricing, Calibrated: true, CalibrationNote: "型号：示例型号；入口：同类入口；网关版本：测试版本；样本：100；误报：0；记录标识：测试记录"}
 	}
 	return s
 }
@@ -37,7 +38,7 @@ func TestAggregateGroupsAndFloors(t *testing.T) {
 		keys = append(keys, key)
 	}
 	result := Aggregate(checks, nil, ModeFormal, calibrated(keys...))
-	want := map[string]float64{"capability": 0.7, "function": 0.7, "availability": 0.6, "performance": 1.05}
+	want := map[string]float64{"identity": 1, "capability": 0.7, "function": 0.7, "availability": 0.6, "performance": 1.05}
 	if !reflect.DeepEqual(result.GroupFactors, want) || result.QualityFactor == nil || *result.QualityFactor != 0.5 {
 		t.Fatalf("组系数或总下限错误：%+v", result)
 	}
@@ -54,24 +55,35 @@ func TestAggregateFunctionFacesMerge(t *testing.T) {
 	}
 }
 
-func TestAggregateCalibrationAndEmptyEvidence(t *testing.T) {
+func TestAggregatePricingDisabledAndEmptyEvidence(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		check    Check
 		settings Settings
 	}{
-		{"未校准", sample("D06", 0.7), Defaults()},
-		{"启用不等于校准", sample("D06", 0.7), func() Settings {
+		{"默认关闭扣价", sample("D06", 0.7), Defaults()},
+		{"启用不等于扣价", sample("D06", 0.7), func() Settings {
 			s := Defaults()
 			enabled := true
 			s.CheckOverrides["D06"] = CheckOverride{Enabled: &enabled}
 			return s
 		}()},
-		{"没有校准登记", sample("D06", 0.7), func() Settings { s := Defaults(); s.CheckOverrides["D06"] = CheckOverride{Calibrated: true}; return s }()},
+		{"已校准不等于扣价", sample("D06", 0.7), func() Settings {
+			s := Defaults()
+			s.CheckOverrides["D06"] = CheckOverride{Calibrated: true, CalibrationNote: "登记记录"}
+			return s
+		}()},
 		{"结论不确定", func() Check { c := sample("D06", 0.7); c.Status = "inconclusive"; return c }(), calibrated("D06")},
 		{"未检测", func() Check { c := sample("D06", 0.7); c.Status = "not_run"; return c }(), calibrated("D06")},
 		{"没有样本", func() Check { c := sample("D06", 0.7); c.Samples = Samples{}; return c }(), calibrated("D06")},
-		{"只展示项", sample("A03", 0.7), calibrated("A03")},
+		{"检测项关闭", sample("D06", 0.7), func() Settings {
+			s := calibrated("D06")
+			enabled := false
+			override := s.CheckOverrides["D06"]
+			override.Enabled = &enabled
+			s.CheckOverrides["D06"] = override
+			return s
+		}()},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			result := Aggregate(map[string]Check{test.check.Key: test.check}, nil, ModeFormal, test.settings)
@@ -89,20 +101,103 @@ func TestAggregateTrialAndGates(t *testing.T) {
 	checks := map[string]Check{"D06": sample("D06", 0.85), "A04": sample("A04", 1)}
 	s := calibrated("D06", "A04")
 	trial := Aggregate(checks, nil, ModeTrial, s)
-	if trial.QualityFactor == nil || *trial.QualityFactor != 0.85 || trial.Checks["D06"].Applied || !trial.Provisional {
-		t.Fatalf("试运行预览错误：%+v", trial)
+	if trial.QualityFactor == nil || *trial.QualityFactor != 0.85 || !trial.Checks["D06"].Applied || trial.Provisional {
+		t.Fatalf("试运行扣价未生效：%+v", trial)
 	}
 	gate := Gate{CheckKey: "A04", Health: "unavailable", Confirmed: true}
 	for _, mode := range []string{ModeTrial, ModeFormal} {
 		result := Aggregate(checks, []Gate{gate}, mode, s)
-		if result.QualityFactor != nil || result.Gates[0].Confirmed != (mode == ModeFormal) || result.Checks["A04"].Applied != (mode == ModeFormal) || result.Checks["D06"].Applied {
+		if result.Gates[0].Confirmed != (mode == ModeFormal) || result.Checks["A04"].Applied != (mode == ModeTrial) || result.Checks["D06"].Applied != (mode == ModeTrial) || (result.QualityFactor == nil) != (mode == ModeFormal) {
 			t.Fatalf("模式 %s 的门槛处理错误：%+v", mode, result)
 		}
 	}
 	s.CheckOverrides["A04"] = CheckOverride{}
 	result := Aggregate(checks, []Gate{gate}, ModeFormal, s)
-	if result.QualityFactor == nil || result.Gates[0].Confirmed {
+	if result.QualityFactor == nil || result.Gates[0].Confirmed || !result.Checks["D06"].Applied {
 		t.Fatal("未校准的门槛影响了正式结果")
+	}
+}
+
+func TestAggregatePricingIndependentOfModeRoleAndCalibration(t *testing.T) {
+	for _, mode := range []string{ModeTrial, ModeFormal} {
+		for _, key := range []string{"D07", "A02", "A04", "third_party"} {
+			for _, status := range []string{"pass", "warning", "fail"} {
+				t.Run(mode+"/"+key+"/"+status, func(t *testing.T) {
+					s := Defaults()
+					pricing := true
+					// 不登记校准，确认展示项和门槛项也能独立开启扣价。
+					s.CheckOverrides[key] = CheckOverride{Pricing: &pricing}
+					check := sample(key, 1)
+					check.Status, check.Factor = status, nil
+					result := Aggregate(map[string]Check{key: check}, nil, mode, s)
+					definition, _ := Effective(key, s)
+					want := 1.0
+					switch status {
+					case "warning":
+						want = definition.Coefficients["warning"]
+					case "fail":
+						want = definition.Coefficients["severe"]
+					}
+					if result.QualityFactor == nil || math.Abs(*result.QualityFactor-want) > 1e-12 || !result.Checks[key].Applied || result.Checks[key].Factor == nil || *result.Checks[key].Factor != want || result.Provisional {
+						t.Fatalf("模式、角色或校准限制了扣价，期望 %v：%+v", want, result)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestAggregateIdentityMinimumAndFloor(t *testing.T) {
+	checks := map[string]Check{"A02": sample("A02", 0.85), "A03": sample("A03", 0.7), "third_party": sample("third_party", 0.75)}
+	s := calibrated("A02", "A03", "third_party")
+	result := Aggregate(checks, nil, ModeTrial, s)
+	if result.QualityFactor == nil || *result.QualityFactor != 0.7 || result.GroupFactors["identity"] != 0.7 {
+		t.Fatalf("同组身份项重复相乘：%+v", result)
+	}
+	checks["A03"] = sample("A03", 0.3)
+	result = Aggregate(checks, nil, ModeTrial, s)
+	if result.QualityFactor == nil || *result.QualityFactor != 0.6 || result.GroupFactors["identity"] != 0.6 {
+		t.Fatalf("身份组未遵守下限：%+v", result)
+	}
+}
+
+func TestAggregateDisplayChecksUseConfiguredCoefficients(t *testing.T) {
+	for _, key := range []string{"A01", "A06", "A08", "D05"} {
+		t.Run(key, func(t *testing.T) {
+			s := Defaults()
+			pricing := true
+			s.CheckOverrides[key] = CheckOverride{Pricing: &pricing, Coefficients: map[string]float64{"warning": 0.85}}
+			check := sample(key, 1)
+			check.Factor = nil
+			result := Aggregate(map[string]Check{key: check}, nil, ModeTrial, s)
+			if result.QualityFactor == nil || *result.QualityFactor != 0.85 || !result.Checks[key].Applied {
+				t.Fatalf("展示项自定义扣价未计入 Q：%+v", result)
+			}
+		})
+	}
+}
+
+func TestAggregateFunctionPermissionBoundaryAndOutputRemainIndependent(t *testing.T) {
+	checks := map[string]Check{"A04": sample("A04", 0.9), "A05": sample("A05", 0.9), "D08": sample("D08", 0.95)}
+	result := Aggregate(checks, nil, ModeTrial, calibrated("A04", "A05", "D08"))
+	if result.QualityFactor == nil || math.Abs(*result.QualityFactor-0.9*0.9*0.95) > 1e-12 || result.GroupFactors["capability"] != 1 || math.Abs(result.GroupFactors["function"]-0.9*0.9*0.95) > 1e-12 {
+		t.Fatalf("权限、上下文边界与输出应在功能组各自成桶：%+v", result)
+	}
+}
+
+func TestAggregateThirdPartyGateDoesNotRequireCalibration(t *testing.T) {
+	s := Defaults()
+	pricing := true
+	s.CheckOverrides["third_party"] = CheckOverride{Pricing: &pricing}
+	checks := map[string]Check{"third_party": sample("third_party", 0.7)}
+	gate := Gate{CheckKey: "third_party", Health: "degraded", Confirmed: true}
+	trial := Aggregate(checks, []Gate{gate}, ModeTrial, s)
+	if trial.Gates[0].Confirmed || trial.QualityFactor == nil || !trial.Checks["third_party"].Applied {
+		t.Fatalf("试运行第三方门槛阻止扣价：%+v", trial)
+	}
+	formal := Aggregate(checks, []Gate{gate}, ModeFormal, s)
+	if !formal.Gates[0].Confirmed || formal.QualityFactor != nil || formal.Checks["third_party"].Applied {
+		t.Fatalf("正式第三方门槛应优先暂停且保留既有 Q：%+v", formal)
 	}
 }
 
@@ -232,5 +327,52 @@ func TestPublicChecksRedaction(t *testing.T) {
 	}
 	if len(result) != 1 || len(result["D06"].Metrics) != 0 || len(check.Metrics) != 1 || result["D06"].Evidence.Code != "" {
 		t.Fatal("白名单脱敏或输入隔离失败")
+	}
+}
+
+func TestPublicChecksOnlyKeepAppliedFactors(t *testing.T) {
+	for _, applied := range []bool{false, true} {
+		check := sample("A02", 0.7)
+		check.Applied = applied
+		check.Impact = "试运行旧说明"
+		public := PublicChecks(map[string]Check{"A02": check})["A02"]
+		if (public.Factor != nil) != applied || public.Applied != applied || applied && *public.Factor != 0.7 {
+			t.Fatalf("扣价系数公开范围错误：%+v", public)
+		}
+		if strings.Contains(public.Impact, "试运行") || check.Factor == nil {
+			t.Fatal("公开说明沿用旧模式规则或修改了输入")
+		}
+	}
+}
+
+func TestPublicItemChecksRedactionAndAdvice(t *testing.T) {
+	for _, tt := range []struct{ code, status, reason string }{
+		{"item_pass", "pass", "本次抽样观测通过。"},
+		{"item_pass_rate_low", "warning", "本次抽样观测发现需要关注的差异。"},
+		{"item_function_failed", "fail", "本次抽样观测未通过，建议修复后复检。"},
+		{"capability_unsupported", "not_applicable", "本次检测条件不适用。"},
+		{"capability_unknown", "inconclusive", "模型官方能力尚未登记，暂时无法判定此项。"},
+		{"needs_baseline", "inconclusive", "该项需要基线账号对照，暂时无法判定。"},
+	} {
+		t.Run(tt.code, func(t *testing.T) {
+			c := sample("D07", .7)
+			c.Applied = true
+			c.Status, c.Reason = tt.status, "私有题面、判分器和期望阈值"
+			c.Evidence.Source, c.Evidence.Code = "item_probe", tt.code
+			c.Metrics["expected_pass_rate"] = Metric{Value: number(.9), Unit: "fraction"}
+			public := PublicChecks(map[string]Check{"D07": c})["D07"]
+			if public.Evidence.Source != "item_probe" || public.Evidence.Code != "" || len(public.Metrics) != 0 || public.Factor == nil || public.Reason != tt.reason {
+				t.Fatalf("卖家摘要未脱敏或丢失安全说明：%+v", public)
+			}
+			raw, _ := json.Marshal(public)
+			for _, secret := range []string{tt.code, "expected_pass_rate", "私有题面", "判分器", "0.9"} {
+				if strings.Contains(string(raw), secret) {
+					t.Fatalf("卖家摘要泄露 %s：%s", secret, raw)
+				}
+			}
+			if c.Factor == nil || len(c.Metrics) != 1 {
+				t.Fatal("脱敏改写内部证据")
+			}
+		})
 	}
 }

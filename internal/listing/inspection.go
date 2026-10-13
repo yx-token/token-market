@@ -30,6 +30,7 @@ type inspectionViewInput struct {
 	Checks             map[string]inspection.Check
 	ConfirmedGate      bool
 	CoverageIncomplete bool
+	PricingEnabled     bool
 }
 
 func makeInspectionView(mode string, in inspectionViewInput) InspectionView {
@@ -44,7 +45,7 @@ func makeInspectionView(mode string, in inspectionViewInput) InspectionView {
 	return InspectionView{
 		InspectionMode: evidenceMode,
 		QualityFactor:  q,
-		Appraisal:      inspection.Appraise(in.Base, in.Tier, q, in.AppraisedAt, mode != inspection.ModeFormal || evidenceMode != inspection.ModeFormal, in.CoverageIncomplete),
+		Appraisal:      inspection.Appraise(in.Base, in.Tier, q, in.AppraisedAt, !in.PricingEnabled, in.CoverageIncomplete),
 		QualityChecks:  inspection.PublicChecks(in.Checks),
 		LastCheckedAt:  in.LastCheckedAt,
 	}
@@ -61,14 +62,17 @@ func LoadInspectionViews(ctx context.Context, db DB, ids []int64) (map[int64]Ins
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT u.id, u.health, COALESCE(u.tier, ''), v.appraisal_base, u.appraised_at,
-		q.quality_factor, COALESCE(q.checks, '{}'), q.created_at,
+	pricingEnabled := st.PricingEnabled()
+	rows, err := db.Query(ctx, `SELECT u.id, u.health, COALESCE(u.tier, ''), v.appraisal_base, CASE WHEN q.run_id IS NULL THEN NULL ELSE u.appraised_at END,
+		CASE WHEN q.run_id IS NULL THEN NULL ELSE COALESCE(q.quality_factor, u.quality_factor, 1) END, COALESCE(q.checks, '{}'), q.created_at,
 		EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(q.gates) = 'array' THEN q.gates ELSE '[]'::jsonb END) gate WHERE gate->>'confirmed' = 'true'),
 		COALESCE((r.summary->'appraisal'->>'provisional')::boolean, false),
 		COALESCE(r.summary->>'inspection_mode', 'trial')
 		FROM upstreams u JOIN vendor_configs v ON v.platform = u.platform
+		LEFT JOIN upstream_quality_state state ON state.upstream_id = u.id
 		LEFT JOIN LATERAL (SELECT quality_factor, checks, gates, created_at, run_id FROM quality_verdicts
-			WHERE upstream_id = u.id ORDER BY created_at DESC, id DESC LIMIT 1) q ON true
+			WHERE upstream_id = u.id AND created_at > COALESCE(state.deductions_reset_at, '-infinity'::timestamptz)
+			ORDER BY created_at DESC, id DESC LIMIT 1) q ON true
 		LEFT JOIN probe_runs r ON r.id = q.run_id
 		WHERE u.id = ANY($1)`, ids)
 	if err != nil {
@@ -78,6 +82,7 @@ func LoadInspectionViews(ctx context.Context, db DB, ids []int64) (map[int64]Ins
 	for rows.Next() {
 		var id int64
 		var in inspectionViewInput
+		in.PricingEnabled = pricingEnabled
 		var base, checks []byte
 		if err := rows.Scan(&id, &in.Health, &in.Tier, &base, &in.AppraisedAt, &in.Factor, &checks, &in.LastCheckedAt, &in.ConfirmedGate, &in.CoverageIncomplete, &in.EvidenceMode); err != nil {
 			return nil, err

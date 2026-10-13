@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// 新题只用 inspection 套件；旧版选择器不会把影子结果混入判定。
+// 内置题使用检测项和流程选题，旧智力套件不再参与运行。
 func inspectionBuiltinItems() []Item {
 	high := "high"
 	var items []Item

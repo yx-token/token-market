@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/DueGin/token-market/internal/inspection"
@@ -89,36 +90,92 @@ func QualityTrend(ctx context.Context, db DB, sellerID, upstreamID int64, days i
 	})
 }
 
-// ManualRetest 卖家手动复测：仅在该厂商开启检测时可用，每天限次。
+// RetestEligibility 说明卖家此刻能否手动复测；不能时 Code 与复测接口拒绝时的错误码一致，前端据此提示原因。
+type RetestEligibility struct {
+	Allowed bool   `json:"allowed"`
+	Code    string `json:"code,omitempty"`
+}
+
+// ManualRetestEligibility 只读判断卖家能否手动复测，不占用当天次数。
+func (e *Engine) ManualRetestEligibility(ctx context.Context, u *listing.Upstream) (RetestEligibility, error) {
+	blocked, err := e.manualRetestBlock(ctx, u)
+	if err != nil {
+		return RetestEligibility{}, err
+	}
+	if blocked != nil {
+		return RetestEligibility{Code: blocked.Code}, nil
+	}
+	return RetestEligibility{Allowed: true}, nil
+}
+
+// manualRetestBlock 返回卖家手动复测被拒绝的原因，nil 表示可以复测。
+// 检测正常时不允许复测：此时复测对卖家没有必要，却会反复消耗探测资源，探测按用量结算时还是套现入口。
+// 健康异常、检测失败、证据不足或扣价已生效时，卖家可复测自证修复。
+func (e *Engine) manualRetestBlock(ctx context.Context, u *listing.Upstream) (*httpx.Error, error) {
+	if u.Sub2APIAccountID == nil || (u.Status != listing.StatusReady && u.Status != listing.StatusListed) {
+		return httpx.Conflict("NOT_TESTABLE", "upstream is not ready for testing"), nil
+	}
+	p, err := EffectivePolicy(ctx, e.DB, u.ID, u.Platform, u.AuthType)
+	if err != nil {
+		return nil, err
+	}
+	if !p.Enabled {
+		return httpx.Forbidden("DETECTION_DISABLED", "detection is disabled for this vendor"), nil
+	}
+	abnormal := u.Health == listing.HealthSuspected || u.Health == listing.HealthDegraded || u.Health == listing.HealthUnavailable
+	if !abnormal {
+		var status, verdict string
+		var applied bool
+		err := e.DB.QueryRow(ctx, `SELECT status,COALESCE(summary->>'verdict',''),EXISTS(SELECT 1 FROM jsonb_each(COALESCE(summary->'checks','{}')) c WHERE c.value->>'applied'='true' AND (c.value->>'factor')::float8<1) FROM probe_runs
+			WHERE upstream_id = $1 AND trigger <> 'reference' AND status IN ('done', 'failed')
+			ORDER BY finished_at DESC NULLS LAST, id DESC LIMIT 1`, u.ID).Scan(&status, &verdict, &applied)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			abnormal = true // 还没有完成过检测，不拦
+		case err != nil:
+			return nil, err
+		default:
+			abnormal = applied || status == "failed" || (verdict != "" && verdict != "normal")
+		}
+	}
+	if !abnormal {
+		return httpx.Conflict("RETEST_NOT_NEEDED", "the latest check passed; manual retest is only available after an abnormal result"), nil
+	}
+	st, err := e.Settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var used int
+	if err := e.DB.QueryRow(ctx, `SELECT COALESCE((SELECT CASE WHEN manual_runs_date = current_date THEN manual_runs_today ELSE 0 END
+		FROM upstream_quality_state WHERE upstream_id = $1), 0)`, u.ID).Scan(&used); err != nil {
+		return nil, err
+	}
+	if used >= st.ManualRetestDailyLimit {
+		return httpx.TooMany("RETEST_LIMIT", "daily manual retest limit reached"), nil
+	}
+	return nil, nil
+}
+
+// ManualRetest 卖家手动复测：仅在该厂商开启检测、且最近结果异常时可用，每天限次。
+// 复测探测消耗卖家自己的额度，入账时不结算收益（见 billing.attribute）。
 func (e *Engine) ManualRetest(ctx context.Context, sellerID, upstreamID int64) (int64, error) {
 	u, err := listing.GetSellerUpstream(ctx, e.DB, sellerID, upstreamID)
 	if err != nil {
 		return 0, err
 	}
-	if u.Sub2APIAccountID == nil || (u.Status != listing.StatusReady && u.Status != listing.StatusListed) {
-		return 0, httpx.Conflict("NOT_TESTABLE", "upstream is not ready for testing")
-	}
-	p, err := EffectivePolicy(ctx, e.DB, u.ID, u.Platform, u.AuthType)
+	blocked, err := e.manualRetestBlock(ctx, u)
 	if err != nil {
 		return 0, err
 	}
-	if !p.Enabled {
-		return 0, httpx.Forbidden("DETECTION_DISABLED", "detection is disabled for this vendor")
+	if blocked != nil {
+		return 0, blocked
 	}
-	st, err := e.Settings(ctx)
-	if err != nil {
-		return 0, err
-	}
-	var used int
-	if err := e.DB.QueryRow(ctx, `INSERT INTO upstream_quality_state (upstream_id, manual_runs_today, manual_runs_date) VALUES ($1, 0, current_date)
+	// 重置跨天计数；限次已在上面判断，这里只确保状态行存在
+	if _, err := e.DB.Exec(ctx, `INSERT INTO upstream_quality_state (upstream_id, manual_runs_today, manual_runs_date) VALUES ($1, 0, current_date)
 		ON CONFLICT (upstream_id) DO UPDATE SET
 			manual_runs_today = CASE WHEN upstream_quality_state.manual_runs_date = current_date THEN upstream_quality_state.manual_runs_today ELSE 0 END,
-			manual_runs_date = current_date
-		RETURNING manual_runs_today`, u.ID).Scan(&used); err != nil {
+			manual_runs_date = current_date`, u.ID); err != nil {
 		return 0, err
-	}
-	if used >= st.ManualRetestDailyLimit {
-		return 0, httpx.TooMany("RETEST_LIMIT", "daily manual retest limit reached")
 	}
 	id, err := e.QueueRun(ctx, u.ID, "seller_manual")
 	if err != nil {
@@ -149,7 +206,7 @@ func scanAppeal(row pgx.Row) (*Appeal, error) {
 	return &a, nil
 }
 
-// CreateAppeal 卖家对降智、不可用或正式扣价项提出申诉。
+// CreateAppeal 卖家对暂停或已生效扣价项提出申诉。
 func CreateAppeal(ctx context.Context, db DB, sellerID, reportID int64, reason string) (*Appeal, error) {
 	r, err := SellerReport(ctx, db, sellerID, reportID)
 	if err != nil {
@@ -162,7 +219,7 @@ func CreateAppeal(ctx context.Context, db DB, sellerID, reportID int64, reason s
 		return nil, err
 	}
 	if r.Verdict != "degraded" && r.Verdict != "unavailable" && !hasAppliedDiscount(summary.Checks) {
-		return nil, httpx.BadRequest("NOT_APPEALABLE", "只有降智、不可用或正式扣价项可以申诉")
+		return nil, httpx.BadRequest("NOT_APPEALABLE", "只有降智、不可用或已生效扣价项可以申诉")
 	}
 	if reason == "" {
 		return nil, httpx.BadRequest("REASON_REQUIRED", "reason is required")
@@ -195,7 +252,7 @@ func ListAppeals(ctx context.Context, db DB, status string, limit, offset int) (
 	return out, rows.Err()
 }
 
-// ResolveAppeal 管理员处理申诉：retest 用三倍题量复测（不受预算限制），overturn 直接恢复健康，uphold 维持判定。
+// ResolveAppeal 管理员处理申诉：完整复测不受每日美元预算限制，推翻清除对应流程旧证据。
 func (e *Engine) ResolveAppeal(ctx context.Context, appealID int64, action, note string) (*Appeal, error) {
 	a, err := scanAppeal(e.DB.QueryRow(ctx, "SELECT "+appealColumns+" FROM appeals WHERE id = $1", appealID))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -208,17 +265,36 @@ func (e *Engine) ResolveAppeal(ctx context.Context, appealID int64, action, note
 		return nil, httpx.Conflict("APPEAL_NOT_OPEN", "appeal is not open")
 	}
 	var upstreamID int64
-	if err := e.DB.QueryRow(ctx, "SELECT upstream_id FROM test_reports WHERE id = $1", a.ReportID).Scan(&upstreamID); err != nil {
+	var flows []string
+	if err := e.DB.QueryRow(ctx, `SELECT t.upstream_id,r.flows FROM test_reports t JOIN probe_runs r ON r.id=t.run_id WHERE t.id=$1`, a.ReportID).Scan(&upstreamID, &flows); err != nil {
 		return nil, err
 	}
 	switch action {
 	case "retest":
-		if _, err := e.QueueRun(ctx, upstreamID, "appeal"); err != nil {
+		if _, err := e.QueueRun(ctx, upstreamID, "appeal", flows...); err != nil {
 			return nil, err
 		}
 		_, err = e.DB.Exec(ctx, "UPDATE appeals SET status = 'retesting', admin_note = NULLIF($2, '') WHERE id = $1", appealID, note)
 	case "overturn":
-		if _, err := listing.SetHealth(ctx, e.DB, upstreamID, listing.HealthHealthy, ""); err != nil {
+		if len(flows) == 0 {
+			flows = append([]string(nil), detectionFlows...)
+		}
+		if err := resetFlowDeductions(ctx, e.DB, upstreamID, flows, e.now()); err != nil {
+			return nil, err
+		}
+		// 推翻后旧证据不再参与扣价，排序同步恢复；估价等待新的有效检测。
+		if _, err := e.DB.Exec(ctx, `UPDATE upstreams SET quality_factor=1,appraised_at=NULL,updated_at=now() WHERE id=$1`, upstreamID); err != nil {
+			return nil, err
+		}
+		var remaining []string
+		if err := e.DB.QueryRow(ctx, `SELECT suspected_flows FROM upstream_quality_state WHERE upstream_id=$1`, upstreamID).Scan(&remaining); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+		health, reason := listing.HealthHealthy, ""
+		if len(remaining) > 0 {
+			health, reason = listing.HealthSuspected, "flow: "+strings.Join(remaining, "、")
+		}
+		if _, err := listing.SetHealth(ctx, e.DB, upstreamID, health, reason); err != nil {
 			return nil, err
 		}
 		_, err = e.DB.Exec(ctx, "UPDATE appeals SET status = 'overturned', admin_note = NULLIF($2, ''), resolved_at = now() WHERE id = $1", appealID, note)
@@ -292,24 +368,8 @@ func AdminOverview(ctx context.Context, db DB) (*Overview, error) {
 	return out, err
 }
 
-// SeedDefaultItems 仅空库写入旧基础题，另按稳定键补缺影子题，不覆盖管理员维护。
-func SeedDefaultItems(ctx context.Context, db DB) (int, error) {
-	var n int
-	if err := db.QueryRow(ctx, "SELECT count(*) FROM probe_items").Scan(&n); err != nil {
-		return 0, err
-	}
-	if n > 0 {
-		return SyncInspectionItems(ctx, db)
-	}
-	items := defaultItems()
-	for _, it := range items {
-		if _, err := CreateItem(ctx, db, it); err != nil {
-			return 0, err
-		}
-	}
-	added, err := SyncInspectionItems(ctx, db)
-	return len(items) + added, err
-}
+// SeedDefaultItems 只补齐新检测题，停用的旧题不再写入。
+func SeedDefaultItems(ctx context.Context, db DB) (int, error) { return SyncInspectionItems(ctx, db) }
 
 // defaultItems 是内置的基础题。
 func defaultItems() []Item {
@@ -348,17 +408,20 @@ func defaultItems() []Item {
 
 // RunSummary 是管理员查看的一次检测记录（含基线对照检测）。
 type RunSummary struct {
-	ID         int64           `json:"id"`
-	UpstreamID int64           `json:"upstream_id"`
-	BatchID    string          `json:"batch_id"`
-	Trigger    string          `json:"trigger"`
-	Model      string          `json:"model"`
-	Status     string          `json:"status"`
-	Summary    json.RawMessage `json:"summary,omitempty"`
-	Items      int             `json:"items"`
-	Passed     int             `json:"passed"`
-	QueuedAt   time.Time       `json:"queued_at"`
-	FinishedAt *time.Time      `json:"finished_at,omitempty"`
+	Flows          []string        `json:"flows"`
+	IdentitySource *string         `json:"identity_source"`
+	Models         []string        `json:"models"`
+	ID             int64           `json:"id"`
+	UpstreamID     int64           `json:"upstream_id"`
+	BatchID        string          `json:"batch_id"`
+	Trigger        string          `json:"trigger"`
+	Model          string          `json:"model"`
+	Status         string          `json:"status"`
+	Summary        json.RawMessage `json:"summary,omitempty"`
+	Items          int             `json:"items"`
+	Passed         int             `json:"passed"`
+	QueuedAt       time.Time       `json:"queued_at"`
+	FinishedAt     *time.Time      `json:"finished_at,omitempty"`
 
 	// executionSnapshot 是冻结的执行快照原文，仅在 GetRunDetail 内部用于解析标准答案，不随响应返回。
 	executionSnapshot []byte
@@ -412,12 +475,12 @@ type RunDetail struct {
 const runSummaryColumns = `r.id, r.upstream_id, r.batch_id, r.trigger, r.model, r.status, r.summary,
 	(SELECT count(*) FROM probe_results x WHERE x.run_id = r.id),
 	(SELECT count(*) FILTER (WHERE x.passed) FROM probe_results x WHERE x.run_id = r.id),
-	r.queued_at, r.finished_at`
+	r.queued_at,r.finished_at,r.flows,r.identity_source,r.models`
 
 func scanRunSummary(row pgx.CollectableRow) (RunSummary, error) {
 	var s RunSummary
 	var summary []byte
-	err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt)
+	err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models)
 	if len(summary) > 0 {
 		s.Summary = summary
 	}
@@ -444,7 +507,7 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 	target, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunSummary, error) {
 		var s RunSummary
 		var summary, snapshot []byte
-		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &snapshot)
+		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models, &snapshot)
 		if len(summary) > 0 {
 			s.Summary = summary
 		}
@@ -473,7 +536,7 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 	refs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunSummary, error) {
 		var s RunSummary
 		var summary, snapshot []byte
-		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &snapshot)
+		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models, &snapshot)
 		if len(summary) > 0 {
 			s.Summary = summary
 		}

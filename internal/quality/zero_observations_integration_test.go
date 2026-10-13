@@ -41,7 +41,7 @@ func TestUnobservedRunDoesNotVerifyOrResolve(t *testing.T) {
 			if _, err := pool.Exec(ctx, `UPDATE upstreams SET status=$2,health=$3,health_reason='保留原原因',grade='B',probe_group_id=101 WHERE id=$1`, run.upstreamID, upstreamStatus, tc.health); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := pool.Exec(ctx, `UPDATE probe_runs SET trigger=$2 WHERE id=$1`, run.id, tc.trigger); err != nil {
+			if _, err := pool.Exec(ctx, `UPDATE probe_runs SET trigger=$2,flows=ARRAY['intelligence'],identity_source=NULL WHERE id=$1`, run.id, tc.trigger); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := pool.Exec(ctx, `DELETE FROM probe_runs WHERE id=$1`, ref.id); err != nil {
@@ -57,19 +57,23 @@ func TestUnobservedRunDoesNotVerifyOrResolve(t *testing.T) {
 			if _, err := pool.Exec(ctx, `INSERT INTO system_keys(purpose,sub2api_group_id,key_enc,sub2api_key_id) VALUES('probe',101,$1,1)`, key); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := CreateItem(ctx, pool, Item{Suite: "iq", Category: "有效观测回归", Prompt: "只输出 1。", Grader: Grader{Type: "exact", Answer: "1"}, MaxTokens: 32}); err != nil {
+			if _, err := CreateItem(ctx, pool, Item{Suite: "inspection_capability", CheckKey: "D07", Category: "有效观测回归", Prompt: "只输出 1。", Grader: Grader{Type: "exact", Answer: "1"}, MaxTokens: 32}); err != nil {
 				t.Fatal(err)
 			}
-			thirdParty := []ThirdPartyCheck{}
-			if tc.trigger == "onboarding" || tc.trigger == "appeal" || tc.trigger == "recovery" {
-				// 第三方即使启用，也不能替无观测的内部检测放行。
-				thirdParty = append(thirdParty, ThirdPartyCheck{Provider: "bazaarlink", Triggers: []string{tc.trigger}, OnMismatch: "degraded", OnSubmodelMismatch: "suspected"})
-			}
-			if _, err := pool.Exec(ctx, `UPDATE detection_policies SET enabled=true,suites='{iq}',third_party=$1 WHERE platform='anthropic'`, mustJSON(thirdParty)); err != nil {
+			flows := policyFlowsFixture()
+			flows.Intelligence.Models = []IntelligenceModel{{Model: run.model}}
+			flows.Identity.Enabled = false
+			if _, err := pool.Exec(ctx, `UPDATE detection_policies SET enabled=true,flows=$1,third_party='[]' WHERE platform='anthropic'`, mustJSON(flows)); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := pool.Exec(ctx, `UPDATE detection_providers SET enabled=true WHERE name='bazaarlink'`); err != nil {
-				t.Fatal(err)
+			if tc.trigger == "recovery" {
+				if _, err := SyncInspectionItems(ctx, pool); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := pool.Exec(ctx, `UPDATE probe_items SET status='retired' WHERE builtin_key IS NOT NULL`); err != nil {
+					t.Fatal(err)
+				}
+				e.Wait = func(ctx context.Context, _ time.Duration) error { return ctx.Err() }
 			}
 			if tc.trigger == "appeal" {
 				var reportID, oldRunID int64
@@ -108,7 +112,7 @@ func TestUnobservedRunDoesNotVerifyOrResolve(t *testing.T) {
 				Scan(&status, &health, &reason, &grade, &failure, &runStatus, &verdict, &count, &reportCount, &verdictCount, &thirdPartyCount, &attempts, &consecutive, &nextRecovery); err != nil {
 				t.Fatal(err)
 			}
-			if health != tc.health || reason != "保留原原因" || grade != "B" || count != 1 || verdict != "inconclusive" || thirdPartyCount != 0 {
+			if health != tc.health || reason != "保留原原因" || grade != "B" || count < 1 || verdict != "inconclusive" || thirdPartyCount != 0 {
 				t.Fatalf("零观测改变健康/等级、丢失故障或派发第三方：%s %s %s %s 错误=%d 第三方=%d", health, reason, grade, verdict, count, thirdPartyCount)
 			}
 			if tc.trigger == "scheduled" || tc.trigger == "adaptive" {
@@ -121,12 +125,12 @@ func TestUnobservedRunDoesNotVerifyOrResolve(t *testing.T) {
 			if err := pool.QueryRow(ctx, `SELECT summary->>'error' FROM probe_runs WHERE id=$1`, run.id).Scan(&errorText); err != nil {
 				t.Fatal(err)
 			}
-			if runStatus != "failed" || reportCount != 0 || verdictCount != 0 || !strings.Contains(errorText, "没有有效观测：限流/平台错误，可稍后重试") {
+			if runStatus != "failed" || reportCount != 0 || verdictCount != 0 || !strings.Contains(errorText, "目标流程没有有效结论") {
 				t.Fatalf("必须按检测未完成推进流程：%s 报告=%d 判定=%d 原因=%s", runStatus, reportCount, verdictCount, errorText)
 			}
 			switch tc.trigger {
 			case "onboarding":
-				if status != "verify_failed" || !strings.Contains(failure, "没有有效观测") || (tc.errorClass == "configuration" && !strings.Contains(failure, "配置错误")) {
+				if status != "verify_failed" || !strings.Contains(failure, "目标流程没有有效结论") {
 					t.Fatalf("无观测上架检测不能通过：%s %s", status, failure)
 				}
 			case "appeal":

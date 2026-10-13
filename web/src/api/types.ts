@@ -31,6 +31,7 @@ export interface MarketConfig {
 }
 
 export interface MarketItem {
+  models?: string[]
   listing_id: number
   platform: string
   auth_type: string
@@ -293,6 +294,9 @@ export interface BillDay {
 }
 
 export interface Upstream {
+  model_whitelist?: string[] | null
+  model_catalog?: string[]
+  model_catalog_at?: string | null
   id: number
   proxy_id?: number
   seller_id: number
@@ -323,6 +327,12 @@ export interface Upstream {
   failure_reason?: string
   created_at: string
   updated_at: string
+}
+
+export interface UpstreamModels {
+  catalog: string[]
+  whitelist: string[] | null
+  fetched_at: string | null
 }
 
 export interface Listing {
@@ -490,6 +500,8 @@ export interface UpstreamDetail extends Upstream {
   reset_credits_supported: boolean
   /** 能否授权平台自动用卡（Codex） */
   auto_reset_supported: boolean
+  /** 能否手动复测：检测正常时不允许，code 为拒绝原因的错误码 */
+  manual_retest?: { allowed: boolean; code?: string }
 }
 
 export interface AuthorizationStart {
@@ -527,6 +539,11 @@ export interface Report {
 }
 
 export interface ReportSummary {
+  flows?: DetectionFlow[]
+  identity_source?: IdentitySource | null
+  models?: string[]
+  intelligence?: IntelligenceSummary
+  identity?: IdentitySummary
   verdict: string
   trigger: string
   model: string
@@ -752,6 +769,46 @@ export interface Pool {
   updated_at: string
 }
 
+export type DetectionFlow = 'intelligence' | 'identity'
+export type InspectionFlow = DetectionFlow | 'common'
+export type IdentitySource = 'third_party' | 'self'
+
+export interface DetectionFlowPolicy {
+  enabled: boolean
+  scheduled_enabled: boolean
+  interval_minutes: number
+  triggers: string[]
+  full_triggers: string[]
+}
+
+export interface IntelligenceModelPolicy {
+  model: string
+  expected_pass_rate: number | null
+}
+
+export interface DetectionFlows {
+  intelligence: DetectionFlowPolicy & { models: IntelligenceModelPolicy[] }
+  identity: DetectionFlowPolicy & { source: IdentitySource }
+}
+
+export interface IntelligenceSummary {
+  status: InspectionCheckResult['status']
+  inherited_at?: string | null
+  models: {
+    model: string
+    status: InspectionCheckResult['status']
+    target_pass_rate?: number | null
+    expected_pass_rate?: number | null
+    samples?: number
+  }[]
+}
+
+export interface IdentitySummary {
+  source: IdentitySource
+  status: InspectionCheckResult['status']
+  inherited_at?: string | null
+}
+
 export interface Thresholds {
   h0: number
   h1: number
@@ -779,6 +836,7 @@ export interface Policy {
   token_budgets?: Partial<Record<'full' | 'quick', InspectionTokenBudget>>
   version: number
   updated_at: string
+  flows?: DetectionFlows
 }
 
 export interface ThirdPartyCheck {
@@ -852,6 +910,9 @@ export interface ProbeRun {
   passed: number
   queued_at: string
   finished_at?: string
+  flows?: DetectionFlow[]
+  identity_source?: IdentitySource | null
+  models?: string[]
 }
 
 /** 一次检测中一道题的结果（含题目与回答片段，仅管理员可见） */
@@ -938,6 +999,9 @@ export interface InspectionCheckDefinition {
   advice: string
   calibration_note: string
   description?: string
+  flow?: InspectionFlow
+  pricing?: boolean
+  default_pricing?: boolean
 }
 
 export interface InspectionCheckOverride {
@@ -946,6 +1010,7 @@ export interface InspectionCheckOverride {
   calibration_note: string
   coefficients: Record<string, number>
   thresholds: Record<string, number>
+  pricing?: boolean | null
 }
 
 export interface InspectionTokenBudget {
@@ -953,9 +1018,31 @@ export interface InspectionTokenBudget {
   output_tokens_per_side: number
 }
 
+export interface ModelCapability {
+  platform: string
+  model: string
+  context_window: number
+  context_window_by_auth: Record<string, number> | null
+  max_output: number
+  max_output_unlimited: boolean | null
+  tools: boolean | null
+  json_schema: boolean | null
+  image: boolean | null
+  pdf: boolean | null
+  multiturn: boolean | null
+  thinking: boolean | null
+  prompt_cache: boolean | null
+  efforts: string[] | null
+  source: string
+}
+
+export type ModelCapabilityOverride = Pick<ModelCapability, 'platform' | 'model'> & Partial<ModelCapability>
+
 export interface InspectionSettings {
   mode: 'trial' | 'formal'
   check_overrides: Record<string, Partial<InspectionCheckOverride>>
+  model_capabilities?: ModelCapabilityOverride[]
+  model_capability_defaults?: ModelCapability[]
   grade_thresholds: Record<string, number>
   grade_hysteresis: number
   downgrade_confirmations: number
@@ -1181,6 +1268,8 @@ export interface SellerUsageRecord {
   duration_ms?: number
   total_cost: number
   payout: number
+  /** 上架检测或卖家手动复测的探测：消耗卖家自己的额度，不结算收益 */
+  seller_borne?: boolean
 }
 
 export interface QuotaWindow {

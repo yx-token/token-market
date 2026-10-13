@@ -44,6 +44,8 @@ type upstreamDetail struct {
 	// 能否使用重置卡、能否授权平台自动用卡
 	ResetCredits bool `json:"reset_credits_supported"`
 	AutoReset    bool `json:"auto_reset_supported"`
+	// 能否手动复测；检测正常时不允许，按钮置灰并说明原因
+	ManualRetest *quality.RetestEligibility `json:"manual_retest,omitempty"`
 }
 
 // upstreamStats 是上游近 24 小时的服务情况（只含已入账的用量，有几分钟延迟）。
@@ -76,6 +78,13 @@ func (s *Server) getUpstream(w http.ResponseWriter, r *http.Request) error {
 	}
 	if d.Quote, err = listing.CurrentQuote(r.Context(), s.DB, id); err != nil {
 		return err
+	}
+	if s.Quality != nil {
+		eligibility, err := s.Quality.ManualRetestEligibility(r.Context(), u)
+		if err != nil {
+			return err
+		}
+		d.ManualRetest = &eligibility
 	}
 	if err := s.DB.QueryRow(r.Context(), `SELECT count(*) FILTER (WHERE channel IN ('pool', 'direct')), count(*) FILTER (WHERE channel = 'probe'),
 			COALESCE(sum(payout) FILTER (WHERE channel IN ('pool', 'direct')), 0)::float8,
@@ -171,6 +180,48 @@ func (s *Server) retryVerification(w http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	u, err := s.Listings.RetryVerification(r.Context(), httpx.MustUser(r).UserID, id)
+	if err != nil {
+		return err
+	}
+	return ok(w, u)
+}
+
+func (s *Server) upstreamModels(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	models, err := s.Listings.GetModels(r.Context(), httpx.MustUser(r).UserID, id)
+	if err != nil {
+		return err
+	}
+	return ok(w, models)
+}
+
+func (s *Server) refreshUpstreamModels(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	models, err := s.Listings.RefreshModels(r.Context(), httpx.MustUser(r).UserID, id)
+	if err != nil {
+		return err
+	}
+	return ok(w, models)
+}
+
+func (s *Server) setUpstreamModels(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Models []string `json:"models"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	u, err := s.Listings.SetModels(r.Context(), httpx.MustUser(r).UserID, id, in.Models)
 	if err != nil {
 		return err
 	}

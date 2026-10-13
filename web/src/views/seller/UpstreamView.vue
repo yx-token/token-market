@@ -17,10 +17,12 @@ import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
 import ResetCreditsPanel from '@/components/ResetCreditsPanel.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
+import UpstreamModelWhitelist from '@/components/UpstreamModelWhitelist.vue'
 import { authTypeText, isKeyAuthType, label, upstreamName } from '@/utils/labels'
 import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
-import { appealableReport } from '@/utils/inspection'
+import { appealableReport, intelligenceStatusText } from '@/utils/inspection'
+import { errorText } from '@/api/errors'
 
 const props = defineProps<{ id: string }>()
 const upstreamId = computed(() => Number(props.id))
@@ -227,6 +229,16 @@ async function saveReserve() {
   }
 }
 
+/** 不能手动复测时的原因；检测正常时后端拒绝复测，按钮置灰 */
+const retestBlockedReason = computed(() => {
+  const r = u.value?.manual_retest
+  return r && !r.allowed ? errorText(r.code ?? '', '当前不能手动复测') : ''
+})
+async function retest() {
+  if (!confirm('复测会消耗你账号的额度，这部分检测不结算收益。只有检测结果异常时才能复测，确定发起？')) return
+  await listingAction(() => seller.retest(upstreamId.value), '已排队复测')
+}
+
 async function remove() {
   if (!confirm('删除这个上游？挂单会关闭，账号在进行中的请求结束后从平台移除，未结算的收益照常结算。')) return
   if (await run(() => seller.removeUpstream(upstreamId.value), '正在删除')) router.push('/seller/upstreams')
@@ -260,7 +272,14 @@ const appealable = appealableReport
       <button v-if="u.status === 'verify_failed'" class="btn-secondary" :disabled="busy" @click="listingAction(() => seller.retryVerification(u!.id), '已重新开始检测')">
         重新检测
       </button>
-      <button v-if="['ready', 'listed'].includes(u.status)" class="btn-secondary" :disabled="busy" @click="listingAction(() => seller.retest(u!.id), '已排队复测')">
+      <button
+        v-if="['ready', 'listed'].includes(u.status)"
+        class="btn-secondary"
+        :disabled="busy || !!retestBlockedReason"
+        :title="retestBlockedReason || '检测结果异常时可发起复测；复测消耗你自己的额度，不结算收益'"
+        data-testid="manual-retest"
+        @click="retest"
+      >
         手动复测
       </button>
       <button v-if="isOAuth && !['draft', 'authorizing', 'removing', 'removed'].includes(u.status)" class="btn-secondary" :disabled="busy" @click="startReauth">
@@ -300,6 +319,7 @@ const appealable = appealableReport
     </div>
 
     <InspectionAppraisal class="mt-5" :appraisal="u.appraisal" :grade="u.grade" :quality-factor="u.quality_factor" :inspection-mode="u.inspection_mode" :price="u.listing?.multiplier" />
+    <UpstreamModelWhitelist :upstream="u" class="mt-5" @changed="reload" />
     <QuotaPanel v-if="hasAccount" :key="quotaKey" :upstream-id="u.id" class="mt-5" />
     <ResetCreditsPanel v-if="hasAccount && u.reset_credits_supported" :upstream-id="u.id" class="mt-5" @changed="quotaKey++" />
 
@@ -445,7 +465,7 @@ const appealable = appealableReport
           { key: 'created_at', label: '时间' },
           { key: 'trigger', label: '类型' },
           { key: 'verdict', label: '结论' },
-          { key: 'score', label: '智力相对分', align: 'right' },
+          { key: 'score', label: '测智', align: 'right' },
           { key: 'actions', label: '' },
         ]"
         :rows="reports.data.value"
@@ -455,7 +475,7 @@ const appealable = appealableReport
         <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
         <template #cell-trigger="{ row }"><StatusBadge kind="trigger" :value="row.trigger" /></template>
         <template #cell-verdict="{ row }"><StatusBadge kind="verdict" :value="row.verdict" /></template>
-        <template #cell-score="{ row }">{{ row.summary?.suites?.iq ? percent(row.summary.suites.iq.relative_score, 0) : '—' }}</template>
+        <template #cell-score="{ row }">{{ row.summary?.intelligence?.status ? intelligenceStatusText(row.summary.intelligence.status) : row.summary?.suites?.iq ? percent(row.summary.suites.iq.relative_score, 0) : '—' }}</template>
         <template #cell-actions="{ row }">
           <button class="btn-ghost btn-sm" @click="openReport = row">查看</button>
         </template>

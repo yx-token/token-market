@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import ReportDetail from '@/components/ReportDetail.vue'
 import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 import ProbeRunDetail from '@/components/ProbeRunDetail.vue'
@@ -20,6 +21,7 @@ describe('质检报告与估价', () => {
     expect(wrapper.text()).toContain('3 / 4 次成功')
     expect(wrapper.text()).toContain('95%（8 题')
     expect(wrapper.find('[data-testid="inspection-appraisal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-flow]').exists()).toBe(false)
   })
 
   it('试运行按组显示候选结果与修复建议，保持原等级', () => {
@@ -29,13 +31,15 @@ describe('质检报告与估价', () => {
     expect(wrapper.text()).toContain('能力与智力')
     expect(wrapper.text()).toContain('推理强度兑现')
     expect(wrapper.text()).toContain('试运行，不影响价格')
-    expect(wrapper.text()).toContain('候选系数，不生效 0.850')
+    expect(wrapper.text()).not.toContain('生效系数')
+    expect(wrapper.text()).not.toContain('候选系数')
     expect(wrapper.text()).toContain('试算等级')
     expect(wrapper.text()).toContain('修复后预计等级')
     expect(wrapper.text()).toContain('核对推理设置')
     expect(wrapper.text()).not.toContain('秘密答案')
     expect(wrapper.text()).not.toContain('内部地址')
     expect(wrapper.text()).not.toContain('0.81')
+    expect(wrapper.find('[data-flow]').exists()).toBe(false)
   })
 
   it('正式报告显示生效扣价与确认门槛，扣价可申诉', () => {
@@ -45,8 +49,159 @@ describe('质检报告与估价', () => {
     expect(wrapper.text()).toContain('质量系数降低')
     expect(wrapper.text()).toContain('已确认，按健康限制处置')
     expect(wrapper.text()).toContain('暂不估价')
+    expect(wrapper.text()).toContain('本次检测覆盖不足')
     expect(appealableReport(value)).toBe(true)
     expect(appealableReport(report())).toBe(false)
+  })
+
+  it('新报告按流程归类，第三方卡片归入身份区块并标明沿用时间', () => {
+    const result = (key: string, name = key): InspectionCheckResult => ({ ...check, key, name, status: 'pass', role: 'display', factor: null, impact: '' })
+    const keys = ['D05', 'D10', 'D04', 'D13', 'D07', 'D07.honesty', 'D09', 'D06', 'A06', 'A01', 'A02', 'A03', 'A12', 'A15', 'A04', 'A05', 'A11.tools', 'D08', 'D12', 'third_party']
+    const value = report({
+      flows: ['intelligence', 'identity'], identity_source: 'third_party', models: ['gpt-6-astra'],
+      intelligence: { status: 'warning', inherited_at: '2026-10-10T04:00:00Z', models: [{ model: 'gpt-6-astra', status: 'warning', target_pass_rate: 0.8, expected_pass_rate: 0.9, samples: 57 }] },
+      identity: { source: 'third_party', status: 'pass', inherited_at: '2026-10-11T04:00:00Z' },
+      checks: Object.fromEntries(keys.map((key) => [key, result(key)])),
+      third_party: [{ provider: 'bazaarlink', status: 'completed', verdict: 'normal', model: 'gpt-6-astra', summary: { verdict_status: 'clean_match' } }],
+    })
+    const wrapper = mount(ReportDetail, { props: { report: value } })
+    expect(wrapper.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['common', 'intelligence', 'identity'])
+    const common = wrapper.get('[data-flow="common"]')
+    expect(common.text()).toContain('可用与性能')
+    expect(common.findAll('[data-check-key]').map((row) => row.attributes('data-check-key'))).toEqual(['D13', 'D04', 'D10', 'D05'])
+    const intelligence = wrapper.get('[data-flow="intelligence"]')
+    expect(intelligence.findAll('[data-check-key]').map((row) => row.attributes('data-check-key'))).toEqual(['A06', 'D06', 'D07', 'D07.honesty', 'D09'])
+    expect(intelligence.text()).toContain('偏低（扣价）')
+    expect(intelligence.text()).toContain('沿用 2026-10-10')
+    expect(intelligence.text()).toContain('的结果')
+    const identity = wrapper.get('[data-flow="identity"]')
+    expect(identity.findAll('[data-check-key]')).toHaveLength(11)
+    expect(identity.find('[data-testid="idle-checks"]').exists()).toBe(false)
+    expect(identity.text()).toContain('来源：第三方检测')
+    expect(identity.text()).toContain('家族与具体型号都与声明一致')
+    expect(identity.text()).toContain('沿用 2026-10-11')
+    expect(wrapper.findAllComponents({ name: 'ThirdPartyResult' })).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('试运行，不影响价格')
+  })
+
+  it('身份来源为第三方时，未执行的自有检测项收起，只保留第三方结论', () => {
+    const idle = (key: string, name: string): InspectionCheckResult => ({ ...check, key, name, status: 'not_run', role: 'display', factor: null, impact: '' })
+    const value = report({
+      flows: ['intelligence', 'identity'], identity_source: 'third_party', models: ['gpt-6-astra'],
+      intelligence: { status: 'pass', inherited_at: null, models: [{ model: 'gpt-6-astra', status: 'pass' }] },
+      identity: { source: 'third_party', status: 'pass', inherited_at: null },
+      checks: {
+        D07: { ...check, key: 'D07', name: '智力测试', status: 'pass', role: 'factor', factor: null, impact: '' },
+        A02: idle('A02', '响应型号一致'),
+        A11_tools: idle('A11.tools', '工具调用'),
+        third_party: { ...check, key: 'third_party', name: '第三方身份核验', status: 'pass', role: 'gate', factor: null, impact: '' },
+      },
+      third_party: [{ provider: 'bazaarlink', status: 'completed', verdict: 'normal', model: 'gpt-6-astra', summary: { verdict_status: 'clean_match' } }],
+    })
+    const identity = mount(ReportDetail, { props: { report: value } }).get('[data-flow="identity"]')
+    expect(identity.findAll('[data-check-key]').map((row) => row.attributes('data-check-key'))).toEqual(['third_party'])
+    const folded = identity.get('[data-testid="idle-checks"]')
+    expect(folded.element.hasAttribute('open')).toBe(false)
+    expect(folded.text()).toContain('本次未执行的检测项（2 项）')
+    expect(folded.get('[data-idle-keys]').attributes('data-idle-keys')).toBe('A02,A11.tools')
+  })
+
+  it('自有题库报告展示身份与功能结果，只有已生效的扣价显示系数', () => {
+    const value = report({
+      intelligence: { status: 'fail', inherited_at: null, models: [{ model: 'gpt-6-astra', status: 'fail' }] },
+      identity: { source: 'self', status: 'warning', inherited_at: null },
+      checks: {
+        D06: { ...check, applied: true, impact: '已用于扣价。' },
+        A04: { ...check, key: 'A04', name: '型号权限', category: 'configuration', role: 'gate', applied: true, factor: 0.7 },
+        A11: { ...check, key: 'A11.tools', name: '工具调用', category: 'function', factor: 0.95 },
+      },
+      third_party: [{ provider: 'bazaarlink', status: 'completed', verdict: 'normal', model: '旧第三方型号' }],
+    })
+    const wrapper = mount(ReportDetail, { props: { report: value } })
+    expect(wrapper.get('[data-flow="intelligence"]').text()).toContain('显著偏低（疑似）')
+    const identity = wrapper.get('[data-flow="identity"]')
+    expect(identity.text()).toContain('来源：自有题库')
+    expect(identity.text()).toContain('型号权限')
+    expect(identity.text()).toContain('工具调用')
+    expect(wrapper.get('[data-check-key="D06"]').text()).toContain('生效系数 0.850')
+    expect(identity.get('[data-check-key="A04"]').text()).toContain('生效系数 0.700')
+    expect(identity.get('[data-check-key="A11.tools"]').text()).not.toContain('0.950')
+    expect(appealableReport(report({ checks: { A04: value.summary.checks!.A04 } }))).toBe(true)
+    expect(wrapper.text()).not.toContain('候选系数')
+    expect(wrapper.text()).not.toContain('旧第三方型号')
+    expect(wrapper.text()).not.toContain('沿用')
+  })
+
+  it('卖家测智只显示模型状态，管理员额外显示通过率和期望通过率', () => {
+    const value = report({
+      intelligence: { status: 'pass', models: [{ model: 'gpt-6-astra', status: 'pass', target_pass_rate: 0.96, expected_pass_rate: 0.9 }, { model: 'gpt-6.1-sol', status: 'not_run' }] },
+      identity: { source: 'self', status: 'not_run' },
+      checks: { D07: { ...check, key: 'D07', metrics: { target_pass_rate: { value: 0.96, unit: 'ratio' } } } },
+    })
+    const sellerWrapper = mount(ReportDetail, { props: { report: value } })
+    const sellerModels = sellerWrapper.get('[data-testid="intelligence-models"]')
+    expect(sellerModels.text()).toContain('gpt-6-astra')
+    expect(sellerModels.text()).toContain('正常')
+    expect(sellerModels.text()).toContain('gpt-6.1-sol')
+    expect(sellerModels.text()).toContain('未测')
+    expect(sellerWrapper.get('[data-flow="intelligence"]').text()).not.toContain('通过率')
+    const adminWrapper = mount(ReportDetail, { props: { report: value, admin: true } })
+    const adminModels = adminWrapper.get('[data-testid="intelligence-models"]')
+    expect(adminModels.text()).toContain('通过率 96.0%')
+    expect(adminModels.text()).toContain('期望通过率 90.0%')
+    expect(adminModels.get('[data-model="gpt-6.1-sol"]').text()).toContain('通过率 —')
+  })
+
+  it('脱敏报告和不适用测智保持完整区块，不要求模型率或检测项', () => {
+    const value = report({ checks: undefined, intelligence: { status: 'not_applicable', models: [] }, identity: { source: 'self', status: 'not_run' } })
+    const wrapper = mount(ReportDetail, { props: { report: value } })
+    expect(wrapper.get('[data-flow="intelligence"]').text()).toContain('不适用')
+    expect(wrapper.get('[data-flow="intelligence"]').text()).toContain('挂售模型未配置测智')
+    expect(wrapper.get('[data-flow="identity"]').text()).toContain('未测')
+    expect(wrapper.get('[data-flow="common"]').text()).toContain('暂无可用与性能检测结果')
+  })
+
+  it.each<{ name: string; extra: Partial<Report['summary']> }>([
+    { name: '空流程列表', extra: { flows: [] } },
+    { name: '身份来源', extra: { identity_source: 'self' } },
+    { name: '空测试模型列表', extra: { models: [] } },
+  ])('只有$name新字段时仍采用新版报告', ({ extra }) => {
+    const value = report({ checks: undefined, suites: { iq: { relative_score: 0.95, samples: 8 } }, ...extra })
+    const wrapper = mount(ReportDetail, { props: { report: value } })
+    expect(wrapper.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['common', 'intelligence', 'identity'])
+    expect(wrapper.text()).not.toContain('智力相对分')
+  })
+
+  it('新版估价试算提示表示未启用扣价，不再表示检测覆盖不足', () => {
+    const value = report({
+      intelligence: { status: 'pass', models: [] },
+      appraisal: { ...appraisal, factor: 1, multiplier: 1.5, provisional: true },
+      checks: {},
+    })
+    const wrapper = mount(ReportDetail, { props: { report: value } })
+    expect(wrapper.text()).toContain('未启用扣价，估价为试算')
+    expect(wrapper.text()).not.toContain('本次检测覆盖不足')
+    expect(wrapper.text()).not.toContain('试运行，不影响价格')
+    expect(value.summary.appraisal?.provisional).toBe(true)
+  })
+
+  it('新版试运行已生效的扣价不显示旧估价和价格提示', () => {
+    const value = report({
+      intelligence: { status: 'warning', models: [] },
+      inspection_mode: 'trial',
+      appraisal: { ...appraisal, provisional: false },
+      checks: { D06: { ...check, applied: true, impact: '质量系数降低，已用于扣价。' } },
+    })
+    const wrapper = mount(ReportDetail, { props: { report: value } })
+    expect(wrapper.text()).toContain('生效系数 0.850')
+    expect(wrapper.text()).toContain('质量系数降低，已用于扣价。')
+    expect(wrapper.text()).not.toContain('未启用扣价，估价为试算')
+    expect(wrapper.text()).not.toContain('本次检测覆盖不足')
+    expect(wrapper.text()).not.toContain('试运行，不影响价格')
+    expect(wrapper.text()).not.toContain('等级与回收报价沿用现有判定')
+    value.summary.checks!.D06.impact = ''
+    const fallback = mount(ReportDetail, { props: { report: value } })
+    expect(fallback.get('[data-check-key="D06"]').text()).toContain('本项已用于扣价。')
   })
 
   it('未配置与没有有效系数严格区分，不使用回收价兜底', () => {
@@ -66,11 +221,13 @@ describe('质检报告与估价', () => {
     expect(appraisalDeviation(1, { ...appraisal, multiplier: null })).toBe('—')
     const wrapper = mount(InspectionAppraisal, { props: { grade: 'A', appraisal, qualityFactor: 0.85, inspectionMode: 'trial', price: 1.53 } })
     expect(wrapper.text()).toContain('+20.0%')
-    expect(wrapper.text()).toContain('等级、回收报价与调度沿用现有判定')
+    expect(wrapper.text()).toContain('等级与回收报价沿用现有判定')
   })
 
-  it('市场卡片显示关键项、检测时间与抽样局限', () => {
-    const wrapper = mount(MarketListingCard, { props: { sku: { id: 'l-1', listingId: 1, kind: 'channel', plat: 'Claude', tier: 'Max', title: '测试通道', img: 'card1.jpg', mult: 0.8, grade: 'B', success: 0.97, ttft: 400, qualityChecks: { D06: check }, inspectionMode: 'trial', lastCheckedAt: appraisal.checked_at! } }, global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
+  it('市场卡片显示关键项、检测时间与抽样局限', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+    await router.push('/')
+    const wrapper = mount(MarketListingCard, { props: { sku: { id: 'l-1', listingId: 1, kind: 'channel', plat: 'Claude', tier: 'Max', title: '测试通道', img: 'card1.jpg', mult: 0.8, grade: 'B', success: 0.97, ttft: 400, qualityChecks: { D06: check }, inspectionMode: 'trial', lastCheckedAt: appraisal.checked_at! } }, global: { plugins: [router], stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
     expect(wrapper.text()).toContain('B 级')
     expect(wrapper.text()).toContain('推理强度兑现：需关注')
     expect(wrapper.text()).toContain('上次检测')

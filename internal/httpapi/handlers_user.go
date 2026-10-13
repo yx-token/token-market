@@ -100,6 +100,7 @@ func (s *Server) marketListings(w http.ResponseWriter, r *http.Request) error {
 	items, err := s.Market.List(r.Context(), market.Filter{
 		Platform: r.URL.Query().Get("platform"), Grade: r.URL.Query().Get("grade"), MaxPrice: maxPrice,
 		Kind: r.URL.Query().Get("kind"), Category: r.URL.Query().Get("category"), Sort: r.URL.Query().Get("sort"),
+		Model: r.URL.Query().Get("model"),
 	}, limit, offset)
 	if err != nil {
 		return err

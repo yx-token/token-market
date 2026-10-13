@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, toRaw } from 'vue'
 import { admin } from '@/api'
-import type { DetectionProvider, Policy, ThirdPartyCheck, Upstream, VendorConfig } from '@/api/types'
+import type { DetectionFlow, DetectionFlows, DetectionProvider, Policy, ThirdPartyCheck, Upstream, VendorConfig } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { filterByDateField, filterByKeyword, useClientPage, useListQuery } from '@/composables/useListQuery'
 import { useToast } from '@/stores/toast'
@@ -15,6 +15,7 @@ import TabBar from '@/components/TabBar.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import { authTypeText, label, options, upstreamName } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
+import { detectionFlowText, identitySourceText } from '@/utils/inspection'
 
 const toast = useToast()
 const tab = ref<'policies' | 'upstream'>('policies')
@@ -36,25 +37,24 @@ const { queryParams, resetQuery, handleQuery } = useListQuery({
 const policies = useLoader(() => admin.policies(), [] as Policy[] | null)
 const providers = useLoader(() => admin.providers(), [] as DetectionProvider[] | null)
 const triggerOptions = options('trigger')
-// 套件与后端 validSuites 保持一致；未知套件在保存时被 INVALID_SUITE 拒绝
-const suiteOptions = [
-  'availability',
-  'latency',
-  'iq',
-  'reasoning',
-  'long_context',
-  'inspection_authenticity',
-  'inspection_capability',
-  'inspection_context',
-  'inspection_function',
-  'inspection_output',
-  'inspection_performance',
-].map((value) => ({ value, text: value }))
-// 模型 / 厂商 / 上游选项来自注册表；已存值不在表中时由 SearchSelect 保留并标注
+const mismatchOptions = [
+  { value: 'degraded', text: '暂停调度' },
+  { value: 'suspected', text: '标记疑似' },
+  { value: 'ignore', text: '仅记录' },
+]
+// 模型是开放集合：合并价目、全部策略（含第三方检测）与题库限定的模型。
+// 厂商与上游仍按注册表选择，已存值不在表中时保留并标注。
 const priceModels = ref<string[]>([])
+const probeModels = ref<string[]>([])
 const vendors = ref<VendorConfig[]>([])
 const upstreams = ref<Upstream[]>([])
-const modelOptions = computed<SelectOption[]>(() => priceModels.value.map((m) => ({ value: m, text: m })))
+const modelOptions = computed<SelectOption[]>(() => {
+  const policyModels = (policies.data.value ?? []).flatMap((p) => [
+    ...(p.flows?.intelligence.models.map((m) => m.model) ?? p.models), ...(p.third_party ?? []).map((t) => t.model ?? ''),
+  ])
+  return [...new Set([...priceModels.value, ...policyModels, ...probeModels.value])]
+    .filter(Boolean).map((m) => ({ value: m, text: m }))
+})
 const vendorOptions = computed<SelectOption[]>(() =>
   vendors.value.map((v) => ({ value: v.platform, text: `${label('platform', v.platform).text}（${v.platform}）` })),
 )
@@ -66,17 +66,14 @@ const upstreamOptions = computed<SelectOption[]>(() =>
   })),
 )
 const createAuthTypes = computed(() => vendors.value.find((v) => v.platform === newAuth.platform)?.supported_auth_types ?? [])
-type TPForm = { enabled: boolean; triggers: string[]; model: string; format: string; onMismatch: string; onSubmodel: string }
+type TPForm = { enabled: boolean; model: string; format: string; onMismatch: string; onSubmodel: string }
 const thirdParty = reactive<Record<string, TPForm>>({})
 const { busy, run } = useAction()
 const editing = ref<Policy | null>(null)
 const form = reactive({
   enabled: false,
   scheduled: false,
-  interval: 360,
   jitter: 30,
-  suites: [] as string[],
-  models: [] as string[],
   budget: 1,
   h0: 0.9,
   h1: 0.7,
@@ -85,19 +82,45 @@ const form = reactive({
   autoPause: true,
   grade: 'B',
   parallelism: 2,
-  fullTriggers: [] as string[],
   tokenBudgets: '{}',
+  flows: {
+    intelligence: { enabled: true, scheduled_enabled: true, interval_minutes: 360, triggers: [] as string[], full_triggers: [] as string[], models: [] as { model: string; expected_pass_rate: number | '' | null }[] },
+    identity: { enabled: false, source: 'third_party' as 'third_party' | 'self', scheduled_enabled: false, interval_minutes: 1440, triggers: [] as string[], full_triggers: [] as string[] },
+  },
 })
 const newAuth = reactive({ platform: '', authType: '' })
 const override = reactive({ upstream: '', mode: 'on', scheduled: '', expires: '', reason: '' })
+const selectedFlows = ref<DetectionFlow[]>(['intelligence', 'identity'])
+const flowOptions = (['intelligence', 'identity'] as DetectionFlow[]).map((value) => ({ value, text: detectionFlowText(value) }))
+
+// 旧策略只用于兼容回填；保存时统一写入新的流程配置。
+function policyFlows(p: Policy): DetectionFlows {
+  if (p.flows) return p.flows
+  return {
+    intelligence: { enabled: p.enabled, scheduled_enabled: p.scheduled_enabled, interval_minutes: p.interval_minutes, triggers: triggerOptions.map((t) => t.value), full_triggers: p.full_triggers ?? ['onboarding', 'admin', 'appeal', 'recovery'], models: p.models.map((model) => ({ model, expected_pass_rate: null })) },
+    identity: { enabled: !!p.third_party?.length, source: 'third_party', scheduled_enabled: false, interval_minutes: 1440, triggers: [...new Set((p.third_party ?? []).flatMap((t) => t.triggers ?? []))], full_triggers: triggerOptions.map((t) => t.value) },
+  }
+}
+
+function flowSummary(p: Policy, flow: DetectionFlow): string {
+  const config = policyFlows(p)[flow]
+  const source = flow === 'identity' ? ` · ${identitySourceText(policyFlows(p).identity.source)}` : ''
+  return `${config.enabled ? '开' : '关'}${source} · ${config.scheduled_enabled ? `每 ${config.interval_minutes} 分钟` : `定时关（${config.interval_minutes} 分钟）`}`
+}
 onMounted(async () => {
   policies.load()
   providers.load()
   // 选项接口失败时降级为空列表，表单仍可保存（SearchSelect 支持手动录入）
-  vendors.value = (await admin.vendors().catch(() => null)) ?? []
-  const st = await admin.settings().catch(() => null)
+  const [vendorList, st, upstreamList, itemList] = await Promise.all([
+    admin.vendors().catch(() => null),
+    admin.settings().catch(() => null),
+    admin.upstreams().catch(() => null),
+    admin.items().catch(() => null),
+  ])
+  vendors.value = vendorList ?? []
   priceModels.value = st?.price_models ?? []
-  upstreams.value = (await admin.upstreams().catch(() => null)) ?? []
+  upstreams.value = upstreamList ?? []
+  probeModels.value = (itemList ?? []).flatMap((item) => item.models)
 })
 
 const filtered = computed(() => {
@@ -127,10 +150,7 @@ function edit(p: Policy) {
   Object.assign(form, {
     enabled: p.enabled,
     scheduled: p.scheduled_enabled,
-    interval: p.interval_minutes,
     jitter: p.jitter_minutes,
-    suites: [...p.suites],
-    models: [...p.models],
     budget: p.daily_budget_usd,
     h0: p.thresholds.h0,
     h1: p.thresholds.h1,
@@ -139,14 +159,15 @@ function edit(p: Policy) {
     autoPause: p.auto_pause,
     grade: p.default_grade,
     parallelism: p.item_parallelism ?? 2,
-    fullTriggers: [...(p.full_triggers ?? ['onboarding', 'admin', 'appeal', 'recovery'])],
     tokenBudgets: JSON.stringify(p.token_budgets ?? {}, null, 2),
+    flows: structuredClone(toRaw(policyFlows(p))),
   })
-  for (const pr of providers.data.value ?? []) {
-    const c = (p.third_party ?? []).find((x) => x.provider === pr.name)
-    thirdParty[pr.name] = {
+  for (const name of Object.keys(thirdParty)) delete thirdParty[name]
+  const providerNames = new Set([...(providers.data.value ?? []).map((pr) => pr.name), ...(p.third_party ?? []).map((t) => t.provider)])
+  for (const name of providerNames) {
+    const c = (p.third_party ?? []).find((x) => x.provider === name)
+    thirdParty[name] = {
       enabled: !!c,
-      triggers: c?.triggers ?? ['onboarding', 'admin', 'appeal'],
       model: c?.model ?? '',
       format: c?.format ?? '',
       onMismatch: c?.on_mismatch ?? 'degraded',
@@ -170,26 +191,49 @@ async function save() {
     toast.error('token 预算需要是 JSON 对象')
     return
   }
+  const models = form.flows.intelligence.models.map((m) => ({
+    model: m.model.trim(),
+    expected_pass_rate: m.expected_pass_rate === '' || m.expected_pass_rate === null ? null : Number(m.expected_pass_rate),
+  }))
+  if (models.some((m) => !m.model || (m.expected_pass_rate !== null && (!Number.isFinite(m.expected_pass_rate) || m.expected_pass_rate <= 0 || m.expected_pass_rate > 1)))) {
+    toast.error('请填写模型 ID，期望通过率需大于 0 且不超过 1，或留空使用默认值')
+    return
+  }
+  if (new Set(models.map((m) => m.model)).size !== models.length) {
+    toast.error('测智模型不能重复')
+    return
+  }
+  for (const flow of [form.flows.intelligence, form.flows.identity]) {
+    if (!Number.isInteger(Number(flow.interval_minutes)) || Number(flow.interval_minutes) < 10) {
+      toast.error('检测周期需为至少 10 分钟的整数')
+      return
+    }
+  }
+  if (form.flows.identity.enabled && form.flows.identity.source === 'third_party' && !Object.entries(thirdParty).some(([name, t]) => t.enabled && providers.data.value?.some((pr) => pr.name === name && pr.enabled))) {
+    toast.error('第三方身份核验需要选择至少一个已启用的检测站')
+    return
+  }
+  const flows: DetectionFlows = {
+    intelligence: { ...form.flows.intelligence, interval_minutes: Number(form.flows.intelligence.interval_minutes), models },
+    identity: { ...form.flows.identity, interval_minutes: Number(form.flows.identity.interval_minutes) },
+  }
   const body = {
+    flows,
     enabled: form.enabled,
     scheduled_enabled: form.enabled && form.scheduled,
-    interval_minutes: Number(form.interval),
     jitter_minutes: Number(form.jitter),
-    suites: [...form.suites],
-    models: [...form.models],
     daily_budget_usd: Number(form.budget),
     thresholds: { h0: Number(form.h0), h1: Number(form.h1), alpha: Number(form.alpha), beta: Number(form.beta) },
     auto_pause: form.autoPause,
     default_grade: form.grade,
     item_parallelism: Number(form.parallelism),
-    full_triggers: [...form.fullTriggers],
     token_budgets: tokenBudgets,
     third_party: Object.entries(thirdParty)
       .filter(([, t]) => t.enabled)
       .map(
         ([provider, t]): ThirdPartyCheck => ({
           provider,
-          triggers: t.triggers,
+          triggers: [...flows.identity.triggers],
           model: t.model.trim() || undefined,
           format: t.format || undefined,
           on_mismatch: t.onMismatch,
@@ -243,7 +287,15 @@ async function clearOverride() {
 }
 async function probe() {
   const id = Number(override.upstream)
-  if (id) await run(() => admin.probe(id), '已排队检测')
+  if (!id) {
+    toast.error('请选择上游')
+    return
+  }
+  if (!selectedFlows.value.length) {
+    toast.error('请选择至少一个检测流程')
+    return
+  }
+  await run(() => admin.probeFlows(id, [...selectedFlows.value]), '已排队检测')
 }
 </script>
 
@@ -308,8 +360,8 @@ async function probe() {
         { key: 'auth_type', label: '接入方式' },
         { key: 'enabled', label: '是否检测' },
         { key: 'scheduled_enabled', label: '是否定时检测' },
-        { key: 'interval', label: '周期' },
-        { key: 'models', label: '模型' },
+        { key: 'intelligence', label: '测智' },
+        { key: 'identity', label: '身份核验' },
         { key: 'daily_budget_usd', label: '每日预算', align: 'right' },
         { key: 'third_party', label: '第三方检测' },
         { key: 'updated_at', label: '更新时间' },
@@ -332,13 +384,13 @@ async function probe() {
           {{ row.scheduled_enabled ? '开' : '关' }}
         </button>
       </template>
-      <template #cell-interval="{ row }">{{ row.interval_minutes }} 分钟 ± {{ row.jitter_minutes }}</template>
-      <template #cell-models="{ row }">{{ row.models.join(', ') || '—' }}</template>
+      <template #cell-intelligence="{ row }">{{ flowSummary(row, 'intelligence') }}</template>
+      <template #cell-identity="{ row }">{{ flowSummary(row, 'identity') }}</template>
       <template #cell-daily_budget_usd="{ row }">{{ row.daily_budget_usd }}</template>
       <template #cell-third_party="{ row }">
         <span v-if="!row.third_party?.length" class="text-slate-400">—</span>
-        <span v-for="t in row.third_party ?? []" :key="t.provider" class="mr-2 text-xs" :title="t.triggers.map((x: string) => label('trigger', x).text).join('、')">
-          {{ providerName(t.provider) }}（{{ t.triggers.length }} 类检测）
+        <span v-for="t in row.third_party ?? []" :key="t.provider" class="mr-2 text-xs">
+          {{ providerName(t.provider) }}
         </span>
       </template>
       <template #cell-updated_at="{ row }">{{ dateTime(row.updated_at) }}</template>
@@ -377,6 +429,10 @@ async function probe() {
           <label class="label" for="or">原因</label>
           <input id="or" v-model="override.reason" class="input" placeholder="可选备注" />
         </div>
+      </div>
+      <div class="mt-4">
+        <label class="label" for="probe-flows">立即检测的流程</label>
+        <SearchSelect id="probe-flows" v-model="selectedFlows" :options="flowOptions" multiple placeholder="选择检测流程" />
       </div>
       <div class="mt-6 flex flex-wrap justify-end gap-2 border-t border-gray-100 pt-4">
         <button type="button" class="btn btn-secondary" :disabled="busy" @click="clearOverride">删除覆盖</button>
@@ -418,16 +474,12 @@ async function probe() {
   </ModalDialog>
 
   <ModalDialog :open="!!editing" :title="`编辑策略：${label('platform', editing?.platform).text} ${editing?.auth_type || ''}`" wide @update:open="(v: boolean) => !v && (editing = null)">
-    <div class="flex gap-6 text-sm">
+    <div class="flex flex-wrap gap-6 text-sm">
       <label class="flex items-center gap-2"><input v-model="form.enabled" type="checkbox" /> 是否检测</label>
       <label class="flex items-center gap-2"><input v-model="form.scheduled" type="checkbox" :disabled="!form.enabled" /> 是否定时检测</label>
-      <label class="flex items-center gap-2"><input v-model="form.autoPause" type="checkbox" /> 确认降智后自动停止调度</label>
+      <label class="flex items-center gap-2"><input v-model="form.autoPause" type="checkbox" /> 确认门槛后自动停止调度</label>
     </div>
     <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
-      <div>
-        <label class="label" for="pi">周期（分钟）</label>
-        <input id="pi" v-model.number="form.interval" class="input" type="number" min="10" />
-      </div>
       <div>
         <label class="label" for="pj">随机抖动（分钟）</label>
         <input id="pj" v-model.number="form.jitter" class="input" type="number" min="0" />
@@ -437,21 +489,89 @@ async function probe() {
         <input id="pb" v-model.number="form.budget" class="input" type="number" min="0" step="0.1" />
       </div>
     </div>
-    <div class="grid grid-cols-2 gap-3">
-      <div>
-        <label class="label" for="pm">模型（多个时轮换）</label>
-        <SearchSelect id="pm" v-model="form.models" :options="modelOptions" multiple placeholder="选择模型" />
+    <section aria-labelledby="intelligence-title" class="space-y-3 border-t border-slate-100 pt-3">
+      <h3 id="intelligence-title" class="text-sm font-medium text-slate-700">测智</h3>
+      <div class="flex flex-wrap gap-6 text-sm">
+        <label class="flex items-center gap-2"><input id="intelligence-enabled" v-model="form.flows.intelligence.enabled" type="checkbox" /> 开启测智</label>
+        <label class="flex items-center gap-2"><input id="intelligence-scheduled" v-model="form.flows.intelligence.scheduled_enabled" type="checkbox" /> 定时检测</label>
+      </div>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div><label class="label" for="intelligence-interval">周期（分钟）</label><input id="intelligence-interval" v-model.number="form.flows.intelligence.interval_minutes" class="input" type="number" min="10" /></div>
+        <div><label class="label" for="intelligence-triggers">触发类型</label><SearchSelect id="intelligence-triggers" v-model="form.flows.intelligence.triggers" :options="triggerOptions" multiple placeholder="选择触发类型" /></div>
+        <div class="sm:col-span-2"><label class="label" for="intelligence-full-triggers">完整检测触发类型</label><SearchSelect id="intelligence-full-triggers" v-model="form.flows.intelligence.full_triggers" :options="triggerOptions" multiple placeholder="选择触发类型" /></div>
       </div>
       <div>
-        <label class="label" for="ps">套件</label>
-        <SearchSelect id="ps" v-model="form.suites" :options="suiteOptions" multiple placeholder="选择套件" />
-        <p class="hint">试运行新题仅记录；正式模式只使用质检题。未注册的套件保存时会被拒绝。</p>
+        <p class="label">测智模型</p>
+        <p class="hint mb-2">每次检测全部配置模型与挂售白名单的交集。期望通过率留空时使用检测项默认值。</p>
+        <div v-for="(model, index) in form.flows.intelligence.models" :key="index" class="mb-2 grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_10rem_auto]">
+          <div><label class="label" :for="`intelligence-model-${index}`">模型 ID</label><SearchSelect :id="`intelligence-model-${index}`" v-model="model.model" :options="modelOptions" creatable placeholder="选择或输入模型 ID" /></div>
+          <div><label class="label" :for="`intelligence-rate-${index}`">期望通过率</label><input :id="`intelligence-rate-${index}`" v-model="model.expected_pass_rate" class="input" type="number" min="0.0001" max="1" step="0.01" placeholder="使用默认值" /></div>
+          <button type="button" class="btn btn-secondary" :aria-label="`删除第 ${index + 1} 个测智模型`" @click="form.flows.intelligence.models.splice(index, 1)">删除</button>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" @click="form.flows.intelligence.models.push({ model: '', expected_pass_rate: null })">添加测智模型</button>
       </div>
-    </div>
-    <div class="grid grid-cols-2 gap-3">
+    </section>
+    <section aria-labelledby="identity-title" class="space-y-3 border-t border-slate-100 pt-3">
+      <h3 id="identity-title" class="text-sm font-medium text-slate-700">身份与功能核验</h3>
+      <div class="flex flex-wrap gap-6 text-sm">
+        <label class="flex items-center gap-2"><input id="identity-enabled" v-model="form.flows.identity.enabled" type="checkbox" /> 开启身份与功能核验</label>
+        <label class="flex items-center gap-2"><input id="identity-scheduled" v-model="form.flows.identity.scheduled_enabled" type="checkbox" /> 定时检测</label>
+      </div>
+      <fieldset class="flex flex-wrap gap-4 text-sm">
+        <legend class="label">来源</legend>
+        <label class="flex items-center gap-2"><input id="identity-source-third-party" v-model="form.flows.identity.source" type="radio" value="third_party" /> 第三方检测</label>
+        <label class="flex items-center gap-2"><input id="identity-source-self" v-model="form.flows.identity.source" type="radio" value="self" /> 自有题库</label>
+      </fieldset>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div><label class="label" for="identity-interval">周期（分钟）</label><input id="identity-interval" v-model.number="form.flows.identity.interval_minutes" class="input" type="number" min="10" /></div>
+        <div><label class="label" for="identity-triggers">触发类型</label><SearchSelect id="identity-triggers" v-model="form.flows.identity.triggers" :options="triggerOptions" multiple placeholder="选择触发类型" /></div>
+        <div class="sm:col-span-2"><label class="label" for="identity-full-triggers">完整检测触发类型</label><SearchSelect id="identity-full-triggers" v-model="form.flows.identity.full_triggers" :options="triggerOptions" multiple placeholder="选择触发类型" /></div>
+      </div>
+      <div v-if="form.flows.identity.source === 'third_party'" data-testid="third-party-config" class="border-t border-slate-100 pt-3">
+        <div class="mb-1 text-sm font-medium text-slate-700">第三方检测</div>
+        <p class="hint mb-2">第三方身份检测独立执行，触发类型以本流程配置为准。身份不符可停止调度或标记疑似；上架时无法得出结论会判检测失败。协议可按平台自动选择。</p>
+        <p v-if="!providers.data.value?.length" class="text-sm text-slate-400">暂无可接入的检测站</p>
+        <div v-for="pr in providers.data.value ?? []" :key="pr.name" class="mb-3 rounded-xl border border-gray-100 bg-white/70 p-3 text-sm">
+          <template v-if="thirdParty[pr.name]">
+            <label class="flex items-center gap-2 font-medium">
+              <input v-model="thirdParty[pr.name].enabled" type="checkbox" /> {{ pr.label }}
+              <span v-if="!pr.enabled" class="text-xs font-normal text-amber-600">（检测站未启用，在"第三方检测"中开启后生效）</span>
+            </label>
+            <div v-if="thirdParty[pr.name].enabled" class="mt-2 space-y-2">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
+                <div>
+                  <label class="label" :for="`tp-model-${pr.name}`">检测模型</label>
+                  <SearchSelect :id="`tp-model-${pr.name}`" v-model="thirdParty[pr.name].model" :options="modelOptions" creatable placeholder="默认取可测模型" />
+                </div>
+                <div>
+                  <label class="label" :for="`tp-format-${pr.name}`">协议</label>
+                  <select :id="`tp-format-${pr.name}`" v-model="thirdParty[pr.name].format" class="input">
+                    <option value="">按平台自动</option>
+                    <option value="anthropic">Anthropic Messages</option>
+                    <option value="openai">OpenAI Chat Completions</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label" :for="`tp-mis-${pr.name}`">身份不一致 / 伪装时</label>
+                  <select :id="`tp-mis-${pr.name}`" v-model="thirdParty[pr.name].onMismatch" class="input">
+                    <option v-for="a in mismatchOptions" :key="a.value" :value="a.value">{{ a.text }}</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label" :for="`tp-sub-${pr.name}`">仅具体型号不一致时</label>
+                  <select :id="`tp-sub-${pr.name}`" v-model="thirdParty[pr.name].onSubmodel" class="input">
+                    <option v-for="a in mismatchOptions" :key="a.value" :value="a.value">{{ a.text }}</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </section>
+    <div class="grid grid-cols-1 gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
       <div><label class="label" for="policy-parallelism">题目并行上界</label><input id="policy-parallelism" v-model.number="form.parallelism" class="input" type="number" min="1" /><p class="hint">实际取策略、质检设置与账号当前下发并发的最小值；被测与基线各自限流。</p></div>
-      <div><label class="label" for="policy-full-triggers">执行完整质检的触发类型</label><SearchSelect id="policy-full-triggers" v-model="form.fullTriggers" :options="triggerOptions" multiple placeholder="选择触发类型" /><p class="hint">未知触发类型保存时会被拒绝。</p></div>
-      <div class="col-span-2"><label class="label" for="policy-token-budgets">每侧 token 预算覆盖（JSON）</label><textarea id="policy-token-budgets" v-model="form.tokenBudgets" class="input font-mono" /><p class="hint">{} 使用质检设置；可按 full/quick 配 input_tokens_per_side 与 output_tokens_per_side。</p></div>
+      <div class="sm:col-span-2"><label class="label" for="policy-token-budgets">每侧 token 预算覆盖（JSON）</label><textarea id="policy-token-budgets" v-model="form.tokenBudgets" class="input font-mono" /><p class="hint">{} 使用质检设置；可按 full/quick 配 input_tokens_per_side 与 output_tokens_per_side。</p></div>
     </div>
     <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
       <div>
@@ -475,53 +595,6 @@ async function probe() {
         <select id="pg" v-model="form.grade" class="input">
           <option v-for="g in ['S', 'A', 'B', 'C', 'D']" :key="g" :value="g">{{ g }}</option>
         </select>
-      </div>
-    </div>
-    <div class="border-t border-slate-100 pt-3">
-      <div class="mb-1 text-sm font-medium text-slate-700">第三方检测</div>
-      <p class="hint mb-2">平台探测完成后，在选中的检测类型中追加第三方身份检测；最终结论取平台探测与第三方检测中更严重的一项，检测站失败或证据不足时不影响结论。"判为降智"会停止调度（开启自动停止时），"判为疑似"会降低流量。协议按平台自动选择时 Claude 用 Anthropic Messages，其余用 OpenAI Chat Completions。</p>
-      <p v-if="!providers.data.value?.length" class="text-sm text-slate-400">暂无可接入的检测站</p>
-      <div v-for="pr in providers.data.value ?? []" :key="pr.name" class="mb-3 rounded-xl border border-gray-100 bg-white/70 p-3 text-sm">
-        <template v-if="thirdParty[pr.name]">
-          <label class="flex items-center gap-2 font-medium">
-            <input v-model="thirdParty[pr.name].enabled" type="checkbox" /> {{ pr.label }}
-            <span v-if="!pr.enabled" class="text-xs font-normal text-amber-600">（检测站未启用，在"第三方检测"中开启后生效）</span>
-          </label>
-          <div v-if="thirdParty[pr.name].enabled" class="mt-2 space-y-2">
-            <div class="flex flex-wrap gap-3">
-              <span class="text-slate-500">执行于</span>
-              <label v-for="t in triggerOptions" :key="t.value" class="flex items-center gap-1">
-                <input v-model="thirdParty[pr.name].triggers" type="checkbox" :value="t.value" /> {{ t.text }}
-              </label>
-            </div>
-            <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <div>
-                <label class="label" :for="`tp-model-${pr.name}`">检测模型</label>
-                <SearchSelect :id="`tp-model-${pr.name}`" v-model="thirdParty[pr.name].model" :options="modelOptions" placeholder="默认同平台探测" />
-              </div>
-              <div>
-                <label class="label" :for="`tp-format-${pr.name}`">协议</label>
-                <select :id="`tp-format-${pr.name}`" v-model="thirdParty[pr.name].format" class="input">
-                  <option value="">按平台自动</option>
-                  <option value="anthropic">Anthropic Messages</option>
-                  <option value="openai">OpenAI Chat Completions</option>
-                </select>
-              </div>
-              <div>
-                <label class="label" :for="`tp-mis-${pr.name}`">身份不一致 / 伪装时</label>
-                <select :id="`tp-mis-${pr.name}`" v-model="thirdParty[pr.name].onMismatch" class="input">
-                  <option v-for="a in options('tpAction')" :key="a.value" :value="a.value">{{ a.text }}</option>
-                </select>
-              </div>
-              <div>
-                <label class="label" :for="`tp-sub-${pr.name}`">仅具体型号不一致时</label>
-                <select :id="`tp-sub-${pr.name}`" v-model="thirdParty[pr.name].onSubmodel" class="input">
-                  <option v-for="a in options('tpAction')" :key="a.value" :value="a.value">{{ a.text }}</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </template>
       </div>
     </div>
     <template #footer>

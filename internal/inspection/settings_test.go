@@ -87,6 +87,52 @@ func TestSettingsCalibrationRegistration(t *testing.T) {
 	}
 }
 
+func TestSettingsPricingIndependentAndReset(t *testing.T) {
+	db := &memoryDB{}
+	pricing := true
+	s, err := UpdateOverride(context.Background(), db, "A02", CheckOverride{Pricing: &pricing})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective, _ := Effective("A02", s); !effective.Pricing || effective.Calibrated || effective.DefaultPricing {
+		t.Fatalf("扣价依赖校准或改写默认值：%+v", effective)
+	}
+	s, err = UpdateOverride(context.Background(), db, "A02", CheckOverride{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective, _ := Effective("A02", s); effective.Pricing || s.CheckOverrides["A02"].Pricing != nil {
+		t.Fatalf("空覆盖没有恢复默认扣价：%s", db.raw)
+	}
+	if _, err := Update(context.Background(), db, []byte(`{"check_overrides":{"A02":{"pricing":true}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Update(context.Background(), db, []byte(`{"check_overrides":{"A02":{"pricing":null}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effective, _ := Effective("A02", s); effective.Pricing {
+		t.Fatal("显式 null 没有恢复默认扣价")
+	}
+}
+
+func TestSettingsPricingEnabledIgnoresDisabledAndUnknownChecks(t *testing.T) {
+	s := Defaults()
+	if s.PricingEnabled() {
+		t.Fatal("默认设置存在用于扣价的项")
+	}
+	pricing, enabled := true, false
+	s.CheckOverrides["unknown"] = CheckOverride{Pricing: &pricing}
+	s.CheckOverrides["D07"] = CheckOverride{Enabled: &enabled, Pricing: &pricing}
+	if s.PricingEnabled() {
+		t.Fatal("未知或停用检测项影响估价试算状态")
+	}
+	enabled = true
+	if !s.PricingEnabled() {
+		t.Fatal("启用且开启扣价的项没有生效")
+	}
+}
+
 func TestSettingsValidation(t *testing.T) {
 	for _, patch := range []string{
 		`{"mode":"shadow"}`, `{"grade_thresholds":{"B":0.99}}`, `{"grade_hysteresis":0.5}`, `{"downgrade_confirmations":1}`,
@@ -114,6 +160,15 @@ func TestRegistryCopiesAndDefaultDisabledFingerprint(t *testing.T) {
 		if definition.Name == "" || definition.Description == "" || (i > 0 && known[i-1].Key >= definition.Key) {
 			t.Fatal("目录说明缺失或顺序不稳定")
 		}
+		effective, _ := Effective(definition.Key, Defaults())
+		if definition.DefaultPricing || effective.Pricing || definition.Flow != FlowIntelligence && definition.Flow != FlowIdentity && definition.Flow != FlowCommon {
+			t.Fatalf("流程归属缺失或默认开启扣价：%+v", definition)
+		}
+		for _, coefficient := range []string{"warning", "severe"} {
+			if value, exists := definition.Coefficients[coefficient]; !exists || value <= 0 || value > 1.05 {
+				t.Fatalf("目录项未提供可编辑的状态系数：%+v", definition)
+			}
+		}
 	}
 	definition, _ := Lookup("D06")
 	definition.Coefficients["warning"] = 0.5
@@ -129,7 +184,22 @@ func TestRegistryCopiesAndDefaultDisabledFingerprint(t *testing.T) {
 	enabled := true
 	s.CheckOverrides["A15"] = CheckOverride{Enabled: &enabled}
 	a15, _ = Effective("A15", s)
-	if a15.Enabled || a15.Calibrated {
-		t.Fatal("参数指纹在未校准时被 enabled 激活")
+	if !a15.Enabled || a15.Calibrated {
+		t.Fatal("参数指纹显式开启后仍依赖校准")
+	}
+}
+
+func TestRegistryFlowMembership(t *testing.T) {
+	for flow, keys := range map[string][]string{
+		FlowIntelligence: {"D07", "D07.honesty", "D09", "D06"},
+		FlowIdentity:     {"A02", "A03", "A12", "A15", "A04", "A05", "A11.tools", "D08", "D12", "third_party"},
+		FlowCommon:       {"D13", "D04", "D10", "D05"},
+	} {
+		for _, key := range keys {
+			definition, _ := Lookup(key)
+			if definition.Flow != flow {
+				t.Fatalf("%s 的流程应为 %s：%+v", key, flow, definition)
+			}
+		}
 	}
 }

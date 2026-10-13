@@ -16,13 +16,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// 第三方检测
-//
-// 内部探测完成后，若策略为本次检测类型配置了第三方检测，检测记录进入 third_party 状态并为每个检测站生成一条
-// third_party_checks。worker 为每条检测生成一个只路由到该上游探测分组、到期自动失效的 Edge 临时令牌，
-// 把 Edge 对外地址与令牌交给检测站；检测站经 Edge 访问被测账号（与内部探测一样计入探测成本）。
-// 全部检测站出结果（或超时）后，按策略把检测站的结论折算后与内部判定合并（取更严重者），再统一处置。
-// 内部判定为不可用时不再提交第三方检测。
+// 第三方身份核验在内部题执行前提交，内部题结束后统一等待和合并结论。
+// 同一运行与检测站只有一条记录，重入沿用已有提交；内部不可用时撤销临时令牌。
 
 // tpResult 是一条第三方检测的最终结果。
 type tpResult struct {
@@ -36,10 +31,6 @@ type tpResult struct {
 	Summary   map[string]any `json:"summary,omitempty"`
 }
 
-var verdictRanks = map[string]int{"normal": 0, "inconclusive": 1, "suspected": 2, "degraded": 3, "unavailable": 4}
-
-func verdictRank(v string) int { return verdictRanks[v] }
-
 func (e *Engine) thirdPartyClient() *http.Client {
 	if e.ThirdPartyHTTP != nil {
 		return e.ThirdPartyHTTP
@@ -47,57 +38,72 @@ func (e *Engine) thirdPartyClient() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
 }
 
-// startThirdParty 为刚完成内部探测的检测记录排队第三方检测；返回 true 表示需要等待第三方结果。
-func (e *Engine) startThirdParty(ctx context.Context, run runRow, u *upstreamRow, p *Policy, a Assessment) (bool, error) {
-	if u.isReference || a.Verdict == "unavailable" {
-		return false, nil
+// submitThirdParty 提前提交身份核验；运行仍处于 running，检测站先完成也不能提前结案。
+func (e *Engine) submitThirdParty(ctx context.Context, run runRow, u *upstreamRow, p *Policy) error {
+	if u.isReference || !containsAny(run.flows, "identity") || run.identitySource != "third_party" {
+		return nil
 	}
-	type planned struct {
-		check   ThirdPartyCheck
-		timeout int
-	}
-	var plan []planned
-	for _, c := range p.ThirdParty {
-		if !c.Applies(run.trigger) {
+	for _, site := range p.ThirdParty {
+		provider, err := loadProviderRow(ctx, e.DB, site.Provider)
+		if err != nil {
+			return err
+		}
+		if provider == nil || !provider.enabled {
 			continue
 		}
-		row, err := loadProviderRow(ctx, e.DB, c.Provider)
-		if err != nil {
-			return false, err
+		model := site.Model
+		if model == "" && len(run.models) > 0 {
+			model = run.models[0]
 		}
-		if row != nil && row.enabled {
-			plan = append(plan, planned{c, row.timeoutMinutes})
-		}
-	}
-	if len(plan) == 0 {
-		return false, nil
-	}
-	tx, err := e.DB.Begin(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	tag, err := tx.Exec(ctx, `UPDATE probe_runs SET status = 'third_party', summary = $2 WHERE id = $1 AND status = 'running'`,
-		run.id, mustJSON(map[string]any{"internal": a}))
-	if err != nil || tag.RowsAffected() == 0 {
-		return false, err
-	}
-	for _, pl := range plan {
-		model := pl.check.Model
 		if model == "" {
 			model = run.model
 		}
-		format := pl.check.Format
+		if model == "" && len(u.modelWhitelist) > 0 {
+			model = u.modelWhitelist[0]
+		}
+		format := site.Format
 		if format == "" {
 			format = DefaultFormat(u.platform)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO third_party_checks (run_id, upstream_id, provider, model, format, config, deadline)
-			VALUES ($1, $2, $3, $4, $5, $6, now() + make_interval(mins => $7))`,
-			run.id, u.id, pl.check.Provider, model, format, mustJSON(pl.check), pl.timeout); err != nil {
-			return false, err
+		var checkID int64
+		err = e.DB.QueryRow(ctx, `INSERT INTO third_party_checks(run_id,upstream_id,provider,model,format,config,deadline) VALUES($1,$2,$3,$4,$5,$6,now()+make_interval(mins=>$7)) ON CONFLICT(run_id,provider) DO UPDATE SET run_id=EXCLUDED.run_id RETURNING id`, run.id, u.id, site.Provider, model, format, mustJSON(site), provider.timeoutMinutes).Scan(&checkID)
+		if err != nil {
+			return err
+		}
+		var c tpCheckRow
+		var raw []byte
+		err = e.DB.QueryRow(ctx, `SELECT id,run_id,upstream_id,provider,model,format,status,config,external_id,attempts,deadline FROM third_party_checks WHERE id=$1`, checkID).Scan(&c.id, &c.runID, &c.upstreamID, &c.provider, &c.model, &c.format, &c.status, &raw, &c.externalID, &c.attempts, &c.deadline)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(raw, &c.config); err != nil {
+			return err
+		}
+		if c.status == "pending" {
+			if err := e.submitCheck(ctx, c); err != nil {
+				e.Log.Warn("提交第三方检测", "check_id", c.id, "err", err)
+			}
 		}
 	}
-	return true, tx.Commit(ctx)
+	return nil
+}
+
+func (e *Engine) startThirdParty(ctx context.Context, run runRow, u *upstreamRow, p *Policy, a Assessment) (bool, error) {
+	if a.Verdict == "unavailable" {
+		return false, e.cancelThirdParty(ctx, run.id)
+	}
+	if u.isReference || !containsAny(run.flows, "identity") || run.identitySource != "third_party" {
+		return false, nil
+	}
+	_, err := e.DB.Exec(ctx, `UPDATE probe_runs SET status='third_party',summary=$2 WHERE id=$1 AND status='running'`, run.id, mustJSON(map[string]any{"internal": a}))
+	return err == nil, err
+}
+
+func (e *Engine) cancelThirdParty(ctx context.Context, runID int64) error {
+	if _, err := e.DB.Exec(ctx, `UPDATE third_party_checks SET status='skipped',outcome='inconclusive',verdict='inconclusive',error='内部检测不可用或检测失败，已撤销',finished_at=now() WHERE run_id=$1 AND status IN ('pending','running')`, runID); err != nil {
+		return err
+	}
+	return e.revokeTokens(ctx)
 }
 
 type tpCheckRow struct {
@@ -183,6 +189,28 @@ func (e *Engine) provider(ctx context.Context, name string) (thirdparty.Provider
 }
 
 func (e *Engine) submitCheck(ctx context.Context, c tpCheckRow) error {
+	// 提交与定时推进共享锁，避免同一 pending 记录并发向检测站创建两次任务。
+	conn, err := e.DB.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	var claimed bool
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock($1)`, -c.id).Scan(&claimed); err != nil {
+		return err
+	}
+	if !claimed {
+		return nil
+	}
+	defer func() { _, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, -c.id) }()
+	var current string
+	if err := conn.QueryRow(ctx, `SELECT status FROM third_party_checks WHERE id=$1`, c.id).Scan(&current); err != nil {
+		return err
+	}
+	if current != "pending" {
+		return nil
+	}
+
 	prov, row, err := e.provider(ctx, c.provider)
 	if err != nil {
 		return err
@@ -327,7 +355,7 @@ func (e *Engine) revokeTokens(ctx context.Context) error {
 
 // finishThirdParty 对第三方检测全部结束的检测记录合并结论并处置。
 func (e *Engine) finishThirdParty(ctx context.Context) error {
-	rows, err := e.DB.Query(ctx, `SELECT r.id, r.upstream_id, r.trigger, r.model, r.summary FROM probe_runs r
+	rows, err := e.DB.Query(ctx, `SELECT r.id,r.upstream_id,r.trigger,r.model,r.summary,r.mode,r.flows,COALESCE(r.identity_source,''),r.models FROM probe_runs r
 		WHERE r.status = 'third_party' AND NOT EXISTS (
 			SELECT 1 FROM third_party_checks c WHERE c.run_id = r.id AND c.status IN ('pending', 'running'))
 		ORDER BY r.id LIMIT 50`)
@@ -340,7 +368,7 @@ func (e *Engine) finishThirdParty(ctx context.Context) error {
 	}
 	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (waiting, error) {
 		var w waiting
-		err := row.Scan(&w.run.id, &w.run.upstreamID, &w.run.trigger, &w.run.model, &w.summary)
+		err := row.Scan(&w.run.id, &w.run.upstreamID, &w.run.trigger, &w.run.model, &w.summary, &w.run.mode, &w.run.flows, &w.run.identitySource, &w.run.models)
 		return w, err
 	})
 	if err != nil {
@@ -390,6 +418,17 @@ func (e *Engine) finishRun(ctx context.Context, run runRow, summary []byte) erro
 	p, err := EffectivePolicy(ctx, e.DB, u.id, u.platform, u.authType)
 	if err != nil {
 		return err
+	}
+	var frozenRaw []byte
+	if err := e.DB.QueryRow(ctx, `SELECT execution_snapshot FROM probe_runs WHERE id=$1`, run.id).Scan(&frozenRaw); err != nil {
+		return err
+	}
+	var frozen executionSnapshot
+	if err := json.Unmarshal(frozenRaw, &frozen); err != nil {
+		return err
+	}
+	if frozen.Policy != nil {
+		p = frozen.Policy
 	}
 	return e.conclude(ctx, run, u, p, s.Internal, results)
 }

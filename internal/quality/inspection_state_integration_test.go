@@ -133,7 +133,7 @@ func TestInspectionCacheRequiresBothCompleteStepsAndUsage(t *testing.T) {
 	it := plannedInstance{Item: *item, ItemID: item.ID, CheckKey: "D12", Hash: "离线缓存证据实例", GeneratorVersion: "static-1", Steps: []plannedStep{{Step: 0}, {Step: 1}}}
 	st := defaultInspectionSettings()
 	st.Mode = inspection.ModeFormal
-	st.CheckOverrides["D12"] = inspection.CheckOverride{Calibrated: true, CalibrationNote: "离线缓存证据夹具，非真实运营校准。"}
+	st.CheckOverrides["D12"] = inspection.CheckOverride{Pricing: func() *bool { v := true; return &v }(), Calibrated: true, CalibrationNote: "离线缓存证据夹具，非真实运营校准。"}
 	value := func(n int64) *int64 { return &n }
 	type cacheStep struct {
 		cache    *int64
@@ -159,7 +159,7 @@ func TestInspectionCacheRequiresBothCompleteStepsAndUsage(t *testing.T) {
 		{"基线缺第一步记录", [2]cacheStep{step(0), step(100)}, [2]cacheStep{{omit: true}, step(100)}, false, "inconclusive", 0},
 		{"被测第二步尚未完成", [2]cacheStep{step(0), {cache: value(100), status: 200}}, [2]cacheStep{step(0), step(100)}, false, "inconclusive", 0},
 		{"基线第二步请求失败", [2]cacheStep{step(0), step(100)}, [2]cacheStep{step(0), {cache: value(100), complete: true, status: 503}}, false, "inconclusive", 0},
-		{"没有同期基线", [2]cacheStep{step(0), step(100)}, [2]cacheStep{step(0), step(100)}, true, "inconclusive", 0},
+		{"没有同期基线也能按被测第二步命中判定", [2]cacheStep{step(0), step(100)}, [2]cacheStep{step(0), step(100)}, true, "pass", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := pool.Exec(ctx, `DELETE FROM probe_results WHERE item_id=$1`, item.ID); err != nil {

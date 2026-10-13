@@ -2,7 +2,6 @@ package scheduling
 
 import (
 	"math"
-	"reflect"
 	"testing"
 
 	"github.com/DueGin/token-market/internal/inspection"
@@ -17,7 +16,7 @@ func inspectionScheduling(mode string, enabled bool, minimum string) inspection.
 	return st
 }
 
-func TestInspectionDisabledAndTrialPreservePlan(t *testing.T) {
+func TestQualityPriorityAppliesWithoutFormalPoolGate(t *testing.T) {
 	ups := []UpstreamInput{
 		{ID: 1, Platform: "anthropic", Status: "listed", Health: "healthy", AccountID: 11, ProbeGroupID: i64(1001), Grade: "C", QualityFactor: 0.5, ConfirmedGate: true,
 			Listing: &ListingInput{ID: 1, Mode: "consignment", Status: "active", Multiplier: f64(0.3), JoinDefaultPool: true, GroupID: i64(5001)}},
@@ -28,9 +27,25 @@ func TestInspectionDisabledAndTrialPreservePlan(t *testing.T) {
 	for _, st := range []inspection.Settings{inspectionScheduling(inspection.ModeTrial, false, "S"), inspectionScheduling(inspection.ModeTrial, true, "S"), inspectionScheduling(inspection.ModeFormal, false, "S")} {
 		pc := planCtx()
 		pc.Inspection = st
-		if got := Plan(pc, ups); !reflect.DeepEqual(got, baseline) {
-			t.Fatalf("试运行或开关关闭时规划器输出改变：%+v\n%+v", baseline, got)
+		got := Plan(pc, ups)
+		if got[0].Priority != 62 || got[0].RateMultiplier != baseline[0].RateMultiplier || !equalIDs(got[0].GroupIDs, baseline[0].GroupIDs) {
+			t.Fatalf("扣价应改变排序，保障池准入和实际倍率仍遵循独立开关：%+v", got)
 		}
+		if got[1].Priority != baseline[1].Priority || got[1].Concurrency != baseline[1].Concurrency || !equalIDs(got[1].GroupIDs, baseline[1].GroupIDs) {
+			t.Fatalf("扣价不能改变回收等级排序或疑似并发限制：%+v", got)
+		}
+	}
+}
+
+func TestQualityPriorityNeutralFactorPreservesOrder(t *testing.T) {
+	ups := []UpstreamInput{{ID: 1, Platform: "anthropic", Status: "listed", Health: "healthy", AccountID: 11, Grade: "B", QualityFactor: 1,
+		Listing: &ListingInput{ID: 1, Mode: "consignment", Status: "active", Multiplier: f64(0.3), JoinDefaultPool: true}}}
+	pc := planCtx()
+	baseline := Plan(pc, ups)[0]
+	pc.Inspection = inspectionScheduling(inspection.ModeTrial, false, "S")
+	adjusted := Plan(pc, ups)[0]
+	if adjusted.Priority != baseline.Priority || adjusted.RateMultiplier != baseline.RateMultiplier || !equalIDs(adjusted.GroupIDs, baseline.GroupIDs) {
+		t.Fatalf("没有生效扣价时排序应保持：%+v，%+v", baseline, adjusted)
 	}
 }
 

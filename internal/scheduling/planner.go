@@ -48,7 +48,7 @@ type UpstreamInput struct {
 	AutoReset7d   *int
 	Listing       *ListingInput
 	DefaultGrade  string  // 检测没有给出等级时使用的默认等级（厂商策略的 default_grade）
-	QualityFactor float64 // 正式检测的有效 Q；未检测或无有效值时排序按 1
+	QualityFactor float64 // 已生效扣价的 Q；未检测或无有效值时排序按 1
 	ConfirmedGate bool
 }
 
@@ -158,7 +158,8 @@ func eligibleHealth(health string) bool {
 func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 	strategy := pc.Strategy
 	qualityScheduling := pc.Inspection.Mode == inspection.ModeFormal && pc.Inspection.Scheduling.Enabled
-	if qualityScheduling && pc.Inspection.Scheduling.Strategy == "quality_adjusted" {
+	// 扣价对所有模式的排序生效，保障池等级门槛另受正式模式开关控制。
+	if pc.Inspection.Scheduling.Strategy == "quality_adjusted" {
 		strategy = QualityAdjustedStrategy{}
 	}
 	if strategy == nil {

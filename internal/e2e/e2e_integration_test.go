@@ -157,17 +157,39 @@ func setupWithDatabaseMode(t *testing.T, fromScratch bool, opts ...func(cfg *con
 
 	// 题库：每题要求回答固定口令，替身默认按口令作答。首次配置的上游必须通过上架检测才能挂单。
 	for i := 1; i <= 12; i++ {
-		if _, err := quality.CreateItem(ctx, a.DB, quality.Item{Suite: "iq", Category: "recall",
+		if _, err := quality.CreateItem(ctx, a.DB, quality.Item{Suite: "inspection_capability", CheckKey: "D07", Category: "recall",
 			Prompt: fmt.Sprintf("Q%d: reply with the code PONG%d and nothing else", i, i), MaxTokens: 32,
 			Grader: quality.Grader{Type: "contains", Answer: fmt.Sprintf("PONG%d", i)}}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// 共用夹具只测口令题，保留 12 题规模；生产题库的采样数在质检专项中验证。
+	if _, err := a.DB.Exec(ctx, `UPDATE detection_policies SET flows=jsonb_set(flows,'{intelligence,enabled}','true'::jsonb)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.DB.Exec(ctx, `INSERT INTO settings(key,value) VALUES('inspection','{"check_overrides":{"D07":{"thresholds":{"min_pairs":12}}}}')
+		ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`); err != nil {
+		t.Fatal(err)
 	}
 	fake.SetResponder(func(_ int64, prompt string) string { return "The code is " + pongRe.FindString(prompt) })
 	return &env{t: t, ctx: ctx, app: a, fake: fake, replica: replicaPool, api: api, sender: sender, guard: guard}
 }
 
 var pongRe = regexp.MustCompile(`PONG\d+`)
+
+func testDetectionFlows(models []string, source string, identity bool) quality.PolicyFlows {
+	triggers := []string{"onboarding", "scheduled", "recovery", "seller_manual", "admin", "adaptive", "appeal"}
+	configured := make([]quality.IntelligenceModel, 0, len(models))
+	for _, model := range models {
+		configured = append(configured, quality.IntelligenceModel{Model: model})
+	}
+	return quality.PolicyFlows{
+		Intelligence: quality.IntelligenceFlowPolicy{FlowPolicy: quality.FlowPolicy{Enabled: true, IntervalMinutes: 360,
+			Triggers: triggers, FullTriggers: []string{"onboarding", "appeal", "admin"}}, Models: configured},
+		Identity: quality.IdentityFlowPolicy{FlowPolicy: quality.FlowPolicy{Enabled: identity, IntervalMinutes: 1440,
+			Triggers: triggers, FullTriggers: []string{"onboarding", "appeal", "admin"}}, Source: source},
+	}
+}
 
 // tick 执行几轮质量调度（中间发送出站操作，例如给探测用户充值）。
 func (e *env) tick() {
@@ -329,9 +351,11 @@ func (c *client) call(method, path string, body, out any) (int, string) {
 
 func (c *client) must(method, path string, body, out any) {
 	c.e.t.Helper()
-	if status, raw := c.call(method, path, body, out); status >= 300 {
+	status, raw := c.call(method, path, body, out)
+	if status >= 300 {
 		c.e.t.Fatalf("%s %s: http %d: %s", method, path, status, raw)
 	}
+	c.selectOnboardingModels(method, path, raw, out)
 }
 
 func (c *client) expect(status int, method, path string, body any) string {
@@ -340,7 +364,41 @@ func (c *client) expect(status int, method, path string, body any) string {
 	if got != status {
 		c.e.t.Fatalf("%s %s: want http %d, got %d: %s", method, path, status, got, raw)
 	}
+	if got < 300 {
+		c.selectOnboardingModels(method, path, raw, nil)
+	}
 	return raw
+}
+
+// 现有接入用例自动全选目录，白名单专项用例直接 call，观察待选择状态。
+func (c *client) selectOnboardingModels(method, path, raw string, out any) {
+	c.e.t.Helper()
+	if method != http.MethodPost || !strings.HasPrefix(path, "/api/seller/upstreams/") ||
+		!strings.HasSuffix(path, "/oauth/complete") && !strings.HasSuffix(path, "/coding-key") && !strings.HasSuffix(path, "/import") {
+		return
+	}
+	var response struct {
+		Data struct {
+			ID     int64  `json:"id"`
+			Status string `json:"status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(raw), &response); err != nil {
+		c.e.t.Fatal(err)
+	}
+	if response.Data.Status != "selecting_models" {
+		return
+	}
+	var catalog struct {
+		Catalog []string `json:"catalog"`
+	}
+	modelPath := fmt.Sprintf("/api/seller/upstreams/%d/models", response.Data.ID)
+	c.must(http.MethodGet, modelPath, nil, &catalog)
+	if len(catalog.Catalog) == 0 {
+		// 目录不可用时仍可手动填写；替身的通用调用模型供旧用例继续验证原流程。
+		catalog.Catalog = []string{"claude-sonnet-4-5"}
+	}
+	c.must(http.MethodPut, modelPath, map[string]any{"models": catalog.Catalog}, out)
 }
 
 type idOnly struct {
@@ -440,14 +498,17 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 	if email2 == nil || *email2 != "bob@example.test" {
 		t.Fatalf("account email not backfilled: %v", email2)
 	}
-	// 先入账上架检测的探测流量（卖家照常获得收益，记为平台探测成本），后面只看买家流量带来的变化
+	// 先入账上架检测的探测流量：上架检测由卖家承担，消耗卖家额度但不结算收益；后面只看买家流量带来的变化
 	e.ingestAll()
 	var base1 struct {
 		Pending float64 `json:"pending"`
 	}
 	seller1.must("GET", "/api/seller/earnings", nil, &base1)
-	if base1.Pending <= 0 {
-		t.Fatalf("seller should earn from onboarding probe usage: %+v", base1)
+	var onboardingProbes, onboardingPaid int
+	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE payout <> 0 OR NOT seller_borne)
+		FROM usage_records WHERE upstream_id = $1 AND channel = 'probe'`, up1.ID), &onboardingProbes, &onboardingPaid)
+	if onboardingProbes == 0 || onboardingPaid != 0 || base1.Pending != 0 {
+		t.Fatalf("onboarding probes must be seller-borne: probes=%d paid=%d earnings=%+v", onboardingProbes, onboardingPaid, base1)
 	}
 	var acc1, acc2, poolGroup int64
 	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT sub2api_account_id FROM upstreams WHERE id = $1", up1.ID), &acc1)

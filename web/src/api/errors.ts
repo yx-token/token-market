@@ -77,6 +77,7 @@ const messages: Record<string, string> = {
   INSUFFICIENT_AVAILABLE: '超过可提现余额',
   KYC_ALREADY_VERIFIED: '实名已通过，不能修改',
   RETEST_LIMIT: '今日手动复测次数已用完',
+  RETEST_NOT_NEEDED: '最近一次检测正常，检测结果异常时才能手动复测',
   DETECTION_DISABLED: '该厂商未开启检测，不能手动复测',
   NOT_TESTABLE: '当前状态不能检测',
   RUN_PENDING: '已有检测在排队',

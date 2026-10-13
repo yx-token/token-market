@@ -6,6 +6,10 @@ import "time"
 const (
 	ModeTrial  = "trial"
 	ModeFormal = "formal"
+
+	FlowIntelligence = "intelligence"
+	FlowIdentity     = "identity"
+	FlowCommon       = "common"
 )
 
 type TokenBudget struct {
@@ -15,6 +19,7 @@ type TokenBudget struct {
 
 type CheckOverride struct {
 	Enabled         *bool              `json:"enabled,omitempty"`
+	Pricing         *bool              `json:"pricing"`
 	Calibrated      bool               `json:"calibrated"`
 	CalibrationNote string             `json:"calibration_note"`
 	Coefficients    map[string]float64 `json:"coefficients,omitempty"`
@@ -22,11 +27,12 @@ type CheckOverride struct {
 }
 
 type Settings struct {
-	Mode                   string                   `json:"mode"`
-	CheckOverrides         map[string]CheckOverride `json:"check_overrides"`
-	GradeThresholds        map[string]float64       `json:"grade_thresholds"`
-	GradeHysteresis        float64                  `json:"grade_hysteresis"`
-	DowngradeConfirmations int                      `json:"downgrade_confirmations"`
+	Mode                   string                    `json:"mode"`
+	CheckOverrides         map[string]CheckOverride  `json:"check_overrides"`
+	ModelCapabilities      []ModelCapabilityOverride `json:"model_capabilities"`
+	GradeThresholds        map[string]float64        `json:"grade_thresholds"`
+	GradeHysteresis        float64                   `json:"grade_hysteresis"`
+	DowngradeConfirmations int                       `json:"downgrade_confirmations"`
 	SRequirements          struct {
 		GateFreeDays     int     `json:"gate_free_days"`
 		AvailabilityDays int     `json:"availability_days"`
@@ -53,10 +59,20 @@ type Settings struct {
 }
 
 type Metric struct {
-	Value      *float64    `json:"value"`
-	Unit       string      `json:"unit"`
-	CI         *[2]float64 `json:"ci"`
-	Confidence *float64    `json:"confidence"`
+	Value      *float64           `json:"value"`
+	Unit       string             `json:"unit"`
+	CI         *[2]float64        `json:"ci"`
+	Confidence *float64           `json:"confidence"`
+	Models     []ModelCheckResult `json:"models,omitempty"`
+}
+
+type ModelCheckResult struct {
+	Model            string            `json:"model"`
+	Status           string            `json:"status"`
+	TargetPassRate   *float64          `json:"target_pass_rate,omitempty"`
+	ExpectedPassRate *float64          `json:"expected_pass_rate,omitempty"`
+	Samples          int               `json:"samples"`
+	Metrics          map[string]Metric `json:"metrics,omitempty"`
 }
 
 type Samples struct {

@@ -43,6 +43,7 @@ function onBuy(e: Event) {
       <span v-else-if="sku.kind === 'pack'" class="card-kind is-pack">额度包</span>
       <span v-else class="card-kind">按量通道</span>
       <h3 class="card-title">{{ sku.title }}</h3>
+      <p v-if="sku.listingId" class="mb-2 break-all text-xs text-slate-600">挂售模型：{{ sku.models?.length ? sku.models.join('、') : '卖家未声明（不限模型）' }}</p>
       <p v-if="sku.desc" class="mb-2 line-clamp-2 text-xs leading-relaxed text-slate-500">{{ sku.desc }}</p>
       <div class="card-meta">
         <span class="grade">{{ sku.grade }} 级</span>

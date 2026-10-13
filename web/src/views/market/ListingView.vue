@@ -226,6 +226,10 @@ async function cancelPay() {
         </div>
         <div class="specs">
           <div class="spec">
+            <b>挂售模型</b>
+            <span class="break-all">{{ item.data.value.models?.length ? item.data.value.models.join('、') : '卖家未声明，目前不限制模型请求' }}</span>
+          </div>
+          <div class="spec">
             <b>厂商 / 档位</b>
             <span>{{ plat }} · {{ item.data.value.tier || '—' }}</span>
           </div>

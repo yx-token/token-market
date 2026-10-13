@@ -16,7 +16,7 @@ const isConsole = computed(() => routeIsConsole.value || documentIsConsole())
 
 const id = Symbol('dialog')
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape' && stack[stack.length - 1] === id) open.value = false
+  if (e.key === 'Escape' && !e.defaultPrevented && stack[stack.length - 1] === id) open.value = false
 }
 function release() {
   const i = stack.indexOf(id)

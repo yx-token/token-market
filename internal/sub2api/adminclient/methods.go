@@ -225,7 +225,8 @@ func (c *Client) CreateAccount(ctx context.Context, in CreateAccountInput, idemp
 }
 
 // UpdateAccountInput 对应 PUT /admin/accounts/:id。注意：传 Extra 时 sub2api 会整体替换 extra
-// （只保留配额用量等受保护键），修改部分 extra 键请用 BulkUpdateAccounts。
+// （只保留配额用量等受保护键）；Credentials 只保留未提交的敏感凭证，其他键由新对象决定。
+// 修改部分 extra 或 credentials 键请用 BulkUpdateAccounts。
 type UpdateAccountInput struct {
 	Name           string         `json:"name,omitempty"`
 	Notes          *string        `json:"notes,omitempty"`

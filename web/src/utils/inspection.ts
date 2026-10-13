@@ -2,7 +2,7 @@ import type { InspectionAppraisal, InspectionCheckResult, ProbeRunResult, Report
 
 export const inspectionCategories: Record<string, string> = {
   configuration: '配置与权限', authenticity: '真伪与一致性', capability: '能力与智力',
-  function: '功能兑现', availability: '可用性', performance: '性能', display: '说明项',
+  identity: '身份核验', function: '功能兑现', availability: '可用性', performance: '性能', display: '说明项',
 }
 
 export const inspectionStatuses: Record<string, string> = {
@@ -22,7 +22,7 @@ export function appraisalDeviation(price: number | undefined, appraisal?: Inspec
 }
 
 export function appealableReport(report: Report): boolean {
-  return report.verdict === 'degraded' || report.verdict === 'unavailable' || Object.values(report.summary.checks ?? {}).some((check) => check.applied && check.role === 'factor' && check.factor !== null && check.factor < 1)
+  return report.verdict === 'degraded' || report.verdict === 'unavailable' || Object.values(report.summary.checks ?? {}).some((check) => check.applied && check.factor !== null && check.factor < 1)
 }
 
 export function inspectionSummary(checks?: Record<string, InspectionCheckResult>): string[] {
@@ -38,21 +38,59 @@ export function probeResultKey(result: Pick<ProbeRunResult, 'item_id' | 'instanc
 
 // 检测套件代码的中文名；未知套件保留原值
 export const probeSuiteNames: Record<string, string> = {
-  iq: '智力',
-  reasoning: '推理',
-  long_context: '长上下文',
-  inspection_capability: '能力质检',
-  inspection_context: '上下文质检',
-  inspection_function: '功能质检',
-  inspection_authenticity: '真实性质检',
-  inspection_output: '输出质检',
-  inspection_performance: '性能质检',
-  availability: '可用性',
+  inspection_capability: '测智',
+  inspection_context: '测智·上下文深度',
+  inspection_authenticity: '身份核验',
+  inspection_function: '功能核验',
+  inspection_output: '输出完整性',
+  inspection_performance: '性能',
+  iq: '旧智力题（已停用）',
+  reasoning: '旧智力题（已停用）',
+  long_context: '旧智力题（已停用）',
+  availability: '可用率',
   latency: '延迟',
 }
 
+export const probeSuiteOrder = [
+  'inspection_capability', 'inspection_context', 'inspection_authenticity',
+  'inspection_function', 'inspection_output', 'inspection_performance',
+  'availability', 'latency', 'iq', 'reasoning', 'long_context',
+]
+
 export function probeSuiteText(suite: string): string {
   return probeSuiteNames[suite] ?? suite
+}
+
+export function compareProbeSuites(a: string, b: string): number {
+  const rank = (suite: string) => {
+    const index = probeSuiteOrder.indexOf(suite)
+    return index < 0 ? probeSuiteOrder.length : index
+  }
+  return rank(a) - rank(b) || a.localeCompare(b)
+}
+
+export const detectionFlowNames: Record<string, string> = {
+  intelligence: '测智', identity: '身份与功能核验', common: '通用',
+}
+
+export function detectionFlowText(flow: string): string {
+  return detectionFlowNames[flow] ?? flow
+}
+
+export const identitySourceNames: Record<string, string> = {
+  third_party: '第三方检测', self: '自有题库',
+}
+
+export function identitySourceText(source: string): string {
+  return identitySourceNames[source] ?? source
+}
+
+export function intelligenceStatusText(status: string): string {
+  const names: Record<string, string> = {
+    pass: '正常', warning: '偏低（扣价）', fail: '显著偏低（疑似）',
+    not_run: '未测', not_applicable: '不适用', inconclusive: '无法判定',
+  }
+  return names[status] ?? status
 }
 
 // 逐题结果标记的中文名；未知标记保留原值

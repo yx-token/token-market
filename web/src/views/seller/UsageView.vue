@@ -197,7 +197,10 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
         <template #cell-upstream_id="{ row }">
           <RouterLink :to="`/seller/upstreams/${row.upstream_id}?from=usage`" class="font-bold underline underline-offset-2">{{ nameOf.get(row.upstream_id) ?? `#${row.upstream_id}` }} →</RouterLink>
         </template>
-        <template #cell-channel="{ row }"><StatusBadge kind="channel" :value="row.channel" /></template>
+        <template #cell-channel="{ row }">
+          <StatusBadge kind="channel" :value="row.channel" />
+          <span v-if="row.seller_borne" class="ml-1 text-xs text-slate-500" title="上架检测或你发起的手动复测：消耗你自己的额度，不结算收益">卖家承担</span>
+        </template>
         <template #cell-tokens="{ row }">
           {{ tokens(row.input_tokens) }} / {{ tokens(row.output_tokens) }} / {{ tokens(row.cache_creation_tokens + row.cache_read_tokens) }}
         </template>

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { admin } from '@/api'
-import type { InspectionSettings } from '@/api/types'
+import type { InspectionSettings, ModelCapability, ModelCapabilityOverride } from '@/api/types'
+import InspectionCapabilitiesCard from './InspectionCapabilitiesCard.vue'
 import { useAction } from '@/composables/useAsync'
 import { useToast } from '@/stores/toast'
 
 const toast = useToast()
 const advanced = ref('')
 const loaded = ref(false)
+const capabilityDefaults = ref<ModelCapability[]>([])
 const { busy, run } = useAction()
 
 function parsed(): InspectionSettings | null {
@@ -24,9 +26,12 @@ function patch(patch: Partial<InspectionSettings>) {
 const mode = computed({ get: () => parsed()?.mode ?? 'trial', set: (mode: 'trial' | 'formal') => patch({ mode }) })
 const scheduling = computed({ get: () => parsed()?.scheduling?.enabled ?? false, set: (enabled: boolean) => patch({ scheduling: { ...(parsed()?.scheduling ?? { minimum_grade: 'B', strategy: 'quality_adjusted' }), enabled } }) })
 const minimumGrade = computed({ get: () => parsed()?.scheduling?.minimum_grade ?? 'B', set: (minimum_grade: string) => patch({ scheduling: { ...(parsed()?.scheduling ?? { enabled: false, strategy: 'quality_adjusted' }), minimum_grade } }) })
+const capabilities = computed({ get: () => parsed()?.model_capabilities ?? [], set: (model_capabilities: ModelCapabilityOverride[]) => patch({ model_capabilities }) })
 
 function setSettings(settings: InspectionSettings) {
-  advanced.value = JSON.stringify(settings, null, 2)
+  const { model_capability_defaults, ...editable } = settings
+  if (model_capability_defaults) capabilityDefaults.value = model_capability_defaults
+  advanced.value = JSON.stringify(editable, null, 2)
   loaded.value = true
 }
 
@@ -40,6 +45,7 @@ async function save() {
     toast.error('质检高级设置需要是 JSON 对象')
     return
   }
+  delete body.model_capability_defaults
   const result = await run(() => admin.updateInspectionSettings(body), '质检设置已保存，后续检测生效')
   if (result) setSettings(result)
 }
@@ -64,4 +70,5 @@ onMounted(load)
     </template>
     <p v-else class="hint">正在读取质检设置。<button class="link" @click="load">重新加载</button></p>
   </section>
+  <InspectionCapabilitiesCard v-if="loaded" v-model:overrides="capabilities" :defaults="capabilityDefaults" />
 </template>

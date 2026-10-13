@@ -255,9 +255,9 @@ func TestAPISurface(t *testing.T) {
 	admin.must("PUT", fmt.Sprintf("/api/admin/upstreams/%d/detection-override", upC.ID), map[string]any{"enabled": true, "reason": "spot check"}, nil)
 	admin.must("DELETE", fmt.Sprintf("/api/admin/upstreams/%d/detection-override", upC.ID), nil, nil)
 	var item idOnly
-	admin.must("POST", "/api/admin/probe-items", map[string]any{"suite": "iq", "category": "math", "prompt": "What is 17*23? Answer with the number only.",
+	admin.must("POST", "/api/admin/probe-items", map[string]any{"suite": "inspection_capability", "check_key": "D07", "category": "math", "prompt": "What is 17*23? Answer with the number only.",
 		"grader": map[string]any{"type": "numeric", "number": 391}, "max_tokens": 16, "status": "active"}, &item)
-	admin.must("PUT", fmt.Sprintf("/api/admin/probe-items/%d", item.ID), map[string]any{"suite": "iq", "category": "math", "prompt": "What is 17*23? Reply with digits only.",
+	admin.must("PUT", fmt.Sprintf("/api/admin/probe-items/%d", item.ID), map[string]any{"suite": "inspection_capability", "check_key": "D07", "category": "math", "prompt": "What is 17*23? Reply with digits only.",
 		"grader": map[string]any{"type": "numeric", "number": 391}, "max_tokens": 16, "status": "active"}, nil)
 	admin.must("POST", fmt.Sprintf("/api/admin/probe-items/%d/retire", item.ID), nil, nil)
 	admin.expect(404, "POST", fmt.Sprintf("/api/admin/probe-items/%d/retire", item.ID), nil)

@@ -2,10 +2,12 @@ package quality
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -104,42 +106,77 @@ func outcomes(n, targetPass int, refPass bool) []Outcome {
 var th = Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1}
 
 func TestAssessVerdicts(t *testing.T) {
-	if a := Assess(outcomes(12, 12, true), th, true); a.Verdict != "normal" || a.RelativeScore == nil || *a.RelativeScore != 1 || a.Grade != "S" {
-		t.Fatalf("all pass should be normal/S: %+v", a)
-	}
-	if a := Assess(outcomes(12, 4, true), th, true); a.Verdict != "degraded" || a.Grade != "D" {
-		t.Fatalf("4/12 vs baseline 12/12 should be degraded: %+v", a)
-	}
-	if a := Assess(outcomes(12, 9, true), th, true); a.Verdict == "normal" || a.Verdict == "degraded" {
-		t.Fatalf("9/12 should be undecided (needs more samples): %+v", a)
-	}
-	failing := outcomes(4, 0, true)
-	for i := range failing {
-		failing[i].Target = ProbeResult{HTTPStatus: 503, ErrorClass: "http_5xx"}
-	}
-	if a := Assess(failing, th, true); a.Verdict != "unavailable" {
-		t.Fatalf("all errors should be unavailable: %+v", a)
-	}
-	// 基线本身失败的题不计入
-	refFail := outcomes(6, 0, false)
-	for i := range refFail {
-		refFail[i].Ref.ErrorClass = "http_5xx"
-	}
-	if a := Assess(refFail, th, true); a.Samples != 0 {
-		t.Fatalf("items with failed baseline must be excluded: %+v", a)
+	for _, tc := range []struct {
+		name    string
+		success int
+		failed  int
+		want    string
+	}{{"没有请求", 0, 0, "inconclusive"}, {"单次失败证据不足", 0, 1, "inconclusive"},
+		{"全失败", 0, 4, "unavailable"}, {"低于一半", 1, 3, "unavailable"},
+		{"恰好一半", 2, 2, "normal"}, {"全部可用", 12, 0, "normal"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := outcomes(tc.success+tc.failed, 0, false)
+			for i := tc.success; i < len(rows); i++ {
+				rows[i].Target = ProbeResult{HTTPStatus: 503, ErrorClass: "http_5xx"}
+			}
+			for _, scoring := range []bool{false, true} {
+				a := Assess(rows, th, scoring)
+				if a.Verdict != tc.want || a.AvailableOK != tc.success || a.AvailableTotal != len(rows) {
+					t.Fatalf("可用率结论错误：%+v", a)
+				}
+			}
+		})
 	}
 }
 
-func TestAssessReasoningRatio(t *testing.T) {
-	var out []Outcome
-	for i := 0; i < 4; i++ {
-		tgt := ProbeResult{HTTPStatus: 200, Text: "1", ReasoningTokens: 300}
-		ref := ProbeResult{HTTPStatus: 200, Text: "1", ReasoningTokens: 1000}
-		out = append(out, Outcome{Suite: "reasoning", Target: tgt, TargetPass: true, Ref: &ref, RefPass: true})
+func TestAssessIgnoresLegacyIntelligenceInputs(t *testing.T) {
+	rows := outcomes(12, 12, true)
+	before := Assess(rows, th, false)
+	for i := range rows {
+		rows[i].TargetPass = false
+		rows[i].RefPass = false
+		rows[i].Ref.ErrorClass = "http_5xx"
+		rows[i].Ref.ReasoningTokens = 100000
+		rows[i].Target.ReasoningTokens = 1
+		rows[i].Suite = []string{"iq", "reasoning", "long_context"}[i%3]
+		rows[i].ExpectedPassRate = f(.01)
+		rows[i].RefHistRate = f(.99)
 	}
-	a := Assess(out, th, true)
-	if a.ReasoningRatio == nil || *a.ReasoningRatio < 0.29 || *a.ReasoningRatio > 0.31 {
-		t.Fatalf("reasoning ratio: %+v", a.ReasoningRatio)
+	a := Assess(rows, Thresholds{}, true)
+	if a.ReferenceErrorCounts["http_5xx"] != len(rows) {
+		t.Fatalf("基线故障证据丢失：%+v", a)
+	}
+	a.ReferenceErrorCounts = nil
+	if !reflect.DeepEqual(before, a) {
+		t.Fatalf("旧测智输入改变可用率或性能：%+v → %+v", before, a)
+	}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary map[string]any
+	if err := json.Unmarshal(raw, &summary); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"llr", "samples", "relative_score", "reasoning_ratio", "target_pass_rate", "confidence", "grade"} {
+		if _, ok := summary[key]; ok {
+			t.Fatalf("汇总仍输出旧测智指标 %s：%s", key, raw)
+		}
+	}
+}
+
+func TestAssessPerformanceUsesSuccessfulRequests(t *testing.T) {
+	rows := outcomes(4, 0, false)
+	for i := range rows {
+		rows[i].Suite = "inspection_capability"
+		rows[i].Target.TTFT = time.Duration(i+1) * 100 * time.Millisecond
+		rows[i].Target.Duration = rows[i].Target.TTFT + time.Second
+		rows[i].Target.OutputTokens = 10 * (i + 1)
+	}
+	rows = append(rows, Outcome{Suite: "inspection_function"}, Outcome{Suite: "inspection_function", Target: ProbeResult{HTTPStatus: 503, TTFT: time.Hour, OutputTokens: 100000}})
+	a := Assess(rows, th, true)
+	if a.AvailableTotal != 5 || a.AvailableOK != 4 || a.TTFTp50Ms == nil || *a.TTFTp50Ms != 200 || a.TTFTp95Ms == nil || *a.TTFTp95Ms != 400 || a.OutputTPS == nil || *a.OutputTPS != 20 {
+		t.Fatalf("未执行或失败请求污染性能统计：%+v", a)
 	}
 }
 
@@ -209,7 +246,7 @@ func TestThirdPartyCheckVerdicts(t *testing.T) {
 		}
 	}
 	c.OnMismatch = "ignore"
-	if c.VerdictFor("mismatch") != "inconclusive" {
+	if c.VerdictFor("mismatch") != "normal" {
 		t.Error("ignore should not affect the verdict")
 	}
 	if !c.Applies("onboarding") || c.Applies("scheduled") {
@@ -217,7 +254,6 @@ func TestThirdPartyCheckVerdicts(t *testing.T) {
 	}
 	for _, bad := range []ThirdPartyCheck{
 		{Provider: "unknown", Triggers: []string{"onboarding"}},
-		{Provider: "bazaarlink"},
 		{Provider: "bazaarlink", Triggers: []string{"nope"}},
 		{Provider: "bazaarlink", Triggers: []string{"admin"}, Format: "gemini"},
 		{Provider: "bazaarlink", Triggers: []string{"admin"}, OnMismatch: "ban"},

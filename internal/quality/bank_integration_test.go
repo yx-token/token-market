@@ -5,26 +5,20 @@ package quality
 import (
 	"context"
 	"reflect"
-	"strings"
 	"testing"
 )
 
-func TestInspectionBuiltinSyncAndLegacySelection(t *testing.T) {
+func TestInspectionBuiltinSyncAndFlowSelection(t *testing.T) {
 	t.Parallel()
 	pool, _, _ := inspectionDB(t)
 	ctx := context.Background()
 	created, err := SeedDefaultItems(ctx, pool)
-	if err != nil || created != 21+len(inspectionBuiltinItems()) {
+	if err != nil || created != len(inspectionBuiltinItems()) {
 		t.Fatalf("启动同步失败：%d %v", created, err)
 	}
-	old, err := selectItems(ctx, pool, "anthropic", "claude-sonnet-4-5", []string{"iq", "reasoning", "long_context", "inspection_capability", "inspection_context"})
-	if err != nil || len(old) != 21 {
-		t.Fatalf("旧选择器选到了新题：%d %v", len(old), err)
-	}
-	for _, it := range old {
-		if strings.HasPrefix(it.Suite, "inspection_") {
-			t.Fatal("新套件进入旧选择器")
-		}
+	var legacyCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM probe_items WHERE suite IN ('iq','reasoning','long_context') AND status='active'`).Scan(&legacyCount); err != nil || legacyCount != 0 {
+		t.Fatalf("启动不应重新写入旧题：%d %v", legacyCount, err)
 	}
 	var id int64
 	if err := pool.QueryRow(ctx, `SELECT id FROM probe_items WHERE builtin_key='inspection/zebra/2'`).Scan(&id); err != nil {
@@ -44,7 +38,7 @@ func TestInspectionBuiltinSyncAndLegacySelection(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT status,prompt,version FROM probe_items WHERE id=$1`, id).Scan(&status, &prompt, &version); err != nil || status != "retired" || prompt != "管理员私有题面" || version != 9 {
 		t.Fatal("启动复活下线题或覆盖管理员编辑", err)
 	}
-	quick, err := selectExecutionItems(ctx, pool, "anthropic", "claude-sonnet-4-5", []string{"iq", "inspection_capability", "inspection_context", "inspection_function"}, "quick")
+	quick, err := selectFlowExecutionItems(ctx, pool, "anthropic", "claude-sonnet-4-5", []string{"claude-sonnet-4-5"}, []string{"intelligence", "identity"}, "self", map[string]string{"intelligence": "quick", "identity": "quick"}, defaultInspectionSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,13 +65,13 @@ func TestInspectionGeneratedSnapshotIsFrozen(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := Engine{DB: pool, Keyring: testInspectionKeyring(t)}
-	p := &Policy{Version: 1, Suites: []string{"iq", "inspection_capability"}, Thresholds: th}
+	p := &Policy{Version: 1, Suites: []string{"inspection_capability"}, Thresholds: th}
 	st := defaultInspectionSettings()
 	a, err := e.executionPlan(ctx, run, p, []Item{*it}, st)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(a.Instances) != 8 || a.Instances[0].GeneratorVersion != "register_machine/1" {
+	if len(a.Instances) != 16 || a.Instances[0].GeneratorVersion != "register_machine/1" {
 		t.Fatalf("实例数版本错误：%+v", a)
 	}
 	for _, instance := range a.Instances {
@@ -97,41 +91,34 @@ func TestInspectionGeneratedSnapshotIsFrozen(t *testing.T) {
 	}
 }
 
-func TestInspectionShadowInvalidConfigurationDoesNotBlockOldPlan(t *testing.T) {
+func TestInspectionInvalidTemplatePreservesValidItems(t *testing.T) {
 	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
-	legacy := Item{ID: 1, Suite: "iq", Prompt: "旧题", MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}}
-	shadow := Item{ID: 2, Suite: "inspection_capability", MaxTokens: 32, Generator: []byte(`{"template_id":"zebra","version":"1","parameters":{"houses":7}}`)}
+	legacy := Item{ID: 1, Suite: "inspection_capability", CheckKey: "D07", Prompt: "有效题", MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}}
+	shadow := Item{ID: 2, Suite: "inspection_capability", CheckKey: "D07", MaxTokens: 32, Generator: []byte(`{"template_id":"zebra","version":"1","parameters":{"houses":7}}`)}
 	e := Engine{DB: pool, Keyring: testInspectionKeyring(t)}
-	p := &Policy{Version: 1, Suites: []string{"iq", "inspection_capability"}, Thresholds: th}
+	p := &Policy{Version: 1, Suites: []string{"inspection_capability"}, Thresholds: th}
 	plan, err := e.executionPlan(ctx, run, p, []Item{shadow, legacy}, defaultInspectionSettings())
 	if err != nil || len(plan.Instances) != 1 || plan.Instances[0].ItemID != 1 || len(plan.Warnings) == 0 {
-		t.Fatalf("影子生成失败挡住旧题：%+v %v", plan, err)
+		t.Fatalf("无效模板挡住有效题：%+v %v", plan, err)
 	}
 	if err := validateItem(shadow); err == nil {
 		t.Fatal("非法参数域不应允许保存")
 	}
 }
 
-func TestInspectionShadowExpansionLimitPreservesOldPlan(t *testing.T) {
+func TestInspectionExpansionLimitIsPerModel(t *testing.T) {
 	t.Parallel()
 	pool, run, _ := inspectionDB(t)
 	ctx := context.Background()
-	items := []Item{{ID: 999, Suite: "iq", Prompt: "旧题", MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}}}
+	items := []Item{}
 	for i := 0; i < 8; i++ {
-		items = append(items, Item{ID: int64(i + 1), Suite: "inspection_capability", MaxTokens: 32, Generator: []byte(`{"template_id":"register_machine","version":"1","instances":{"full":32}}`)})
+		items = append(items, Item{ID: int64(i + 1), Suite: "inspection_capability", CheckKey: "D07", MaxTokens: 32, Generator: []byte(`{"template_id":"register_machine","version":"1","instances":{"full":32}}`)})
 	}
 	e := Engine{DB: pool, Keyring: testInspectionKeyring(t)}
-	plan, err := e.executionPlan(ctx, run, &Policy{Version: 1, Suites: []string{"iq", "inspection_capability"}, Thresholds: th}, items, defaultInspectionSettings())
-	if err != nil || len(plan.Instances) != 200 || len(plan.Warnings) == 0 {
-		t.Fatalf("扩样上限未生效：%d %v %v", len(plan.Instances), plan.Warnings, err)
-	}
-	found := false
-	for _, it := range plan.Instances {
-		found = found || it.ItemID == 999
-	}
-	if !found {
-		t.Fatal("影子扩样挤掉旧题")
+	plan, err := e.executionPlan(ctx, run, &Policy{Version: 1, Suites: []string{"inspection_capability"}, Thresholds: th}, items, defaultInspectionSettings())
+	if err == nil || len(plan.Instances) != 200 || len(plan.Warnings) == 0 {
+		t.Fatalf("超限计划不能作为完整覆盖执行：%d %v %v", len(plan.Instances), plan.Warnings, err)
 	}
 }

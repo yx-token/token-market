@@ -66,33 +66,18 @@ func TestAstraCandyBuiltinDefinitionAndGrader(t *testing.T) {
 	}
 }
 
-func TestAstraCandyTrialOnlyDisplaysInspectionEvidence(t *testing.T) {
+func TestAstraCandyBothModesProduceInspectionEvidence(t *testing.T) {
 	it := astraCandyItem()
 	candy := scopedStaticOutcome()
 	candy.Suite, candy.CheckKey = it.Suite, it.CheckKey
-	for _, scoring := range []bool{false, true} {
-		for _, pass := range []bool{false, true} {
-			old := outcomes(20, 4, true)
-			candy.TargetPass = pass
-			before := Assess(old, th, scoring)
-			combined := append(old, candy)
-			if after := Assess(combined, th, scoring); !reflect.DeepEqual(before, after) {
-				t.Fatalf("糖果题污染试运行旧判定：%+v → %+v", before, after)
-			}
-			shadow := summarizeShadow(combined)
-			if shadow == nil || shadow.Applied || shadow.Checks["D07"].Observed != 1 {
-				t.Fatalf("糖果题应仅保留影子证据：%+v", shadow)
-			}
-		}
-	}
-	// 正式模式与参数化题共享配对和 SPRT，仍遵守校准与剔除规则。
 	rows := append(modelScopedD07Rows(), candy)
-	st := calibratedInspectionSettings()
-	checks, _ := Inspect(rows, st, time.Now())
-	if c := checks["D07"]; c.Samples.Paired != 20 || c.Factor == nil || *c.Factor != .7 {
-		t.Fatalf("糖果题未进入正式 D07 扣价配对：%+v", c)
-	}
-	if a := assessFormal(rows, th, st); a.Samples != 20 || a.Verdict != "degraded" {
-		t.Fatalf("糖果题未进入正式 SPRT：%+v", a)
+	for _, st := range []InspectionSettings{defaultInspectionSettings(), calibratedInspectionSettings()} {
+		checks, _ := Inspect(rows, st, time.Now())
+		if c := checks["D07"]; c.Samples.Paired != 20 || c.Status != "fail" || c.Factor == nil || *c.Factor != .7 {
+			t.Fatalf("糖果题未进入 D07 配对证据：%+v", c)
+		}
+		if a := assessFormal(rows, th, st); a.Samples != 0 || a.AvailableTotal != 20 || a.Verdict != "normal" {
+			t.Fatalf("糖果题不应再触发旧SPRT：%+v", a)
+		}
 	}
 }

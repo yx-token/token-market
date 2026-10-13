@@ -103,12 +103,13 @@ seed() {
   api POST /api/admin/pools '{"name":"tm-pool-claude","platform":"anthropic","sell_multiplier":0.8}' >/dev/null
   api POST /api/admin/pools '{"name":"tm-pool-gpt","platform":"openai","sell_multiplier":0.7}' >/dev/null
   api POST /api/admin/pools '{"name":"tm-pool-all","platform":"composite","sell_multiplier":0.9}' >/dev/null
-  # 替身只会回答"口令题"：把内置题库下线，换成口令题，让上架检测能在本地通过
+  # 替身只会回答"口令题"：把内置题库下线，换成测智口令题，让上架检测能在本地通过。
+  # 测智按题目判定至少需要 20 道可计分题，这里放 24 道。
   for id in $(api GET '/api/admin/probe-items?status=active' | grep -o '"id":[0-9]*' | cut -d: -f2); do
     api POST "/api/admin/probe-items/$id/retire" >/dev/null
   done
-  for i in $(seq 1 12); do
-    api POST /api/admin/probe-items "{\"suite\":\"iq\",\"category\":\"recall\",\"prompt\":\"Q$i: reply with the code PONG$i and nothing else\",\"grader\":{\"type\":\"contains\",\"answer\":\"PONG$i\"},\"max_tokens\":32}" >/dev/null
+  for i in $(seq 1 24); do
+    api POST /api/admin/probe-items "{\"suite\":\"inspection_capability\",\"check_key\":\"D07\",\"category\":\"recall\",\"prompt\":\"Q$i: reply with the code PONG$i and nothing else\",\"grader\":{\"type\":\"contains\",\"answer\":\"PONG$i\"},\"max_tokens\":32}" >/dev/null
   done
   api PUT /api/admin/settings '{"refund_lock_seconds":5,"price_change_cooldown_minutes":1}' >/dev/null
   touch "$DATA/seeded"
@@ -129,15 +130,22 @@ seed_payments() {
   touch "$DATA/seeded-payments"
 }
 
-# 第三方检测：BazaarLink 指向替身（Edge 是本机 http 地址，需要允许非 https 目标），Claude 的上架检测、管理员检测、
-# 卖家复测与申诉复测追加身份检测
+# 第三方检测：BazaarLink 指向替身（Edge 是本机 http 地址，需要允许非 https 目标）。
+# Claude 开启「身份与功能核验」流程并以第三方为来源，在上架检测、管理员检测、卖家复测与申诉复测中执行。
 seed_thirdparty() {
   [[ -f "$DATA/seeded-thirdparty" ]] && return
   login_admin
   api PUT /api/admin/detection-providers/bazaarlink \
     "{\"enabled\":true,\"base_url\":\"$THIRDPARTY\",\"settings\":{\"allow_insecure_target\":true},\"max_runs_per_hour\":30,\"timeout_minutes\":30}" >/dev/null
-  api PUT /api/admin/detection-policies/anthropic \
-    '{"third_party":[{"provider":"bazaarlink","triggers":["onboarding","admin","seller_manual","appeal"]}]}' >/dev/null
+  local all='["onboarding","scheduled","recovery","seller_manual","admin","adaptive","appeal"]'
+  api PUT /api/admin/detection-policies/anthropic "{
+    \"third_party\":[{\"provider\":\"bazaarlink\",\"triggers\":[\"onboarding\",\"admin\",\"seller_manual\",\"appeal\"]}],
+    \"flows\":{
+      \"intelligence\":{\"enabled\":true,\"scheduled_enabled\":false,\"interval_minutes\":360,\"triggers\":$all,
+        \"full_triggers\":[\"onboarding\",\"appeal\",\"admin\"],\"models\":[{\"model\":\"claude-sonnet-4-5\",\"expected_pass_rate\":null}]},
+      \"identity\":{\"enabled\":true,\"source\":\"third_party\",\"scheduled_enabled\":false,\"interval_minutes\":1440,
+        \"triggers\":[\"onboarding\",\"admin\",\"seller_manual\",\"appeal\"],\"full_triggers\":$all}
+    }}" >/dev/null
   touch "$DATA/seeded-thirdparty"
 }
 

@@ -18,16 +18,17 @@ import (
 
 // 上游状态
 const (
-	StatusDraft        = "draft"
-	StatusAuthorizing  = "authorizing"
-	StatusVerifying    = "verifying"
-	StatusVerifyFailed = "verify_failed"
-	StatusReady        = "ready"
-	StatusListed       = "listed"
-	StatusSuspended    = "suspended"
-	StatusFailed       = "failed"
-	StatusRemoving     = "removing"
-	StatusRemoved      = "removed"
+	StatusDraft           = "draft"
+	StatusAuthorizing     = "authorizing"
+	StatusSelectingModels = "selecting_models"
+	StatusVerifying       = "verifying"
+	StatusVerifyFailed    = "verify_failed"
+	StatusReady           = "ready"
+	StatusListed          = "listed"
+	StatusSuspended       = "suspended"
+	StatusFailed          = "failed"
+	StatusRemoving        = "removing"
+	StatusRemoved         = "removed"
 )
 
 // 健康状态
@@ -112,6 +113,9 @@ type Upstream struct {
 	AccountEmail       *string    `json:"account_email,omitempty"` // 官方账号邮箱，授权或导入时从令牌信息中识别
 	PrivacyOK          *bool      `json:"privacy_ok,omitempty"`
 	SelfReservePercent int        `json:"self_reserve_percent"`
+	ModelWhitelist     []string   `json:"model_whitelist"` // 空值表示存量上游未声明，不限制模型
+	ModelCatalog       []string   `json:"model_catalog"`
+	ModelCatalogAt     *time.Time `json:"model_catalog_at"`
 	// 自动用卡（仅 Codex）：卖家授权后，窗口用量达到阈值时由平台使用重置卡；阈值为空表示跟随暂停线
 	AutoResetEnabled      bool       `json:"auto_reset_enabled"`
 	AutoReset5hPercent    *int       `json:"auto_reset_5h_percent,omitempty"`
@@ -125,14 +129,15 @@ type Upstream struct {
 
 const upstreamColumns = `id, seller_id, platform, auth_type, is_reference, status, health, health_reason, health_changed_at,
 	sub2api_account_id, proxy_id, probe_group_id, tier, account_email, privacy_ok, self_reserve_percent,
-	auto_reset_enabled, auto_reset_5h_percent, auto_reset_7d_percent, auto_reset_authorized_at, grade, failure_reason, created_at, updated_at`
+	auto_reset_enabled, auto_reset_5h_percent, auto_reset_7d_percent, auto_reset_authorized_at, grade, failure_reason, created_at, updated_at,
+	model_whitelist, model_catalog, model_catalog_at`
 
 func scanUpstream(row pgx.Row) (*Upstream, error) {
 	var u Upstream
 	err := row.Scan(&u.ID, &u.SellerID, &u.Platform, &u.AuthType, &u.IsReference, &u.Status, &u.Health, &u.HealthReason,
 		&u.HealthChangedAt, &u.Sub2APIAccountID, &u.ProxyID, &u.ProbeGroupID, &u.Tier, &u.AccountEmail, &u.PrivacyOK,
 		&u.SelfReservePercent, &u.AutoResetEnabled, &u.AutoReset5hPercent, &u.AutoReset7dPercent, &u.AutoResetAuthorizedAt,
-		&u.Grade, &u.FailureReason, &u.CreatedAt, &u.UpdatedAt)
+		&u.Grade, &u.FailureReason, &u.CreatedAt, &u.UpdatedAt, &u.ModelWhitelist, &u.ModelCatalog, &u.ModelCatalogAt)
 	if err != nil {
 		return nil, err
 	}

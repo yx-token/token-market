@@ -8,26 +8,24 @@ import (
 	"testing"
 )
 
-func TestInspectionShadowDoesNotChangeLegacyAssessment(t *testing.T) {
+func TestInspectionRequestsParticipateInAvailability(t *testing.T) {
 	for _, scoring := range []bool{false, true} {
-		for _, failures := range []int{0, 3, 15} {
-			old := outcomes(20, failures, true)
-			before := Assess(old, th, scoring)
-			combined := append([]Outcome(nil), old...)
-			for _, suite := range []string{"inspection_capability", "inspection_context", "inspection_function", "inspection_output", "inspection_performance", "inspection_authenticity"} {
-				for _, class := range []string{"", "rate_limited", "platform", "http_5xx"} {
-					ref := ProbeResult{HTTPStatus: 200, ReasoningTokens: 100000}
-					combined = append(combined, Outcome{Suite: suite, CheckKey: "D07", Target: ProbeResult{HTTPStatus: 500, ErrorClass: class, ReasoningTokens: 1}, Ref: &ref, RefPass: true})
-				}
+		var rows []Outcome
+		for _, suite := range []string{"inspection_capability", "inspection_context", "inspection_function", "inspection_output", "inspection_performance", "inspection_authenticity"} {
+			rows = append(rows, Outcome{Suite: suite, Target: ProbeResult{HTTPStatus: 200}}, Outcome{Suite: suite, Target: ProbeResult{HTTPStatus: 503, ErrorClass: "http_5xx"}}, Outcome{Suite: suite})
+			for _, class := range []string{"rate_limited", "platform", "expected_reject", "configuration"} {
+				rows = append(rows, Outcome{Suite: suite, Target: ProbeResult{HTTPStatus: 429, ErrorClass: class}})
 			}
-			after := Assess(combined, th, scoring)
-			if !reflect.DeepEqual(before, after) {
-				t.Fatalf("影子题污染旧判定：%+v → %+v", before, after)
-			}
-			shadow := summarizeShadow(combined)
-			if shadow == nil || shadow.Applied || shadow.Checks["D07"].Observed != 24 {
-				t.Fatalf("影子证据未记录：%+v", shadow)
-			}
+		}
+		a := Assess(rows, th, scoring)
+		if a.AvailableTotal != 12 || a.AvailableOK != 6 || a.Verdict != "normal" || a.ErrorCounts["http_5xx"] != 6 || a.ErrorCounts["platform"] != 6 || a.Samples != 0 || a.LLR != 0 || a.Grade != "" {
+			t.Fatalf("质检题必须按实际请求统计，排除平台故障和未执行题：%+v", a)
+		}
+		for i := range rows {
+			rows[i].Suite = "availability"
+		}
+		if plain := Assess(rows, th, scoring); !reflect.DeepEqual(a, plain) {
+			t.Fatalf("套件名称不应改变请求统计：%+v → %+v", a, plain)
 		}
 	}
 }
@@ -35,11 +33,8 @@ func TestInspectionShadowDoesNotChangeLegacyAssessment(t *testing.T) {
 func TestInspectionBuiltinDefinitions(t *testing.T) {
 	t.Parallel()
 	keys := map[string]bool{}
-	if len(defaultItems()) != 21 {
-		t.Fatal("旧题数量改变")
-	}
 	for _, it := range inspectionBuiltinItems() {
-		if it.BuiltinKey == nil || keys[*it.BuiltinKey] || scoringSuite(it.Suite) {
+		if it.BuiltinKey == nil || keys[*it.BuiltinKey] || !strings.HasPrefix(it.Suite, "inspection_") {
 			t.Fatalf("内置键或套件不兼容：%+v", it)
 		}
 		keys[*it.BuiltinKey] = true

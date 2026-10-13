@@ -57,6 +57,9 @@ export const buyer = {
 }
 
 export const seller = {
+  upstreamModels: (id: number) => http.get<T.UpstreamModels>(`/api/seller/upstreams/${id}/models`),
+  refreshUpstreamModels: (id: number) => http.post<T.UpstreamModels>(`/api/seller/upstreams/${id}/models/refresh`, {}, 30000),
+  setUpstreamModels: (id: number, models: string[]) => http.put<T.Upstream>(`/api/seller/upstreams/${id}/models`, { models }),
   proxies: () => http.get<T.Proxy[] | null>('/api/seller/proxies'),
   createProxy: (body: T.CreateProxyInput) => http.post<T.Proxy>('/api/seller/proxies', body),
   updateProxy: (id: number, body: T.CreateProxyInput) => http.put<T.Proxy>(`/api/seller/proxies/${id}`, body),
@@ -166,6 +169,8 @@ export const admin = {
   setOverride: (upstreamId: number, body: Record<string, unknown>) => http.put<Ok>(`/api/admin/upstreams/${upstreamId}/detection-override`, body),
   deleteOverride: (upstreamId: number) => http.del<Ok>(`/api/admin/upstreams/${upstreamId}/detection-override`),
   probe: (upstreamId: number) => http.post<{ run_id: number }>(`/api/admin/upstreams/${upstreamId}/probe`),
+  probeFlows: (upstreamId: number, flows: T.DetectionFlow[]) =>
+    http.post<{ run_id: number }>(`/api/admin/upstreams/${upstreamId}/probe`, { flows }),
   probeRuns: (upstreamId: number) => http.get<T.ProbeRun[] | null>(`/api/admin/upstreams/${upstreamId}/probe-runs`),
   probeRun: (runId: number) => http.get<T.ProbeRunDetail>(`/api/admin/probe-runs/${runId}`),
   probeRecords: (q?: Query) => http.get<T.ProbeRunRecord[] | null>('/api/admin/probe-runs', q),

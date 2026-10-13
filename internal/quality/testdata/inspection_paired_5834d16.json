@@ -1,0 +1,5104 @@
+{
+  "基线未兑现": {
+    "checks": {
+      "A01": {
+        "key": "A01",
+        "name": "订阅档位",
+        "category": "configuration",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tier_unverified"
+        },
+        "reason": "订阅档位为授权资料，未经过官方接口独立核验。",
+        "advice": "核对授权档位与上架声明，无法核实时保留未核验状态。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A02": {
+        "key": "A02",
+        "name": "响应型号一致",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 330,
+          "excluded": 30
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对声明型号、官方回退规则与接入配置，完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A03": {
+        "key": "A03",
+        "name": "输入计数指纹",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 330,
+          "excluded": 30
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "确认被测与基线采用相同接入方式，复核输入计数差异。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A04": {
+        "key": "A04",
+        "name": "型号权限",
+        "category": "configuration",
+        "status": "inconclusive",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 0,
+          "excluded": 30
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "基线或错误来源不足以确认权限/边界。",
+        "advice": "核对账号对上架型号的访问权限，修复后重新检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A05": {
+        "key": "A05",
+        "name": "上下文边界",
+        "category": "configuration",
+        "status": "inconclusive",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 0,
+          "excluded": 30
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "基线或错误来源不足以确认权限/边界。",
+        "advice": "核对声明上下文长度、请求预算与入口行为，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A06": {
+        "key": "A06",
+        "name": "推理档位",
+        "category": "configuration",
+        "status": "not_run",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "核对型号支持的推理档位及实际接入配置。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A08": {
+        "key": "A08",
+        "name": "知识代际",
+        "category": "display",
+        "status": "not_run",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "与同时段同型号基线对照，避免将过期事实或缺失信息作为确定失败。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.image_pdf": {
+        "key": "A11.image_pdf",
+        "name": "图片与 PDF",
+        "category": "function",
+        "status": "not_applicable",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reference_unsupported"
+        },
+        "reason": "同期基线也未兑现此功能，不归因卖家。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.json_schema": {
+        "key": "A11.json_schema",
+        "name": "结构化输出",
+        "category": "function",
+        "status": "not_applicable",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reference_unsupported"
+        },
+        "reason": "同期基线也未兑现此功能，不归因卖家。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.multiturn": {
+        "key": "A11.multiturn",
+        "name": "多轮保持",
+        "category": "function",
+        "status": "not_applicable",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reference_unsupported"
+        },
+        "reason": "同期基线也未兑现此功能，不归因卖家。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.thinking": {
+        "key": "A11.thinking",
+        "name": "推理功能",
+        "category": "function",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reasoning_usage_unknown"
+        },
+        "reason": "当前通道未提供可比较的推理用量。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.tools": {
+        "key": "A11.tools",
+        "name": "工具调用",
+        "category": "function",
+        "status": "not_applicable",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reference_unsupported"
+        },
+        "reason": "同期基线也未兑现此功能，不归因卖家。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A12": {
+        "key": "A12",
+        "name": "回退与拒答",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 330,
+          "excluded": 30
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查无害请求的回退与拒答情况，并对照同期基线。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A15": {
+        "key": "A15",
+        "name": "参数规则指纹",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "已登记参数规则与同期基线一致。",
+        "advice": "完成同型号 A/A 校准；被网关本地拦截的规则不能作为厂商指纹。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D04": {
+        "key": "D04",
+        "name": "异常限流",
+        "category": "availability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_not_verified"
+        },
+        "reason": "缺少可验证的额度窗口，429 不作为异常扣价。",
+        "advice": "核对额度窗口与限流来源，排除网关本地限制后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D05": {
+        "key": "D05",
+        "name": "额度窗口",
+        "category": "display",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_unknown"
+        },
+        "reason": "窗口余量未知。",
+        "advice": "关注账号窗口余量；未知余量不阻塞上架、申诉或管理员检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D06": {
+        "key": "D06",
+        "name": "推理强度兑现",
+        "category": "capability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 10,
+          "paired": 0,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reasoning_pairs_insufficient"
+        },
+        "reason": "有效推理量配对不足，零值或缺失用量不能证明降档。",
+        "advice": "检查推理档位及用量观测，修复后与同期基线复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07": {
+        "key": "D07",
+        "name": "智力配对",
+        "category": "capability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "同期基线全部未通过，无法确认被测能力。",
+        "advice": "检查模型路由与接入配置，修复后完成配对复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07.honesty": {
+        "key": "D07.honesty",
+        "name": "诚实与弃权",
+        "category": "capability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "同期基线全部未通过，无法确认被测能力。",
+        "advice": "在信息不足时准确说明无法确定，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D08": {
+        "key": "D08",
+        "name": "输出完整性",
+        "category": "capability",
+        "status": "not_applicable",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reference_unsupported"
+        },
+        "reason": "同期基线也未兑现此功能，不归因卖家。",
+        "advice": "检查输出上限及内容完整性，避免占位或省略后完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D09": {
+        "key": "D09",
+        "name": "上下文深度",
+        "category": "capability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "同期基线全部未通过，无法确认被测能力。",
+        "advice": "检查长上下文完整保留与检索能力，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D10": {
+        "key": "D10",
+        "name": "响应性能",
+        "category": "performance",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "performance",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "output_tps_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "ttft_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 330,
+          "excluded": 30
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查延迟与吞吐，结合同行或同期基线完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D12": {
+        "key": "D12",
+        "name": "缓存功能",
+        "category": "function",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "缓存需要同账号两步的使用量证据。",
+        "advice": "检查缓存支持与长前缀复用，排除计数缺失后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D13": {
+        "key": "D13",
+        "name": "可用率",
+        "category": "availability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "success_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 400,
+          "paired": 400,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "availability_normal"
+        },
+        "reason": "有效请求可用率满足当前档位。",
+        "advice": "检查账号权限、额度与连接稳定性，排除平台侧错误后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "third_party": {
+        "key": "third_party",
+        "name": "第三方身份核验",
+        "category": "authenticity",
+        "status": "not_run",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "核对第三方核验结果；证据不足时重新核验。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      }
+    },
+    "gates": [],
+    "formal": {
+      "quality_factor": null,
+      "reference_error_counts": {
+        "http_5xx": 60
+      },
+      "verdict": "normal",
+      "llr": -22.618298545281583,
+      "samples": 90,
+      "target_pass_rate": 1,
+      "relative_score": 1,
+      "confidence": 0.9,
+      "baseline": true,
+      "available_ok": 400,
+      "available_total": 400,
+      "ttft_p50_ms": 1000,
+      "ttft_p95_ms": 1000,
+      "output_tps": 100,
+      "grade": "S"
+    }
+  },
+  "差异配对": {
+    "checks": {
+      "A01": {
+        "key": "A01",
+        "name": "订阅档位",
+        "category": "configuration",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tier_unverified"
+        },
+        "reason": "订阅档位为授权资料，未经过官方接口独立核验。",
+        "advice": "核对授权档位与上架声明，无法核实时保留未核验状态。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A02": {
+        "key": "A02",
+        "name": "响应型号一致",
+        "category": "authenticity",
+        "status": "warning",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 300,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 300,
+          "excluded": 60
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_mismatch"
+        },
+        "reason": "存在与同期基线不同的观测，需复检与校准。",
+        "advice": "核对声明型号、官方回退规则与接入配置，完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A03": {
+        "key": "A03",
+        "name": "输入计数指纹",
+        "category": "authenticity",
+        "status": "warning",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 300,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 300,
+          "excluded": 60
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_mismatch"
+        },
+        "reason": "存在与同期基线不同的观测，需复检与校准。",
+        "advice": "确认被测与基线采用相同接入方式，复核输入计数差异。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A04": {
+        "key": "A04",
+        "name": "型号权限",
+        "category": "configuration",
+        "status": "fail",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "permission_or_context_denied"
+        },
+        "reason": "同期基线接受但被测明确拒绝测试点。",
+        "advice": "核对账号对上架型号的访问权限，修复后重新检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A05": {
+        "key": "A05",
+        "name": "上下文边界",
+        "category": "configuration",
+        "status": "fail",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "permission_or_context_denied"
+        },
+        "reason": "同期基线接受但被测明确拒绝测试点。",
+        "advice": "核对声明上下文长度、请求预算与入口行为，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A06": {
+        "key": "A06",
+        "name": "推理档位",
+        "category": "configuration",
+        "status": "not_run",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "核对型号支持的推理档位及实际接入配置。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A08": {
+        "key": "A08",
+        "name": "知识代际",
+        "category": "display",
+        "status": "not_run",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "与同时段同型号基线对照，避免将过期事实或缺失信息作为确定失败。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.image_pdf": {
+        "key": "A11.image_pdf",
+        "name": "图片与 PDF",
+        "category": "function",
+        "status": "fail",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 0.95,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_function_failed"
+        },
+        "reason": "基线通过但被测未兑现功能。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.json_schema": {
+        "key": "A11.json_schema",
+        "name": "结构化输出",
+        "category": "function",
+        "status": "fail",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 0.95,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_function_failed"
+        },
+        "reason": "基线通过但被测未兑现功能。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.multiturn": {
+        "key": "A11.multiturn",
+        "name": "多轮保持",
+        "category": "function",
+        "status": "fail",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 0.95,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_function_failed"
+        },
+        "reason": "基线通过但被测未兑现功能。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.thinking": {
+        "key": "A11.thinking",
+        "name": "推理功能",
+        "category": "function",
+        "status": "fail",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 0.95,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "thinking_not_observed"
+        },
+        "reason": "基线明确提供推理用量，被测明确返回零推理用量。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.tools": {
+        "key": "A11.tools",
+        "name": "工具调用",
+        "category": "function",
+        "status": "fail",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 0.95,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_function_failed"
+        },
+        "reason": "基线通过但被测未兑现功能。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A12": {
+        "key": "A12",
+        "name": "回退与拒答",
+        "category": "authenticity",
+        "status": "warning",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0.01,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 3,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 300,
+          "excluded": 60
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_mismatch"
+        },
+        "reason": "存在与同期基线不同的观测，需复检与校准。",
+        "advice": "检查无害请求的回退与拒答情况，并对照同期基线。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A15": {
+        "key": "A15",
+        "name": "参数规则指纹",
+        "category": "authenticity",
+        "status": "warning",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatches": {
+            "value": 30,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "参数规则与同期基线有差异，需复核网关行为。",
+        "advice": "完成同型号 A/A 校准；被网关本地拦截的规则不能作为厂商指纹。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D04": {
+        "key": "D04",
+        "name": "异常限流",
+        "category": "availability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_not_verified"
+        },
+        "reason": "缺少可验证的额度窗口，429 不作为异常扣价。",
+        "advice": "核对额度窗口与限流来源，排除网关本地限制后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D05": {
+        "key": "D05",
+        "name": "额度窗口",
+        "category": "display",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_unknown"
+        },
+        "reason": "窗口余量未知。",
+        "advice": "关注账号窗口余量；未知余量不阻塞上架、申诉或管理员检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D06": {
+        "key": "D06",
+        "name": "推理强度兑现",
+        "category": "capability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 10,
+          "paired": 7,
+          "excluded": 3
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reasoning_pairs_insufficient"
+        },
+        "reason": "有效推理量配对不足，零值或缺失用量不能证明降档。",
+        "advice": "检查推理档位及用量观测，修复后与同期基线复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07": {
+        "key": "D07",
+        "name": "智力配对",
+        "category": "capability",
+        "status": "fail",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 0.7,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 0.000015258789062500003,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 0.37037037037037035,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 0.37037037037037035,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 27,
+          "excluded": 3
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_intelligence_low"
+        },
+        "reason": "配对准确率显著低于同期基线。",
+        "advice": "检查模型路由与接入配置，修复后完成配对复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07.honesty": {
+        "key": "D07.honesty",
+        "name": "诚实与弃权",
+        "category": "capability",
+        "status": "fail",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 0.7,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 0.0000019073486328125,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 0.3333333333333333,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 0.3333333333333333,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_intelligence_low"
+        },
+        "reason": "配对准确率显著低于同期基线。",
+        "advice": "在信息不足时准确说明无法确定，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D08": {
+        "key": "D08",
+        "name": "输出完整性",
+        "category": "capability",
+        "status": "fail",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 0.95,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_function_failed"
+        },
+        "reason": "基线通过但被测未兑现功能。",
+        "advice": "检查输出上限及内容完整性，避免占位或省略后完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D09": {
+        "key": "D09",
+        "name": "上下文深度",
+        "category": "capability",
+        "status": "warning",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 0.85,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 0.0000019073486328125,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 0.3333333333333333,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 0.3333333333333333,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "context_depth_low"
+        },
+        "reason": "长上下文样本弱于同期基线。",
+        "advice": "检查长上下文完整保留与检索能力，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D10": {
+        "key": "D10",
+        "name": "响应性能",
+        "category": "performance",
+        "status": "fail",
+        "role": "factor",
+        "factor_group": "performance",
+        "factor": 0.85,
+        "applied": false,
+        "metrics": {
+          "output_tps_ratio": {
+            "value": 0.2,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "ttft_ratio": {
+            "value": 3,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 300,
+          "excluded": 60
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_speed_slow"
+        },
+        "reason": "同型号配对速度慢于基线。",
+        "advice": "检查延迟与吞吐，结合同行或同期基线完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D12": {
+        "key": "D12",
+        "name": "缓存功能",
+        "category": "function",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "缓存需要同账号两步的使用量证据。",
+        "advice": "检查缓存支持与长前缀复用，排除计数缺失后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D13": {
+        "key": "D13",
+        "name": "可用率",
+        "category": "availability",
+        "status": "warning",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": 0.7,
+        "applied": false,
+        "metrics": {
+          "success_rate": {
+            "value": 0.8378378378378378,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 400,
+          "paired": 370,
+          "excluded": 30
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "availability_low"
+        },
+        "reason": "有效请求可用率低于正常档位。",
+        "advice": "检查账号权限、额度与连接稳定性，排除平台侧错误后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "third_party": {
+        "key": "third_party",
+        "name": "第三方身份核验",
+        "category": "authenticity",
+        "status": "not_run",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "核对第三方核验结果；证据不足时重新核验。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      }
+    },
+    "gates": [
+      {
+        "check_key": "A04",
+        "code": "permission_or_context_denied",
+        "health": "unavailable",
+        "confirmed": true,
+        "occurred_at": "0001-01-01T00:00:00Z",
+        "reason": "同期基线接受但被测明确拒绝测试点。"
+      },
+      {
+        "check_key": "A05",
+        "code": "permission_or_context_denied",
+        "health": "unavailable",
+        "confirmed": true,
+        "occurred_at": "0001-01-01T00:00:00Z",
+        "reason": "同期基线接受但被测明确拒绝测试点。"
+      },
+      {
+        "check_key": "D13",
+        "code": "availability_below_minimum",
+        "health": "unavailable",
+        "confirmed": true,
+        "occurred_at": "0001-01-01T00:00:00Z",
+        "reason": "有效请求可用率低于最低要求。"
+      }
+    ],
+    "formal": {
+      "quality_factor": null,
+      "error_counts": {
+        "http_4xx": 60
+      },
+      "verdict": "degraded",
+      "llr": 30.449866359806485,
+      "samples": 87,
+      "target_pass_rate": 0.3448275862068966,
+      "relative_score": 0.3448275862068966,
+      "confidence": 0.95,
+      "baseline": true,
+      "available_ok": 310,
+      "available_total": 370,
+      "ttft_p50_ms": 3000,
+      "ttft_p95_ms": 3000,
+      "output_tps": 20,
+      "grade": "D"
+    }
+  },
+  "未校准": {
+    "checks": {
+      "A01": {
+        "key": "A01",
+        "name": "订阅档位",
+        "category": "configuration",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tier_unverified"
+        },
+        "reason": "订阅档位为授权资料，未经过官方接口独立核验。",
+        "advice": "核对授权档位与上架声明，无法核实时保留未核验状态。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A02": {
+        "key": "A02",
+        "name": "响应型号一致",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对声明型号、官方回退规则与接入配置，完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A03": {
+        "key": "A03",
+        "name": "输入计数指纹",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "确认被测与基线采用相同接入方式，复核输入计数差异。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A04": {
+        "key": "A04",
+        "name": "型号权限",
+        "category": "configuration",
+        "status": "pass",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tested_point_accepted"
+        },
+        "reason": "本次测试点被接受，不代表核验全部权限或完整上下文上限。",
+        "advice": "核对账号对上架型号的访问权限，修复后重新检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A05": {
+        "key": "A05",
+        "name": "上下文边界",
+        "category": "configuration",
+        "status": "pass",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tested_point_accepted"
+        },
+        "reason": "本次测试点被接受，不代表核验全部权限或完整上下文上限。",
+        "advice": "核对声明上下文长度、请求预算与入口行为，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A06": {
+        "key": "A06",
+        "name": "推理档位",
+        "category": "configuration",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "baseline_high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "reasoning_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": [
+              1,
+              1
+            ],
+            "confidence": 0.95
+          }
+        },
+        "samples": {
+          "observed": 10,
+          "paired": 10,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "explicit_effort_observed"
+        },
+        "reason": "已显式发推理档位请求；响应量只作观测，不等同厂商档位认证。",
+        "advice": "核对型号支持的推理档位及实际接入配置。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A08": {
+        "key": "A08",
+        "name": "知识代际",
+        "category": "display",
+        "status": "not_run",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "与同时段同型号基线对照，避免将过期事实或缺失信息作为确定失败。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.image_pdf": {
+        "key": "A11.image_pdf",
+        "name": "图片与 PDF",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.json_schema": {
+        "key": "A11.json_schema",
+        "name": "结构化输出",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.multiturn": {
+        "key": "A11.multiturn",
+        "name": "多轮保持",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.thinking": {
+        "key": "A11.thinking",
+        "name": "推理功能",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.tools": {
+        "key": "A11.tools",
+        "name": "工具调用",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A12": {
+        "key": "A12",
+        "name": "回退与拒答",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查无害请求的回退与拒答情况，并对照同期基线。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A15": {
+        "key": "A15",
+        "name": "参数规则指纹",
+        "category": "authenticity",
+        "status": "not_applicable",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "disabled"
+        },
+        "reason": "此项规则未启用。",
+        "advice": "完成同型号 A/A 校准；被网关本地拦截的规则不能作为厂商指纹。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D04": {
+        "key": "D04",
+        "name": "异常限流",
+        "category": "availability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_not_verified"
+        },
+        "reason": "缺少可验证的额度窗口，429 不作为异常扣价。",
+        "advice": "核对额度窗口与限流来源，排除网关本地限制后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D05": {
+        "key": "D05",
+        "name": "额度窗口",
+        "category": "display",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_unknown"
+        },
+        "reason": "窗口余量未知。",
+        "advice": "关注账号窗口余量；未知余量不阻塞上架、申诉或管理员检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D06": {
+        "key": "D06",
+        "name": "推理强度兑现",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "baseline_high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "reasoning_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": [
+              1,
+              1
+            ],
+            "confidence": 0.95
+          }
+        },
+        "samples": {
+          "observed": 10,
+          "paired": 10,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reasoning_ratio_normal"
+        },
+        "reason": "有效配对推理量未见明显下降。",
+        "advice": "检查推理档位及用量观测，修复后与同期基线复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07": {
+        "key": "D07",
+        "name": "智力配对",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查模型路由与接入配置，修复后完成配对复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07.honesty": {
+        "key": "D07.honesty",
+        "name": "诚实与弃权",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "在信息不足时准确说明无法确定，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D08": {
+        "key": "D08",
+        "name": "输出完整性",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查输出上限及内容完整性，避免占位或省略后完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D09": {
+        "key": "D09",
+        "name": "上下文深度",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查长上下文完整保留与检索能力，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D10": {
+        "key": "D10",
+        "name": "响应性能",
+        "category": "performance",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "performance",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "output_tps_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "ttft_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查延迟与吞吐，结合同行或同期基线完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D12": {
+        "key": "D12",
+        "name": "缓存功能",
+        "category": "function",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "缓存需要同账号两步的使用量证据。",
+        "advice": "检查缓存支持与长前缀复用，排除计数缺失后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D13": {
+        "key": "D13",
+        "name": "可用率",
+        "category": "availability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "success_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 400,
+          "paired": 400,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "availability_normal"
+        },
+        "reason": "有效请求可用率满足当前档位。",
+        "advice": "检查账号权限、额度与连接稳定性，排除平台侧错误后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "third_party": {
+        "key": "third_party",
+        "name": "第三方身份核验",
+        "category": "authenticity",
+        "status": "not_run",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "核对第三方核验结果；证据不足时重新核验。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      }
+    },
+    "gates": [],
+    "formal": {
+      "quality_factor": null,
+      "verdict": "normal",
+      "llr": 0,
+      "samples": 0,
+      "baseline": false,
+      "available_ok": 400,
+      "available_total": 400,
+      "ttft_p50_ms": 1000,
+      "ttft_p95_ms": 1000,
+      "output_tps": 100
+    }
+  },
+  "正常配对": {
+    "checks": {
+      "A01": {
+        "key": "A01",
+        "name": "订阅档位",
+        "category": "configuration",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tier_unverified"
+        },
+        "reason": "订阅档位为授权资料，未经过官方接口独立核验。",
+        "advice": "核对授权档位与上架声明，无法核实时保留未核验状态。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A02": {
+        "key": "A02",
+        "name": "响应型号一致",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对声明型号、官方回退规则与接入配置，完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A03": {
+        "key": "A03",
+        "name": "输入计数指纹",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "确认被测与基线采用相同接入方式，复核输入计数差异。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A04": {
+        "key": "A04",
+        "name": "型号权限",
+        "category": "configuration",
+        "status": "pass",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tested_point_accepted"
+        },
+        "reason": "本次测试点被接受，不代表核验全部权限或完整上下文上限。",
+        "advice": "核对账号对上架型号的访问权限，修复后重新检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A05": {
+        "key": "A05",
+        "name": "上下文边界",
+        "category": "configuration",
+        "status": "pass",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tested_point_accepted"
+        },
+        "reason": "本次测试点被接受，不代表核验全部权限或完整上下文上限。",
+        "advice": "核对声明上下文长度、请求预算与入口行为，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A06": {
+        "key": "A06",
+        "name": "推理档位",
+        "category": "configuration",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "baseline_high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "reasoning_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": [
+              1,
+              1
+            ],
+            "confidence": 0.95
+          }
+        },
+        "samples": {
+          "observed": 10,
+          "paired": 10,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "explicit_effort_observed"
+        },
+        "reason": "已显式发推理档位请求；响应量只作观测，不等同厂商档位认证。",
+        "advice": "核对型号支持的推理档位及实际接入配置。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A08": {
+        "key": "A08",
+        "name": "知识代际",
+        "category": "display",
+        "status": "not_run",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "与同时段同型号基线对照，避免将过期事实或缺失信息作为确定失败。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.image_pdf": {
+        "key": "A11.image_pdf",
+        "name": "图片与 PDF",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.json_schema": {
+        "key": "A11.json_schema",
+        "name": "结构化输出",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.multiturn": {
+        "key": "A11.multiturn",
+        "name": "多轮保持",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.thinking": {
+        "key": "A11.thinking",
+        "name": "推理功能",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.tools": {
+        "key": "A11.tools",
+        "name": "工具调用",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A12": {
+        "key": "A12",
+        "name": "回退与拒答",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查无害请求的回退与拒答情况，并对照同期基线。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A15": {
+        "key": "A15",
+        "name": "参数规则指纹",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "已登记参数规则与同期基线一致。",
+        "advice": "完成同型号 A/A 校准；被网关本地拦截的规则不能作为厂商指纹。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D04": {
+        "key": "D04",
+        "name": "异常限流",
+        "category": "availability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_not_verified"
+        },
+        "reason": "缺少可验证的额度窗口，429 不作为异常扣价。",
+        "advice": "核对额度窗口与限流来源，排除网关本地限制后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D05": {
+        "key": "D05",
+        "name": "额度窗口",
+        "category": "display",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_unknown"
+        },
+        "reason": "窗口余量未知。",
+        "advice": "关注账号窗口余量；未知余量不阻塞上架、申诉或管理员检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D06": {
+        "key": "D06",
+        "name": "推理强度兑现",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "baseline_high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "reasoning_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": [
+              1,
+              1
+            ],
+            "confidence": 0.95
+          }
+        },
+        "samples": {
+          "observed": 10,
+          "paired": 10,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reasoning_ratio_normal"
+        },
+        "reason": "有效配对推理量未见明显下降。",
+        "advice": "检查推理档位及用量观测，修复后与同期基线复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07": {
+        "key": "D07",
+        "name": "智力配对",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查模型路由与接入配置，修复后完成配对复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07.honesty": {
+        "key": "D07.honesty",
+        "name": "诚实与弃权",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "在信息不足时准确说明无法确定，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D08": {
+        "key": "D08",
+        "name": "输出完整性",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查输出上限及内容完整性，避免占位或省略后完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D09": {
+        "key": "D09",
+        "name": "上下文深度",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查长上下文完整保留与检索能力，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D10": {
+        "key": "D10",
+        "name": "响应性能",
+        "category": "performance",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "performance",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "output_tps_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "ttft_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查延迟与吞吐，结合同行或同期基线完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D12": {
+        "key": "D12",
+        "name": "缓存功能",
+        "category": "function",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "缓存需要同账号两步的使用量证据。",
+        "advice": "检查缓存支持与长前缀复用，排除计数缺失后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D13": {
+        "key": "D13",
+        "name": "可用率",
+        "category": "availability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "success_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 400,
+          "paired": 400,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "availability_normal"
+        },
+        "reason": "有效请求可用率满足当前档位。",
+        "advice": "检查账号权限、额度与连接稳定性，排除平台侧错误后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "third_party": {
+        "key": "third_party",
+        "name": "第三方身份核验",
+        "category": "authenticity",
+        "status": "not_run",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "核对第三方核验结果；证据不足时重新核验。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      }
+    },
+    "gates": [],
+    "formal": {
+      "quality_factor": null,
+      "verdict": "normal",
+      "llr": -22.618298545281583,
+      "samples": 90,
+      "target_pass_rate": 1,
+      "relative_score": 1,
+      "confidence": 0.9,
+      "baseline": true,
+      "available_ok": 400,
+      "available_total": 400,
+      "ttft_p50_ms": 1000,
+      "ttft_p95_ms": 1000,
+      "output_tps": 100,
+      "grade": "S"
+    }
+  },
+  "禁用功能": {
+    "checks": {
+      "A01": {
+        "key": "A01",
+        "name": "订阅档位",
+        "category": "configuration",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tier_unverified"
+        },
+        "reason": "订阅档位为授权资料，未经过官方接口独立核验。",
+        "advice": "核对授权档位与上架声明，无法核实时保留未核验状态。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A02": {
+        "key": "A02",
+        "name": "响应型号一致",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对声明型号、官方回退规则与接入配置，完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A03": {
+        "key": "A03",
+        "name": "输入计数指纹",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "确认被测与基线采用相同接入方式，复核输入计数差异。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A04": {
+        "key": "A04",
+        "name": "型号权限",
+        "category": "configuration",
+        "status": "pass",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tested_point_accepted"
+        },
+        "reason": "本次测试点被接受，不代表核验全部权限或完整上下文上限。",
+        "advice": "核对账号对上架型号的访问权限，修复后重新检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A05": {
+        "key": "A05",
+        "name": "上下文边界",
+        "category": "configuration",
+        "status": "not_applicable",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "disabled"
+        },
+        "reason": "此项规则未启用。",
+        "advice": "核对声明上下文长度、请求预算与入口行为，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A06": {
+        "key": "A06",
+        "name": "推理档位",
+        "category": "configuration",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "baseline_high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "reasoning_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": [
+              1,
+              1
+            ],
+            "confidence": 0.95
+          }
+        },
+        "samples": {
+          "observed": 10,
+          "paired": 10,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "explicit_effort_observed"
+        },
+        "reason": "已显式发推理档位请求；响应量只作观测，不等同厂商档位认证。",
+        "advice": "核对型号支持的推理档位及实际接入配置。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A08": {
+        "key": "A08",
+        "name": "知识代际",
+        "category": "display",
+        "status": "not_run",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "与同时段同型号基线对照，避免将过期事实或缺失信息作为确定失败。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.image_pdf": {
+        "key": "A11.image_pdf",
+        "name": "图片与 PDF",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.json_schema": {
+        "key": "A11.json_schema",
+        "name": "结构化输出",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.multiturn": {
+        "key": "A11.multiturn",
+        "name": "多轮保持",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.thinking": {
+        "key": "A11.thinking",
+        "name": "推理功能",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.tools": {
+        "key": "A11.tools",
+        "name": "工具调用",
+        "category": "function",
+        "status": "not_applicable",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "disabled"
+        },
+        "reason": "此项规则未启用。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A12": {
+        "key": "A12",
+        "name": "回退与拒答",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查无害请求的回退与拒答情况，并对照同期基线。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A15": {
+        "key": "A15",
+        "name": "参数规则指纹",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "已登记参数规则与同期基线一致。",
+        "advice": "完成同型号 A/A 校准；被网关本地拦截的规则不能作为厂商指纹。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D04": {
+        "key": "D04",
+        "name": "异常限流",
+        "category": "availability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_not_verified"
+        },
+        "reason": "缺少可验证的额度窗口，429 不作为异常扣价。",
+        "advice": "核对额度窗口与限流来源，排除网关本地限制后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D05": {
+        "key": "D05",
+        "name": "额度窗口",
+        "category": "display",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_unknown"
+        },
+        "reason": "窗口余量未知。",
+        "advice": "关注账号窗口余量；未知余量不阻塞上架、申诉或管理员检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D06": {
+        "key": "D06",
+        "name": "推理强度兑现",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "baseline_high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "high_low_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "reasoning_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": [
+              1,
+              1
+            ],
+            "confidence": 0.95
+          }
+        },
+        "samples": {
+          "observed": 10,
+          "paired": 10,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reasoning_ratio_normal"
+        },
+        "reason": "有效配对推理量未见明显下降。",
+        "advice": "检查推理档位及用量观测，修复后与同期基线复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07": {
+        "key": "D07",
+        "name": "智力配对",
+        "category": "capability",
+        "status": "not_applicable",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "disabled"
+        },
+        "reason": "此项规则未启用。",
+        "advice": "检查模型路由与接入配置，修复后完成配对复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07.honesty": {
+        "key": "D07.honesty",
+        "name": "诚实与弃权",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "在信息不足时准确说明无法确定，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D08": {
+        "key": "D08",
+        "name": "输出完整性",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查输出上限及内容完整性，避免占位或省略后完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D09": {
+        "key": "D09",
+        "name": "上下文深度",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查长上下文完整保留与检索能力，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D10": {
+        "key": "D10",
+        "name": "响应性能",
+        "category": "performance",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "performance",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "output_tps_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "ttft_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 360,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查延迟与吞吐，结合同行或同期基线完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D12": {
+        "key": "D12",
+        "name": "缓存功能",
+        "category": "function",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 30,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "缓存需要同账号两步的使用量证据。",
+        "advice": "检查缓存支持与长前缀复用，排除计数缺失后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D13": {
+        "key": "D13",
+        "name": "可用率",
+        "category": "availability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "success_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 400,
+          "paired": 400,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "availability_normal"
+        },
+        "reason": "有效请求可用率满足当前档位。",
+        "advice": "检查账号权限、额度与连接稳定性，排除平台侧错误后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "third_party": {
+        "key": "third_party",
+        "name": "第三方身份核验",
+        "category": "authenticity",
+        "status": "not_run",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "核对第三方核验结果；证据不足时重新核验。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      }
+    },
+    "gates": [],
+    "formal": {
+      "quality_factor": null,
+      "verdict": "normal",
+      "llr": -15.078865696854386,
+      "samples": 60,
+      "target_pass_rate": 1,
+      "relative_score": 1,
+      "confidence": 0.9,
+      "baseline": true,
+      "available_ok": 400,
+      "available_total": 400,
+      "ttft_p50_ms": 1000,
+      "ttft_p95_ms": 1000,
+      "output_tps": 100,
+      "grade": "S"
+    }
+  },
+  "部分证据": {
+    "checks": {
+      "A01": {
+        "key": "A01",
+        "name": "订阅档位",
+        "category": "configuration",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tier_unverified"
+        },
+        "reason": "订阅档位为授权资料，未经过官方接口独立核验。",
+        "advice": "核对授权档位与上架声明，无法核实时保留未核验状态。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A02": {
+        "key": "A02",
+        "name": "响应型号一致",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 240,
+          "excluded": 120
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对声明型号、官方回退规则与接入配置，完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A03": {
+        "key": "A03",
+        "name": "输入计数指纹",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 240,
+          "excluded": 120
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "确认被测与基线采用相同接入方式，复核输入计数差异。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A04": {
+        "key": "A04",
+        "name": "型号权限",
+        "category": "configuration",
+        "status": "pass",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 20,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tested_point_accepted"
+        },
+        "reason": "本次测试点被接受，不代表核验全部权限或完整上下文上限。",
+        "advice": "核对账号对上架型号的访问权限，修复后重新检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A05": {
+        "key": "A05",
+        "name": "上下文边界",
+        "category": "configuration",
+        "status": "pass",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 20,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "tested_point_accepted"
+        },
+        "reason": "本次测试点被接受，不代表核验全部权限或完整上下文上限。",
+        "advice": "核对声明上下文长度、请求预算与入口行为，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A06": {
+        "key": "A06",
+        "name": "推理档位",
+        "category": "configuration",
+        "status": "not_run",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "核对型号支持的推理档位及实际接入配置。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A08": {
+        "key": "A08",
+        "name": "知识代际",
+        "category": "display",
+        "status": "not_run",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "与同时段同型号基线对照，避免将过期事实或缺失信息作为确定失败。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.image_pdf": {
+        "key": "A11.image_pdf",
+        "name": "图片与 PDF",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 20,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.json_schema": {
+        "key": "A11.json_schema",
+        "name": "结构化输出",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 20,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.multiturn": {
+        "key": "A11.multiturn",
+        "name": "多轮保持",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 20,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.thinking": {
+        "key": "A11.thinking",
+        "name": "推理功能",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 20,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A11.tools": {
+        "key": "A11.tools",
+        "name": "工具调用",
+        "category": "function",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 20,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "核对对应功能是否获得授权且被接入方式保留，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A12": {
+        "key": "A12",
+        "name": "回退与拒答",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatch_rate": {
+            "value": 0,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 240,
+          "excluded": 120
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查无害请求的回退与拒答情况，并对照同期基线。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "A15": {
+        "key": "A15",
+        "name": "参数规则指纹",
+        "category": "authenticity",
+        "status": "pass",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {
+          "mismatches": {
+            "value": 0,
+            "unit": "count",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 20,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "已登记参数规则与同期基线一致。",
+        "advice": "完成同型号 A/A 校准；被网关本地拦截的规则不能作为厂商指纹。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D04": {
+        "key": "D04",
+        "name": "异常限流",
+        "category": "availability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_not_verified"
+        },
+        "reason": "缺少可验证的额度窗口，429 不作为异常扣价。",
+        "advice": "核对额度窗口与限流来源，排除网关本地限制后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D05": {
+        "key": "D05",
+        "name": "额度窗口",
+        "category": "display",
+        "status": "inconclusive",
+        "role": "display",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "account_snapshot",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "window_unknown"
+        },
+        "reason": "窗口余量未知。",
+        "advice": "关注账号窗口余量；未知余量不阻塞上架、申诉或管理员检测。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D06": {
+        "key": "D06",
+        "name": "推理强度兑现",
+        "category": "capability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 10,
+          "paired": 4,
+          "excluded": 6
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "reasoning_pairs_insufficient"
+        },
+        "reason": "有效推理量配对不足，零值或缺失用量不能证明降档。",
+        "advice": "检查推理档位及用量观测，修复后与同期基线复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07": {
+        "key": "D07",
+        "name": "智力配对",
+        "category": "capability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 16,
+          "excluded": 14
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "insufficient_pairs"
+        },
+        "reason": "有效配对或校准证据不足，暂不能判定。",
+        "advice": "检查模型路由与接入配置，修复后完成配对复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D07.honesty": {
+        "key": "D07.honesty",
+        "name": "诚实与弃权",
+        "category": "capability",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 16,
+          "excluded": 14
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "insufficient_pairs"
+        },
+        "reason": "有效配对或校准证据不足，暂不能判定。",
+        "advice": "在信息不足时准确说明无法确定，修复后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D08": {
+        "key": "D08",
+        "name": "输出完整性",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 20,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查输出上限及内容完整性，避免占位或省略后完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D09": {
+        "key": "D09",
+        "name": "上下文深度",
+        "category": "capability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "capability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "mcnemar_p": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          },
+          "relative_score": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "target_pass_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 30,
+          "paired": 16,
+          "excluded": 14
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查长上下文完整保留与检索能力，修复后完成完整复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D10": {
+        "key": "D10",
+        "name": "响应性能",
+        "category": "performance",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "performance",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "output_tps_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          },
+          "ttft_ratio": {
+            "value": 1,
+            "unit": "ratio",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 360,
+          "paired": 240,
+          "excluded": 120
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "本次有效配对未见异常。",
+        "advice": "检查延迟与吞吐，结合同行或同期基线完成复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D12": {
+        "key": "D12",
+        "name": "缓存功能",
+        "category": "function",
+        "status": "inconclusive",
+        "role": "factor",
+        "factor_group": "function",
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 30,
+          "paired": 20,
+          "excluded": 10
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "paired_pass"
+        },
+        "reason": "缓存需要同账号两步的使用量证据。",
+        "advice": "检查缓存支持与长前缀复用，排除计数缺失后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "D13": {
+        "key": "D13",
+        "name": "可用率",
+        "category": "availability",
+        "status": "pass",
+        "role": "factor",
+        "factor_group": "availability",
+        "factor": 1,
+        "applied": false,
+        "metrics": {
+          "success_rate": {
+            "value": 1,
+            "unit": "fraction",
+            "ci": null,
+            "confidence": null
+          }
+        },
+        "samples": {
+          "observed": 400,
+          "paired": 400,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "availability_normal"
+        },
+        "reason": "有效请求可用率满足当前档位。",
+        "advice": "检查账号权限、额度与连接稳定性，排除平台侧错误后复检。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      },
+      "third_party": {
+        "key": "third_party",
+        "name": "第三方身份核验",
+        "category": "authenticity",
+        "status": "not_run",
+        "role": "gate",
+        "factor_group": null,
+        "factor": null,
+        "applied": false,
+        "metrics": {},
+        "samples": {
+          "observed": 0,
+          "paired": 0,
+          "excluded": 0
+        },
+        "evidence": {
+          "source": "paired_probe",
+          "window_start": null,
+          "window_end": null,
+          "generator_version": null,
+          "sample_unit": "item_unit",
+          "code": "not_run"
+        },
+        "reason": "本次未检测此项。",
+        "advice": "核对第三方核验结果；证据不足时重新核验。",
+        "impact": "证据不足，不扣价。",
+        "checked_at": "0001-01-01T00:00:00Z"
+      }
+    },
+    "gates": [],
+    "formal": {
+      "quality_factor": null,
+      "verdict": "normal",
+      "llr": -12.063092557483508,
+      "samples": 48,
+      "target_pass_rate": 1,
+      "relative_score": 1,
+      "confidence": 0.9,
+      "baseline": true,
+      "available_ok": 400,
+      "available_total": 400,
+      "ttft_p50_ms": 1000,
+      "ttft_p95_ms": 1000,
+      "output_tps": 100,
+      "grade": "S"
+    }
+  }
+}

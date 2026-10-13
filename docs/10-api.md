@@ -22,8 +22,8 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/market/listings` | 生效中的寄售 / 额度包（已排除降智、不可用、不面向买家的上游）。筛选：`platform`、`grade`、`max_price`、`kind`（`channel` / `pack`）；排序 `sort`：`price`（默认）/ `success` / `ttft` |
-| GET | `/api/market/listings/:id` | 挂单摘要：厂商、档位、买家价 `price`（= m_s × (1 + c)）、`sku_kind`、额度包 `face_value`/`stock`、按量 `min_amount`、健康状态、等级、24h 成功率与请求数、首字延迟 |
+| GET | `/api/market/listings` | 生效中的寄售 / 额度包（已排除降智、不可用、不面向买家的上游）。每项含挂售模型 `models: string[]`；筛选：`platform`、`model`、`grade`、`max_price`、`kind`（`channel` / `pack`）；排序 `sort`：`price`（默认）/ `success` / `ttft`。模型筛选按模型 ID 精确匹配；未声明白名单的存量上游不限制模型，也会匹配 |
+| GET | `/api/market/listings/:id` | 挂单摘要：厂商、档位、挂售模型 `models: string[]`、买家价 `price`（= m_s × (1 + c)）、`sku_kind`、额度包 `face_value`/`stock`、按量 `min_amount`、健康状态、等级、24h 成功率与请求数、首字延迟；存量未声明白名单时 `models` 为空数组 |
 | GET | `/api/market/pools` | 默认分组列表及售价 D |
 | GET | `/api/market/discovery` | 首页运营配置（类目树、横幅、静态槽位等） |
 | GET | `/api/market/recommend` | 首页四宫格推荐结果（按 `market_recommend` 因子打分） |
@@ -104,13 +104,18 @@
 | POST | `/api/seller/upstreams/:id/reauthorize` | 授权失效后重新授权：返回新的授权链接，之后同样用 `oauth/complete` 提交；必须是同一个官方账号；可选 `project_id` 同上 |
 | POST | `/api/seller/upstreams/:id/retry-verification` | 上架检测失败后重新检测 |
 | GET | `/api/seller/upstreams` | 上游列表。`account_email` 是授权或导入时识别的官方账号邮箱，控制台用它作为账号名称（Gemini 与 Coding Plan 没有邮箱，按上游编号展示）；不向买家展示 |
-| GET | `/api/seller/upstreams/:id` | 详情：状态、健康状态、档位、等级、当前挂单与报价、近 24 小时服务情况（请求数、收益、首字延迟、成功率）、能否使用重置卡与授权自动用卡（`reset_credits_supported`、`auto_reset_supported`）及自动用卡设置 |
+| GET | `/api/seller/upstreams/:id` | 详情：状态、健康状态、档位、等级、挂售模型 `model_whitelist: string[] \| null`、模型目录 `model_catalog: string[]`、目录获取时间 `model_catalog_at`、当前挂单与报价、近 24 小时服务情况（请求数、收益、首字延迟、成功率）、能否使用重置卡与授权自动用卡（`reset_credits_supported`、`auto_reset_supported`）及自动用卡设置 |
+| GET | `/api/seller/upstreams/:id/models` | 已缓存的模型目录与白名单：`catalog: string[]`、`whitelist: string[] \| null`、`fetched_at`（RFC 3339 时间或 null） |
+| POST | `/api/seller/upstreams/:id/models/refresh` | 重新获取并缓存账号模型目录，返回格式同 GET models；不改变白名单。直接同步失败时回退查询，已声明白名单的上游保留并合入缓存目录；两种方式都失败时返回 503 `MODEL_CATALOG_UNAVAILABLE`，保留原目录与获取时间 |
+| PUT | `/api/seller/upstreams/:id/models` | 提交或修改挂售白名单：`{"models":["模型 ID"]}`，必须非空，目录非空时只能选目录内模型；目录为空时允许手动输入具体模型 ID，不接受空白字符或通配符。立即合并写入 sub2api 的 `credentials.model_mapping`，返回更新后的上游；处于 `selecting_models` 时进入 `verifying` 并开始上架检测 |
 | PUT | `/api/seller/upstreams/:id/settings` | 修改自留比例：`self_reserve_percent`（0–90，仅支持窗口阈值的厂商） |
 | GET | `/api/seller/upstreams/:id/quota` | 账号的官方订阅额度：各窗口（5 小时、7 天、Sonnet / Opus 7 天、30 天、Gemini 每日、Antigravity 各模型、Coding Plan 各窗口）的使用率、重置时间与窗口内经平台的请求数 / token / 官方价费用，以及授权失效、封禁等提示和自留比例。Claude 默认读 sub2api 的响应头采样快照（不访问官方）；`refresh=1` 向官方查询（同一上游至少间隔 2 分钟，其余 1 分钟内复用结果） |
 | GET | `/api/seller/upstreams/:id/reset-credits` | 重置卡（仅 Codex 与 Claude 的 OAuth 账号，详情的 `reset_credits_supported` 为真）：`queried`（是否有官方数据）、`available_count`、各张卡的到期时间（Claude 另有恢复的窗口 `clears`、能否使用及原因）、官方冷却时间；Codex 另有自动用卡 `auto`（是否授权、是否已在底层生效、卖家设定与实际生效的阈值、暂停线、sub2api 的运行状态）；最近 20 条用卡记录 `events`（手动与平台自动）。Codex 默认读 sub2api 缓存的快照，Claude 默认返回最近一次查询结果；`refresh=1` 向官方查询（30 秒内复用结果） |
 | POST | `/api/seller/upstreams/:id/reset-credits/redeem` | 使用一张重置卡：`request_id`（8–64 位字母、数字、`-`、`_`，每次确认生成；网络中断重试沿用同一个，返回首次结果）、`expected_available`（确认时看到的可用张数）。用卡前向官方确认张数：没有卡返回 `NO_RESET_CREDIT`，张数变化返回 `RESET_CREDITS_CHANGED`，同一上游正在用卡返回 `RESET_IN_PROGRESS`，这三种情况都不消耗卡。返回用卡记录，`status` 为 success / no_credit / failed / unknown（结果不确定，卡可能已用掉） |
 | PUT | `/api/seller/upstreams/:id/auto-reset` | 授权或取消平台自动用卡（仅 Codex）：`enabled`，可选 `threshold_5h_percent`、`threshold_7d_percent`（1 到暂停线 100 − 自留比例，留空跟随暂停线，超出返回 `INVALID_AUTO_RESET_THRESHOLD`）。只在挂单面向买家时生效 |
 | DELETE | `/api/seller/upstreams/:id` | 删除上游 |
+
+OAuth 授权、Coding Key 和账号导入成功后进入 `selecting_models`（待选择挂售模型），先获取模型目录，选择提交后才检查隐私设置并开始上架检测；隐私设置失败时保留白名单，进入 `verify_failed` 等待重试。目录优先直接同步上游，失败回退查询账号模型；白名单按 `{模型 ID: 模型 ID}` 保存，重新授权与导入后补写，其他登录凭证保留。存量 `model_whitelist = null` 表示允许全部模型，检测重试时也不要求补选，卖家可以在详情页补填。接入、刷新、白名单提交和重新授权串行执行，同一上游忙碌或操作容量已满时返回 409 `UPSTREAM_BUSY`，可稍后重试；数据库连接池须至少配置两条连接。白名单同步结果不确定或本地保存失败时尝试恢复原映射，上架检测入队失败时回到可重试的 `verify_failed`。
 
 ### 4.2 挂单
 
@@ -134,8 +139,8 @@
 | GET | `/api/seller/upstreams/:id/reports` | 报告列表 |
 | GET | `/api/seller/reports/:id` | 报告详情（脱敏，不含题目、答案与基线信息，见 [05](05-quality.md) 第 8 节） |
 | GET | `/api/seller/upstreams/:id/quality-trend` | 每日智力相对分与异常次数：`days`（默认 30） |
-| POST | `/api/seller/upstreams/:id/retest` | 手动复测（每日限次，仅该厂商开启检测时可用） |
-| POST | `/api/seller/reports/:id/appeal` | 对降智 / 不可用的判定申诉：`reason` |
+| POST | `/api/seller/upstreams/:id/retest` | 手动复测（每日限次，厂商须开启检测；健康异常、最近检测失败/证据不足或已有生效扣价时可用，否则 409 `RETEST_NOT_NEEDED`）。检测异常流程，复测由卖家承担、不结算收益；详情 `manual_retest` 给出能否复测及原因 |
+| POST | `/api/seller/reports/:id/appeal` | 对暂停结论或已生效且系数小于 1 的扣价申诉：`reason` |
 
 ### 4.4 收益与提现
 
@@ -177,16 +182,18 @@
 | 厂商 | `GET /api/admin/vendors`、`PUT /api/admin/vendors/:platform`：是否开放接入、开放的接入方式（`auth_types`，只能从 `supported_auth_types` 中选）、寄售倍率区间、回收基础倍率表（按档位）、默认并发、限流参数 |
 | 代理库存 | `GET/POST /api/admin/proxies`、`POST /api/admin/proxies/:id/sync`（同步到 sub2api）、`/test`、`/quality-check`、`/disable`、`/enable`；检测响应与卖家接口相同。列表包含平台代理和卖家代理，`seller_id` 区分来源，后台新增代理归平台 |
 | 默认分组 | `GET/POST /api/admin/pools`、`PUT /api/admin/pools/:id`（售价 D、最低毛利、安全缓冲、启用）、`POST /api/admin/pools/:id/sync` |
-| 检测策略 | `GET /api/admin/detection-policies`、`PUT /api/admin/detection-policies/:platform[?auth_type=]`（`enabled`、`scheduled_enabled`、周期、套件、模型、预算、阈值、`auto_pause`、`default_grade`、`third_party`，见 [05](05-quality.md) 第 3、9 节） |
+| 检测策略 | `GET /api/admin/detection-policies`、`PUT /api/admin/detection-policies/:platform[?auth_type=]`：总开关 enabled / scheduled_enabled、flows 的两条独立流程、预算、default_grade、third_party；旧 suites / models / interval_minutes / full_triggers 保留返回但已废弃，见 [05](05-quality.md) 第 3、9 节 |
+| 质检设置 | `GET/PUT /api/admin/inspection/settings`：mode、预算、并发、恢复、等级、调度、模型能力等，部分更新 |
+| 检测项 | `GET /api/admin/inspection/checks` 返回 flow、pricing、default_pricing=false、warning/severe 系数与校准；`PUT /api/admin/inspection/checks/:key` 覆盖 enabled、pricing（true/false/null）、calibrated、calibration_note、coefficients、thresholds |
 | 第三方检测 | `GET /api/admin/detection-providers`（可接入的检测站、配置、最近 1 小时提交次数）、`PUT /api/admin/detection-providers/:name`（`enabled`、`base_url`、`api_key`、`settings`、`max_runs_per_hour`、`timeout_minutes`）、`GET /api/admin/third-party-checks[?upstream_id=]` |
 | 单上游检测覆盖 | `PUT /api/admin/upstreams/:id/detection-override`、`DELETE …` |
-| 手动检测 | `POST /api/admin/upstreams/:id/probe`（对关闭检测的厂商也可执行） |
-| 检测明细 | `GET /api/admin/upstreams/:id/probe-runs`（最近的检测记录，不含基线对照检测，`limit` 默认 20）、`GET /api/admin/probe-runs/:id`（逐题结果：题目、是否通过、耗时、token、回答片段前 500 字符，附同批次基线账号的结果） |
-| 检测记录 | `GET /api/admin/probe-runs`（全部上游的检测记录，带各套件题数与通过数；筛选 `platform`、`upstream_id`、`model`、`trigger`（为空时不含基线对照，`reference` 只看基线对照）、`status`、`verdict`、`from` / `to`（本地日期 YYYY-MM-DD，含当天）、`limit` / `offset`）、`GET /api/admin/probe-item-stats`（按题统计，被测上游与基线账号分开统计，筛选同上）、`GET /api/admin/probe-items/:id/results`（一道题最近的答题结果，含基线对照，`limit` 默认 50） |
-| 题库 | `GET/POST /api/admin/probe-items`、`PUT /api/admin/probe-items/:id`、`POST /api/admin/probe-items/:id/retire` |
+| 手动检测 | `POST /api/admin/upstreams/:id/probe`：请求体可选 `{"flows":["intelligence","identity"]}`，省略检测全部已启用流程；对关闭检测总开关的厂商也可执行 |
+| 检测明细 | `GET /api/admin/upstreams/:id/probe-runs`（最近的检测记录，含 flows / identity_source / models，不含基线对照检测，`limit` 默认 20）、`GET /api/admin/probe-runs/:id`（逐题结果：题目、是否通过、耗时、token、回答片段前 500 字符，附同批次基线账号的结果） |
+| 检测记录 | `GET /api/admin/probe-runs`（全部上游的检测记录，含 flows / identity_source / models 及各套件题数与通过数；筛选 `platform`、`upstream_id`、`model`、`trigger`（为空时不含基线对照，`reference` 只看基线对照）、`status`、`verdict`、`from` / `to`（本地日期 YYYY-MM-DD，含当天）、`limit` / `offset`）、`GET /api/admin/probe-item-stats`（按题统计，被测上游与基线账号分开统计，筛选同上）、`GET /api/admin/probe-items/:id/results`（一道题最近的答题结果，含基线对照，`limit` 默认 50） |
+| 题库 | `GET/POST /api/admin/probe-items`、`PUT /api/admin/probe-items/:id`、`POST /api/admin/probe-items/:id/retire`；新建拒绝旧 iq / reasoning / long_context 套件 |
 | 基线账号 | `GET/POST /api/admin/reference-accounts`、`DELETE /api/admin/reference-accounts/:id`（授权复用卖家的授权接口） |
 | 质量看板 | `GET /api/admin/quality/overview`（各厂商健康与等级分布、官方全局事件、降智上游列表） |
-| 申诉 | `GET /api/admin/appeals`、`POST /api/admin/appeals/:id/resolve`（`action`：`retest` / `overturn` / `uphold`） |
+| 申诉 | `GET /api/admin/appeals`、`POST /api/admin/appeals/:id/resolve`（`action`：`retest` / `overturn` / `uphold`）；人工 overturn 将 Q 恢复为 1、清空估价时间并等待新检测，保留历史报告 |
 | 上游 | `GET /api/admin/upstreams`、`POST /api/admin/upstreams/:id/suspend`、`/unsuspend`、`DELETE /api/admin/upstreams/:id` |
 | 用户与实名 | `GET /api/admin/kyc`、`POST /api/admin/kyc/:id/review`、`POST /api/admin/users/:id/status`（冻结 / 解冻） |
 | 充值 | `GET /api/admin/recharges`、`POST /api/admin/recharges/:id/confirm`（只用于人工充值单）、`POST /api/admin/recharges/:id/sync`（向渠道查单）、`POST /api/admin/recharges/:id/refund`（代买家按充值单退款，参数与规则同买家接口） |
@@ -198,5 +205,31 @@
 | 账本 | `GET /api/admin/ledger`（平台现金、收入、探测成本、调整、买家余额合计、卖家应付合计） |
 | sub2api 状态 | `GET /api/admin/sub2api/status`（版本、迁移指纹、兼容自检状态、出站队列积压、入账游标） |
 | 审计 | `GET /api/admin/audit-logs`（可按 `target` 筛选） |
+
+检测策略的 flows 字段结构如下。每个流程分别保存开关、周期、触发类型与完整检测触发；身份来源第三方且开启时必须有已启用检测站。expected_pass_rate 为空或 `(0,1]`，为空沿用检测项阈值；third_party 内原 triggers 已废弃，执行以 identity.triggers 为准。
+
+第三方 on_mismatch / on_submodel_mismatch 支持 degraded、suspected、ignore；ignore 折算为 normal 与身份 pass，不产生疑似或扣价。执行实例最多 `200 × max(1, 测智模型数)`，快照最多 32 MiB，超限运行明确失败，不执行删减计划。
+
+```json
+{
+  "flows": {
+    "intelligence": {
+      "enabled": true, "scheduled_enabled": true, "interval_minutes": 360,
+      "triggers": ["onboarding", "scheduled", "recovery", "seller_manual", "admin", "adaptive", "appeal"],
+      "full_triggers": ["onboarding", "appeal", "admin"],
+      "models": [{"model": "gpt-6-astra", "expected_pass_rate": null}]
+    },
+    "identity": {
+      "enabled": true, "source": "third_party", "scheduled_enabled": false, "interval_minutes": 1440,
+      "triggers": ["onboarding", "admin", "appeal"],
+      "full_triggers": ["onboarding", "appeal", "admin", "scheduled", "recovery", "seller_manual", "adaptive"]
+    }
+  }
+}
+```
+
+运行与报告 summary 新增 flows、identity_source、models，以及 intelligence / identity 两个区块（status、inherited_at；身份还有 source）。测智状态允许 pass / warning / fail / inconclusive / not_applicable / not_run，身份不含 not_applicable。管理员 intelligence.models[] 还包含 target_pass_rate、expected_pass_rate、samples；卖家只返回 model、status。卖家 checks 的 applied=true 项保留 factor。旧报告没有流程字段时继续用 summary.suites 展示，详见 [05 第 8 节](05-quality.md#8-卖家测试报告)。
+
+测智历史只沿用当前模型集合的有效结果，模型期望或该检测项定义变化后须重测；其他项配置变化不使历史失效。申诉复测正常且无生效扣价时自动推翻，证据边界取本轮开始时间（未开始取入队时间），本轮通过结果继续用于估价；人工推翻以当前时间清旧证据，摘要等待新检测。
 
 **与设计稿的差异**：价格类设置合并在"系统设置"与"厂商"中，没有单独的 `/pricing`；提现审核用一个 `review` 接口；调账不设审批流（记录审计日志与原因）；第一期没有赠送余额，钱包不拆分现金与赠送；Key 详情不显示熔断状态（熔断在各 Edge 实例内存中）。

@@ -8,37 +8,18 @@ import (
 	"github.com/DueGin/token-market/internal/inspection"
 )
 
-// 正式判定复用原 SPRT，新增题只在有同期、有效配对时计智力分。
-// 拒答、截断、限流和平台错误的剔除与扣价所用配对保持一致。
+// 总结只统计可用与性能，测智结论由各检测项和模型分别给出。
 func assessFormal(outcomes []Outcome, th Thresholds, configurations ...InspectionSettings) Assessment {
 	rows := make([]Outcome, 0, len(outcomes))
 	for _, o := range outcomes {
 		if o.Target.HTTPStatus == 0 && o.Target.ErrorClass == "" {
 			continue
 		}
-		if o.CheckKey == "" && !strings.HasPrefix(o.Suite, "inspection_") {
-			o.RefHistRate = nil
-			if !eligiblePair(o) {
-				o.Suite = "availability"
-			}
-			rows = append(rows, o)
-			continue
-		}
 		o.Suite = "availability"
 		o.RefHistRate = nil
-		scoringEnabled := true
-		if len(configurations) > 0 {
-			rule, _ := inspection.Effective(o.CheckKey, configurations[0])
-			scoringEnabled = rule.Enabled && rule.Calibrated
-		}
-		if scoringEnabled && (o.CheckKey == "D07" || o.CheckKey == "D07.honesty" || o.CheckKey == "D09") && eligiblePair(o) {
-			o.Suite = "iq"
-		} else {
-			o.RefHistRate = nil
-		}
 		rows = append(rows, o)
 	}
-	return Assess(rows, th, true)
+	return Assess(rows, th, false)
 }
 
 func eligiblePair(o Outcome) bool {
@@ -94,118 +75,139 @@ func pairCheck(c *inspection.Check, rows []Outcome, d inspection.EffectiveDefini
 }
 
 // Inspect 输出统一目录；采样、显著性与校准分别保留，缺测不能伪造通过。
-func Inspect(rows []Outcome, st InspectionSettings, now time.Time) (map[string]inspection.Check, []inspection.Gate) {
+func Inspect(rows []Outcome, st InspectionSettings, now time.Time, options ...InspectOptions) (map[string]inspection.Check, []inspection.Gate) {
+	itemMode := !hasInspectionReference(rows)
+	var opts InspectOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
 	checks := map[string]inspection.Check{}
 	gates := []inspection.Gate{}
 	for _, definition := range inspection.Known() {
 		d, _ := inspection.Effective(definition.Key, st)
 		c := newInspectionCheck(d, now)
 		own := observedRows(rows, d.Key)
-		if !d.Enabled {
+		if opts.Flows != nil && (d.Flow == "intelligence" && !containsAny(opts.Flows, "intelligence") || d.Flow == "identity" && (!containsAny(opts.Flows, "identity") || opts.IdentitySource == "third_party")) {
+			checks[d.Key] = c
+			continue
+		}
+		if opts.Flows != nil && d.Flow == "intelligence" && containsAny(opts.Flows, "intelligence") && len(opts.Models) == 0 {
+			c.Status, c.Reason, c.Evidence.Code = "not_applicable", "挂售模型未配置测智。", "intelligence_models_unconfigured"
+			checks[d.Key] = c
+			continue
+		}
+		// A15 默认停用时仍说明对照要求，既不启用采样也不参与扣价。
+		if !d.Enabled && (!itemMode || d.Key != "A15") {
 			c.Status = "not_applicable"
 			c.Reason = "此项规则未启用。"
 			c.Evidence.Code = "disabled"
 			checks[d.Key] = c
 			continue
 		}
-		switch d.Key {
-		case "D07", "D07.honesty", "D09":
-			paired := pairCheck(&c, own, d)
-			if c.Status == "pass" {
-				inspectIntelligence(&c, paired, d)
-			}
-		case "A15":
-			inspectParameterFingerprint(&c, own)
-		case "D06":
-			inspectReasoning(&c, rows, d)
-		case "A11.tools", "A11.json_schema", "A11.multiturn", "A11.image_pdf", "D08":
-			paired := pairCheck(&c, own, d)
-			if c.Status == "pass" {
-				relevant, failures := 0, 0
-				for _, o := range paired {
-					if o.RefPass {
-						relevant++
-						if !o.TargetPass {
-							failures++
-						}
-					}
-				}
-				if relevant == 0 {
-					c.Status = "not_applicable"
-					c.Factor = nil
-					c.Reason = "同期基线也未兑现此功能，不归因卖家。"
-					c.Evidence.Code = "reference_unsupported"
-				} else if failures > 0 {
-					c.Status = "fail"
-					c.Factor = numberPointer(d.Coefficients["failure"])
-					c.Reason = "基线通过但被测未兑现功能。"
-					c.Evidence.Code = "paired_function_failed"
-				}
-			}
-		case "A11.thinking":
-			paired := pairCheck(&c, own, d)
-			if c.Status == "pass" {
-				observed, failed := 0, 0
-				for _, o := range paired {
-					if o.Ref.ReasoningObserved && o.Ref.ReasoningTokens > 0 && o.Target.ReasoningObserved {
-						observed++
-						if o.Target.ReasoningTokens == 0 {
-							failed++
-						}
-					}
-				}
-				if observed == 0 {
-					c.Status = "inconclusive"
-					c.Factor = nil
-					c.Reason = "当前通道未提供可比较的推理用量。"
-					c.Evidence.Code = "reasoning_usage_unknown"
-				} else if failed > 0 {
-					c.Status = "fail"
-					c.Factor = numberPointer(d.Coefficients["failure"])
-					c.Reason = "基线明确提供推理用量，被测明确返回零推理用量。"
-					c.Evidence.Code = "thinking_not_observed"
-				}
-			}
-		case "A02", "A03", "A12", "D10":
-			inspectSharedEvidence(&c, rows, d)
-		case "A04", "A05":
-			inspectPermissionBoundary(&c, own, d, &gates, now)
-		case "D13":
-			inspectAvailability(&c, rows, d, &gates, now)
-		case "D04":
-			c.Status = "inconclusive"
-			c.Reason = "缺少可验证的额度窗口，429 不作为异常扣价。"
-			c.Evidence.Code = "window_not_verified"
-		case "A01":
-			c.Status = "inconclusive"
-			c.Reason = "订阅档位为授权资料，未经过官方接口独立核验。"
-			c.Evidence.Source = "account_snapshot"
-			c.Evidence.Code = "tier_unverified"
-		case "D05":
-			c.Status = "inconclusive"
-			c.Reason = "窗口余量未知。"
-			c.Evidence.Source = "account_snapshot"
-			c.Evidence.Code = "window_unknown"
-		case "D12":
-			// 两步缓存由引擎读取完整步骤，不能仅凭最后一步跨账号比较。
-			pairCheck(&c, own, d)
-			if len(own) == 0 {
-				break
-			}
-			c.Status = "inconclusive"
-			c.Factor = nil
-			c.Reason = "缓存需要同账号两步的使用量证据。"
+		if inspectIntelligenceModels(&c, rows, own, d, st, opts, now) {
+			checks[d.Key] = c
+			continue
 		}
-		if !d.Calibrated && (c.Status == "fail" || c.Status == "warning") {
-			c.Impact = "待运营校准，当前不扣价。"
+		if !itemMode || !inspectItemProbe(&c, rows, own, d, st, opts, &gates, now) {
+			switch d.Key {
+			case "D07", "D07.honesty", "D09":
+				paired := pairCheck(&c, own, d)
+				if c.Status == "pass" {
+					inspectIntelligence(&c, paired, d)
+				}
+			case "A15":
+				inspectParameterFingerprint(&c, own)
+			case "D06":
+				inspectReasoning(&c, rows, d)
+			case "A11.tools", "A11.json_schema", "A11.multiturn", "A11.image_pdf", "D08":
+				paired := pairCheck(&c, own, d)
+				if c.Status == "pass" {
+					relevant, failures := 0, 0
+					for _, o := range paired {
+						if o.RefPass {
+							relevant++
+							if !o.TargetPass {
+								failures++
+							}
+						}
+					}
+					if relevant == 0 {
+						c.Status = "not_applicable"
+						c.Factor = nil
+						c.Reason = "同期基线也未兑现此功能，不归因卖家。"
+						c.Evidence.Code = "reference_unsupported"
+					} else if failures > 0 {
+						c.Status = "fail"
+						c.Factor = numberPointer(d.Coefficients["severe"])
+						c.Reason = "基线通过但被测未兑现功能。"
+						c.Evidence.Code = "paired_function_failed"
+					}
+				}
+			case "A11.thinking":
+				paired := pairCheck(&c, own, d)
+				if c.Status == "pass" {
+					observed, failed := 0, 0
+					for _, o := range paired {
+						if o.Ref.ReasoningObserved && o.Ref.ReasoningTokens > 0 && o.Target.ReasoningObserved {
+							observed++
+							if o.Target.ReasoningTokens == 0 {
+								failed++
+							}
+						}
+					}
+					if observed == 0 {
+						c.Status = "inconclusive"
+						c.Factor = nil
+						c.Reason = "当前通道未提供可比较的推理用量。"
+						c.Evidence.Code = "reasoning_usage_unknown"
+					} else if failed > 0 {
+						c.Status = "fail"
+						c.Factor = numberPointer(d.Coefficients["severe"])
+						c.Reason = "基线明确提供推理用量，被测明确返回零推理用量。"
+						c.Evidence.Code = "thinking_not_observed"
+					}
+				}
+			case "A02", "A03", "A12", "D10":
+				inspectSharedEvidence(&c, rows, d)
+			case "A04", "A05":
+				inspectPermissionBoundary(&c, own, d, &gates, now)
+			case "D13":
+				inspectAvailability(&c, rows, d, &gates, now)
+			case "D04":
+				c.Status = "inconclusive"
+				c.Reason = "缺少可验证的额度窗口，429 不作为异常扣价。"
+				c.Evidence.Code = "window_not_verified"
+			case "A01":
+				c.Status = "inconclusive"
+				c.Reason = "订阅档位为授权资料，未经过官方接口独立核验。"
+				c.Evidence.Source = "account_snapshot"
+				c.Evidence.Code = "tier_unverified"
+			case "D05":
+				c.Status = "inconclusive"
+				c.Reason = "窗口余量未知。"
+				c.Evidence.Source = "account_snapshot"
+				c.Evidence.Code = "window_unknown"
+			case "D12":
+				// 两步缓存由引擎读取完整步骤，不能仅凭最后一步跨账号比较。
+				pairCheck(&c, own, d)
+				if len(own) == 0 {
+					break
+				}
+				c.Status = "inconclusive"
+				c.Factor = nil
+				c.Reason = "缓存需要同账号两步的使用量证据。"
+			}
 		}
 		checks[d.Key] = c
 	}
-	if strength, ok := checks["D06"]; ok && len(strength.Metrics) > 0 {
+	if strength, ok := checks["D06"]; ok && (strength.Metrics["reasoning_ratio"].Value != nil || strength.Metrics["high_low_ratio"].Value != nil) && (opts.Flows == nil || containsAny(opts.Flows, "identity") && opts.IdentitySource == "self") {
 		c := checks["A06"]
 		c.Status = "pass"
 		c.Samples = strength.Samples
 		c.Metrics = strength.Metrics
+		if itemMode {
+			c.Evidence.Source = "item_probe"
+		}
 		c.Reason = "已显式发推理档位请求；响应量只作观测，不等同厂商档位认证。"
 		c.Evidence.Code = "explicit_effort_observed"
 		checks["A06"] = c
@@ -235,11 +237,17 @@ func inspectIntelligence(c *inspection.Check, rows []Outcome, d inspection.Effec
 		c.Reason = "同期基线全部未通过，无法确认被测能力。"
 		return
 	}
-	ratio := float64(target) / float64(ref)
+	rate := float64(target) / float64(len(rows))
+	expected := float64(ref) / float64(len(rows))
+	if configured := d.Thresholds["model_expected_pass_rate"]; configured > 0 {
+		expected = configured
+	}
+	ratio := rate / expected
 	p := mcnemarExact(bad, good)
 	c.Metrics["relative_score"] = metric(ratio, "ratio")
 	c.Metrics["mcnemar_p"] = metric(p, "fraction")
 	c.Metrics["target_pass_rate"] = metric(float64(target)/float64(len(rows)), "fraction")
+	c.Metrics["expected_pass_rate"] = metric(expected, "fraction")
 	if d.Key == "D09" {
 		if ratio < d.Thresholds["warning_relative"] && bad > good {
 			c.Status = "warning"
@@ -299,7 +307,7 @@ func inspectReasoning(c *inspection.Check, rows []Outcome, d inspection.Effectiv
 	}
 	for _, o := range rows {
 		// 静态 D07 题只比较答题能力，没有参数化 high/low 锚点；快检无 low 时也须排除。
-		if o.CheckKey != "D07" || o.InstanceIdx >= 1000 || o.GeneratorVersion == "static-1" || !strings.HasPrefix(o.Suite, "inspection_") {
+		if o.CheckKey != "D07" || o.InstanceIdx%10000 >= 1000 || o.GeneratorVersion == "static-1" || !strings.HasPrefix(o.Suite, "inspection_") {
 			continue
 		}
 		if len(anchors) > 0 && !anchors[fmtInspectionKey(o.ItemID, o.InstanceIdx)] {

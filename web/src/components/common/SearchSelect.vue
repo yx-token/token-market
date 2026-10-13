@@ -1,14 +1,16 @@
 <script setup lang="ts">
 /**
  * 可搜索下拉选择：单选（string）或多选（string[]），用于表单里引用其它实体的字段。
- * - 选项里没有的已存值不会被丢弃，会标注“（未注册）”并保留，便于看清并改正
+ * - 选项里没有的已存值不会被丢弃；普通字段标注“（未注册）”，开放字段标注“（自定义）”
+ * - creatable 显式开启自由录入，适用于模型 ID 等开放集合；默认仍限制在选项内
  * - options 为空、非远程且不在 loading 时（选项接口失败的降级路径），单选/多选都允许回车录入输入文本，不卡住表单保存；
  *   选项正常加载后拒绝录入不存在的值，避免拼错写入脏数据
- * - 远程搜索场景拒绝随意录入，避免拼错 ID 写入脏数据
+ * - 远程搜索默认拒绝随意录入，避免拼错 ID 写入脏数据
  * - 远程搜索：选中后缓存其 text，关闭/重开面板都不会误判为“未注册”
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { usePopoverPosition } from '@/composables/usePopoverPosition'
+import ConsoleIcon from '@/components/icons/ConsoleIcon.vue'
 import type { SelectOption } from './searchSelect'
 
 export type { SelectOption }
@@ -26,7 +28,9 @@ const props = withDefaults(
     disabled?: boolean
     /** 选项接口尚未就绪 */
     loading?: boolean
-    /** 面板宽度，默认与触发器同宽 */
+    /** 显式允许输入自定义值；默认只保留空选项时的降级录入规则 */
+    creatable?: boolean
+    /** 面板宽度，默认跟随触发器、至少 240px，并限制在视口内 */
     panelWidth?: number
     /** 选中值的展示文案，未命中 options 时回退为原值 */
     textOf?: (value: string) => string
@@ -35,7 +39,7 @@ const props = withDefaults(
     /** 远程搜索防抖毫秒，默认 250 */
     remoteDebounce?: number
   }>(),
-  { modelValue: '', multiple: false, allowEmpty: true, placeholder: '搜索选择', disabled: false, loading: false, remoteDebounce: 250 },
+  { modelValue: '', multiple: false, allowEmpty: true, placeholder: '搜索选择', disabled: false, loading: false, creatable: false, remoteDebounce: 250 },
 )
 
 const emit = defineEmits<{
@@ -50,11 +54,17 @@ const active = ref(0)
 const triggerRef = ref<HTMLElement | null>(null)
 const listRef = ref<HTMLElement | null>(null)
 const searchRef = ref<HTMLInputElement | null>(null)
-const { style: panelStyle, open: placePanel, close: unplacePanel } = usePopoverPosition(triggerRef, {
-  // 未指定时由 usePopoverPosition 按触发器实测宽度计算，勿传 0（会变成 0px 竖线）
-  width: props.panelWidth,
+const { style: panelStyle, update: updatePanel, open: placePanel, close: unplacePanel } = usePopoverPosition(triggerRef, {
+  // 未指定时跟随触发器实测宽度并保底 240px，窄输入框里的选项也能读全；勿传 0（会变成 0px 竖线）
+  width: (rect) => props.panelWidth ?? Math.max(rect.width, 240),
   maxHeight: 320,
 })
+
+// 多选标签换行或外部修改宽度后，重新对齐仍打开的面板。
+watch(() => [props.modelValue, props.panelWidth], async () => {
+  await nextTick()
+  if (isOpen.value) updatePanel()
+}, { deep: true })
 
 // 远程搜索结果与状态；remote 未提供时退回纯本地过滤
 const remoteResults = ref<SelectOption[]>([])
@@ -86,29 +96,37 @@ const pool = computed<SelectOption[]>(() => {
 
 const known = computed(() => new Set(pool.value.map((o) => o.value)))
 
-/** 远程搜索场景无法穷举全部合法值，不把预填 / 未命中值标为“未注册”；本地场景才标 */
-const staleValues = computed(() => {
+/** 远程搜索无法穷举合法值；本地未命中的已存值仍保留在选项中。 */
+const unlistedValues = computed(() => {
   if (props.remote) return []
   return selected.value.filter((v) => !known.value.has(v))
 })
+const staleValues = computed(() => props.creatable ? [] : unlistedValues.value)
 
 const merged = computed<SelectOption[]>(() => {
-  const extra: SelectOption[] = staleValues.value.map((value) => ({ value, text: `${value}（未注册）`, stale: true }))
+  const extra: SelectOption[] = unlistedValues.value.map((value) => ({
+    value, text: `${value}（${props.creatable ? '自定义' : '未注册'}）`, stale: !props.creatable,
+  }))
   // 远程搜索有结果时以远程为准；否则用本地 options，保证降级可用
   const base = props.remote && (query.value.trim() || remoteResults.value.length) ? remoteResults.value : props.options
   return [...base, ...extra]
 })
 
-const filtered = computed(() => {
-  const q = query.value.trim().toLowerCase()
-  const list = merged.value
-  if (!q) return list
-  return list.filter((o) => `${o.value} ${o.text} ${o.keywords ?? ''}`.toLowerCase().includes(q))
-})
+/** 开放字段显式允许录入；其余字段保持“非远程、空选项且不在加载”的降级规则。 */
+const canFreeText = computed(() =>
+  !props.loading && !remoteLoading.value && (props.creatable || (!props.remote && props.options.length === 0)),
+)
 
-/** 是否允许回车录入输入文本：仅“非远程且 options 为空且不在 loading”时才允许，
- *  即选项接口失败时的降级路径；选项正常加载后拒绝录入拼错的值 */
-const canFreeText = computed(() => !props.remote && props.options.length === 0 && !props.loading && !remoteLoading.value)
+const filtered = computed(() => {
+  const value = query.value.trim()
+  const q = value.toLowerCase()
+  if (!q) return merged.value
+  const list = merged.value.filter((o) => `${o.value} ${o.text} ${o.keywords ?? ''}`.toLowerCase().includes(q))
+  if (!props.creatable || !canFreeText.value) return list
+  // 完整输入优先，避免输入新模型 ID 时误选同前缀的已有模型；已有值不重复添加。
+  const exact = list.find((o) => o.value === value)
+  return exact ? [exact, ...list.filter((o) => o !== exact)] : [{ value, text: `${value}（自定义）` }, ...list]
+})
 
 async function runRemote(q: string) {
   if (!props.remote) return
@@ -175,8 +193,8 @@ function displayOne(value: string) {
   if (props.textOf) return props.textOf(value)
   const hit = pool.value.find((o) => o.value === value)
   if (hit) return hit.text
-  // 远程场景无法确认是否未注册，只回显原值；本地场景才标“未注册”
-  return props.remote ? value : `${value}（未注册）`
+  // 开放集合的未知值是自定义值；远程场景只回显原值。
+  return props.remote ? value : `${value}（${props.creatable ? '自定义' : '未注册'}）`
 }
 
 function toggle(value: string, option?: SelectOption) {
@@ -248,6 +266,7 @@ function onKeydown(e: KeyboardEvent) {
   }
   if (e.key === 'Escape') {
     e.preventDefault()
+    e.stopPropagation()
     closePanel()
   } else if (e.key === 'ArrowDown') {
     e.preventDefault()
@@ -263,8 +282,7 @@ function onKeydown(e: KeyboardEvent) {
     if (hit) {
       toggle(hit.value, hit)
     } else if (canFreeText.value && query.value.trim()) {
-      // 选项接口失败降级：仅非远程且 options 为空且不在 loading 时，才允许把输入文本当作一个值录入；
-      // 选项正常加载时拒绝录入拼错的值。多选直接加入，单选录入后关闭
+      // 空选项接口失败时降级录入；开放字段由上方的自定义选项处理。
       toggle(query.value.trim())
     }
   } else if (e.key === 'Backspace' && props.multiple && !query.value && selected.value.length) {
@@ -323,14 +341,13 @@ const emptyHint = computed(() => {
       @click="openPanel"
     >
       <span v-if="!multiple || !selected.length" class="ss-value">{{ displayText }}</span>
-      <span v-else class="ss-value ss-value--ph">{{ placeholder }}</span>
       <span class="ss-tags" v-if="multiple && selected.length">
-        <span v-for="v in selected" :key="v" class="ss-tag" :class="{ 'is-stale': !known.has(v) }">
-          {{ displayOne(v) }}
+        <span v-for="v in selected" :key="v" class="ss-tag" :class="{ 'is-stale': staleValues.includes(v) }">
+          <span class="ss-tag-text">{{ displayOne(v) }}</span>
           <button type="button" class="ss-tag-x" tabindex="-1" :aria-label="`移除 ${displayOne(v)}`" @click="remove(v, $event)">✕</button>
         </span>
       </span>
-      <span class="ss-chevron" :class="{ 'is-open': isOpen }" aria-hidden="true">▾</span>
+      <span class="ss-chevron" :class="{ 'is-open': isOpen }" aria-hidden="true"><ConsoleIcon name="chevron-down" size="sm" /></span>
     </div>
 
     <Teleport to="body">
@@ -406,12 +423,10 @@ const emptyHint = computed(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ss-value--ph {
-  opacity: 0.65;
-}
 .ss-chevron {
+  display: inline-flex;
   flex: none;
-  font-size: 0.7rem;
+  line-height: 0;
   opacity: 0.6;
   transition: transform 0.15s ease;
 }
@@ -420,12 +435,15 @@ const emptyHint = computed(() => {
 }
 .ss-tags {
   display: flex;
-  flex: none;
+  flex: 1;
+  min-width: 0;
   flex-wrap: wrap;
   gap: 0.25rem;
 }
 .ss-tag {
   display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 0.2rem;
   border-radius: 3px;
@@ -433,11 +451,16 @@ const emptyHint = computed(() => {
   padding: 1px 0.25rem 1px 0.4rem;
   font-size: 0.75rem;
 }
+.ss-tag-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .ss-tag.is-stale {
   background: #fdf3e7;
   color: #b45309;
 }
 .ss-tag-x {
+  flex: none;
   border: 0;
   background: transparent;
   color: inherit;
