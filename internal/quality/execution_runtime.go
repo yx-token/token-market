@@ -711,6 +711,17 @@ func instanceOutcome(it plannedInstance) Outcome {
 	o := Outcome{ItemID: it.ItemID, CheckKey: it.CheckKey, Suite: it.Item.Suite, InstanceIdx: it.InstanceIdx, GeneratorVersion: it.GeneratorVersion, StaticComparable: len(it.Steps) == 1}
 	if len(it.Steps) > 0 {
 		o.RequestedModel = it.Steps[0].Request.Model
+		_ = json.Unmarshal(mustJSON(it.Parameters["target_tokens"]), &o.ProbeTokens)
+		o.ProbeOutputTokens = estimateContextTokens(it.Steps[len(it.Steps)-1].Answer)
+		for _, step := range it.Steps {
+			for _, attachment := range step.Request.Attachments {
+				if attachment.MediaType == "application/pdf" {
+					o.ProbeFeature = "pdf"
+				} else if strings.HasPrefix(attachment.MediaType, "image/") && o.ProbeFeature == "" {
+					o.ProbeFeature = "image"
+				}
+			}
+		}
 	}
 	return o
 }

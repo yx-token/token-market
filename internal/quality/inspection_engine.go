@@ -55,13 +55,19 @@ func (e *Engine) inspectionAssessment(ctx context.Context, run runRow, ref *runR
 	for i := range rows {
 		rows[i].PrimaryModel = rows[i].RequestedModel == run.model
 	}
-	checks, gates := Inspect(rows, st, e.now())
+	capability := inspection.LookupCapability(u.platform, run.model, st)
+	opts := InspectOptions{Platform: u.platform, AuthType: u.authType, Capability: &capability}
+	checks, gates := Inspect(rows, st, e.now(), opts)
 	if plan.InspectionMode == "formal" && a.Verdict == "degraded" {
 		d, _ := inspection.Effective("D07", st)
-		gates = append(gates, inspection.Gate{CheckKey: "D07", Code: "sprt_degraded", Health: "degraded", Confirmed: d.Enabled && d.Calibrated, OccurredAt: e.now(), Reason: "有效配对的序贯检验支持能力下降。"})
+		reason := "有效配对的序贯检验支持能力下降。"
+		if ref == nil {
+			reason = "按题目判定的序贯检验支持能力低于期望；未与基线对照。"
+		}
+		gates = append(gates, inspection.Gate{CheckKey: "D07", Code: "sprt_degraded", Health: "degraded", Confirmed: d.Enabled && d.Calibrated, OccurredAt: e.now(), Reason: reason})
 	}
 	// 正式可用率门槛由 Inspect 的目录样本阈值决定，不沿用旧流程的两请求捷径。
-	if err := e.inspectCache(ctx, run, ref, plan, st, checks); err != nil {
+	if err := e.inspectCache(ctx, run, ref, plan, st, checks, capability); err != nil {
 		return a, err
 	}
 	if err := e.inspectRecoveryAvailability(ctx, run, u, st, checks, &gates); err != nil {
@@ -128,7 +134,7 @@ func (e *Engine) inspectionAssessment(ctx context.Context, run runRow, ref *runR
 	return a, nil
 }
 
-func (e *Engine) inspectCache(ctx context.Context, run runRow, ref *runRow, plan executionSnapshot, st InspectionSettings, checks map[string]inspection.Check) error {
+func (e *Engine) inspectCache(ctx context.Context, run runRow, ref *runRow, plan executionSnapshot, st InspectionSettings, checks map[string]inspection.Check, capabilities ...inspection.ModelCapability) error {
 	c, ok := checks["D12"]
 	if !ok {
 		return nil
@@ -142,8 +148,19 @@ func (e *Engine) inspectCache(ctx context.Context, run runRow, ref *runRow, plan
 			continue
 		}
 		if ref == nil {
-			c.Status = "inconclusive"
-			c.Reason = "缺少同期缓存基线。"
+			t, err := e.cacheTwoSteps(ctx, run.id, it)
+			if err != nil {
+				return err
+			}
+			platform := ""
+			if plan.Policy != nil {
+				platform = plan.Policy.Platform
+			}
+			capability := inspection.LookupCapability(platform, run.model, st)
+			if len(capabilities) > 0 {
+				capability = capabilities[0]
+			}
+			inspectItemCache(&c, t, d, capability.PromptCache)
 			checks["D12"] = c
 			continue
 		}

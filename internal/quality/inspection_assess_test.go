@@ -57,8 +57,8 @@ func TestInspectIntelligenceAndCalibration(t *testing.T) {
 		t.Fatalf("正式新题未接入SPRT：%+v", got)
 	}
 	rows[0].Ref = nil
-	if got := assessFormal(rows[:1], th); got.Samples != 0 {
-		t.Fatal("无同期基线不能使用默认 .95")
+	if got := assessFormal(rows[:1], th); got.Samples != 1 || got.Baseline {
+		t.Fatal("无同期基线应按题目期望计分，不能冒充配对")
 	}
 }
 

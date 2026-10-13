@@ -11,19 +11,23 @@ import (
 
 // Outcome 是一道题在被测上游与基线账号上的结果。
 type Outcome struct {
-	InstanceIdx      int
-	GeneratorVersion string
-	PrimaryModel     bool
-	StaticComparable bool
-	RequestedModel   string
-	CheckKey         string
-	ItemID           int64
-	Suite            string
-	Target           ProbeResult
-	TargetPass       bool
-	Ref              *ProbeResult
-	RefPass          bool
-	RefHistRate      *float64 // 该题在基线账号上近 7 天的通过率
+	InstanceIdx       int
+	GeneratorVersion  string
+	PrimaryModel      bool
+	StaticComparable  bool
+	RequestedModel    string
+	ProbeTokens       int
+	ProbeOutputTokens int
+	ProbeFeature      string
+	ExpectedPassRate  *float64
+	CheckKey          string
+	ItemID            int64
+	Suite             string
+	Target            ProbeResult
+	TargetPass        bool
+	Ref               *ProbeResult
+	RefPass           bool
+	RefHistRate       *float64 // 该题在基线账号上近 7 天的通过率
 }
 
 // Assessment 是一次检测的评估结果。
@@ -72,6 +76,8 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 
 	var ttft, tps []float64
 	var targetPass, refPass, both, targetScored int
+	var expectedTotal float64
+	var itemExpectation bool
 	var tReason, rReason []float64
 	for _, o := range outcomes {
 		// 新题仅保留影子证据，不进入旧判定的任一指标或错误分母。
@@ -116,7 +122,12 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 			continue // 基线本身失败，这道题不计入
 		default:
 			pRef = 0.95
+			if o.ExpectedPassRate != nil {
+				pRef = *o.ExpectedPassRate
+				itemExpectation = true
+			}
 		}
+		expectedTotal += pRef
 		p0, p1 := clampP(th.H0*pRef), clampP(th.H1*pRef)
 		if o.TargetPass {
 			a.LLR += math.Log(p1 / p0)
@@ -158,6 +169,9 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 			rel = math.Min(1.5, rate/(float64(refPass)/float64(both)))
 		case !a.Baseline:
 			rel = math.Min(1.5, rate/0.95)
+			if itemExpectation {
+				rel = math.Min(1.5, rate/(expectedTotal/float64(targetScored)))
+			}
 		default:
 			rel = rate
 		}

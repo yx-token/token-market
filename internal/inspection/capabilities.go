@@ -15,6 +15,7 @@ type ModelCapability struct {
 	ContextWindow       int            `json:"context_window"`
 	ContextWindowByAuth map[string]int `json:"context_window_by_auth"`
 	MaxOutput           int            `json:"max_output"`
+	MaxOutputUnlimited  *bool          `json:"max_output_unlimited"`
 	Tools               *bool          `json:"tools"`
 	JSONSchema          *bool          `json:"json_schema"`
 	Image               *bool          `json:"image"`
@@ -83,6 +84,9 @@ func buildCapabilityDefaults() []ModelCapability {
 		}
 		// 无输出上限不能伪造为一个有限值，来源中保留官方说明。
 		add("grok", model, window, 0, efforts, capabilityBool(true), "docs/research/inspection/model-landscape.md 第4章7节；https://docs.x.ai/developers/models/"+model)
+		if model == "grok-4.7" || model == "grok-4.6" {
+			result[len(result)-1].MaxOutputUnlimited = capabilityBool(true)
+		}
 	}
 	for _, model := range []string{"k3", "kimi-k3", "kimi-for-coding", "kimi-for-coding-highspeed"} {
 		window, output, efforts := 1048576, 0, []string{"low", "high", "max"}
