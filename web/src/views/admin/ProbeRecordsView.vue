@@ -222,7 +222,7 @@ async function openItem(s: ProbeItemStat) {
         <div v-if="row.summary?.error" class="max-w-[14rem] truncate text-xs text-red-600" :title="row.summary.error">{{ row.summary.error }}</div>
       </template>
       <template #cell-answers="{ row }">
-        <span class="num" :class="row.passed < row.items ? 'text-red-600' : ''">{{ row.passed }} / {{ row.items }}</span>
+        <span class="num" :class="row.passed < row.items ? 'text-red-600' : ''">通过 {{ row.passed }} / 已答 {{ row.items }} / 共 {{ row.planned ?? '—' }}</span>
         <div class="num text-xs">
           <span v-for="s in suiteText(row)" :key="s.suite" class="mr-2" :class="s.bad ? 'text-red-600' : 'text-ink-500'">{{ s.text }}</span>
         </div>

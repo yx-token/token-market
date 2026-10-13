@@ -188,7 +188,8 @@ function passText(p: boolean | null | undefined) {
         <dl class="kv">
           <dt>答题</dt>
           <dd>
-            共 <span class="num">{{ run.items }}</span> 题，通过 <span class="num">{{ run.passed }}</span> 题
+            通过 <span class="num">{{ run.passed }}</span> / 已答 <span class="num">{{ run.items }}</span> / 共
+            <span class="num">{{ run.planned ?? '—' }}</span> 题
             <template v-if="detail.reference"
               >；基线 <span class="num">#{{ detail.reference.upstream_id }}</span> 通过
               <span class="num">{{ detail.reference.passed }} / {{ detail.reference.items }}</span></template

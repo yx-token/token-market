@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { seller } from '@/api'
-import type { ListingCategoryOption, Report, TrendPoint, UpstreamDetail, VendorView } from '@/api/types'
+import type { ListingCategoryOption, Report, SellerProbeRun, UpstreamDetail, VendorView } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { useConfig } from '@/stores/config'
 import { useToast } from '@/stores/toast'
@@ -11,7 +11,6 @@ import RefreshButton from '@/components/RefreshButton.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import DataTable from '@/components/DataTable.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
-import TrendChart from '@/components/TrendChart.vue'
 import ReportDetail from '@/components/ReportDetail.vue'
 import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
@@ -21,7 +20,7 @@ import UpstreamModelWhitelist from '@/components/UpstreamModelWhitelist.vue'
 import { authTypeText, isKeyAuthType, label, upstreamName } from '@/utils/labels'
 import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
-import { appealableReport, intelligenceStatusText } from '@/utils/inspection'
+import { appealableReport, detectionFlowText, intelligenceStatusText } from '@/utils/inspection'
 import { errorText } from '@/api/errors'
 
 const props = defineProps<{ id: string }>()
@@ -34,7 +33,7 @@ const { busy, run } = useAction()
 
 const detail = useLoader(() => seller.upstream(upstreamId.value), null as UpstreamDetail | null)
 const reports = useLoader(() => seller.reports(upstreamId.value), [] as Report[] | null)
-const trend = useLoader(() => seller.trend(upstreamId.value), [] as TrendPoint[] | null)
+const probeRuns = useLoader(() => seller.probeRuns(upstreamId.value), [] as SellerProbeRun[] | null)
 const vendors = ref<VendorView[]>([])
 const vendor = computed(() => vendors.value.find((v) => v.platform === detail.data.value?.platform))
 const u = computed(() => detail.data.value)
@@ -55,15 +54,33 @@ const backNav = computed(() => {
   return { to: '/seller/upstreams', label: '我的上游' }
 })
 
-function reload() {
-  detail.load()
-  reports.load()
-  trend.load()
+const runningStatuses = new Set(['queued', 'running', 'third_party'])
+const hasRunningRuns = computed(() => probeRuns.data.value?.some((run) => runningStatuses.has(run.status)) ?? false)
+
+async function reload() {
+  await Promise.all([detail.load(), reports.load(), probeRuns.load()])
+  if (!hasRunningRuns.value) stopPolling()
+  else startPolling()
 }
 
 let timer: ReturnType<typeof setInterval> | null = null
+function stopPolling() {
+  if (timer) clearInterval(timer)
+  timer = null
+}
+function startPolling() {
+  if (timer || !hasRunningRuns.value) return
+  timer = setInterval(async () => {
+    if (!hasRunningRuns.value) {
+      stopPolling()
+      return
+    }
+    await probeRuns.load()
+    if (!hasRunningRuns.value) stopPolling()
+  }, 10000)
+}
 onMounted(async () => {
-  reload()
+  await reload()
   cfg.ensure()
   const [v, cats] = await Promise.all([
     seller.vendors().catch(() => null),
@@ -72,11 +89,8 @@ onMounted(async () => {
   vendors.value = v ?? []
   categoryOpts.value = cats ?? []
   categories.value = []
-  timer = setInterval(() => {
-    if (u.value?.status === 'verifying') reload()
-  }, 10000)
 })
-onUnmounted(() => timer && clearInterval(timer))
+onUnmounted(stopPolling)
 
 // ---- 挂单 ----
 const mode = ref<'consignment' | 'pack' | 'buyback'>('consignment')
@@ -246,6 +260,17 @@ async function remove() {
 
 // ---- 报告 ----
 const openReport = ref<Report | null>(null)
+const reportLoading = ref(false)
+async function openReportDetail(reportID: number) {
+  reportLoading.value = true
+  try {
+    openReport.value = await seller.report(reportID)
+  } catch (error) {
+    toast.error(error)
+  } finally {
+    reportLoading.value = false
+  }
+}
 const showAppeal = ref(false)
 const appealReason = ref('')
 async function submitAppeal() {
@@ -256,6 +281,27 @@ async function submitAppeal() {
   }
 }
 const appealable = appealableReport
+
+function runStatusText(status: string) {
+  const names: Record<string, string> = {
+    queued: '排队中', running: '检测中', third_party: '第三方核验中', done: '已完成',
+    failed: '未完成', skipped_budget: '预算跳过', skipped_disabled: '已停用跳过',
+  }
+  return names[status] ?? status
+}
+
+function reportFor(run: SellerProbeRun) {
+  return run.report_id ? reports.data.value?.find((report) => report.id === run.report_id) : undefined
+}
+
+function intelligenceText(run: SellerProbeRun) {
+  const report = reportFor(run)
+  return report?.summary?.intelligence?.status
+    ? intelligenceStatusText(report.summary.intelligence.status)
+    : report?.summary?.suites?.iq
+      ? percent(report.summary.suites.iq.relative_score, 0)
+      : '—'
+}
 </script>
 
 <template>
@@ -266,7 +312,7 @@ const appealable = appealableReport
       :back-to="backNav.to"
       :back-label="backNav.label"
     >
-      <RefreshButton :loading="detail.loading.value || reports.loading.value || trend.loading.value" @click="reload" />
+      <RefreshButton :loading="detail.loading.value || reports.loading.value || probeRuns.loading.value" @click="reload" />
       <RouterLink v-if="hasAccount" :to="`/seller/usage?upstream=${u.id}`" class="xm-btn xm-btn-ghost xm-btn-sm">用量明细 →</RouterLink>
       <button v-if="needsAuth" type="button" class="xm-btn xm-btn-primary xm-btn-sm" @click="showWizard = true">继续授权</button>
       <button v-if="u.status === 'verify_failed'" class="btn-secondary" :disabled="busy" @click="listingAction(() => seller.retryVerification(u!.id), '已重新开始检测')">
@@ -453,31 +499,43 @@ const appealable = appealableReport
     </div>
 
     <div class="card mt-5">
-      <h2 class="card-title">质量趋势（近 30 天）</h2>
-      <TrendChart v-if="trend.data.value && trend.data.value.length" :points="trend.data.value" />
-      <p v-else class="text-sm text-slate-400">暂无检测数据</p>
-    </div>
-
-    <div class="card mt-5">
-      <h2 class="card-title">质检报告</h2>
+      <h2 class="card-title">检测记录</h2>
       <DataTable
         :columns="[
-          { key: 'created_at', label: '时间' },
+          { key: 'queued_at', label: '时间' },
           { key: 'trigger', label: '类型' },
-          { key: 'verdict', label: '结论' },
+          { key: 'status', label: '状态' },
+          { key: 'flows', label: '流程' },
+          { key: 'models', label: '测试模型' },
+          { key: 'progress', label: '进度' },
           { key: 'score', label: '测智', align: 'right' },
+          { key: 'third_party', label: '第三方检测' },
           { key: 'actions', label: '' },
         ]"
-        :rows="reports.data.value"
-        :loading="reports.loading.value"
+        :rows="probeRuns.data.value"
+        :loading="probeRuns.loading.value"
         row-key="id"
       >
-        <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
+        <template #cell-queued_at="{ row }">
+          <span class="num">{{ dateTime(row.queued_at) }}</span>
+          <div v-if="row.started_at" class="text-xs text-slate-500">开始时间 {{ dateTime(row.started_at) }}</div>
+        </template>
         <template #cell-trigger="{ row }"><StatusBadge kind="trigger" :value="row.trigger" /></template>
-        <template #cell-verdict="{ row }"><StatusBadge kind="verdict" :value="row.verdict" /></template>
-        <template #cell-score="{ row }">{{ row.summary?.intelligence?.status ? intelligenceStatusText(row.summary.intelligence.status) : row.summary?.suites?.iq ? percent(row.summary.suites.iq.relative_score, 0) : '—' }}</template>
+        <template #cell-status="{ row }">{{ runStatusText(row.status) }}</template>
+        <template #cell-flows="{ row }">{{ row.flows?.length ? row.flows.map(detectionFlowText).join(' / ') : '—' }}</template>
+        <template #cell-models="{ row }">{{ row.models?.length ? row.models.join(' / ') : '—' }}</template>
+        <template #cell-progress="{ row }">
+          已答 <span class="num">{{ row.progress.answered }}</span>
+          <template v-if="row.progress.total !== null"> / 共 <span class="num">{{ row.progress.total }}</span> 题</template>
+          <template v-else> 题</template>
+        </template>
+        <template #cell-score="{ row }">{{ intelligenceText(row) }}</template>
+        <template #cell-third_party="{ row }">
+          <span v-if="!row.third_party?.length">—</span>
+          <span v-for="site in row.third_party" :key="site.provider" class="mr-2 text-xs">{{ site.provider }}：{{ site.status }}</span>
+        </template>
         <template #cell-actions="{ row }">
-          <button class="btn-ghost btn-sm" @click="openReport = row">查看</button>
+          <button v-if="row.report_id" class="btn-ghost btn-sm" :disabled="reportLoading" @click="openReportDetail(row.report_id)">查看报告</button>
         </template>
       </DataTable>
     </div>

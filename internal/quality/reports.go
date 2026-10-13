@@ -63,33 +63,6 @@ func SellerReport(ctx context.Context, db DB, sellerID, reportID int64) (*Report
 	return &reports[0], nil
 }
 
-type TrendPoint struct {
-	Day           string   `json:"day"`
-	RelativeScore *float64 `json:"relative_score,omitempty"`
-	Checks        int      `json:"checks"`
-	Degraded      int      `json:"degraded"`
-	Unavailable   int      `json:"unavailable"`
-}
-
-// QualityTrend 返回近 N 天每日的智力相对分与异常次数。
-func QualityTrend(ctx context.Context, db DB, sellerID, upstreamID int64, days int) ([]TrendPoint, error) {
-	if _, err := listing.GetSellerUpstream(ctx, db, sellerID, upstreamID); err != nil {
-		return nil, err
-	}
-	rows, err := db.Query(ctx, `SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD'), avg(relative_score), count(*),
-			count(*) FILTER (WHERE verdict = 'degraded'), count(*) FILTER (WHERE verdict = 'unavailable')
-		FROM quality_verdicts WHERE upstream_id = $1 AND created_at > now() - make_interval(days => $2)
-		GROUP BY 1 ORDER BY 1`, upstreamID, days)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (TrendPoint, error) {
-		var p TrendPoint
-		err := row.Scan(&p.Day, &p.RelativeScore, &p.Checks, &p.Degraded, &p.Unavailable)
-		return p, err
-	})
-}
-
 // RetestEligibility 说明卖家此刻能否手动复测；不能时 Code 与复测接口拒绝时的错误码一致，前端据此提示原因。
 type RetestEligibility struct {
 	Allowed bool   `json:"allowed"`
@@ -420,6 +393,7 @@ type RunSummary struct {
 	Summary        json.RawMessage `json:"summary,omitempty"`
 	Items          int             `json:"items"`
 	Passed         int             `json:"passed"`
+	Planned        *int            `json:"planned"`
 	QueuedAt       time.Time       `json:"queued_at"`
 	FinishedAt     *time.Time      `json:"finished_at,omitempty"`
 
@@ -472,15 +446,20 @@ type RunDetail struct {
 	RefResults []RunResult `json:"reference_results,omitempty"`
 }
 
+const plannedRunColumn = `(SELECT SUM(jsonb_array_length(instance->'steps'))::int
+	FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.execution_snapshot->'instances') = 'array'
+		THEN r.execution_snapshot->'instances' ELSE '[]'::jsonb END) instance)`
+
 const runSummaryColumns = `r.id, r.upstream_id, r.batch_id, r.trigger, r.model, r.status, r.summary,
 	(SELECT count(*) FROM probe_results x WHERE x.run_id = r.id),
 	(SELECT count(*) FILTER (WHERE x.passed) FROM probe_results x WHERE x.run_id = r.id),
+	` + plannedRunColumn + `,
 	r.queued_at,r.finished_at,r.flows,r.identity_source,r.models`
 
 func scanRunSummary(row pgx.CollectableRow) (RunSummary, error) {
 	var s RunSummary
 	var summary []byte
-	err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models)
+	err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models)
 	if len(summary) > 0 {
 		s.Summary = summary
 	}
@@ -507,7 +486,7 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 	target, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunSummary, error) {
 		var s RunSummary
 		var summary, snapshot []byte
-		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models, &snapshot)
+		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models, &snapshot)
 		if len(summary) > 0 {
 			s.Summary = summary
 		}
@@ -536,7 +515,7 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 	refs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunSummary, error) {
 		var s RunSummary
 		var summary, snapshot []byte
-		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models, &snapshot)
+		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models, &snapshot)
 		if len(summary) > 0 {
 			s.Summary = summary
 		}
