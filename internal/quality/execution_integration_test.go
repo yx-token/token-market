@@ -36,7 +36,17 @@ func inspectionDB(t *testing.T) (*pgxpool.Pool, runRow, runRow) {
 	if err := pool.QueryRow(ctx, `INSERT INTO probe_runs(upstream_id,batch_id,trigger,policy_version,model,mode) VALUES($1,'inspection-batch','reference',1,'claude-sonnet-4-5','full') RETURNING id`, u2).Scan(&r2); err != nil {
 		t.Fatal(err)
 	}
-	return pool, runRow{id: r1, upstreamID: u1, trigger: "admin", model: "claude-sonnet-4-5", mode: "full", batch: "inspection-batch"}, runRow{id: r2, upstreamID: u2, trigger: "reference", model: "claude-sonnet-4-5", mode: "full", batch: "inspection-batch"}
+	if _, err := pool.Exec(ctx, `UPDATE probe_runs SET flows=ARRAY['intelligence','identity'],models=ARRAY['claude-sonnet-4-5'],identity_source='self'`); err != nil {
+		t.Fatal(err)
+	}
+	return pool, runRow{id: r1, upstreamID: u1, trigger: "admin", model: "claude-sonnet-4-5", models: []string{"claude-sonnet-4-5"}, flows: []string{"intelligence", "identity"}, identitySource: "self", mode: "full", batch: "inspection-batch"}, runRow{id: r2, upstreamID: u2, trigger: "reference", model: "claude-sonnet-4-5", models: []string{"claude-sonnet-4-5"}, flows: []string{"intelligence", "identity"}, identitySource: "self", mode: "full", batch: "inspection-batch"}
+}
+
+func inspectionTestPolicy(run runRow) *Policy {
+	flows := policyFlowsFixture()
+	flows.Intelligence.Models = []IntelligenceModel{{Model: run.model}}
+	flows.Identity.Source = "self"
+	return &Policy{Version: 1, ItemParallelism: 1, Suites: []string{"inspection_capability"}, Thresholds: th, Flows: flows}
 }
 
 func TestInspectionSnapshotPairAndResume(t *testing.T) {
@@ -46,13 +56,13 @@ func TestInspectionSnapshotPairAndResume(t *testing.T) {
 	e := Engine{DB: pool, Keyring: testInspectionKeyring(t)}
 	var items []Item
 	for _, prompt := range []string{"第一题 {{HAYSTACK:100}}", "第二题"} {
-		it, err := CreateItem(ctx, pool, Item{Suite: "iq", Category: "安全测试", Prompt: prompt, MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}})
+		it, err := CreateItem(ctx, pool, Item{Suite: "inspection_capability", CheckKey: "D07", Category: "安全测试", Prompt: prompt, MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		items = append(items, *it)
 	}
-	p := &Policy{Version: 1, ItemParallelism: 1, Suites: []string{"iq"}, Thresholds: th}
+	p := inspectionTestPolicy(run)
 	st := defaultInspectionSettings()
 	plan, err := e.executionPlan(ctx, run, p, items, st)
 	if err != nil {
@@ -126,7 +136,7 @@ func TestInspectionSnapshotPairAndResume(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM probe_results`).Scan(&n); err != nil || n != 4 {
 		t.Fatalf("结果重复：%d %v", n, err)
 	}
-	if a := Assess(out, th, true); a.AvailableOK != 2 || a.Samples != 2 {
+	if a := Assess(out, th, true); a.AvailableOK != 2 {
 		t.Fatalf("续跑丢失观测：%+v", a)
 	}
 }
@@ -205,11 +215,11 @@ func TestInspectionMultistepRealToolsAndResume(t *testing.T) {
 	e := Engine{DB: pool, Keyring: testInspectionKeyring(t)}
 	g := Grader{Type: "tool_calls", GraderOptions: GraderOptions{Expect: []ExpectedToolCall{{Name: "schedule", Args: map[string]any{"city": "杭州"}}}}}
 	final := Grader{Type: "exact", Answer: "2026-10-12"}
-	it, err := CreateItem(ctx, pool, Item{Suite: "iq", Category: "本地工具续跑", Prompt: "查班次", Grader: g, MaxTokens: 64, Request: ProbeRequest{Tools: []ProbeTool{{Name: "schedule", InputSchema: map[string]any{"type": "object"}}}, Steps: []ProbeStep{{Request: &ProbeRequest{Prompt: "只输出日期"}, Expected: &final, UsePrevious: true, ToolResults: map[string]any{"schedule": map[string]any{"date": "2026-10-12"}}}}}})
+	it, err := CreateItem(ctx, pool, Item{Suite: "inspection_function", CheckKey: "A11.tools", Category: "本地工具续跑", Prompt: "查班次", Grader: g, MaxTokens: 64, Request: ProbeRequest{Tools: []ProbeTool{{Name: "schedule", InputSchema: map[string]any{"type": "object"}}}, Steps: []ProbeStep{{Request: &ProbeRequest{Prompt: "只输出日期"}, Expected: &final, UsePrevious: true, ToolResults: map[string]any{"schedule": map[string]any{"date": "2026-10-12"}}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &Policy{Version: 1, ItemParallelism: 1, Suites: []string{"iq"}, Thresholds: th}
+	p := inspectionTestPolicy(run)
 	st := defaultInspectionSettings()
 	plan, err := e.executionPlan(ctx, run, p, []Item{*it}, st)
 	if err != nil {

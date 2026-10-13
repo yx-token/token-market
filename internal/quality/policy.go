@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ func (t Thresholds) validate() error {
 
 // Policy 是一个厂商（可细化到接入方式）的检测策略。
 type Policy struct {
+	Flows            PolicyFlows            `json:"flows"`
 	ItemParallelism  int                    `json:"item_parallelism"`
 	FullTriggers     []string               `json:"full_triggers"`
 	TokenBudgets     map[string]TokenBudget `json:"token_budgets"`
@@ -55,10 +57,137 @@ type Policy struct {
 	Thresholds       Thresholds             `json:"thresholds"`
 	AutoPause        bool                   `json:"auto_pause"`
 	DefaultGrade     string                 `json:"default_grade"`
-	// ThirdParty 是在内部探测之后追加的第三方检测
+	// ThirdParty 保存身份流程的检测站及处置规则。
 	ThirdParty []ThirdPartyCheck `json:"third_party"`
 	Version    int64             `json:"version"`
 	UpdatedAt  time.Time         `json:"updated_at"`
+}
+
+// PolicyFlows 分别配置测智与身份核验，总开关仍由 Policy 控制。
+type PolicyFlows struct {
+	Intelligence IntelligenceFlowPolicy `json:"intelligence"`
+	Identity     IdentityFlowPolicy     `json:"identity"`
+}
+
+type FlowPolicy struct {
+	Enabled          bool     `json:"enabled"`
+	ScheduledEnabled bool     `json:"scheduled_enabled"`
+	IntervalMinutes  int      `json:"interval_minutes"`
+	Triggers         []string `json:"triggers"`
+	FullTriggers     []string `json:"full_triggers"`
+}
+
+type IntelligenceFlowPolicy struct {
+	FlowPolicy
+	Models []IntelligenceModel `json:"models"`
+}
+
+type IntelligenceModel struct {
+	Model            string   `json:"model"`
+	ExpectedPassRate *float64 `json:"expected_pass_rate"`
+}
+
+type IdentityFlowPolicy struct {
+	FlowPolicy
+	Source string `json:"source"`
+}
+
+func (f FlowPolicy) Applies(trigger string) bool {
+	return f.Enabled && containsTrigger(f.Triggers, trigger)
+}
+
+func (f FlowPolicy) Full(trigger string) bool { return containsTrigger(f.FullTriggers, trigger) }
+
+func containsTrigger(triggers []string, trigger string) bool {
+	for _, t := range triggers {
+		if t == trigger {
+			return true
+		}
+	}
+	return false
+}
+
+func legacyPolicyFlows(p *Policy) PolicyFlows {
+	all := []string{"onboarding", "scheduled", "recovery", "seller_manual", "admin", "adaptive", "appeal"}
+	interval := p.IntervalMinutes
+	if interval == 0 {
+		interval = 360
+	}
+	full := append([]string{}, p.FullTriggers...)
+	if p.FullTriggers == nil {
+		full = []string{"onboarding", "appeal", "admin"}
+	}
+	models := make([]IntelligenceModel, 0, len(p.Models))
+	for _, model := range p.Models {
+		models = append(models, IntelligenceModel{Model: model})
+	}
+	identityTriggers := []string{}
+	for _, trigger := range all {
+		for _, site := range p.ThirdParty {
+			if site.Applies(trigger) {
+				identityTriggers = append(identityTriggers, trigger)
+				break
+			}
+		}
+	}
+	return PolicyFlows{
+		Intelligence: IntelligenceFlowPolicy{FlowPolicy: FlowPolicy{Enabled: p.Enabled, ScheduledEnabled: p.ScheduledEnabled,
+			IntervalMinutes: interval, Triggers: append([]string{}, all...), FullTriggers: full}, Models: models},
+		Identity: IdentityFlowPolicy{FlowPolicy: FlowPolicy{Enabled: len(p.ThirdParty) > 0,
+			ScheduledEnabled: p.ScheduledEnabled && containsTrigger(identityTriggers, "scheduled"), IntervalMinutes: interval,
+			Triggers: identityTriggers, FullTriggers: append([]string{}, all...)}, Source: "third_party"},
+	}
+}
+
+func (f *PolicyFlows) normalize(thirdParty []ThirdPartyCheck) error {
+	for _, flow := range []*FlowPolicy{&f.Intelligence.FlowPolicy, &f.Identity.FlowPolicy} {
+		if flow.IntervalMinutes < 10 {
+			return httpx.BadRequest("INVALID_FLOW_INTERVAL", "流程检测周期须至少为 10 分钟")
+		}
+		if flow.ScheduledEnabled && !flow.Enabled {
+			return httpx.BadRequest("INVALID_FLOW", "流程定时检测需要先启用该流程")
+		}
+		if flow.Triggers == nil {
+			flow.Triggers = []string{}
+		}
+		if flow.FullTriggers == nil {
+			flow.FullTriggers = []string{}
+		}
+		for _, triggers := range [][]string{flow.Triggers, flow.FullTriggers} {
+			seen := map[string]bool{}
+			for _, trigger := range triggers {
+				if !validTriggers[trigger] || seen[trigger] {
+					return httpx.BadRequest("INVALID_TRIGGER", "流程触发类型未知或重复")
+				}
+				seen[trigger] = true
+			}
+		}
+	}
+	if f.Identity.Source != "third_party" && f.Identity.Source != "self" {
+		return httpx.BadRequest("INVALID_IDENTITY_SOURCE", "身份核验来源须为第三方或自有题库")
+	}
+	if f.Identity.Enabled && f.Identity.Source == "third_party" && len(thirdParty) == 0 {
+		return httpx.BadRequest("THIRD_PARTY_REQUIRED", "第三方身份核验需要至少配置一个检测站")
+	}
+	if f.Intelligence.Models == nil {
+		f.Intelligence.Models = []IntelligenceModel{}
+	}
+	if f.Intelligence.Enabled && len(f.Intelligence.Models) == 0 {
+		return httpx.BadRequest("MODELS_REQUIRED", "启用测智流程时须配置至少一个模型")
+	}
+	seen := map[string]bool{}
+	for i := range f.Intelligence.Models {
+		model := &f.Intelligence.Models[i]
+		model.Model = strings.TrimSpace(model.Model)
+		if model.Model == "" || seen[model.Model] {
+			return httpx.BadRequest("INVALID_FLOW_MODELS", "测智模型不能为空或重复")
+		}
+		seen[model.Model] = true
+		if rate := model.ExpectedPassRate; rate != nil && (math.IsNaN(*rate) || math.IsInf(*rate, 0) || *rate <= 0 || *rate > 1) {
+			return httpx.BadRequest("INVALID_EXPECTED_PASS_RATE", "模型期望通过率须大于 0 且不超过 1")
+		}
+	}
+	return nil
 }
 
 // ThirdPartyCheck 是策略中的一项第三方检测：在哪些检测类型中执行，以及检测站的结论如何折算成平台的判定。
@@ -97,9 +226,6 @@ func (c *ThirdPartyCheck) normalize() error {
 	if _, ok := thirdparty.Lookup(c.Provider); !ok {
 		return httpx.BadRequest("UNKNOWN_PROVIDER", "unknown detection provider "+c.Provider)
 	}
-	if len(c.Triggers) == 0 {
-		return httpx.BadRequest("INVALID_THIRD_PARTY", "third-party check needs at least one trigger")
-	}
 	for _, t := range c.Triggers {
 		if !validTriggers[t] {
 			return httpx.BadRequest("INVALID_THIRD_PARTY", "unknown trigger "+t)
@@ -136,18 +262,21 @@ func (c ThirdPartyCheck) VerdictFor(outcome string) string {
 	if action == "degraded" || action == "suspected" {
 		return action
 	}
+	if action == "ignore" {
+		return "normal"
+	}
 	return "inconclusive"
 }
 
 const policyColumns = `id, platform, auth_type, enabled, scheduled_enabled, interval_minutes, jitter_minutes, suites, models,
-	daily_budget_usd::float8, thresholds, auto_pause, default_grade, third_party, version, updated_at, item_parallelism, full_triggers, token_budgets`
+	daily_budget_usd::float8, thresholds, auto_pause, default_grade, third_party, version, updated_at, item_parallelism, full_triggers, token_budgets, flows`
 
 func scanPolicy(row pgx.Row) (*Policy, error) {
 	var p Policy
-	var th, tp, budgets []byte
+	var th, tp, budgets, flows []byte
 	if err := row.Scan(&p.ID, &p.Platform, &p.AuthType, &p.Enabled, &p.ScheduledEnabled, &p.IntervalMinutes, &p.JitterMinutes,
 		&p.Suites, &p.Models, &p.DailyBudgetUSD, &th, &p.AutoPause, &p.DefaultGrade, &tp,
-		&p.Version, &p.UpdatedAt, &p.ItemParallelism, &p.FullTriggers, &budgets); err != nil {
+		&p.Version, &p.UpdatedAt, &p.ItemParallelism, &p.FullTriggers, &budgets, &flows); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(th, &p.Thresholds); err != nil {
@@ -161,6 +290,13 @@ func scanPolicy(row pgx.Row) (*Policy, error) {
 	}
 	if p.ThirdParty == nil {
 		p.ThirdParty = []ThirdPartyCheck{}
+	}
+	if err := json.Unmarshal(flows, &p.Flows); err != nil {
+		return nil, err
+	}
+	// 兼容尚未填流程的旧调用方；迁移已为存量策略写入完整配置。
+	if p.Flows.Intelligence.IntervalMinutes == 0 && p.Flows.Identity.IntervalMinutes == 0 {
+		p.Flows = legacyPolicyFlows(&p)
 	}
 	return &p, nil
 }
@@ -188,8 +324,10 @@ func EffectivePolicy(ctx context.Context, db DB, upstreamID int64, platform, aut
 		WHERE platform = $1 AND auth_type IN ($2, '') ORDER BY (auth_type = $2) DESC LIMIT 1`, platform, authType))
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 没有配置策略的厂商视为不检测
-		return &Policy{Platform: platform, DefaultGrade: "B", Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1},
-			ThirdParty: []ThirdPartyCheck{}}, nil
+		p = &Policy{Platform: platform, DefaultGrade: "B", Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1},
+			ThirdParty: []ThirdPartyCheck{}}
+		p.Flows = legacyPolicyFlows(p)
+		return p, nil
 	}
 	if err != nil {
 		return nil, err
@@ -214,9 +352,10 @@ func EffectivePolicy(ctx context.Context, db DB, upstreamID int64, platform, aut
 	return p, nil
 }
 
-var validSuites = map[string]bool{"availability": true, "latency": true, "iq": true, "reasoning": true, "long_context": true, "inspection_authenticity": true, "inspection_capability": true, "inspection_context": true, "inspection_function": true, "inspection_output": true, "inspection_performance": true}
+var validSuites = map[string]bool{"availability": true, "latency": true, "inspection_authenticity": true, "inspection_capability": true, "inspection_context": true, "inspection_function": true, "inspection_output": true, "inspection_performance": true}
 
 type PolicyInput struct {
+	Flows            *PolicyFlows            `json:"flows"`
 	ItemParallelism  *int                    `json:"item_parallelism"`
 	FullTriggers     *[]string               `json:"full_triggers"`
 	TokenBudgets     *map[string]TokenBudget `json:"token_budgets"`
@@ -307,6 +446,12 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	if in.TokenBudgets != nil {
 		p.TokenBudgets = *in.TokenBudgets
 	}
+	if p.Flows.Intelligence.IntervalMinutes == 0 && p.Flows.Identity.IntervalMinutes == 0 {
+		p.Flows = legacyPolicyFlows(p)
+	}
+	if in.Flows != nil {
+		p.Flows = *in.Flows
+	}
 	if p.ItemParallelism < 1 || p.ItemParallelism > 8 {
 		return nil, httpx.BadRequest("INVALID_PARALLELISM", "题目并发上限须为 1–8")
 	}
@@ -333,6 +478,22 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 		}
 		seen[p.ThirdParty[i].Provider] = true
 	}
+	if err := p.Flows.normalize(p.ThirdParty); err != nil {
+		return nil, err
+	}
+	if p.Flows.Identity.Enabled && p.Flows.Identity.Source == "third_party" {
+		providers := make([]string, 0, len(p.ThirdParty))
+		for _, site := range p.ThirdParty {
+			providers = append(providers, site.Provider)
+		}
+		var enabled bool
+		if err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM detection_providers WHERE name = ANY($1) AND enabled)`, providers).Scan(&enabled); err != nil {
+			return nil, err
+		}
+		if !enabled {
+			return nil, httpx.BadRequest("THIRD_PARTY_REQUIRED", "第三方身份核验需要至少启用一个已配置的检测站")
+		}
+	}
 	switch {
 	case p.ScheduledEnabled && !p.Enabled:
 		return nil, httpx.BadRequest("INVALID_POLICY", "scheduled detection requires detection to be enabled")
@@ -340,17 +501,17 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 		return nil, httpx.BadRequest("INVALID_INTERVAL", "interval must be >= 10 minutes and jitter smaller than interval")
 	case p.DailyBudgetUSD < 0:
 		return nil, httpx.BadRequest("INVALID_BUDGET", "daily_budget_usd must be >= 0")
-	case p.Enabled && len(p.Models) == 0:
-		return nil, httpx.BadRequest("MODELS_REQUIRED", "at least one model is required when detection is enabled")
 	}
 	switch p.DefaultGrade {
 	case "S", "A", "B", "C", "D":
 	default:
 		return nil, httpx.BadRequest("INVALID_GRADE", "default_grade must be S, A, B, C or D")
 	}
-	for _, s := range p.Suites {
-		if !validSuites[s] {
-			return nil, httpx.BadRequest("INVALID_SUITE", "unknown suite "+s)
+	if in.Suites != nil {
+		for _, suite := range p.Suites {
+			if !validSuites[suite] {
+				return nil, httpx.BadRequest("INVALID_SUITE", "未知套件："+suite)
+			}
 		}
 	}
 	if err := p.Thresholds.validate(); err != nil {
@@ -359,18 +520,18 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	th, _ := json.Marshal(p.Thresholds)
 	tp, _ := json.Marshal(p.ThirdParty)
 	return scanPolicy(db.QueryRow(ctx, `INSERT INTO detection_policies (platform, auth_type, enabled, scheduled_enabled, interval_minutes,
-			jitter_minutes, suites, models, daily_budget_usd, thresholds, auto_pause, default_grade, third_party, updated_by, item_parallelism, full_triggers, token_budgets)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $14, $13, $15, $16, $17)
+			jitter_minutes, suites, models, daily_budget_usd, thresholds, auto_pause, default_grade, third_party, updated_by, item_parallelism, full_triggers, token_budgets, flows)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $14, $13, $15, $16, $17, $18)
 		ON CONFLICT (platform, auth_type) DO UPDATE SET enabled = EXCLUDED.enabled, scheduled_enabled = EXCLUDED.scheduled_enabled,
 			interval_minutes = EXCLUDED.interval_minutes, jitter_minutes = EXCLUDED.jitter_minutes, suites = EXCLUDED.suites,
 			models = EXCLUDED.models, daily_budget_usd = EXCLUDED.daily_budget_usd,
 			thresholds = EXCLUDED.thresholds, auto_pause = EXCLUDED.auto_pause,
 			default_grade = EXCLUDED.default_grade, third_party = EXCLUDED.third_party, updated_by = EXCLUDED.updated_by,
-			item_parallelism = EXCLUDED.item_parallelism, full_triggers = EXCLUDED.full_triggers, token_budgets = EXCLUDED.token_budgets,
+			item_parallelism = EXCLUDED.item_parallelism, full_triggers = EXCLUDED.full_triggers, token_budgets = EXCLUDED.token_budgets, flows = EXCLUDED.flows,
 			version = detection_policies.version + 1, updated_at = now()
 		RETURNING `+policyColumns,
 		platform, authType, p.Enabled, p.ScheduledEnabled, p.IntervalMinutes, p.JitterMinutes, p.Suites, p.Models, p.DailyBudgetUSD,
-		th, p.AutoPause, p.DefaultGrade, adminID, tp, p.ItemParallelism, p.FullTriggers, mustJSON(p.TokenBudgets)))
+		th, p.AutoPause, p.DefaultGrade, adminID, tp, p.ItemParallelism, p.FullTriggers, mustJSON(p.TokenBudgets), mustJSON(p.Flows)))
 }
 
 type OverrideInput struct {
@@ -556,38 +717,6 @@ func UpdateItem(ctx context.Context, db DB, id int64, it Item) (*Item, error) {
 
 func ListItems(ctx context.Context, db DB, status string) ([]Item, error) {
 	rows, err := db.Query(ctx, "SELECT "+itemColumns+" FROM probe_items WHERE $1 = '' OR status = $1 ORDER BY id", status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Item
-	for rows.Next() {
-		it, err := scanItem(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *it)
-	}
-	return out, rows.Err()
-}
-
-// selectItems 返回一次检测要测的全部题目，不抽样：启用套件下所有使用中的题，
-// 且题目的适用平台、适用模型包含本次检测的平台和模型（为空表示不限）。
-func selectItems(ctx context.Context, db DB, platform, model string, suites []string) ([]Item, error) {
-	var wanted []string
-	for _, s := range suites {
-		if s == "iq" || s == "reasoning" || s == "long_context" {
-			wanted = append(wanted, s)
-		}
-	}
-	if len(wanted) == 0 {
-		// 只启用可用性 / 延迟套件时用 iq 题作为请求载体，但不计入智力评分
-		wanted = []string{"iq"}
-	}
-	rows, err := db.Query(ctx, "SELECT "+itemColumns+` FROM probe_items
-		WHERE status = 'active' AND suite = ANY($1) AND (cardinality(platforms) = 0 OR $2 = ANY(platforms))
-			AND (cardinality(models) = 0 OR $3 = ANY(models))
-		ORDER BY id`, wanted, platform, model)
 	if err != nil {
 		return nil, err
 	}

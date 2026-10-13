@@ -89,9 +89,10 @@ func TestInspectionDynamicRequestUsesRealOutput(t *testing.T) {
 	}
 }
 
-func TestInspectionExcludesPlatformAndInvalidPairs(t *testing.T) {
+func TestInspectionAvailabilityExcludesPlatformButDoesNotDependOnPairs(t *testing.T) {
 	rows := outcomes(5, 0, true)
 	for i := range rows {
+		rows[i].Suite = "inspection_capability"
 		rows[i].Target.ErrorClass = "platform"
 		rows[i].Target.HTTPStatus = 429
 	}
@@ -100,10 +101,12 @@ func TestInspectionExcludesPlatformAndInvalidPairs(t *testing.T) {
 	}
 	rows = outcomes(5, 0, true)
 	for i := range rows {
+		rows[i].Suite = "inspection_capability"
 		rows[i].Ref.Flags = []string{"truncated"}
+		rows[i].Ref.ErrorClass = "http_5xx"
 	}
-	if a := Assess(rows, th, true); a.Samples != 0 || a.AvailableOK != 5 {
-		t.Fatalf("无效配对污染智力统计：%+v", a)
+	if a := Assess(rows, th, true); a.Samples != 0 || a.AvailableOK != 5 || a.AvailableTotal != 5 || a.Verdict != "normal" || a.ReferenceErrorCounts["http_5xx"] != 5 {
+		t.Fatalf("目标可用率不应依赖基线配对，基线故障仍须留证据：%+v", a)
 	}
 }
 

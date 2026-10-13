@@ -9,9 +9,13 @@ import (
 )
 
 type InspectOptions struct {
-	Platform   string
-	AuthType   string
-	Capability *inspection.ModelCapability
+	Platform           string
+	AuthType           string
+	Capability         *inspection.ModelCapability
+	Flows              []string
+	IdentitySource     string
+	Models             []string
+	IntelligenceModels []IntelligenceModel
 }
 
 func hasInspectionReference(rows []Outcome) bool {
@@ -97,7 +101,7 @@ func itemUnsupported(c *inspection.Check) {
 
 func itemFunctionFailed(c *inspection.Check, d inspection.EffectiveDefinition) {
 	c.Status, c.Reason, c.Evidence.Code = "fail", "官方支持该功能，被测未兑现；未与基线对照。", "item_function_failed"
-	c.Factor = numberPointer(d.Coefficients["failure"])
+	c.Factor = numberPointer(d.Coefficients["severe"])
 }
 
 func inspectItemIntelligence(c *inspection.Check, own []Outcome, d inspection.EffectiveDefinition) {
@@ -378,6 +382,6 @@ func inspectItemCache(c *inspection.Check, steps *[2]int64, d inspection.Effecti
 		itemUnsupported(c)
 	default:
 		c.Status, c.Reason, c.Evidence.Code = "warning", "官方支持缓存，被测第二步未命中；未与基线对照。", "item_function_failed"
-		c.Factor = numberPointer(d.Coefficients["failure"])
+		c.Factor = numberPointer(d.Coefficients["warning"])
 	}
 }

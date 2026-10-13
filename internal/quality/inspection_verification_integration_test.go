@@ -37,7 +37,10 @@ func TestInspectionFailedVerificationDistinguishesIncompleteAndConfirmed(t *test
 			if err != nil {
 				t.Fatal(err)
 			}
-			a := Assessment{InspectionMode: "formal", AvailableTotal: tc.total, Gates: []inspection.Gate{{CheckKey: "D13", Confirmed: tc.confirmed, Health: "unavailable"}}}
+			a := Assessment{InspectionMode: "formal", AvailableTotal: tc.total, Checks: map[string]inspection.Check{"D07": {Status: "inconclusive"}, "A04": {Status: "inconclusive"}}, Gates: []inspection.Gate{{CheckKey: "D13", Confirmed: tc.confirmed, Health: "unavailable"}}}
+			if tc.confirmed {
+				a.Verdict = "unavailable"
+			}
 			failed, err := e.failUnobservedRun(ctx, run, u, a)
 			if err != nil || failed != tc.failed {
 				t.Fatalf("检测未完成与已确认门槛混淆：%v/%v，错误 %v", failed, tc.failed, err)

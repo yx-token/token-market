@@ -363,7 +363,15 @@ func (s *Server) adminProbe(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	runID, err := s.Quality.QueueRun(r.Context(), id, "admin")
+	var in struct {
+		Flows []string `json:"flows"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := httpx.Decode(r, &in); err != nil {
+			return err
+		}
+	}
+	runID, err := s.Quality.QueueRun(r.Context(), id, "admin", in.Flows...)
 	if err != nil {
 		return err
 	}

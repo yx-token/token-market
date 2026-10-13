@@ -284,21 +284,22 @@ func TestItemOnline22FixtureAndFormalScoring(t *testing.T) {
 		}
 	}
 	a := assessFormal(rows, th, st)
-	if a.Samples != 67 || a.Baseline || a.Grade == "" || a.Verdict != "normal" || math.Abs(*a.RelativeScore-(65.0/67.0/.9)) > 1e-12 {
-		t.Fatalf("无基线正式模式未计分或默认期望不一致：%+v", a)
+	if a.Samples != 0 || a.Baseline || a.Verdict != "normal" || a.AvailableTotal != len(rows) {
+		t.Fatalf("检测项之外的总结应只保留可用统计：%+v", a)
 	}
 	for i := range rows {
 		if rows[i].CheckKey == "D07" || rows[i].CheckKey == "D09" {
 			rows[i].TargetPass = false
 		}
 	}
-	if got := assessFormal(rows, th, st); got.Verdict != "degraded" {
-		t.Fatalf("明显低于期望应被 SPRT 检出：%+v", got)
+	checks, _ = Inspect(rows, st, time.Time{})
+	if checks["D07"].Status != "fail" || checks["D09"].Status != "fail" {
+		t.Fatal("测智未通过应由各检测项判定")
 	}
-	st.CheckOverrides = map[string]inspection.CheckOverride{}
-	if got := assessFormal(rows, th, st); got.Samples != 0 {
-		t.Fatal("无基线不能绕过校准要求")
+	if got := assessFormal(rows, th, st); got.Verdict != "normal" || got.Samples != 0 {
+		t.Fatalf("答题未通过不能触发旧SPRT暂停门槛：%+v", got)
 	}
+
 }
 
 func TestPairedOptionsDoNotChangeResults(t *testing.T) {
@@ -324,8 +325,8 @@ func TestPairedOptionsDoNotChangeResults(t *testing.T) {
 	if c := checks["D07"]; c.Status != "inconclusive" || c.Samples.Paired != 1 || c.Samples.Excluded != 29 || c.Evidence.Source != "paired_probe" {
 		t.Fatalf("混合批次绕过配对：%+v", c)
 	}
-	if got := assessFormal(rows, th, st); got.Samples != 1 || !got.Baseline {
-		t.Fatal("正式模式混合批次绕过配对")
+	if got := assessFormal(rows, th, st); got.Samples != 0 || got.AvailableTotal != 30 {
+		t.Fatal("混合批次的成功请求仍应全部计入可用统计")
 	}
 }
 

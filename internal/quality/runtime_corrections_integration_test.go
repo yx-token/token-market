@@ -26,11 +26,11 @@ func TestInspectionLongRetryIsSavedWithoutWaiting(t *testing.T) {
 	defer srv.Close()
 	e := Engine{DB: pool, Keyring: testInspectionKeyring(t), Prober: &Prober{GatewayURL: srv.URL}}
 	ctx := context.Background()
-	it, err := CreateItem(ctx, pool, Item{Suite: "iq", Category: "限流回归", Prompt: "只答1", MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}})
+	it, err := CreateItem(ctx, pool, Item{Suite: "inspection_capability", CheckKey: "D07", Category: "限流回归", Prompt: "只答1", MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &Policy{Version: 1, Suites: []string{"iq"}, Thresholds: th}
+	p := inspectionTestPolicy(run)
 	st := defaultInspectionSettings()
 	plan, err := e.executionPlan(ctx, run, p, []Item{*it}, st)
 	if err != nil {
@@ -57,11 +57,11 @@ func TestInspectionLegacyActualBudgetOnlyWarns(t *testing.T) {
 	defer srv.Close()
 	e := Engine{DB: pool, Keyring: testInspectionKeyring(t), Prober: &Prober{GatewayURL: srv.URL}}
 	ctx := context.Background()
-	it, err := CreateItem(ctx, pool, Item{Suite: "iq", Category: "预算回归", Prompt: "只答1", MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}})
+	it, err := CreateItem(ctx, pool, Item{Suite: "inspection_capability", CheckKey: "D07", Category: "预算回归", Prompt: "只答1", MaxTokens: 32, Grader: Grader{Type: "exact", Answer: "1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &Policy{Version: 1, Suites: []string{"iq"}, Thresholds: th}
+	p := inspectionTestPolicy(run)
 	st := defaultInspectionSettings()
 	st.TokenBudgets["full"] = TokenBudget{Input: 1, Output: 1}
 	run.mode = "legacy"

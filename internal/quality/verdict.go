@@ -3,7 +3,6 @@ package quality
 import (
 	"math"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/DueGin/token-market/internal/inspection"
@@ -42,13 +41,12 @@ type Assessment struct {
 	Provisional          bool                        `json:"provisional,omitempty"`
 	ProposedGrade        string                      `json:"proposed_grade,omitempty"`
 	RepairedGrade        string                      `json:"repaired_grade,omitempty"`
-	Shadow               *ShadowSummary              `json:"shadow,omitempty"`
 	ErrorCounts          map[string]int              `json:"error_counts,omitempty"`
 	ReferenceErrorCounts map[string]int              `json:"reference_error_counts,omitempty"`
 	Warnings             []string                    `json:"warnings,omitempty"`
 	Verdict              string                      `json:"verdict"` // normal / suspected / degraded / unavailable / inconclusive
-	LLR                  float64                     `json:"llr"`
-	Samples              int                         `json:"samples"`
+	LLR                  float64                     `json:"llr,omitempty"`
+	Samples              int                         `json:"samples,omitempty"`
 	TargetPassRate       *float64                    `json:"target_pass_rate,omitempty"`
 	RelativeScore        *float64                    `json:"relative_score,omitempty"`
 	ReasoningRatio       *float64                    `json:"reasoning_ratio,omitempty"`
@@ -62,33 +60,21 @@ type Assessment struct {
 	Grade                string                      `json:"grade,omitempty"`
 }
 
-func scoringSuite(s string) bool { return s == "iq" || s == "reasoning" || s == "long_context" }
-
-func clampP(p float64) float64 { return math.Min(0.99, math.Max(0.01, p)) }
-
-// Assess 用序贯概率比检验（SPRT）判定是否降智：
-// H0：被测通过率 = h0 × 基线通过率（正常）；H1：= h1 × 基线通过率（降智）。
-// 每道题的基线通过率优先取该题近 7 天的基线历史，其次取本批次基线结果，没有基线时按 0.95 估计。
-func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
+// Assess 只汇总实际请求的可用率和性能；测智由检测项按模型判定。
+// 保留旧调用参数，避免历史调用重新引入旧评分结论。
+func Assess(outcomes []Outcome, _ Thresholds, _ bool) Assessment {
 	a := Assessment{}
-	upper := math.Log((1 - th.Beta) / th.Alpha)
-	lower := math.Log(th.Beta / (1 - th.Alpha))
-
 	var ttft, tps []float64
-	var targetPass, refPass, both, targetScored int
-	var expectedTotal float64
-	var itemExpectation bool
-	var tReason, rReason []float64
 	for _, o := range outcomes {
-		// 新题仅保留影子证据，不进入旧判定的任一指标或错误分母。
-		if strings.HasPrefix(o.Suite, "inspection_") {
-			continue
-		}
 		countProbeError(&a.ErrorCounts, o.Target.ErrorClass)
 		if o.Ref != nil {
 			countProbeError(&a.ReferenceErrorCounts, o.Ref.ErrorClass)
 		}
-		if o.Target.ErrorClass == "platform" || o.Target.ErrorClass == "rate_limited" || o.Target.ErrorClass == "expected_reject" || o.Target.ErrorClass == "configuration" {
+		if o.Target.HTTPStatus == 0 && o.Target.ErrorClass == "" {
+			continue
+		}
+		switch o.Target.ErrorClass {
+		case "platform", "rate_limited", "expected_reject", "configuration":
 			continue
 		}
 		a.AvailableTotal++
@@ -102,54 +88,6 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 		if v := o.Target.OutputTPS(); v > 0 {
 			tps = append(tps, v)
 		}
-		if !scoring || !scoringSuite(o.Suite) || !o.Target.EligibleForIntelligence() || (o.Ref != nil && !o.Ref.EligibleForIntelligence()) {
-			continue
-		}
-		var pRef float64
-		refOK := o.Ref != nil && o.Ref.OK()
-		switch {
-		case o.RefHistRate != nil:
-			pRef = *o.RefHistRate
-			a.Baseline = true
-		case refOK:
-			a.Baseline = true
-			if o.RefPass {
-				pRef = 0.9
-			} else {
-				pRef = 0.3
-			}
-		case o.Ref != nil:
-			continue // 基线本身失败，这道题不计入
-		default:
-			pRef = 0.95
-			if o.ExpectedPassRate != nil {
-				pRef = *o.ExpectedPassRate
-				itemExpectation = true
-			}
-		}
-		expectedTotal += pRef
-		p0, p1 := clampP(th.H0*pRef), clampP(th.H1*pRef)
-		if o.TargetPass {
-			a.LLR += math.Log(p1 / p0)
-			targetPass++
-		} else {
-			a.LLR += math.Log((1 - p1) / (1 - p0))
-		}
-		targetScored++
-		a.Samples++
-		if refOK {
-			both++
-			if o.RefPass {
-				refPass++
-			}
-		}
-		if o.Suite == "reasoning" && refOK {
-			t, r := reasoningAmount(o.Target), reasoningAmount(*o.Ref)
-			if r > 0 && (o.Target.ReasoningObserved || o.Target.ReasoningTokens > 0) {
-				tReason = append(tReason, t)
-				rReason = append(rReason, r)
-			}
-		}
 	}
 	if v, ok := percentile(ttft, 0.5); ok {
 		a.TTFTp50Ms = &v
@@ -160,55 +98,13 @@ func Assess(outcomes []Outcome, th Thresholds, scoring bool) Assessment {
 	if v, ok := percentile(tps, 0.5); ok {
 		a.OutputTPS = &v
 	}
-	if targetScored > 0 {
-		rate := float64(targetPass) / float64(targetScored)
-		a.TargetPassRate = &rate
-		var rel float64
-		switch {
-		case both > 0 && refPass > 0:
-			rel = math.Min(1.5, rate/(float64(refPass)/float64(both)))
-		case !a.Baseline:
-			rel = math.Min(1.5, rate/0.95)
-			if itemExpectation {
-				rel = math.Min(1.5, rate/(expectedTotal/float64(targetScored)))
-			}
-		default:
-			rel = rate
-		}
-		a.RelativeScore = &rel
-		a.Grade = gradeFor(rel)
-	}
-	if len(tReason) > 0 {
-		t, _ := percentile(tReason, 0.5)
-		r, _ := percentile(rReason, 0.5)
-		if r > 0 {
-			ratio := t / r
-			a.ReasoningRatio = &ratio
-		}
-	}
-
 	switch {
 	case a.AvailableTotal >= 2 && float64(a.AvailableOK)/float64(a.AvailableTotal) < 0.5:
 		a.Verdict = "unavailable"
-	case a.AvailableTotal == 0:
+	case a.AvailableOK == 0:
 		a.Verdict = "inconclusive"
-	case !scoring || a.Samples == 0:
-		a.Verdict = "normal"
-		if a.AvailableOK == 0 {
-			a.Verdict = "unavailable"
-		}
-	case a.LLR >= upper:
-		a.Verdict = "degraded"
-		c := 1 - th.Alpha
-		a.Confidence = &c
-	case a.LLR <= lower:
-		a.Verdict = "normal"
-		c := 1 - th.Beta
-		a.Confidence = &c
-	case a.LLR > 0:
-		a.Verdict = "suspected"
 	default:
-		a.Verdict = "inconclusive"
+		a.Verdict = "normal"
 	}
 	return a
 }
@@ -222,29 +118,6 @@ func countProbeError(counts *map[string]int, class string) {
 		*counts = map[string]int{}
 	}
 	(*counts)[class]++
-}
-
-func reasoningAmount(r ProbeResult) float64 {
-	if r.ReasoningTokens > 0 {
-		return float64(r.ReasoningTokens)
-	}
-	// 估算在协议层使用输出 usage 完成，不能用被隐藏的 thinking 字符数。
-	return 0
-}
-
-func gradeFor(rel float64) string {
-	switch {
-	case rel >= 0.97:
-		return "S"
-	case rel >= 0.9:
-		return "A"
-	case rel >= 0.8:
-		return "B"
-	case rel >= 0.7:
-		return "C"
-	default:
-		return "D"
-	}
 }
 
 func percentile(vals []float64, p float64) (float64, bool) {

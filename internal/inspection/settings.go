@@ -35,6 +35,16 @@ func Defaults() Settings {
 	return s
 }
 
+func (s Settings) PricingEnabled() bool {
+	for _, definition := range Known() {
+		effective, _ := Effective(definition.Key, s)
+		if effective.Enabled && effective.Pricing {
+			return true
+		}
+	}
+	return false
+}
+
 func (s Settings) Validate() error {
 	if err := validateCapabilityOverrides(s.ModelCapabilities); err != nil {
 		return err

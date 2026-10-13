@@ -133,7 +133,7 @@ func TestInspectionCacheRequiresBothCompleteStepsAndUsage(t *testing.T) {
 	it := plannedInstance{Item: *item, ItemID: item.ID, CheckKey: "D12", Hash: "离线缓存证据实例", GeneratorVersion: "static-1", Steps: []plannedStep{{Step: 0}, {Step: 1}}}
 	st := defaultInspectionSettings()
 	st.Mode = inspection.ModeFormal
-	st.CheckOverrides["D12"] = inspection.CheckOverride{Calibrated: true, CalibrationNote: "离线缓存证据夹具，非真实运营校准。"}
+	st.CheckOverrides["D12"] = inspection.CheckOverride{Pricing: func() *bool { v := true; return &v }(), Calibrated: true, CalibrationNote: "离线缓存证据夹具，非真实运营校准。"}
 	value := func(n int64) *int64 { return &n }
 	type cacheStep struct {
 		cache    *int64

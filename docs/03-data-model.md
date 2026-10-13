@@ -191,17 +191,22 @@ upstream_runtime_params (                -- 账号级参数的期望值（与分
 detection_policies (                     -- 管理员按厂商配置，可动态修改
   id                    bigserial primary key,
   platform              text not null,
-  auth_type             text,            -- 为空表示该厂商所有接入方式
-  enabled               boolean not null,          -- 是否检测（总开关）
-  scheduled_enabled     boolean not null,          -- 是否定时检测，依赖 enabled
-  interval_minutes      int not null,
+  auth_type             text not null default '', -- 空串表示该厂商所有接入方式
+  enabled               boolean not null,         -- 检测总开关
+  scheduled_enabled     boolean not null,         -- 定时总开关，依赖 enabled
+  flows                 jsonb not null default '{}', -- intelligence / identity 的独立配置
+  interval_minutes      int not null,             -- 已废弃，保留兼容
   jitter_minutes        int not null,
-  suites                jsonb not null,  -- availability / latency / iq / reasoning / long_context / tool_call
-  models                jsonb not null,  -- 要测的模型
-  daily_budget_usd      numeric(20,10) not null,   -- 每个上游每天的探测预算（按官方价计）
-  thresholds            jsonb not null,  -- 判定阈值与置信度
-  auto_pause            boolean not null,          -- 判定降智后是否自动不调度
-  default_grade         text not null,             -- 未检测时的默认等级
+  suites                text[] not null,          -- 已废弃，执行按 flows 选题
+  models                text[] not null,          -- 已废弃，测智模型见 flows.intelligence.models
+  full_triggers         text[] not null,          -- 已废弃，使用各流程 full_triggers
+  third_party           jsonb not null,           -- 检测站、模型、协议、身份不符处置；旧 triggers 已废弃
+  item_parallelism      int not null default 4,
+  token_budgets         jsonb not null default '{}', -- full / quick 每侧预算
+  daily_budget_usd      numeric(20,10) not null,
+  thresholds            jsonb not null,           -- 旧阈值保留，旧 SPRT 不再参与结论
+  auto_pause            boolean not null,         -- 兼容字段，测智未通过只标疑似
+  default_grade         text not null,
   version               bigint not null,
   updated_by            bigint,
   updated_at            timestamptz not null,
@@ -247,17 +252,46 @@ system_keys (                            -- 平台探测用户名下的 sub2api 
 );
 -- 探测用户的 sub2api 余额由 worker 定期补足；补足本身不记成本，探测成本在用量入账时按卖家收益记录（见 08）
 
-probe_runs (
+probe_runs (                            -- 同上游串行，一次触发一条运行
   id                 bigserial primary key,
-  upstream_id        bigint references upstreams,
-  reference_id       bigint references reference_accounts,   -- 与 upstream_id 二选一
-  trigger            text not null,      -- onboarding / scheduled / recovery / seller_manual / admin / adaptive
+  upstream_id        bigint not null references upstreams,
+  batch_id           text not null,      -- 同批被测与基线共用执行快照
+  trigger            text not null,      -- onboarding / scheduled / recovery / seller_manual / admin / adaptive / appeal / reference
   policy_version     bigint not null,
-  suites             jsonb not null,
-  status             text not null,      -- running / done / failed / skipped_budget
+  flows              text[] not null default '{}', -- intelligence / identity；旧记录为空
+  identity_source    text,               -- third_party / self，入队冻结
+  models             text[] not null default '{}', -- 本次全部测智模型
+  model              text not null,      -- 主模型，兼容旧字段
+  mode               text not null,      -- full / quick；旧记录可能为 legacy
+  execution_snapshot jsonb not null,     -- 冻结策略、各流程模式、设置、题目与实例
+  deadline_at        timestamptz,
+  status             text not null,      -- queued / running / third_party / done / failed / skipped_budget / skipped_disabled
   cost_usd           numeric(20,10),
-  started_at         timestamptz not null,
+  summary            jsonb,
+  queued_at          timestamptz not null,
+  started_at         timestamptz,
   finished_at        timestamptz
+);
+
+upstream_quality_state (
+  upstream_id          bigint primary key references upstreams,
+  last_run_at          timestamptz,
+  next_scheduled_at    timestamptz,       -- 兼容旧字段
+  next_intelligence_at timestamptz,
+  next_identity_at     timestamptz,
+  last_intelligence_at timestamptz,
+  last_identity_at     timestamptz,
+  suspected_flows      text[] not null default '{}',
+  adaptive_attempts    int not null default 0,
+  deductions_reset_at  timestamptz,       -- 自动推翻取复测开始/入队时间，人工推翻取当前时间
+  recovery_attempts    int not null default 0,
+  next_recovery_at     timestamptz,
+  consecutive_normal   int not null default 0,
+  last_failed_checks   text[] not null default '{}', -- 所有模式保存，恢复必须本次重测通过
+  pending_grade        text,
+  pending_grade_count  int not null default 0,
+  manual_runs_today    int not null default 0,
+  manual_runs_date     date
 );
 
 probe_results (
@@ -276,12 +310,15 @@ probe_results (
 quality_verdicts (
   id              bigserial primary key,
   upstream_id     bigint not null references upstreams,
+  run_id          bigint references probe_runs,
   model           text not null,
   verdict         text not null,         -- normal / suspected / degraded / unavailable / inconclusive
-  relative_score  double precision,      -- 相对基线
-  confidence      double precision,
-  attribution     text,                  -- account / proxy / vendor_wide / time_window / unknown
-  run_ids         bigint[] not null,
+  relative_score  double precision,      -- 旧相对分保留历史
+  quality_factor  double precision,      -- 正式门槛阻断时为空，上游保留原 Q
+  checks          jsonb not null default '{}',
+  gates           jsonb not null default '[]',
+  attribution     text,                  -- account / proxy / vendor_wide / unknown
+  grade           text,
   created_at      timestamptz not null default now()
 );
 
@@ -294,7 +331,8 @@ detection_providers (                    -- 第三方检测站配置
   max_runs_per_hour  int not null,
   timeout_minutes    int not null          -- 从排队到出结果的最长等待
 );
--- detection_policies.third_party jsonb：[{provider, triggers, model, format, on_mismatch, on_submodel_mismatch}]
+-- detection_policies.third_party jsonb：[{provider, model, format, on_mismatch, on_submodel_mismatch}]；旧 triggers 保留但执行忽略
+-- mismatch 动作为 degraded / suspected / ignore；ignore 折算 normal，身份按通过处理
 
 third_party_checks (                     -- 每次检测提交给检测站的记录
   id bigserial primary key,
@@ -311,7 +349,8 @@ third_party_checks (                     -- 每次检测提交给检测站的记
   verdict         text,                    -- 折算后的结论
   summary         jsonb,                   -- 脱敏摘要（不含被测端点的原始回答）
   report_url      text,
-  deadline        timestamptz not null
+  deadline        timestamptz not null,
+  unique (run_id, provider)              -- 同次运行重入不重复提交
 );
 
 test_reports (                           -- 卖家可见的报告（已脱敏）
@@ -319,7 +358,7 @@ test_reports (                           -- 卖家可见的报告（已脱敏）
   upstream_id  bigint not null references upstreams,
   run_id       bigint not null references probe_runs,
   verdict      text not null,
-  summary      jsonb not null,           -- 见 05 第 7 节
+  summary      jsonb not null,           -- 见 05 第 8 节
   impact       jsonb not null,           -- 调度状态变化
   created_at   timestamptz not null default now()
 );
@@ -343,6 +382,16 @@ health_events (                          -- 被动信号：sub2api 账号状态�
   created_at   timestamptz not null default now()
 );
 ```
+
+`flows.intelligence` 保存 enabled、scheduled_enabled、interval_minutes、triggers、full_triggers、models；模型元素为 `{model, expected_pass_rate}`，期望通过率为空或 `(0,1]`。`flows.identity` 保存同样的调度字段及 source（third_party / self）；开启第三方来源须存在已启用检测站。旧 models 迁入测智模型配置，不再用于轮换。
+
+运行与报告 summary 保存 flows、identity_source、models，以及 intelligence / identity 的 status、inherited_at；intelligence.models 为每模型的判定。卖家摘要仅保留 model、status，隐藏通过率与期望阈值。checks 中开启扣价且 applied=true 的项公开 factor，其余候选系数隐藏；所有模式都写 Q 和 last_failed_checks，正式确认门槛时保留原 Q。
+
+`settings.inspection.check_overrides` 每项保存 enabled、pricing（布尔或 null）、calibrated、calibration_note、coefficients、thresholds。pricing 默认 false，null 恢复默认；校准只影响自有正式健康门槛，扣价不要求校准。历史继承比较单项生效定义哈希与当前模型期望，并筛选当前模型集合；撤下模型的旧失败不继续扣价，新增模型缺证据须重测。另一项设置变化不使本项历史失效。
+
+`deductions_reset_at` 是继承与当前估价的共同证据边界。申诉复测自动推翻使用本轮 started_at（未开始则 queued_at），保留本轮通过结果；人工推翻使用当前时间，同时将 upstreams.quality_factor 重置为 1、清空 appraised_at，估价等待新检测。历史运行与卖家报告均保留。
+
+健康正常但最新检查有已生效且系数小于 1 的扣价，也允许卖家手动复测。测智疑似保存在 suspected_flows，按 adaptive_attempts 退避 30 分钟、1 小时、2 小时、4 小时、6 小时封顶；另一流程通过不清除本流程疑似，空模型交集不再适用时清除测智疑似。执行实例上限为 `200 × max(1, 测智模型数)`，execution_snapshot 上限为 32 MiB；超限运行明确失败，不执行截断计划。
 
 ## 6. 用量、账本与结算
 
