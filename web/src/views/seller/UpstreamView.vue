@@ -20,7 +20,7 @@ import OnboardingWizard from '@/components/OnboardingWizard.vue'
 import { authTypeText, isKeyAuthType, label, upstreamName } from '@/utils/labels'
 import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
-import { appealableReport } from '@/utils/inspection'
+import { appealableReport, intelligenceStatusText } from '@/utils/inspection'
 import { errorText } from '@/api/errors'
 
 const props = defineProps<{ id: string }>()
@@ -463,7 +463,7 @@ const appealable = appealableReport
           { key: 'created_at', label: '时间' },
           { key: 'trigger', label: '类型' },
           { key: 'verdict', label: '结论' },
-          { key: 'score', label: '智力相对分', align: 'right' },
+          { key: 'score', label: '测智', align: 'right' },
           { key: 'actions', label: '' },
         ]"
         :rows="reports.data.value"
@@ -473,7 +473,7 @@ const appealable = appealableReport
         <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>
         <template #cell-trigger="{ row }"><StatusBadge kind="trigger" :value="row.trigger" /></template>
         <template #cell-verdict="{ row }"><StatusBadge kind="verdict" :value="row.verdict" /></template>
-        <template #cell-score="{ row }">{{ row.summary?.suites?.iq ? percent(row.summary.suites.iq.relative_score, 0) : '—' }}</template>
+        <template #cell-score="{ row }">{{ row.summary?.intelligence?.status ? intelligenceStatusText(row.summary.intelligence.status) : row.summary?.suites?.iq ? percent(row.summary.suites.iq.relative_score, 0) : '—' }}</template>
         <template #cell-actions="{ row }">
           <button class="btn-ghost btn-sm" @click="openReport = row">查看</button>
         </template>

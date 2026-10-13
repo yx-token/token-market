@@ -4,7 +4,7 @@ import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { seller } from '@/api'
 import UpstreamView from '@/views/seller/UpstreamView.vue'
-import type { UpstreamDetail } from '@/api/types'
+import type { Report, UpstreamDetail } from '@/api/types'
 
 vi.mock('@/api', () => ({
   market: { config: vi.fn().mockResolvedValue({}) },
@@ -51,7 +51,6 @@ async function mountView(detail: UpstreamDetail) {
         ResetCreditsPanel: true,
         OnboardingWizard: true,
         ModalDialog: true,
-        DataTable: true,
         RefreshButton: true,
       },
     },
@@ -61,7 +60,10 @@ async function mountView(detail: UpstreamDetail) {
 }
 
 describe('卖家手动复测：只在检测结果异常时可用', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(seller.reports).mockResolvedValue([])
+  })
 
   it('最近一次检测正常时按钮置灰，并说明原因', async () => {
     const wrapper = await mountView({ ...base, manual_retest: { allowed: false, code: 'RETEST_NOT_NEEDED' } })
@@ -93,6 +95,21 @@ describe('卖家手动复测：只在检测结果异常时可用', () => {
     await flushPromises()
     expect(seller.retest).not.toHaveBeenCalled()
     confirmSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('检测列表显示测智中文状态，旧报告继续回退为相对分', async () => {
+    const statuses = ['pass', 'warning', 'fail', 'not_run', 'not_applicable', 'inconclusive'] as const
+    const reports: Report[] = statuses.map((status, index) => ({
+      id: index + 1, upstream_id: 5, trigger: 'scheduled', verdict: 'normal', created_at: '', impact: {},
+      summary: { verdict: 'normal', trigger: 'scheduled', model: 'gpt-6-astra', checked_at: '', baseline: false, intelligence: { status, models: [] }, suites: { iq: { relative_score: 0.95, samples: 8 } } },
+    }))
+    reports.push({ id: 7, upstream_id: 5, trigger: 'scheduled', verdict: 'normal', created_at: '', impact: {}, summary: { verdict: 'normal', trigger: 'scheduled', model: '旧型号', checked_at: '', baseline: false, suites: { iq: { relative_score: 0.75, samples: 8 } } } })
+    vi.mocked(seller.reports).mockResolvedValue(reports)
+    const wrapper = await mountView({ ...base, manual_retest: { allowed: false } })
+    const table = wrapper.get('table')
+    expect(table.findAll('thead th').map((cell) => cell.text())).toContain('测智')
+    expect(table.findAll('tbody tr').map((row) => row.findAll('td')[3].text())).toEqual(['正常', '偏低（扣价）', '显著偏低（疑似）', '未测', '不适用', '无法判定', '75%'])
     wrapper.unmount()
   })
 })
