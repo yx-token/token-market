@@ -1073,8 +1073,8 @@ export interface SellerProbeRun {
   identity_source?: IdentitySource | null
   models?: string[]
   queued_at: string
-  started_at?: string
-  finished_at?: string
+  started_at?: string | null
+  finished_at?: string | null
   progress: { answered: number; total: number | null }
   third_party: { provider: string; status: string }[]
   report_id: number | null

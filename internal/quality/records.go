@@ -45,8 +45,8 @@ type SellerProbeRun struct {
 	IdentitySource *string                 `json:"identity_source"`
 	Models         []string                `json:"models"`
 	QueuedAt       time.Time               `json:"queued_at"`
-	StartedAt      *time.Time              `json:"started_at,omitempty"`
-	FinishedAt     *time.Time              `json:"finished_at,omitempty"`
+	StartedAt      *time.Time              `json:"started_at"`
+	FinishedAt     *time.Time              `json:"finished_at"`
 	Progress       SellerProbeProgress     `json:"progress"`
 	ThirdParty     []SellerThirdPartyState `json:"third_party"`
 	ReportID       *int64                  `json:"report_id"`
