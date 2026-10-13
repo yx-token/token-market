@@ -119,10 +119,7 @@ func addInspectionProbes(plan *executionSnapshot, p *Policy, st InspectionSettin
 			instance.Steps[0].Request.Expected = ProbeExpected{Outcome: "reject", HTTPStatus: []int{400, 413}, ErrorCodes: []string{"context_length_exceeded", "max_input_tokens", "input_too_long"}}
 		}
 		if instance.CheckKey == "A04" {
-			models := plan.ModelWhitelist
-			if models == nil {
-				models = plan.Models
-			}
+			models := permissionProbeModels(*plan, p)
 			for n, model := range models {
 				if model == instance.Steps[0].Request.Model {
 					continue
@@ -142,6 +139,19 @@ func addInspectionProbes(plan *executionSnapshot, p *Policy, st InspectionSettin
 		sum := sha256.Sum256(mustJSON(plan.Instances[i]))
 		plan.Instances[i].Hash = hex.EncodeToString(sum[:])
 	}
+}
+
+func permissionProbeModels(plan executionSnapshot, p *Policy) []string {
+	if plan.ModelWhitelist != nil {
+		return plan.ModelWhitelist
+	}
+	if len(plan.Models) > 0 {
+		return plan.Models
+	}
+	if p != nil {
+		return intelligenceModels(p, nil)
+	}
+	return nil
 }
 
 // 恢复额外样本只发被测侧；生产统计与恢复样本下限分别配置。

@@ -271,7 +271,7 @@ func (e *Engine) inheritInspection(ctx context.Context, run runRow, u *upstreamR
 	if err := json.Unmarshal(currentRaw, &current); err != nil {
 		return err
 	}
-	rows, err := e.DB.Query(ctx, `SELECT r.flows,r.models,COALESCE(r.identity_source,''),r.mode,r.execution_snapshot,r.summary,r.finished_at,s.deductions_reset_at
+	rows, err := e.DB.Query(ctx, `SELECT r.flows,r.models,r.model,COALESCE(r.identity_source,''),r.mode,r.execution_snapshot,r.summary,r.finished_at,s.deductions_reset_at
  FROM probe_runs r LEFT JOIN upstream_quality_state s ON s.upstream_id=r.upstream_id
  WHERE r.upstream_id=$1 AND r.id<$2 AND r.status='done' AND r.finished_at>COALESCE(s.deductions_reset_at,'-infinity')
  ORDER BY r.finished_at DESC,r.id DESC LIMIT 100`, u.id, run.id)
@@ -281,11 +281,11 @@ func (e *Engine) inheritInspection(ctx context.Context, run runRow, u *upstreamR
 	defer rows.Close()
 	for rows.Next() {
 		var flows, models []string
-		var source, mode string
+		var model, source, mode string
 		var raw, summary []byte
 		var finished time.Time
 		var reset *time.Time
-		if err := rows.Scan(&flows, &models, &source, &mode, &raw, &summary, &finished, &reset); err != nil {
+		if err := rows.Scan(&flows, &models, &model, &source, &mode, &raw, &summary, &finished, &reset); err != nil {
 			return err
 		}
 		var snap executionSnapshot
@@ -308,8 +308,17 @@ func (e *Engine) inheritInspection(ctx context.Context, run runRow, u *upstreamR
 			if !selected && c.Status != "not_run" {
 				continue
 			}
-			if d.Flow == inspection.FlowIdentity && source != p.Flows.Identity.Source {
-				continue
+			if d.Flow == inspection.FlowIdentity {
+				if source != p.Flows.Identity.Source || model != run.model {
+					continue
+				}
+				// 权限项覆盖全部挂售型号，不能把旧白名单的结论移到新型号上。
+				if key == "A04" && !slices.Equal(permissionProbeModels(snap, snap.Policy), permissionProbeModels(current, p)) {
+					continue
+				}
+				if key == "third_party" && (snap.Policy == nil || string(mustJSON(snap.Policy.ThirdParty)) != string(mustJSON(p.ThirdParty))) {
+					continue
+				}
 			}
 			ttl := max(7*24*time.Hour, 2*time.Duration(flowPolicy(p, d.Flow).IntervalMinutes)*time.Minute)
 			prior, ok := old.Checks[key]

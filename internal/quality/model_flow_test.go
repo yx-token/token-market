@@ -52,6 +52,19 @@ func TestPermissionProbeClonesOnlyWhitelistedModels(t *testing.T) {
 	}
 }
 
+func TestIdentityOnlyPermissionProbeUsesAllConfiguredModelsWhenWhitelistMissing(t *testing.T) {
+	p := &Policy{Flows: PolicyFlows{Intelligence: IntelligenceFlowPolicy{Models: []IntelligenceModel{{Model: "模型甲"}, {Model: "模型乙"}}}}}
+	plan := executionSnapshot{Mode: "full", Flows: []string{"identity"}, Models: []string{}, Instances: []plannedInstance{{ItemID: 1, CheckKey: "A04", RequestedModel: "模型甲", Steps: []plannedStep{{Request: ProbeRequest{Model: "模型甲"}}}}}}
+	addInspectionProbes(&plan, p, defaultInspectionSettings())
+	models := []string{}
+	for _, instance := range plan.Instances {
+		models = append(models, instance.RequestedModel)
+	}
+	if !reflect.DeepEqual(models, []string{"模型甲", "模型乙"}) || len(plan.Models) != 0 {
+		t.Fatalf("无白名单的身份检测须覆盖策略型号，不能误写测智集合：%v，%v", models, plan.Models)
+	}
+}
+
 func modelOutcomes(key, model string, n, passed int) []Outcome {
 	rows := itemRows(key, n, passed)
 	for i := range rows {
