@@ -56,7 +56,8 @@ describe('质检题库编辑', () => {
   it('按模板与版本查看新题，保留旧题显示', async () => {
     const { wrapper } = await page()
     expect(wrapper.text()).toContain('旧算术题')
-    expect(wrapper.text()).toContain('上下文质检')
+    expect(wrapper.text()).toContain('测智·上下文深度')
+    expect(wrapper.find('tbody').text()).toContain('旧智力题（已停用）')
     expect(wrapper.text()).toContain('register_machine / 1')
     expect(wrapper.find('option[value="tool_call"]').exists()).toBe(false)
     await wrapper.get('#item-template').setValue('register_machine')
@@ -91,9 +92,26 @@ describe('质检题库编辑', () => {
     const { wrapper } = await page()
     const row = wrapper.findAll('tbody tr').find((tr) => tr.find('td').text() === '1')!
     await row.findAll('button').find((button) => button.text() === '编辑')!.trigger('click')
+    expect(wrapper.get<HTMLSelectElement>('#isuite').element.value).toBe('iq')
+    expect(wrapper.get('#isuite').text()).toContain('旧智力题（已停用）')
     await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
     await flushPromises()
     expect(admin.updateItem).toHaveBeenCalledWith(1, expect.objectContaining({ grader: legacy.grader, request: {}, generator: {}, check_key: '', modes: [], weight: 1, irt_difficulty: legacy.irt_difficulty, irt_discrimination: legacy.irt_discrimination }))
+    wrapper.unmount()
+  })
+
+  it('新建题目默认测智，套件选项不再提供旧智力题', async () => {
+    const { wrapper } = await page()
+    await wrapper.findAll('button').find((button) => button.text() === '添加题目')!.trigger('click')
+    expect(wrapper.get<HTMLSelectElement>('#isuite').element.value).toBe('inspection_capability')
+    expect(wrapper.get('#isuite').findAll('option').map((option) => option.element.getAttribute('value'))).toEqual([
+      'inspection_capability', 'inspection_context', 'inspection_authenticity',
+      'inspection_function', 'inspection_output', 'inspection_performance',
+    ])
+    expect(wrapper.get('#isuite').text()).not.toContain('已停用')
+    await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
+    await flushPromises()
+    expect(admin.createItem).toHaveBeenCalledWith(expect.objectContaining({ suite: 'inspection_capability' }))
     wrapper.unmount()
   })
 

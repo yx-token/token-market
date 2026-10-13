@@ -8,7 +8,7 @@ import ProbeErrorBody from '@/components/ProbeErrorBody.vue'
 import ProbeExcerpt from '@/components/ProbeExcerpt.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { dateTime, ms, percent } from '@/utils/format'
-import { probeFlagText, probeResultKey, probeSuiteText } from '@/utils/inspection'
+import { compareProbeSuites, detectionFlowText, identitySourceText, intelligenceStatusText, probeFlagText, probeResultKey, probeSuiteText } from '@/utils/inspection'
 
 const props = withDefaults(defineProps<{ detail: ProbeRunDetail; showAnswer?: boolean }>(), { showAnswer: false })
 
@@ -25,7 +25,6 @@ const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.le
 
 // 按套件汇总：题数、通过数、错误数、平均耗时与平均推理 token；有基线时附基线通过数
 const suites = computed(() => {
-  const order = ['iq', 'reasoning', 'long_context']
   const groups = new Map<string, { target: ProbeRunResult[]; ref: ProbeRunResult[] }>()
   for (const r of props.detail.results) {
     if (!groups.has(r.suite)) groups.set(r.suite, { target: [], ref: [] })
@@ -33,7 +32,7 @@ const suites = computed(() => {
   }
   for (const r of props.detail.reference_results ?? []) groups.get(r.suite)?.ref.push(r)
   return [...groups.entries()]
-    .sort(([a], [b]) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99))
+    .sort(([a], [b]) => compareProbeSuites(a, b))
     .map(([suite, g]) => {
       const ok = g.target.filter((r) => !r.error_class)
       return {
@@ -51,7 +50,7 @@ const suites = computed(() => {
 
 // 逐题结果按「套件 → 题 → 记录」分组。参数化题一道题会现场生成多个实例，多步题每步一条，
 // D06 还会把 D07 实例用低推理档重答一次（实例号 +1000），所以同一道题在一次检测里有多条记录；
-// 多条记录的题折叠成一行汇总，展开后看各条。行序保持返回顺序，不另排序。
+// 多条记录的题折叠成一行汇总，展开后看各条。套件按现行顺序排列，题目保留返回顺序。
 type Row = (typeof rows.value)[number]
 interface ItemGroup {
   key: string
@@ -95,7 +94,7 @@ const entries = computed<Entry[]>(() => {
     items.get(itemKey)!.push(row)
   })
   const out: Entry[] = []
-  for (const suite of suiteOrder) {
+  for (const suite of suiteOrder.sort(compareProbeSuites)) {
     const items = bySuite.get(suite)!
     let records = 0
     for (const list of items.values()) records += list.length
@@ -169,10 +168,14 @@ function passText(p: boolean | null | undefined) {
         <StatusBadge kind="runTrigger" :value="run.trigger" />
         <StatusBadge kind="probeRunStatus" :value="run.status" />
         <span class="text-slate-600"
-          >检测 <span class="num">#{{ run.id }}</span> · 上游 <span class="num">#{{ run.upstream_id }}</span> · 模型 {{ run.model }}</span
+          >检测 <span class="num">#{{ run.id }}</span> · 上游 <span class="num">#{{ run.upstream_id }}</span> · 测试模型 {{ run.models?.length ? run.models.join(' / ') : run.model }}</span
         >
         <span class="text-xs text-slate-500">{{ dateTime(run.queued_at) }}</span>
       </div>
+      <p v-if="run.flows?.length || run.identity_source" class="text-xs text-slate-500">
+        <span v-if="run.flows?.length">流程：{{ run.flows.map(detectionFlowText).join(' / ') }}</span>
+        <span v-if="run.identity_source" class="ml-3">身份来源：{{ identitySourceText(run.identity_source) }}</span>
+      </p>
       <p v-if="run.summary?.error" class="rounded border-l-2 border-red-500 bg-red-50 px-3 py-2 text-xs text-red-800">
         {{ run.summary.error }}
       </p>
@@ -230,7 +233,23 @@ function passText(p: boolean | null | undefined) {
           </dd>
         </dl>
       </section>
-      <section aria-label="智力与推理指标">
+      <section v-if="run.summary?.intelligence" aria-label="测智指标">
+        <h4 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">测智</h4>
+        <p>{{ intelligenceStatusText(run.summary.intelligence.status) }}</p>
+        <p v-if="run.summary.intelligence.inherited_at" class="mt-1 text-xs text-slate-500">沿用 {{ dateTime(run.summary.intelligence.inherited_at) }} 的结果</p>
+        <dl class="mt-2 space-y-2">
+          <div v-for="model in run.summary.intelligence.models" :key="model.model">
+            <dt class="break-all font-medium">{{ model.model }}</dt>
+            <dd>
+              {{ intelligenceStatusText(model.status) }}
+              <span v-if="showAnswer" class="block text-xs text-slate-500">
+                通过率 {{ percent(model.target_pass_rate) }} · 期望通过率 {{ percent(model.expected_pass_rate) }}
+              </span>
+            </dd>
+          </div>
+        </dl>
+      </section>
+      <section v-else aria-label="智力与推理指标">
         <h4 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">智力与推理</h4>
         <dl class="kv">
           <dt>智力相对分</dt>
@@ -269,9 +288,8 @@ function passText(p: boolean | null | undefined) {
         </thead>
         <tbody>
           <tr v-for="s in suites" :key="s.suite" class="border-t border-slate-100">
-            <td class="p-2 font-medium">
+            <td class="p-2 font-medium" :title="s.suite">
               {{ probeSuiteText(s.suite) }}
-              <span v-if="probeSuiteText(s.suite) !== s.suite" class="ml-1 font-normal text-slate-400">{{ s.suite }}</span>
             </td>
             <td class="num p-2 text-right" :class="s.passed < s.items ? 'text-red-600' : 'text-emerald-700'">{{ s.passed }} / {{ s.items }}</td>
             <td class="num p-2 text-right" :class="s.errors ? 'text-red-600' : ''">{{ s.errors }}</td>
@@ -306,9 +324,8 @@ function passText(p: boolean | null | undefined) {
           <tbody>
             <template v-for="e in entries" :key="e.key">
               <tr v-if="e.type === 'suite'" class="border-t border-slate-200 bg-slate-50">
-                <td :colspan="detailColspan" class="px-2 py-1.5 font-medium text-slate-600">
+                <td :colspan="detailColspan" class="px-2 py-1.5 font-medium text-slate-600" :title="e.suite">
                   {{ probeSuiteText(e.suite) }}
-                  <span v-if="probeSuiteText(e.suite) !== e.suite" class="ml-1 font-normal text-slate-400">{{ e.suite }}</span>
                   <span class="ml-1 font-normal text-slate-400"
                     >（{{ e.items }} 题<template v-if="e.records !== e.items"> · {{ e.records }} 条记录</template>）</span
                   >

@@ -15,7 +15,7 @@ import ProbeRunDetail from '@/components/ProbeRunDetail.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import TabBar from '@/components/TabBar.vue'
 import { authTypeText, label, options } from '@/utils/labels'
-import { probeFlagText, probeSuiteText } from '@/utils/inspection'
+import { compareProbeSuites, detectionFlowText, identitySourceText, probeFlagText, probeSuiteText } from '@/utils/inspection'
 import { dateTime, ms, percent } from '@/utils/format'
 
 const tab = ref<'runs' | 'items'>('runs')
@@ -52,7 +52,7 @@ onMounted(() => {
 })
 
 const filteredRuns = computed(() =>
-  filterByKeyword(records.data.value, queryParams.keyword, ['id', 'upstream_id', 'account_email', 'model'] as (keyof ProbeRunRecord)[]),
+  filterByKeyword(records.data.value, queryParams.keyword, ['id', 'upstream_id', 'account_email', 'model', 'models'] as (keyof ProbeRunRecord)[]),
 )
 const runPage = useClientPage(filteredRuns)
 const filteredStats = computed(() =>
@@ -73,11 +73,10 @@ function onReset() {
   search()
 }
 
-const suiteOrder = ['iq', 'reasoning', 'long_context']
 function suiteText(r: ProbeRunRecord) {
-  return Object.entries(r.suites)
-    .sort(([a], [b]) => (suiteOrder.indexOf(a) + 1 || 99) - (suiteOrder.indexOf(b) + 1 || 99))
-    .map(([s, c]) => ({ suite: s, text: `${s} ${c.passed}/${c.items}`, bad: c.passed < c.items }))
+  return Object.entries(r.suites ?? {})
+    .sort(([a], [b]) => compareProbeSuites(a, b))
+    .map(([s, c]) => ({ suite: s, text: `${probeSuiteText(s)} ${c.passed}/${c.items}`, bad: c.passed < c.items }))
 }
 function rate(passed: number, asked: number) {
   return asked ? passed / asked : null
@@ -186,6 +185,9 @@ async function openItem(s: ProbeItemStat) {
         { key: 'queued_at', label: '时间' },
         { key: 'upstream', label: '上游' },
         { key: 'model', label: '厂商 / 模型' },
+        { key: 'flows', label: '流程' },
+        { key: 'identity_source', label: '身份来源' },
+        { key: 'models', label: '测试模型' },
         { key: 'trigger', label: '触发' },
         { key: 'verdict', label: '结论' },
         { key: 'answers', label: '答题' },
@@ -210,6 +212,9 @@ async function openItem(s: ProbeItemStat) {
         {{ label('platform', row.platform).text }} · {{ authTypeText(row.platform, row.auth_type) }}
         <div class="text-xs text-ink-500">{{ row.model }}</div>
       </template>
+      <template #cell-flows="{ row }">{{ row.flows?.length ? row.flows.map(detectionFlowText).join(' / ') : '—' }}</template>
+      <template #cell-identity_source="{ row }">{{ row.identity_source ? identitySourceText(row.identity_source) : '—' }}</template>
+      <template #cell-models="{ row }">{{ row.models?.length ? row.models.join(' / ') : row.model || '—' }}</template>
       <template #cell-trigger="{ row }"><StatusBadge kind="runTrigger" :value="row.trigger" /></template>
       <template #cell-verdict="{ row }">
         <StatusBadge v-if="row.summary?.verdict" kind="verdict" :value="row.summary.verdict" />
