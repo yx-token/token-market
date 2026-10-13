@@ -22,20 +22,22 @@ func TestSelectedFlowsQueueCombinations(t *testing.T) {
 		want      []string
 		code      string
 	}{
-		{name: "管理员默认全部", trigger: "admin", want: []string{"intelligence", "identity"}},
+		{name: "管理员默认全部", trigger: "admin", want: []string{"intelligence", "degradation", "identity"}},
 		{name: "管理员只测身份", trigger: "admin", requested: []string{"identity"}, want: []string{"identity"}},
 		{name: "管理员只测测智", trigger: "admin", requested: []string{"intelligence"}, want: []string{"intelligence"}},
+		{name: "管理员只测降智", trigger: "admin", requested: []string{"degradation"}, want: []string{"degradation"}},
 		{name: "管理员重复选择规范化", trigger: "admin", requested: []string{"identity", "identity", "intelligence"}, want: []string{"intelligence", "identity"}},
 		{name: "管理员不能选关闭流程", trigger: "admin", requested: []string{"identity"}, change: func(p *Policy) { p.Flows.Identity.Enabled = false }, code: "NO_FLOWS"},
-		{name: "管理员总开关例外", trigger: "admin", change: func(p *Policy) { p.Enabled = false }, want: []string{"intelligence", "identity"}},
+		{name: "管理员不能选关闭的降智流程", trigger: "admin", requested: []string{"degradation"}, change: func(p *Policy) { p.Flows.Degradation.Enabled = false }, code: "NO_FLOWS"},
+		{name: "管理员总开关例外", trigger: "admin", change: func(p *Policy) { p.Enabled = false }, want: []string{"intelligence", "degradation", "identity"}},
 		{name: "上架忽略触发限制", trigger: "onboarding", change: func(p *Policy) {
 			p.Enabled = false
-			p.Flows.Intelligence.Triggers, p.Flows.Identity.Triggers = nil, nil
-		}, want: []string{"intelligence", "identity"}},
-		{name: "上架只测已启用流程", trigger: "onboarding", change: func(p *Policy) { p.Flows.Identity.Enabled = false }, want: []string{"intelligence"}},
-		{name: "定时按触发选择", trigger: "scheduled", want: []string{"intelligence"}},
-		{name: "定时两流程都匹配", trigger: "scheduled", change: func(p *Policy) { p.Flows.Identity.Triggers = []string{"scheduled"} }, want: []string{"intelligence", "identity"}},
-		{name: "定时不选关闭流程", trigger: "scheduled", change: func(p *Policy) { p.Flows.Intelligence.Enabled = false }, code: "NO_FLOWS"},
+			p.Flows.Intelligence.Triggers, p.Flows.Degradation.Triggers, p.Flows.Identity.Triggers = nil, nil, nil
+		}, want: []string{"intelligence", "degradation", "identity"}},
+		{name: "上架只测已启用流程", trigger: "onboarding", change: func(p *Policy) { p.Flows.Identity.Enabled = false }, want: []string{"intelligence", "degradation"}},
+		{name: "定时按触发选择", trigger: "scheduled", want: []string{"intelligence", "degradation"}},
+		{name: "定时两流程都匹配", trigger: "scheduled", change: func(p *Policy) { p.Flows.Identity.Triggers = []string{"scheduled"} }, want: []string{"intelligence", "degradation", "identity"}},
+		{name: "定时不选关闭流程", trigger: "scheduled", change: func(p *Policy) { p.Flows.Intelligence.Enabled = false }, want: []string{"degradation"}},
 		{name: "没有匹配触发", trigger: "other", code: "NO_FLOWS"},
 		{name: "指定流程仍遵守自动触发限制", trigger: "adaptive", requested: []string{"intelligence"}, code: "NO_FLOWS"},
 		{name: "拒绝未知流程", trigger: "admin", requested: []string{"capability"}, code: "INVALID_FLOW"},
@@ -43,6 +45,7 @@ func TestSelectedFlowsQueueCombinations(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p := Policy{Enabled: true, Flows: policyFlowsFixture()}
 			p.Flows.Intelligence.Triggers = []string{"scheduled"}
+			p.Flows.Degradation.Triggers = []string{"scheduled"}
 			p.Flows.Identity.Triggers = []string{"appeal"}
 			if tc.change != nil {
 				tc.change(&p)
@@ -83,10 +86,15 @@ func TestModesForFlowsKeepEachFlowMode(t *testing.T) {
 		{"智力异常追加快检", "adaptive", []string{"intelligence"}, []string{"D07"}, "quick", map[string]string{"intelligence": "quick"}},
 		{"恢复失败项完整", "recovery", []string{"intelligence"}, []string{"D13"}, "full", map[string]string{"intelligence": "full"}},
 		{"卖家扣价复测完整", "seller_manual", []string{"identity"}, []string{"D08"}, "full", map[string]string{"identity": "full"}},
+		{"降智上架强制完整", "onboarding", []string{"degradation"}, nil, "full", map[string]string{"degradation": "full"}},
+		{"降智按完整触发完整", "admin", []string{"degradation"}, nil, "full", map[string]string{"degradation": "full"}},
+		{"降智未在完整触发时快检", "scheduled", []string{"degradation"}, nil, "quick", map[string]string{"degradation": "quick"}},
+		{"降智失败项追加完整", "adaptive", []string{"degradation"}, []string{"D14"}, "full", map[string]string{"degradation": "full"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := Policy{Flows: policyFlowsFixture()}
 			p.Flows.Intelligence.FullTriggers = []string{"admin"}
+			p.Flows.Degradation.FullTriggers = []string{"admin"}
 			p.Flows.Identity.FullTriggers = []string{"scheduled"}
 			mode, modes := modesForFlows(&p, tc.flows, tc.trigger, tc.failed)
 			if mode != tc.want || !reflect.DeepEqual(modes, tc.modes) {
@@ -279,10 +287,13 @@ func TestFlowSummaryPublicModelsAndAppliedFactor(t *testing.T) {
 	}
 	safe := publicReportSummary(raw)
 	var public struct {
-		Flows          []string `json:"flows"`
-		IdentitySource string   `json:"identity_source"`
-		Models         []string `json:"models"`
-		Intelligence   struct {
+		Flows       []string `json:"flows"`
+		Models      []string `json:"models"`
+		Degradation struct {
+			Status string                       `json:"status"`
+			Models []map[string]json.RawMessage `json:"models"`
+		} `json:"degradation"`
+		Intelligence struct {
 			Status string                       `json:"status"`
 			Models []map[string]json.RawMessage `json:"models"`
 		} `json:"intelligence"`
@@ -291,8 +302,16 @@ func TestFlowSummaryPublicModelsAndAppliedFactor(t *testing.T) {
 	if err := json.Unmarshal(safe, &public); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(public.Flows, run.flows) || public.IdentitySource != run.identitySource || !reflect.DeepEqual(public.Models, run.models) || public.Intelligence.Status != "warning" || len(public.Intelligence.Models) != 2 {
+	if !reflect.DeepEqual(public.Flows, run.flows) || !reflect.DeepEqual(public.Models, run.models) || public.Intelligence.Status != "warning" || len(public.Intelligence.Models) != 2 {
 		t.Fatalf("公开摘要丢失流程契约：%s", safe)
+	}
+	// 身份来源属于内部归因，卖家摘要不下发。
+	if strings.Contains(string(safe), "identity_source") {
+		t.Fatalf("卖家摘要泄露身份来源：%s", safe)
+	}
+	// 未跑降智流程时按模型结论为空。
+	if public.Degradation.Status != "not_run" || len(public.Degradation.Models) != 0 {
+		t.Fatalf("未跑的降智流程不应有模型结论：%s", safe)
 	}
 	for i, model := range public.Intelligence.Models {
 		if len(model) != 2 || model["model"] == nil || model["status"] == nil {

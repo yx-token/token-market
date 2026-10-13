@@ -68,14 +68,13 @@ func TestRunSummaryPlannedStepsAndSellerProbeRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sellerRuns) != 2 || sellerRuns[0].ID != runningID || sellerRuns[0].Progress.Answered != 2 || sellerRuns[0].Progress.Total == nil || *sellerRuns[0].Progress.Total != 5 {
-		t.Fatalf("卖家记录排序或进度错误：%+v", sellerRuns)
-	}
-	if len(sellerRuns[0].ThirdParty) != 1 || sellerRuns[0].ThirdParty[0].Provider != "bazaarlink" || sellerRuns[0].ThirdParty[0].Status != "running" || sellerRuns[0].ReportID == nil || sellerRuns[0].Verdict == nil {
-		t.Fatalf("第三方或报告关联错误：%+v", sellerRuns[0])
+	// 卖家记录只说明有无在跑、跑完了与结论，不含进度、模型、流程与第三方核验渠道。
+	if len(sellerRuns) != 2 || sellerRuns[0].ID != runningID || sellerRuns[0].Status != "running" || sellerRuns[0].ReportID == nil || sellerRuns[0].Verdict == nil {
+		t.Fatalf("卖家记录排序或结论错误：%+v", sellerRuns)
 	}
 	raw, _ := json.Marshal(sellerRuns)
-	for _, key := range []string{"prompt", "excerpt", "expected", "grader", "instance_hash", "summary"} {
+	for _, key := range []string{"prompt", "excerpt", "expected", "grader", "instance_hash", "summary",
+		"progress", "answered", "total", "models", "flows", "identity_source", "third_party", "provider", "bazaarlink", "planned"} {
 		if strings.Contains(string(raw), key) {
 			t.Fatalf("卖家检测记录泄露内部字段 %q：%s", key, raw)
 		}

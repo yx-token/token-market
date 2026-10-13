@@ -8,6 +8,7 @@ const (
 	ModeFormal = "formal"
 
 	FlowIntelligence = "intelligence"
+	FlowDegradation  = "degradation"
 	FlowIdentity     = "identity"
 	FlowCommon       = "common"
 )

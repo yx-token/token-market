@@ -134,3 +134,133 @@ func TestBazaarLinkParsesRealShape(t *testing.T) {
 		t.Fatalf("summary leaks sensitive fields: %s", raw)
 	}
 }
+
+// 逐项明细折算成卖家可见的大类计数与风险项：error 与 pending 只计入 total，风险项 failed 在前。
+func TestBazaarLinkItemCategoriesAndRisks(t *testing.T) {
+	longReason := strings.Repeat("截", 200)
+	body := mustJSON(map[string]any{
+		"runId": "r1", "status": "completed", "modelId": "claude-sonnet-4-5",
+		"items": []map[string]any{
+			{"probeId": "1", "label": "家族识别", "group": "identity", "status": "done", "passed": true},
+			{"probeId": "2", "label": "型号识别", "group": "submodel", "status": "done", "passed": true},
+			{"probeId": "3", "label": "安全探针 1", "group": "safety", "status": "done", "passed": "warning", "passReason": "回答包含轻微越界"},
+			{"probeId": "4", "label": "安全探针 2", "group": "safety", "status": "done", "passed": false, "passReason": longReason},
+			{"probeId": "5", "label": "安全探针 3", "group": "safety", "status": "error", "passed": nil, "error": "HTTP 503"},
+			{"probeId": "6", "label": "安全探针 4", "group": "safety", "status": "pending", "passed": nil},
+			{"probeId": "7", "label": "自定义分组项", "group": "custom_group", "status": "done", "passed": false, "passReason": "自定义分组失败"},
+		},
+	})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) }))
+	t.Cleanup(srv.Close)
+	p, err := thirdparty.New("bazaarlink", thirdparty.Config{BaseURL: srv.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := p.Poll(context.Background(), "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	categories, _ := json.Marshal(res.Summary["categories"])
+	var got []struct {
+		Key, Name                             string
+		Total, Passed, Warning, Failed, Error int
+	}
+	if err := json.Unmarshal(categories, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := []struct {
+		Key, Name                             string
+		Total, Passed, Warning, Failed, Error int
+	}{
+		{"identity", "身份识别", 1, 1, 0, 0, 0},
+		{"submodel", "子模型识别", 1, 1, 0, 0, 0},
+		{"safety", "安全探针", 4, 0, 1, 1, 1},
+		{"custom_group", "custom_group", 1, 0, 0, 1, 0},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("大类数量=%d，期望=%d：%s", len(got), len(want), categories)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("第%d个大类=%+v，期望=%+v", i, got[i], want[i])
+		}
+	}
+	if strings.Contains(string(categories), "自定义分组") {
+		t.Fatalf("未知分组不能凭空命名：%s", categories)
+	}
+	risks, _ := json.Marshal(res.Summary["risks"])
+	var gotRisks []struct {
+		Category     string `json:"category"`
+		CategoryName string `json:"category_name"`
+		Label        string `json:"label"`
+		Severity     string `json:"severity"`
+		Reason       string `json:"reason"`
+	}
+	if err := json.Unmarshal(risks, &gotRisks); err != nil {
+		t.Fatal(err)
+	}
+	if len(gotRisks) != 3 {
+		t.Fatalf("风险项应只收 failed 与 warning：%s", risks)
+	}
+	// failed 在前（保持分组出现顺序），warning 在后。
+	if gotRisks[0].Severity != "fail" || gotRisks[0].CategoryName != "安全探针" || gotRisks[0].Label != "安全探针 2" ||
+		gotRisks[1].Severity != "fail" || gotRisks[1].Category != "custom_group" {
+		t.Fatalf("失败项排序或归属错误：%+v", gotRisks)
+	}
+	if runes := []rune(gotRisks[0].Reason); len(runes) != 160 {
+		t.Fatalf("原因应按字符截断到 160：%d", len(runes))
+	}
+	if gotRisks[2].Severity != "warn" || gotRisks[2].Reason != "回答包含轻微越界" {
+		t.Fatalf("警告项缺失或原因错误：%+v", gotRisks[2])
+	}
+	raw, _ := json.Marshal(res.Summary)
+	if strings.Contains(string(raw), "HTTP 503") {
+		t.Fatalf("error 明细不应进入风险项：%s", raw)
+	}
+	if strings.Contains(string(raw), "secret") || strings.Contains(string(raw), "responseHeaders") {
+		t.Fatalf("摘要泄露敏感字段：%s", raw)
+	}
+}
+
+// 风险项上限 20 条，失败的项先占位，警告不会把失败挤出列表。
+func TestBazaarLinkRisksAreCappedAndPreferFailures(t *testing.T) {
+	items := []map[string]any{}
+	for i := 0; i < 25; i++ {
+		items = append(items, map[string]any{"probeId": "w", "label": "警告项", "group": "safety", "status": "done", "passed": "warning"})
+	}
+	for i := 0; i < 25; i++ {
+		items = append(items, map[string]any{"probeId": "f", "label": "失败项", "group": "integrity", "status": "done", "passed": false, "passReason": "原因"})
+	}
+	body := mustJSON(map[string]any{"runId": "r1", "status": "completed", "modelId": "m", "items": items})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) }))
+	t.Cleanup(srv.Close)
+	p, err := thirdparty.New("bazaarlink", thirdparty.Config{BaseURL: srv.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := p.Poll(context.Background(), "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	risks, _ := json.Marshal(res.Summary["risks"])
+	var got []struct {
+		Label    string `json:"label"`
+		Severity string `json:"severity"`
+	}
+	if err := json.Unmarshal(risks, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 20 {
+		t.Fatalf("风险项上限应为 20：%d", len(got))
+	}
+	for i, item := range got {
+		if item.Severity != "fail" || item.Label != "失败项" {
+			t.Fatalf("第%d条风险项应以失败项优先：%+v", i, item)
+		}
+	}
+}
+
+func mustJSON(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
+}

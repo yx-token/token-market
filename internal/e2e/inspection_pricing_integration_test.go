@@ -436,8 +436,8 @@ func assertInspectionModelScopedStaticEvidence(t *testing.T, f *inspectionPricin
 	}
 	target, reference := find(detail.Results), find(detail.RefResults)
 	for _, row := range []*quality.RunResult{target, reference} {
-		if row == nil || row.Suite != "inspection_capability" || row.CheckKey != "D07" || row.InstanceIdx != 0 || row.Step != 0 || row.GeneratorVersion != "static-1" || len(row.InstanceHash) != 64 || row.Passed == nil || !*row.Passed || row.Excerpt == nil || *row.Excerpt != "21" || !strings.Contains(row.Prompt, "糖果") || !reflect.DeepEqual(row.Models, []string{"gpt-6-astra"}) {
-			t.Fatalf("静态糖果题应保留题面、套件与型号，并产生成功 D07 逐题证据：%+v", row)
+		if row == nil || row.Suite != "inspection_degradation" || row.CheckKey != "D14" || row.InstanceIdx != 0 || row.Step != 0 || row.GeneratorVersion != "static-1" || len(row.InstanceHash) != 64 || row.Passed == nil || !*row.Passed || row.Excerpt == nil || *row.Excerpt != "21" || !strings.Contains(row.Prompt, "糖果") || !reflect.DeepEqual(row.Models, []string{"gpt-6-astra"}) {
+			t.Fatalf("静态糖果题应保留题面、套件与型号，并产生成功 D14 逐题证据：%+v", row)
 		}
 	}
 	if detail.Run.Model != "gpt-6-astra" || detail.Reference == nil || detail.Reference.BatchID != detail.Run.BatchID || detail.Reference.Model != detail.Run.Model || target.InstanceHash != reference.InstanceHash {
@@ -447,41 +447,45 @@ func assertInspectionModelScopedStaticEvidence(t *testing.T, f *inspectionPricin
 	if err := json.Unmarshal(detail.Run.Summary, &summary); err != nil {
 		t.Fatal(err)
 	}
+	// 限定型号的糖果题属降智检测：D14 单独判分，测智的 D07 只统计通用参数题。
 	parameterPairs, anchors := 0, 0
 	for _, row := range detail.Results {
-		if strings.HasPrefix(row.Suite, "inspection_") && row.CheckKey == "D07" && (row.ItemID == nil || *row.ItemID != f.scopedItem) {
+		if strings.HasPrefix(row.Suite, "inspection_") && row.CheckKey == "D07" {
 			parameterPairs++
 		}
 		if row.CheckKey == "D06" {
 			anchors++
 		}
 	}
-	d07, d06 := summary.Checks["D07"], summary.Checks["D06"]
-	if parameterPairs < 20 || d07.Samples.Paired != parameterPairs+1 || d07.Samples.Observed != parameterPairs+1 || d07.Samples.Excluded != 0 || d07.Status != "pass" || d07.Evidence.Source != "paired_probe" || d07.Factor == nil || !approx(*d07.Factor, 1) || anchors != 10 || d06.Samples.Observed != anchors {
-		t.Fatalf("糖果题应计入 D07 同组配对，且不进入 D06 推理量样本：参数化=%d 锚点=%d D07=%+v D06=%+v", parameterPairs, anchors, d07, d06)
+	d07, d06, d14 := summary.Checks["D07"], summary.Checks["D06"], summary.Checks["D14"]
+	if parameterPairs < 20 || d07.Samples.Paired != parameterPairs || d07.Samples.Observed != parameterPairs || d07.Samples.Excluded != 0 || d07.Status != "pass" || d07.Evidence.Source != "paired_probe" || d07.Factor == nil || !approx(*d07.Factor, 1) || anchors != 10 || d06.Samples.Observed != anchors {
+		t.Fatalf("测智只统计通用参数题，且不进入 D06 推理量样本：参数化=%d 锚点=%d D07=%+v D06=%+v", parameterPairs, anchors, d07, d06)
+	}
+	if d14.Samples.Paired != 1 || d14.Status != "pass" || d14.Factor == nil || !approx(*d14.Factor, 1) || d14.Evidence.Source != "paired_probe" {
+		t.Fatalf("型号专用糖果题应单独产生 D14 配对证据：%+v", d14)
 	}
 	var unchanged bool
-	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT check_key='D07' AND suite='inspection_capability' AND builtin_key='inspection/pigeonhole/astra/1' AND modes=ARRAY['full','quick']::text[] AND models=ARRAY['gpt-6-astra']::text[] AND max_tokens=8192 AND reasoning_effort='high' AND generator='{}'::jsonb AND status='active' FROM probe_items WHERE id=$1`, f.scopedItem), &unchanged)
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT check_key='D14' AND suite='inspection_degradation' AND builtin_key='inspection/pigeonhole/astra/1' AND modes=ARRAY['full','quick']::text[] AND models=ARRAY['gpt-6-astra']::text[] AND max_tokens=8192 AND reasoning_effort='high' AND generator='{}'::jsonb AND status='active' FROM probe_items WHERE id=$1`, f.scopedItem), &unchanged)
 	if !unchanged {
-		t.Fatal("能力质检糖果题的落库定义错误")
+		t.Fatal("降智检测糖果题的落库定义错误")
 	}
 	var bank []quality.Item
 	f.admin.must("GET", "/api/admin/probe-items", nil, &bank)
 	found := false
 	for _, it := range bank {
 		if it.ID == f.scopedItem {
-			found = it.Suite == "inspection_capability" && it.CheckKey == "D07" && it.BuiltinKey != nil && *it.BuiltinKey == "inspection/pigeonhole/astra/1"
+			found = it.Suite == "inspection_degradation" && it.CheckKey == "D14" && it.BuiltinKey != nil && *it.BuiltinKey == "inspection/pigeonhole/astra/1"
 		}
 	}
 	if !found {
-		t.Fatal("后台题库未展示能力质检/D07 的稳定内置题")
+		t.Fatal("后台题库未展示降智检测/D14 的稳定内置题")
 	}
 	var stats []quality.ItemStat
 	f.admin.must("GET", "/api/admin/probe-item-stats?platform=anthropic&model=gpt-6-astra", nil, &stats)
 	seen := false
 	for _, stat := range stats {
 		if stat.ItemID == f.scopedItem {
-			seen = stat.Suite == "inspection_capability" && strings.Contains(stat.Prompt, "糖果") && reflect.DeepEqual(stat.Models, []string{"gpt-6-astra"}) && stat.Asked == 1 && stat.Passed == 1 && stat.RefAsked == 1 && stat.RefPassed == 1
+			seen = stat.Suite == "inspection_degradation" && strings.Contains(stat.Prompt, "糖果") && reflect.DeepEqual(stat.Models, []string{"gpt-6-astra"}) && stat.Asked == 1 && stat.Passed == 1 && stat.RefAsked == 1 && stat.RefPassed == 1
 		}
 	}
 	if !seen {
@@ -493,8 +497,8 @@ func assertInspectionModelScopedStaticEvidence(t *testing.T, f *inspectionPricin
 		t.Fatalf("后台逐题结果应包含同批被测和基线：%+v", results)
 	}
 	for _, result := range results {
-		if result.Model != "gpt-6-astra" || result.CheckKey != "D07" || result.InstanceHash != target.InstanceHash || result.Excerpt == nil || *result.Excerpt != "21" {
-			t.Fatalf("后台逐题结果的 D07 证据不完整：%+v", result)
+		if result.Model != "gpt-6-astra" || result.CheckKey != "D14" || result.InstanceHash != target.InstanceHash || result.Excerpt == nil || *result.Excerpt != "21" {
+			t.Fatalf("后台逐题结果的 D14 证据不完整：%+v", result)
 		}
 	}
 	var reportID int64
@@ -664,7 +668,9 @@ func TestInspectionPricingTrialAppliesExplicitDiscountWithoutCalibration(t *test
 	f.seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/retest", f.upstreamID), nil, &retest)
 	restored := f.execute(t, retest.RunID)
 	if restored.QualityFactor == nil || !approx(*restored.QualityFactor, 1) || restored.Checks["D08"].Status != "pass" || restored.Checks["D08"].Evidence.Source == "history" {
-		t.Fatalf("健康但存在已生效扣价时须允许卖家复测并解除：%+v", restored)
+		var flows, models, deg []string
+		mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT flows,models,degradation_models FROM probe_runs WHERE id=$1`, retest.RunID), &flows, &models, &deg)
+		t.Fatalf("健康但存在已生效扣价时须允许卖家复测并解除：flows=%v models=%v deg=%v %+v", flows, models, deg, restored.Checks["D08"])
 	}
 }
 

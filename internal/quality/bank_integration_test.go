@@ -38,7 +38,7 @@ func TestInspectionBuiltinSyncAndFlowSelection(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT status,prompt,version FROM probe_items WHERE id=$1`, id).Scan(&status, &prompt, &version); err != nil || status != "retired" || prompt != "管理员私有题面" || version != 9 {
 		t.Fatal("启动复活下线题或覆盖管理员编辑", err)
 	}
-	quick, err := selectFlowExecutionItems(ctx, pool, "anthropic", "claude-sonnet-4-5", []string{"claude-sonnet-4-5"}, []string{"intelligence", "identity"}, "self", map[string]string{"intelligence": "quick", "identity": "quick"}, defaultInspectionSettings())
+	quick, err := selectFlowExecutionItems(ctx, pool, "anthropic", "claude-sonnet-4-5", []string{"claude-sonnet-4-5"}, nil, []string{"intelligence", "identity"}, "self", map[string]string{"intelligence": "quick", "identity": "quick"}, defaultInspectionSettings())
 	if err != nil {
 		t.Fatal(err)
 	}

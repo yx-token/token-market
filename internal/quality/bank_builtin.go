@@ -72,10 +72,11 @@ func inspectionBuiltinItems() []Item {
 	static("inspection/output/2", "完整枚举输出", "inspection_output", "D08", "从1到60逐行输出平方数，格式第01项：1、第02项：4，编号两位补零。不得省略任何行，不加解释、代码围栏或空行。", Grader{Type: "full_output", Answer: output, GraderOptions: GraderOptions{SHA256: hex.EncodeToString(digest[:]), MinLines: 60, Lazy: "list", RequireNormalStop: true}}, ProbeRequest{}, []string{"full"})
 	// Codex 会删除输出上限，完整输出项不适用于该通道。
 	items[len(items)-1].Platforms = []string{"anthropic", "gemini", "antigravity", "grok", "kimi", "zhipu", "minimax", "opencode_go"}
-	// gpt-6-astra 的测智题。最不利原则：形状可凭手感挑选，取 12 颗五角星 + 9 颗圆形即可，答案 21；当作随机摸取会得出 29。
+	// gpt-6-astra 的降智检测题：限定型号的题目用来发现厂商把请求路由到别的型号。
+	// 最不利原则：形状可凭手感挑选，取 12 颗五角星 + 9 颗圆形即可，答案 21；当作随机摸取会得出 29。
 	// 不要求只回答数字，回答中出现独立的 21 即通过；结果仅代表这道题的表现，不代表模型整体能力。
 	// full/quick 各一题，仍受既有硬预算和截止时间限制。
-	static("inspection/pigeonhole/astra/1", "pigeonhole", "inspection_capability", "D07", "在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）\n\n| | 苹果味 | 桃子味 | 西瓜味 |\n|---|---|---|---|\n| 圆形 | 7 | 9 | 8 |\n| 五角星 | 7 | 6 | 4 |", Grader{Type: "regex", Pattern: `(^|[^0-9.])21([^0-9.]|\.([^0-9]|$)|$)`}, ProbeRequest{}, []string{"full", "quick"})
+	static("inspection/pigeonhole/astra/1", "pigeonhole", "inspection_degradation", "D14", "在一个黑色的袋子里放有三种口味的糖果，每种糖果有两种不同的形状（圆形和五角星形，不同的形状靠手感可以分辨）。现已知不同口味的糖和不同形状的数量统计如下表。参赛者需要在活动前决定摸出的糖果数目，那么，最少取出多少个糖果才能保证手中同时拥有不同形状的苹果味和桃子味的糖？（同时手中有圆形苹果味匹配五角星桃子味糖果，或者有圆形桃子味匹配五角星苹果味糖果都满足要求）\n\n| | 苹果味 | 桃子味 | 西瓜味 |\n|---|---|---|---|\n| 圆形 | 7 | 9 | 8 |\n| 五角星 | 7 | 6 | 4 |", Grader{Type: "regex", Pattern: `(^|[^0-9.])21([^0-9.]|\.([^0-9]|$)|$)`}, ProbeRequest{}, []string{"full", "quick"})
 	items[len(items)-1].Models = []string{"gpt-6-astra"}
 	items[len(items)-1].ReasoningEffort = &high
 	items[len(items)-1].MaxTokens = 8192

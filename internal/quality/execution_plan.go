@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DueGin/token-market/internal/inspection"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -53,6 +54,7 @@ type executionSnapshot struct {
 	FlowModes             map[string]string   `json:"flow_modes,omitempty"`
 	Flows                 []string            `json:"flows,omitempty"`
 	Models                []string            `json:"models,omitempty"`
+	DegradationModels     []string            `json:"degradation_models,omitempty"`
 	ModelWhitelist        []string            `json:"model_whitelist"`
 	Limits                struct {
 		Account int `json:"account_parallelism"`
@@ -108,7 +110,7 @@ func (e *Engine) executionPlan(ctx context.Context, run runRow, p *Policy, items
 	if mode == "legacy" {
 		budgetMode = "full"
 	}
-	plan := executionSnapshot{Policy: p, SchemaVersion: 1, PolicyVersion: p.Version, InspectionMode: st.Mode, Mode: mode, Budget: st.TokenBudgets[budgetMode], Thresholds: p.Thresholds, FlowModes: frozen.FlowModes, Flows: run.flows, Models: run.models, ModelWhitelist: frozen.ModelWhitelist}
+	plan := executionSnapshot{Policy: p, SchemaVersion: 1, PolicyVersion: p.Version, InspectionMode: st.Mode, Mode: mode, Budget: st.TokenBudgets[budgetMode], Thresholds: p.Thresholds, FlowModes: frozen.FlowModes, Flows: run.flows, Models: run.models, DegradationModels: run.degradationModels, ModelWhitelist: frozen.ModelWhitelist}
 	plan.Settings = &st
 	plan.Limits.Account, plan.Limits.Global = st.Limits.Account, st.Limits.Global
 	if len(timeouts) > 0 {
@@ -117,8 +119,9 @@ func (e *Engine) executionPlan(ctx context.Context, run runRow, p *Policy, items
 	if b, ok := p.TokenBudgets[budgetMode]; ok {
 		plan.Budget = b
 	}
-	plan.Budget.Input *= int64(max(1, len(plan.Models)))
-	plan.Budget.Output *= int64(max(1, len(plan.Models)))
+	// 两个测智类流程各自按各自的模型数放大预算，快检不会因未参与流程的模型数扩大。
+	plan.Budget.Input *= int64(max(1, len(plan.Models), len(plan.DegradationModels)))
+	plan.Budget.Output *= int64(max(1, len(plan.Models), len(plan.DegradationModels)))
 	orderedItems := append([]Item(nil), items...)
 	sort.SliceStable(orderedItems, func(i, j int) bool {
 		return orderedItems[i].ID < orderedItems[j].ID
@@ -138,10 +141,15 @@ func (e *Engine) executionPlan(ctx context.Context, run runRow, p *Policy, items
 	}
 itemsLoop:
 	for _, it := range orderedItems {
-		for _, model := range flowItemModels(it, run.model, plan.Models) {
+		// 测智类流程按各自冻结的模型列表展开，其他流程只跑主模型。
+		itemModels := []string{run.model}
+		if probeFlowFamily(executionItemFlow(it)) == inspection.FlowIntelligence {
+			itemModels = flowItemModels(it, run.model, flowModelsOf(run, executionItemFlow(it)))
+		}
+		for _, model := range itemModels {
 			modelOffset := 0
-			if executionItemFlow(it) == "intelligence" {
-				for n, candidate := range plan.Models {
+			if probeFlowFamily(executionItemFlow(it)) == inspection.FlowIntelligence {
+				for n, candidate := range flowModelsOf(run, executionItemFlow(it)) {
 					if candidate == model {
 						modelOffset = n * 10000
 						break

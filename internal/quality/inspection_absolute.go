@@ -16,6 +16,9 @@ type InspectOptions struct {
 	IdentitySource     string
 	Models             []string
 	IntelligenceModels []IntelligenceModel
+	DegradationModels  []IntelligenceModel
+	// FrozenDegradationModels 是本次运行冻结的降智模型集合（probe_runs.degradation_models）。
+	FrozenDegradationModels []string
 }
 
 func hasInspectionReference(rows []Outcome) bool {

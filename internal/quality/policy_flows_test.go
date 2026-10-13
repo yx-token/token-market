@@ -12,6 +12,9 @@ func policyFlowsFixture() PolicyFlows {
 		Intelligence: IntelligenceFlowPolicy{FlowPolicy: FlowPolicy{Enabled: true, ScheduledEnabled: true,
 			IntervalMinutes: 360, Triggers: []string{"onboarding", "scheduled", "admin"}, FullTriggers: []string{"onboarding", "admin"}},
 			Models: []IntelligenceModel{{Model: "gpt-6-astra"}}},
+		Degradation: IntelligenceFlowPolicy{FlowPolicy: FlowPolicy{Enabled: true,
+			IntervalMinutes: 1440, Triggers: []string{"onboarding", "scheduled", "admin"}, FullTriggers: []string{"onboarding", "admin"}},
+			Models: []IntelligenceModel{{Model: "gpt-6.1-sol"}}},
 		Identity: IdentityFlowPolicy{FlowPolicy: FlowPolicy{Enabled: true, IntervalMinutes: 1440,
 			Triggers: []string{"onboarding", "admin"}, FullTriggers: []string{"onboarding", "admin"}}, Source: "third_party"},
 	}

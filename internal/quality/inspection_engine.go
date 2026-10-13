@@ -24,9 +24,10 @@ func (e *Engine) inspectionAssessment(ctx context.Context, run runRow, ref *runR
 		rows[i].PrimaryModel = rows[i].RequestedModel == run.model
 	}
 	capability := inspection.LookupCapability(u.platform, run.model, st)
-	opts := InspectOptions{Platform: u.platform, AuthType: u.authType, Capability: &capability, Flows: run.flows, IdentitySource: run.identitySource, Models: run.models}
+	opts := InspectOptions{Platform: u.platform, AuthType: u.authType, Capability: &capability, Flows: run.flows, IdentitySource: run.identitySource, Models: run.models, FrozenDegradationModels: run.degradationModels}
 	if plan.Policy != nil {
 		opts.IntelligenceModels = plan.Policy.Flows.Intelligence.Models
+		opts.DegradationModels = plan.Policy.Flows.Degradation.Models
 	}
 	checks, gates := Inspect(rows, st, e.now(), opts)
 	// 正式可用率门槛由 Inspect 的目录样本阈值决定，不沿用旧流程的两请求捷径。

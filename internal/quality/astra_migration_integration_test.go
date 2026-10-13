@@ -10,6 +10,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/DueGin/token-market/internal/inspection"
 	"github.com/DueGin/token-market/internal/platform/db"
 	"github.com/DueGin/token-market/internal/testutil"
 	"github.com/DueGin/token-market/migrations"
@@ -17,6 +18,10 @@ import (
 )
 
 const astraMigration = "0027_astra_pigeonhole_capability.sql"
+
+// 0033 把限定型号的题目移到降智套件并放宽题目套件约束；内置题定义以内置题同步后的最终形状为准，
+// 所以要在同步内置题之前把库升到 0033。
+const degradationMigration = "0033_degradation_flow.sql"
 
 func preAstraMigrationDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -57,6 +62,19 @@ func applyAstraMigration(t *testing.T, pool *pgxpool.Pool) {
 	}
 	if applied, err := db.Migrate(context.Background(), pool, through); err != nil || len(applied) != 0 {
 		t.Fatalf("迁移重复执行不应再改版本：%v %v", applied, err)
+	}
+}
+
+// applyDegradationMigration 把库继续升到 0033：内置题同步需要该迁移放宽的题目套件约束。
+func applyDegradationMigration(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+	through := migrationsThrough(t, degradationMigration, true)
+	applied, err := db.Migrate(context.Background(), pool, through)
+	if err != nil || len(applied) == 0 || applied[len(applied)-1] != degradationMigration {
+		t.Fatalf("升级到 0033 失败：%v %v", applied, err)
+	}
+	if applied, err := db.Migrate(context.Background(), pool, through); err != nil || len(applied) != 0 {
+		t.Fatalf("升级到 0033 不可重复执行：%v %v", applied, err)
 	}
 }
 
@@ -126,6 +144,12 @@ func TestAstraMigrationKeepsIDHistoryAndMatchesFreshBank(t *testing.T) {
 	if others != probeSnapshot(t, pool, othersQuery) || results != probeSnapshot(t, pool, resultsQuery) || runs != probeSnapshot(t, pool, runsQuery) {
 		t.Fatal("迁移修改了其他题目、历史逐题结果或历史报告摘要")
 	}
+	// 升到 0033：限定型号的题目迁入降智套件，内置题同步也需要放宽后的套件约束。
+	applyDegradationMigration(t, pool)
+	moved = astraDBItem(t, pool)
+	if moved.Suite != "inspection_degradation" || moved.CheckKey != "D14" || moved.Version != old.Version+2 {
+		t.Fatalf("限定型号的糖果题应迁入降智套件：%+v", moved)
+	}
 	if n, err := SyncInspectionItems(ctx, pool); err != nil || n != len(inspectionBuiltinItems())-1 {
 		t.Fatalf("稳定键未阻止重复插入：%d %v", n, err)
 	}
@@ -137,7 +161,7 @@ func TestAstraMigrationKeepsIDHistoryAndMatchesFreshBank(t *testing.T) {
 		t.Fatalf("迁移后糖果题重复：%d %v", count, err)
 	}
 	stats, err := ListItemStats(ctx, pool, RecordFilter{Platform: "openai", Model: "gpt-6-astra"})
-	if err != nil || len(stats) != 1 || stats[0].ItemID != 22 || stats[0].Suite != "inspection_capability" || stats[0].Asked != 1 || stats[0].Passed != 1 || stats[0].RefAsked != 1 || stats[0].RefPassed != 1 {
+	if err != nil || len(stats) != 1 || stats[0].ItemID != 22 || stats[0].Suite != "inspection_degradation" || stats[0].Asked != 1 || stats[0].Passed != 1 || stats[0].RefAsked != 1 || stats[0].RefPassed != 1 {
 		t.Fatalf("迁移丢失历史逐题统计关联：%+v %v", stats, err)
 	}
 	// 空库先跑全量迁移（匹配零行），再按启动入口只写新内置题。
@@ -160,9 +184,10 @@ func TestAstraMigrationKeepsIDHistoryAndMatchesFreshBank(t *testing.T) {
 	if !reflect.DeepEqual(moved, seeded) {
 		t.Fatalf("迁移后的老库与新库题目配置不一致：旧=%+v 新=%+v", moved, seeded)
 	}
+	// 迁移后糖果题属于降智流程：只有冻结了该模型的降智流程才选题。
 	for _, mode := range []string{"full", "quick"} {
 		for _, model := range []string{"gpt-6-astra", "gpt-6-sol"} {
-			items, err := selectFlowExecutionItems(ctx, fresh, "openai", model, []string{model}, []string{"intelligence"}, "third_party", map[string]string{"intelligence": mode}, defaultInspectionSettings())
+			items, err := selectFlowExecutionItems(ctx, fresh, "openai", model, nil, []string{model}, []string{inspection.FlowDegradation}, "third_party", map[string]string{inspection.FlowDegradation: mode}, defaultInspectionSettings())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -177,7 +202,7 @@ func TestAstraMigrationKeepsIDHistoryAndMatchesFreshBank(t *testing.T) {
 				want = 1
 			}
 			if found != want {
-				t.Fatalf("模式/型号选择错误 %s/%s：%d，期望 %d", mode, model, found, want)
+				t.Fatalf("降智题模式/型号选择错误 %s/%s：%d，期望 %d", mode, model, found, want)
 			}
 		}
 	}
@@ -199,6 +224,8 @@ func TestAstraMigrationPreservesAdminChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	applyAstraMigration(t, pool)
+	// 停用题不属于「启用中的限定型号题」，0033 不改动它；这里只需要放宽后的套件约束。
+	applyDegradationMigration(t, pool)
 	if _, err := SyncInspectionItems(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +234,7 @@ func TestAstraMigrationPreservesAdminChanges(t *testing.T) {
 	if !reflect.DeepEqual(moved, *old) {
 		t.Fatalf("迁移覆盖了管理员状态、平台、判分或其他字段：%+v，期望 %+v", moved, old)
 	}
-	items, err := selectFlowExecutionItems(ctx, pool, "openai", "gpt-6-astra", []string{"gpt-6-astra"}, []string{"intelligence"}, "third_party", map[string]string{"intelligence": "quick"}, defaultInspectionSettings())
+	items, err := selectFlowExecutionItems(ctx, pool, "openai", "gpt-6-astra", []string{"gpt-6-astra"}, nil, []string{"intelligence"}, "third_party", map[string]string{"intelligence": "quick"}, defaultInspectionSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +275,9 @@ func TestAstraMigrationDoesNotGuessAdminItemIdentity(t *testing.T) {
 			if name == "多行匹配" || name == "目标键已占用" {
 				second := it
 				if name == "目标键已占用" {
+					// 只要求稳定键已被占用；0026 库还不接受降智套件，改用通用测智套件占位。
 					second = astraCandyItem()
+					second.Suite, second.CheckKey = "inspection_context", "D09"
 				}
 				if _, err := createLegacyFixtureItem(ctx, pool, second); err != nil {
 					t.Fatal(err)
@@ -260,6 +289,8 @@ func TestAstraMigrationDoesNotGuessAdminItemIdentity(t *testing.T) {
 			if before != probeSnapshot(t, pool, query) {
 				t.Fatal("迁移误改了未匹配或归属不唯一的管理员题")
 			}
+			// 0027 不动这些管理员题；把库升到 0033 才能插入降智套件的内置题。
+			applyDegradationMigration(t, pool)
 			if _, err := SyncInspectionItems(ctx, pool); err != nil {
 				t.Fatal(err)
 			}

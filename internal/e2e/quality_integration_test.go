@@ -27,8 +27,8 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 	var onboardingFlows, models []string
 	var source string
 	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT flows,identity_source,models FROM probe_runs WHERE id=$1`, f.onboarding), &onboardingFlows, &source, &models)
-	if !reflect.DeepEqual(onboardingFlows, []string{"intelligence", "identity"}) || source != "self" || !reflect.DeepEqual(models, []string{"claude-sonnet-4-5"}) {
-		t.Fatalf("上架须冻结两条流程与模型：%v %s %v", onboardingFlows, source, models)
+	if !reflect.DeepEqual(onboardingFlows, []string{"intelligence", "degradation", "identity"}) || source != "self" || !reflect.DeepEqual(models, []string{"claude-sonnet-4-5"}) {
+		t.Fatalf("上架须冻结三条流程与模型：%v %s %v", onboardingFlows, source, models)
 	}
 	f.transport.setBad("D07")
 	_, display := f.run(t, "admin")

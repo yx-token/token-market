@@ -355,7 +355,7 @@ func (e *Engine) revokeTokens(ctx context.Context) error {
 
 // finishThirdParty 对第三方检测全部结束的检测记录合并结论并处置。
 func (e *Engine) finishThirdParty(ctx context.Context) error {
-	rows, err := e.DB.Query(ctx, `SELECT r.id,r.upstream_id,r.trigger,r.model,r.summary,r.mode,r.flows,COALESCE(r.identity_source,''),r.models FROM probe_runs r
+	rows, err := e.DB.Query(ctx, `SELECT r.id,r.upstream_id,r.trigger,r.model,r.summary,r.mode,r.flows,COALESCE(r.identity_source,''),r.models,r.degradation_models FROM probe_runs r
 		WHERE r.status = 'third_party' AND NOT EXISTS (
 			SELECT 1 FROM third_party_checks c WHERE c.run_id = r.id AND c.status IN ('pending', 'running'))
 		ORDER BY r.id LIMIT 50`)
@@ -368,7 +368,7 @@ func (e *Engine) finishThirdParty(ctx context.Context) error {
 	}
 	list, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (waiting, error) {
 		var w waiting
-		err := row.Scan(&w.run.id, &w.run.upstreamID, &w.run.trigger, &w.run.model, &w.summary, &w.run.mode, &w.run.flows, &w.run.identitySource, &w.run.models)
+		err := row.Scan(&w.run.id, &w.run.upstreamID, &w.run.trigger, &w.run.model, &w.summary, &w.run.mode, &w.run.flows, &w.run.identitySource, &w.run.models, &w.run.degradationModels)
 		return w, err
 	})
 	if err != nil {

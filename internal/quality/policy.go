@@ -63,9 +63,10 @@ type Policy struct {
 	UpdatedAt  time.Time         `json:"updated_at"`
 }
 
-// PolicyFlows 分别配置测智与身份核验，总开关仍由 Policy 控制。
+// PolicyFlows 分别配置测智、降智检测与身份核验，总开关仍由 Policy 控制。
 type PolicyFlows struct {
 	Intelligence IntelligenceFlowPolicy `json:"intelligence"`
+	Degradation  IntelligenceFlowPolicy `json:"degradation"`
 	Identity     IdentityFlowPolicy     `json:"identity"`
 }
 
@@ -134,6 +135,11 @@ func legacyPolicyFlows(p *Policy) PolicyFlows {
 		// 测智流程默认启用；总开关 p.Enabled 只管上架以外的检测，上架始终测智。
 		Intelligence: IntelligenceFlowPolicy{FlowPolicy: FlowPolicy{Enabled: true, ScheduledEnabled: p.ScheduledEnabled,
 			IntervalMinutes: interval, Triggers: append([]string{}, all...), FullTriggers: full}, Models: models},
+		// 降智检测单独配置题目与模型列表，但存量策略迁移时先继承测智的模型列表：线上已有的限定型号降智题
+		// 若因新流程没有模型而不跑，等于静默停掉检测。定时检测保持关闭，由管理员确认后开启。
+		Degradation: IntelligenceFlowPolicy{FlowPolicy: FlowPolicy{Enabled: true,
+			IntervalMinutes: interval, Triggers: append([]string{}, all...), FullTriggers: append([]string{}, full...)},
+			Models: append([]IntelligenceModel{}, models...)},
 		Identity: IdentityFlowPolicy{FlowPolicy: FlowPolicy{Enabled: len(p.ThirdParty) > 0,
 			ScheduledEnabled: p.ScheduledEnabled && containsTrigger(identityTriggers, "scheduled"), IntervalMinutes: interval,
 			Triggers: identityTriggers, FullTriggers: append([]string{}, all...)}, Source: "third_party"},
@@ -141,7 +147,7 @@ func legacyPolicyFlows(p *Policy) PolicyFlows {
 }
 
 func (f *PolicyFlows) normalize(thirdParty []ThirdPartyCheck) error {
-	for _, flow := range []*FlowPolicy{&f.Intelligence.FlowPolicy, &f.Identity.FlowPolicy} {
+	for _, flow := range []*FlowPolicy{&f.Intelligence.FlowPolicy, &f.Degradation.FlowPolicy, &f.Identity.FlowPolicy} {
 		if flow.IntervalMinutes < 10 {
 			return httpx.BadRequest("INVALID_FLOW_INTERVAL", "流程检测周期须至少为 10 分钟")
 		}
@@ -170,22 +176,28 @@ func (f *PolicyFlows) normalize(thirdParty []ThirdPartyCheck) error {
 	if f.Identity.Enabled && f.Identity.Source == "third_party" && len(thirdParty) == 0 {
 		return httpx.BadRequest("THIRD_PARTY_REQUIRED", "第三方身份核验需要至少配置一个检测站")
 	}
-	if f.Intelligence.Models == nil {
-		f.Intelligence.Models = []IntelligenceModel{}
-	}
-	if f.Intelligence.Enabled && len(f.Intelligence.Models) == 0 {
-		return httpx.BadRequest("MODELS_REQUIRED", "启用测智流程时须配置至少一个模型")
-	}
-	seen := map[string]bool{}
-	for i := range f.Intelligence.Models {
-		model := &f.Intelligence.Models[i]
-		model.Model = strings.TrimSpace(model.Model)
-		if model.Model == "" || seen[model.Model] {
-			return httpx.BadRequest("INVALID_FLOW_MODELS", "测智模型不能为空或重复")
+	// 测智类流程的模型列表规则相同，错误码保留既有取值。
+	for _, models := range []struct {
+		flowName string
+		policy   *IntelligenceFlowPolicy
+	}{{"测智", &f.Intelligence}, {"降智检测", &f.Degradation}} {
+		if models.policy.Models == nil {
+			models.policy.Models = []IntelligenceModel{}
 		}
-		seen[model.Model] = true
-		if rate := model.ExpectedPassRate; rate != nil && (math.IsNaN(*rate) || math.IsInf(*rate, 0) || *rate <= 0 || *rate > 1) {
-			return httpx.BadRequest("INVALID_EXPECTED_PASS_RATE", "模型期望通过率须大于 0 且不超过 1")
+		if models.policy.Enabled && len(models.policy.Models) == 0 {
+			return httpx.BadRequest("MODELS_REQUIRED", "启用"+models.flowName+"流程时须配置至少一个模型")
+		}
+		seen := map[string]bool{}
+		for i := range models.policy.Models {
+			model := &models.policy.Models[i]
+			model.Model = strings.TrimSpace(model.Model)
+			if model.Model == "" || seen[model.Model] {
+				return httpx.BadRequest("INVALID_FLOW_MODELS", models.flowName+"模型不能为空或重复")
+			}
+			seen[model.Model] = true
+			if rate := model.ExpectedPassRate; rate != nil && (math.IsNaN(*rate) || math.IsInf(*rate, 0) || *rate <= 0 || *rate > 1) {
+				return httpx.BadRequest("INVALID_EXPECTED_PASS_RATE", "模型期望通过率须大于 0 且不超过 1")
+			}
 		}
 	}
 	return nil
@@ -296,7 +308,7 @@ func scanPolicy(row pgx.Row) (*Policy, error) {
 		return nil, err
 	}
 	// 兼容尚未填流程的旧调用方；迁移已为存量策略写入完整配置。
-	if p.Flows.Intelligence.IntervalMinutes == 0 && p.Flows.Identity.IntervalMinutes == 0 {
+	if p.Flows.Intelligence.IntervalMinutes == 0 && p.Flows.Degradation.IntervalMinutes == 0 && p.Flows.Identity.IntervalMinutes == 0 {
 		p.Flows = legacyPolicyFlows(&p)
 	}
 	return &p, nil
@@ -353,7 +365,7 @@ func EffectivePolicy(ctx context.Context, db DB, upstreamID int64, platform, aut
 	return p, nil
 }
 
-var validSuites = map[string]bool{"availability": true, "latency": true, "inspection_authenticity": true, "inspection_capability": true, "inspection_context": true, "inspection_function": true, "inspection_output": true, "inspection_performance": true}
+var validSuites = map[string]bool{"availability": true, "latency": true, "inspection_authenticity": true, "inspection_capability": true, "inspection_degradation": true, "inspection_context": true, "inspection_function": true, "inspection_output": true, "inspection_performance": true}
 
 type PolicyInput struct {
 	Flows            *PolicyFlows            `json:"flows"`
@@ -447,7 +459,7 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	if in.TokenBudgets != nil {
 		p.TokenBudgets = *in.TokenBudgets
 	}
-	if p.Flows.Intelligence.IntervalMinutes == 0 && p.Flows.Identity.IntervalMinutes == 0 {
+	if p.Flows.Intelligence.IntervalMinutes == 0 && p.Flows.Degradation.IntervalMinutes == 0 && p.Flows.Identity.IntervalMinutes == 0 {
 		p.Flows = legacyPolicyFlows(p)
 	}
 	if in.Flows != nil {
@@ -612,7 +624,7 @@ func scanItem(row pgx.Row) (*Item, error) {
 
 func validateItem(it Item) error {
 	switch it.Suite {
-	case "iq", "reasoning", "long_context", "inspection_authenticity", "inspection_capability", "inspection_context", "inspection_function", "inspection_output", "inspection_performance":
+	case "iq", "reasoning", "long_context", "inspection_authenticity", "inspection_capability", "inspection_degradation", "inspection_context", "inspection_function", "inspection_output", "inspection_performance":
 	default:
 		return httpx.BadRequest("INVALID_SUITE", "item suite must be iq, reasoning or long_context")
 	}

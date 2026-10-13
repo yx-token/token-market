@@ -53,6 +53,8 @@ func init() {
 		// A06 推理档位由 D06 的用量观测推出，与测智同属一条流程。
 		case "A06", "D06", "D07", "D07.honesty", "D09":
 			flow = FlowIntelligence
+		case "D14":
+			flow = FlowDegradation
 		case "D13", "D04", "D10", "D05":
 			flow = FlowCommon
 		}
@@ -79,6 +81,9 @@ func init() {
 		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 20, "alpha": 0.05, "severe_relative": 0.7, "warning_relative": 0.85, "expected_pass_rate": 0.9})
 	add("D09", "上下文深度", "capability", "factor", "capability", "检查长上下文完整保留与检索能力，修复后完成完整复检。",
 		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 3, "warning_relative": 0.8, "severe_relative": 0.7, "expected_pass_rate": 0.9})
+	// 降智题按厂商或型号限定，单次检测通常只有一两道适用题，最小配对数不能照搬 D07 的 20。
+	add("D14", "降智检测", "capability", "factor", "capability", "核对厂商是否把请求路由到其他型号；确认接入配置后复检。",
+		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 1, "alpha": 0.05, "severe_relative": 0.7, "warning_relative": 0.85, "expected_pass_rate": 0.9})
 	add("D08", "输出完整性", "capability", "factor", "function", "检查输出上限及内容完整性，避免占位或省略后完成复检。",
 		map[string]float64{"failure": 0.95}, map[string]float64{"min_pairs": 1})
 	for _, feature := range []struct{ key, name string }{{"thinking", "推理功能"}, {"tools", "工具调用"}, {"image_pdf", "图片与 PDF"}, {"json_schema", "结构化输出"}, {"multiturn", "多轮保持"}} {

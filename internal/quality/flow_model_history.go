@@ -76,7 +76,8 @@ func worseInheritedModel(candidate, previous inspection.ModelCheckResult) bool {
 }
 
 // 模型级期望变化后重测；留空时检测项阈值的变化由生效定义哈希另行判断。
-func ratesModelsMatch(oldPolicy, newPolicy *Policy, models []string) bool {
+// flow 是测智类流程：期望通过率分别来自各流程自己的模型列表。
+func ratesModelsMatch(oldPolicy, newPolicy *Policy, flow string, models []string) bool {
 	if len(models) == 0 {
 		return true
 	}
@@ -84,8 +85,8 @@ func ratesModelsMatch(oldPolicy, newPolicy *Policy, models []string) bool {
 		return false
 	}
 	for _, model := range models {
-		oldRate, oldOK := configuredModelRate(oldPolicy, model)
-		newRate, newOK := configuredModelRate(newPolicy, model)
+		oldRate, oldOK := configuredModelRate(oldPolicy, flow, model)
+		newRate, newOK := configuredModelRate(newPolicy, flow, model)
 		if !oldOK || !newOK || (oldRate == nil) != (newRate == nil) {
 			return false
 		}
@@ -96,10 +97,14 @@ func ratesModelsMatch(oldPolicy, newPolicy *Policy, models []string) bool {
 	return true
 }
 
-func configuredModelRate(policy *Policy, model string) (*float64, bool) {
+func configuredModelRate(policy *Policy, flow, model string) (*float64, bool) {
 	var rate *float64
 	found := false
-	for _, entry := range policy.Flows.Intelligence.Models {
+	configured := policy.Flows.Intelligence.Models
+	if flow == inspection.FlowDegradation {
+		configured = policy.Flows.Degradation.Models
+	}
+	for _, entry := range configured {
 		if entry.Model != model {
 			continue
 		}

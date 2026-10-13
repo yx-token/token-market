@@ -123,7 +123,9 @@ func TestInspectionBankFlowLifecycle(t *testing.T) {
 	if missing != 0 {
 		t.Fatalf("代表性质检题缺少判分证据：%d", missing)
 	}
-	if healthy["verdict"] != "normal" || healthy["intelligence"].(map[string]any)["status"] != "pass" {
+	// 三道流程都要有通过结论才算正常：降智检测的型号专用题本轮通过。
+	degradation := healthy["degradation"].(map[string]any)
+	if healthy["verdict"] != "normal" || healthy["intelligence"].(map[string]any)["status"] != "pass" || degradation["status"] != "pass" {
 		t.Fatalf("所有题目通过时流程应正常：%+v", healthy)
 	}
 
@@ -139,9 +141,9 @@ func TestInspectionBankFlowLifecycle(t *testing.T) {
 	for _, id := range []int64{fullID, badID} {
 		var oldRows int
 		var evidence bool
-		mustScan(t, e.app.DB.QueryRow(ctx, `SELECT (SELECT count(*) FROM probe_results WHERE run_id=r.id AND suite IN('iq','reasoning','long_context')),EXISTS(SELECT 1 FROM probe_results WHERE run_id=r.id AND item_id=$2 AND suite='inspection_capability' AND check_key='D07' AND generator_version='static-1') FROM probe_runs r WHERE r.id=$1`, id, candyID), &oldRows, &evidence)
+		mustScan(t, e.app.DB.QueryRow(ctx, `SELECT (SELECT count(*) FROM probe_results WHERE run_id=r.id AND suite IN('iq','reasoning','long_context')),EXISTS(SELECT 1 FROM probe_results WHERE run_id=r.id AND item_id=$2 AND suite='inspection_degradation' AND check_key='D14' AND generator_version='static-1') FROM probe_runs r WHERE r.id=$1`, id, candyID), &oldRows, &evidence)
 		if oldRows != 0 || !evidence {
-			t.Fatal("新流程应下线旧智力题并保留型号专用D07静态证据")
+			t.Fatal("新流程应下线旧智力题并保留型号专用D14静态证据")
 		}
 	}
 
