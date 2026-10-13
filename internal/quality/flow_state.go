@@ -165,10 +165,27 @@ func summarizeFlow(flow string, run runRow, a Assessment) flowSummary {
 		if selected && len(run.models) == 0 {
 			summary.Status = "not_applicable"
 		}
-		for _, model := range run.models {
+		models := append([]string(nil), run.models...)
+		if !selected && len(models) == 0 {
+			for _, key := range []string{"D07", "D07.honesty", "D09", "D06"} {
+				c := a.Checks[key]
+				if c.Evidence.Source != "history" {
+					continue
+				}
+				for _, result := range c.Metrics["models"].Models {
+					if !slices.Contains(models, result.Model) {
+						models = append(models, result.Model)
+					}
+				}
+			}
+		}
+		for _, model := range models {
 			result := inspection.ModelCheckResult{Model: model, Status: "not_run"}
 			for _, key := range []string{"D07", "D07.honesty", "D09", "D06"} {
 				c := a.Checks[key]
+				if !selected && c.Evidence.Source != "history" {
+					continue
+				}
 				for _, m := range c.Metrics["models"].Models {
 					if m.Model != model {
 						continue
@@ -179,7 +196,7 @@ func summarizeFlow(flow string, run runRow, a Assessment) flowSummary {
 					}
 				}
 			}
-			if result.Status == "not_run" && len(run.models) == 1 {
+			if result.Status == "not_run" && len(models) == 1 {
 				result.Status = summary.Status
 			}
 			if selected && !checkConclusive(result.Status) {
@@ -242,6 +259,10 @@ func definitionHash(key string, st InspectionSettings) string {
 
 // 按项定义与流程查历史，不要求整份设置相同；申诉前的扣价证据不再继承。
 func (e *Engine) inheritInspection(ctx context.Context, run runRow, u *upstreamRow, p *Policy, st InspectionSettings, checks map[string]inspection.Check, gateLists ...*[]inspection.Gate) error {
+	modelsToInherit := run.models
+	if !slices.Contains(run.flows, inspection.FlowIntelligence) && len(modelsToInherit) == 0 {
+		modelsToInherit = intelligenceModels(p, u.modelWhitelist)
+	}
 	var currentRaw []byte
 	if err := e.DB.QueryRow(ctx, `SELECT execution_snapshot FROM probe_runs WHERE id=$1`, run.id).Scan(&currentRaw); err != nil {
 		return err
@@ -287,15 +308,24 @@ func (e *Engine) inheritInspection(ctx context.Context, run runRow, u *upstreamR
 			if !selected && c.Status != "not_run" {
 				continue
 			}
-			if d.Flow == inspection.FlowIntelligence && !slices.Equal(models, run.models) {
-				continue
-			}
 			if d.Flow == inspection.FlowIdentity && source != p.Flows.Identity.Source {
 				continue
 			}
 			ttl := max(7*24*time.Hour, 2*time.Duration(flowPolicy(p, d.Flow).IntervalMinutes)*time.Minute)
 			prior, ok := old.Checks[key]
-			if !ok || (reset != nil && !prior.CheckedAt.After(*reset)) || !checkConclusive(prior.Status) || e.now().Sub(prior.CheckedAt) > ttl || definitionHash(key, st) != definitionHash(key, *snap.Settings) {
+			if !ok || (reset != nil && !prior.CheckedAt.After(*reset)) || e.now().Sub(prior.CheckedAt) > ttl || definitionHash(key, st) != definitionHash(key, *snap.Settings) {
+				continue
+			}
+			if d.Flow == inspection.FlowIntelligence {
+				if !ratesModelsMatch(snap.Policy, p, modelsToInherit) {
+					continue
+				}
+				prior, ok = inheritedModelsCheck(prior, modelsToInherit)
+				if !ok {
+					continue
+				}
+			}
+			if !checkConclusive(prior.Status) {
 				continue
 			}
 			prior.Applied = false
