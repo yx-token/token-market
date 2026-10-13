@@ -91,11 +91,11 @@ async function removeUpstream(u: Upstream) {
           <div class="flex flex-wrap items-center gap-1.5">
             <RouterLink :to="`/seller/upstreams/${row.id}`" class="xm-btn xm-btn-primary xm-btn-sm">详情</RouterLink>
             <button
-              v-if="['draft', 'authorizing', 'failed'].includes(row.status)"
+              v-if="['draft', 'authorizing', 'failed', 'selecting_models'].includes(row.status)"
               type="button"
               class="xm-btn xm-btn-ghost xm-btn-sm"
               @click="openResume(row)"
-            >继续授权</button>
+            >{{ row.status === 'selecting_models' ? '选择挂售模型' : '继续授权' }}</button>
             <RouterLink
               v-if="row.status === 'ready' || row.status === 'listed'"
               :to="`/seller/publish?upstream=${row.id}`"

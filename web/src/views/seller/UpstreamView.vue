@@ -17,6 +17,7 @@ import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
 import ResetCreditsPanel from '@/components/ResetCreditsPanel.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
+import UpstreamModelWhitelist from '@/components/UpstreamModelWhitelist.vue'
 import { authTypeText, isKeyAuthType, label, upstreamName } from '@/utils/labels'
 import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
@@ -318,6 +319,7 @@ const appealable = appealableReport
     </div>
 
     <InspectionAppraisal class="mt-5" :appraisal="u.appraisal" :grade="u.grade" :quality-factor="u.quality_factor" :inspection-mode="u.inspection_mode" :price="u.listing?.multiplier" />
+    <UpstreamModelWhitelist :upstream="u" class="mt-5" @changed="reload" />
     <QuotaPanel v-if="hasAccount" :key="quotaKey" :upstream-id="u.id" class="mt-5" />
     <ResetCreditsPanel v-if="hasAccount && u.reset_credits_supported" :upstream-id="u.id" class="mt-5" @changed="quotaKey++" />
 

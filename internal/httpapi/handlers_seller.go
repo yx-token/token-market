@@ -186,6 +186,48 @@ func (s *Server) retryVerification(w http.ResponseWriter, r *http.Request) error
 	return ok(w, u)
 }
 
+func (s *Server) upstreamModels(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	models, err := s.Listings.GetModels(r.Context(), httpx.MustUser(r).UserID, id)
+	if err != nil {
+		return err
+	}
+	return ok(w, models)
+}
+
+func (s *Server) refreshUpstreamModels(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	models, err := s.Listings.RefreshModels(r.Context(), httpx.MustUser(r).UserID, id)
+	if err != nil {
+		return err
+	}
+	return ok(w, models)
+}
+
+func (s *Server) setUpstreamModels(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Models []string `json:"models"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	u, err := s.Listings.SetModels(r.Context(), httpx.MustUser(r).UserID, id, in.Models)
+	if err != nil {
+		return err
+	}
+	return ok(w, u)
+}
+
 func (s *Server) upstreamSettings(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathID(r, "id")
 	if err != nil {

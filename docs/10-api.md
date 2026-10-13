@@ -22,8 +22,8 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/market/listings` | 生效中的寄售 / 额度包（已排除降智、不可用、不面向买家的上游）。筛选：`platform`、`grade`、`max_price`、`kind`（`channel` / `pack`）；排序 `sort`：`price`（默认）/ `success` / `ttft` |
-| GET | `/api/market/listings/:id` | 挂单摘要：厂商、档位、买家价 `price`（= m_s × (1 + c)）、`sku_kind`、额度包 `face_value`/`stock`、按量 `min_amount`、健康状态、等级、24h 成功率与请求数、首字延迟 |
+| GET | `/api/market/listings` | 生效中的寄售 / 额度包（已排除降智、不可用、不面向买家的上游）。每项含挂售模型 `models: string[]`；筛选：`platform`、`model`、`grade`、`max_price`、`kind`（`channel` / `pack`）；排序 `sort`：`price`（默认）/ `success` / `ttft`。模型筛选按模型 ID 精确匹配；未声明白名单的存量上游不限制模型，也会匹配 |
+| GET | `/api/market/listings/:id` | 挂单摘要：厂商、档位、挂售模型 `models: string[]`、买家价 `price`（= m_s × (1 + c)）、`sku_kind`、额度包 `face_value`/`stock`、按量 `min_amount`、健康状态、等级、24h 成功率与请求数、首字延迟；存量未声明白名单时 `models` 为空数组 |
 | GET | `/api/market/pools` | 默认分组列表及售价 D |
 | GET | `/api/market/discovery` | 首页运营配置（类目树、横幅、静态槽位等） |
 | GET | `/api/market/recommend` | 首页四宫格推荐结果（按 `market_recommend` 因子打分） |
@@ -104,13 +104,18 @@
 | POST | `/api/seller/upstreams/:id/reauthorize` | 授权失效后重新授权：返回新的授权链接，之后同样用 `oauth/complete` 提交；必须是同一个官方账号；可选 `project_id` 同上 |
 | POST | `/api/seller/upstreams/:id/retry-verification` | 上架检测失败后重新检测 |
 | GET | `/api/seller/upstreams` | 上游列表。`account_email` 是授权或导入时识别的官方账号邮箱，控制台用它作为账号名称（Gemini 与 Coding Plan 没有邮箱，按上游编号展示）；不向买家展示 |
-| GET | `/api/seller/upstreams/:id` | 详情：状态、健康状态、档位、等级、当前挂单与报价、近 24 小时服务情况（请求数、收益、首字延迟、成功率）、能否使用重置卡与授权自动用卡（`reset_credits_supported`、`auto_reset_supported`）及自动用卡设置 |
+| GET | `/api/seller/upstreams/:id` | 详情：状态、健康状态、档位、等级、挂售模型 `model_whitelist: string[] \| null`、模型目录 `model_catalog: string[]`、目录获取时间 `model_catalog_at`、当前挂单与报价、近 24 小时服务情况（请求数、收益、首字延迟、成功率）、能否使用重置卡与授权自动用卡（`reset_credits_supported`、`auto_reset_supported`）及自动用卡设置 |
+| GET | `/api/seller/upstreams/:id/models` | 已缓存的模型目录与白名单：`catalog: string[]`、`whitelist: string[] \| null`、`fetched_at`（RFC 3339 时间或 null） |
+| POST | `/api/seller/upstreams/:id/models/refresh` | 重新获取并缓存账号模型目录，返回格式同 GET models；不改变白名单。直接同步失败时回退查询，已声明白名单的上游保留并合入缓存目录；两种方式都失败时返回 503 `MODEL_CATALOG_UNAVAILABLE`，保留原目录与获取时间 |
+| PUT | `/api/seller/upstreams/:id/models` | 提交或修改挂售白名单：`{"models":["模型 ID"]}`，必须非空，目录非空时只能选目录内模型；目录为空时允许手动输入具体模型 ID，不接受空白字符或通配符。立即合并写入 sub2api 的 `credentials.model_mapping`，返回更新后的上游；处于 `selecting_models` 时进入 `verifying` 并开始上架检测 |
 | PUT | `/api/seller/upstreams/:id/settings` | 修改自留比例：`self_reserve_percent`（0–90，仅支持窗口阈值的厂商） |
 | GET | `/api/seller/upstreams/:id/quota` | 账号的官方订阅额度：各窗口（5 小时、7 天、Sonnet / Opus 7 天、30 天、Gemini 每日、Antigravity 各模型、Coding Plan 各窗口）的使用率、重置时间与窗口内经平台的请求数 / token / 官方价费用，以及授权失效、封禁等提示和自留比例。Claude 默认读 sub2api 的响应头采样快照（不访问官方）；`refresh=1` 向官方查询（同一上游至少间隔 2 分钟，其余 1 分钟内复用结果） |
 | GET | `/api/seller/upstreams/:id/reset-credits` | 重置卡（仅 Codex 与 Claude 的 OAuth 账号，详情的 `reset_credits_supported` 为真）：`queried`（是否有官方数据）、`available_count`、各张卡的到期时间（Claude 另有恢复的窗口 `clears`、能否使用及原因）、官方冷却时间；Codex 另有自动用卡 `auto`（是否授权、是否已在底层生效、卖家设定与实际生效的阈值、暂停线、sub2api 的运行状态）；最近 20 条用卡记录 `events`（手动与平台自动）。Codex 默认读 sub2api 缓存的快照，Claude 默认返回最近一次查询结果；`refresh=1` 向官方查询（30 秒内复用结果） |
 | POST | `/api/seller/upstreams/:id/reset-credits/redeem` | 使用一张重置卡：`request_id`（8–64 位字母、数字、`-`、`_`，每次确认生成；网络中断重试沿用同一个，返回首次结果）、`expected_available`（确认时看到的可用张数）。用卡前向官方确认张数：没有卡返回 `NO_RESET_CREDIT`，张数变化返回 `RESET_CREDITS_CHANGED`，同一上游正在用卡返回 `RESET_IN_PROGRESS`，这三种情况都不消耗卡。返回用卡记录，`status` 为 success / no_credit / failed / unknown（结果不确定，卡可能已用掉） |
 | PUT | `/api/seller/upstreams/:id/auto-reset` | 授权或取消平台自动用卡（仅 Codex）：`enabled`，可选 `threshold_5h_percent`、`threshold_7d_percent`（1 到暂停线 100 − 自留比例，留空跟随暂停线，超出返回 `INVALID_AUTO_RESET_THRESHOLD`）。只在挂单面向买家时生效 |
 | DELETE | `/api/seller/upstreams/:id` | 删除上游 |
+
+OAuth 授权、Coding Key 和账号导入成功后进入 `selecting_models`（待选择挂售模型），先获取模型目录，选择提交后才检查隐私设置并开始上架检测；隐私设置失败时保留白名单，进入 `verify_failed` 等待重试。目录优先直接同步上游，失败回退查询账号模型；白名单按 `{模型 ID: 模型 ID}` 保存，重新授权与导入后补写，其他登录凭证保留。存量 `model_whitelist = null` 表示允许全部模型，检测重试时也不要求补选，卖家可以在详情页补填。接入、刷新、白名单提交和重新授权串行执行，同一上游忙碌或操作容量已满时返回 409 `UPSTREAM_BUSY`，可稍后重试；数据库连接池须至少配置两条连接。白名单同步结果不确定或本地保存失败时尝试恢复原映射，上架检测入队失败时回到可重试的 `verify_failed`。
 
 ### 4.2 挂单
 

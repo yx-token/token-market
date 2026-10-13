@@ -351,9 +351,11 @@ func (c *client) call(method, path string, body, out any) (int, string) {
 
 func (c *client) must(method, path string, body, out any) {
 	c.e.t.Helper()
-	if status, raw := c.call(method, path, body, out); status >= 300 {
+	status, raw := c.call(method, path, body, out)
+	if status >= 300 {
 		c.e.t.Fatalf("%s %s: http %d: %s", method, path, status, raw)
 	}
+	c.selectOnboardingModels(method, path, raw, out)
 }
 
 func (c *client) expect(status int, method, path string, body any) string {
@@ -362,7 +364,41 @@ func (c *client) expect(status int, method, path string, body any) string {
 	if got != status {
 		c.e.t.Fatalf("%s %s: want http %d, got %d: %s", method, path, status, got, raw)
 	}
+	if got < 300 {
+		c.selectOnboardingModels(method, path, raw, nil)
+	}
 	return raw
+}
+
+// 现有接入用例自动全选目录，白名单专项用例直接 call，观察待选择状态。
+func (c *client) selectOnboardingModels(method, path, raw string, out any) {
+	c.e.t.Helper()
+	if method != http.MethodPost || !strings.HasPrefix(path, "/api/seller/upstreams/") ||
+		!(strings.HasSuffix(path, "/oauth/complete") || strings.HasSuffix(path, "/coding-key") || strings.HasSuffix(path, "/import")) {
+		return
+	}
+	var response struct {
+		Data struct {
+			ID     int64  `json:"id"`
+			Status string `json:"status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(raw), &response); err != nil {
+		c.e.t.Fatal(err)
+	}
+	if response.Data.Status != "selecting_models" {
+		return
+	}
+	var catalog struct {
+		Catalog []string `json:"catalog"`
+	}
+	modelPath := fmt.Sprintf("/api/seller/upstreams/%d/models", response.Data.ID)
+	c.must(http.MethodGet, modelPath, nil, &catalog)
+	if len(catalog.Catalog) == 0 {
+		// 目录不可用时仍可手动填写；替身的通用调用模型供旧用例继续验证原流程。
+		catalog.Catalog = []string{"claude-sonnet-4-5"}
+	}
+	c.must(http.MethodPut, modelPath, map[string]any{"models": catalog.Catalog}, out)
 }
 
 type idOnly struct {

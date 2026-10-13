@@ -1,11 +1,12 @@
 <script setup lang="ts">
-// 接入上游：选择厂商与接入方式 → OAuth 授权或提交 Coding Plan key → 进入上架检测。
+// 接入上游：选择接入方式 → 完成账号接入 → 选择挂售模型 → 进入上架检测。
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { market, seller } from '@/api'
 import type { Proxy, Upstream, VendorView } from '@/api/types'
 import { useAction } from '@/composables/useAsync'
 import ModalDialog from '@/components/ModalDialog.vue'
+import ModelWhitelistSelector from '@/components/ModelWhitelistSelector.vue'
 import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
 import { authGuides, takesProjectID, takesTeam } from '@/utils/authGuides'
 import { useToast } from '@/stores/toast'
@@ -18,7 +19,9 @@ const router = useRouter()
 const { busy, run } = useAction()
 const toast = useToast()
 
-const step = ref<'choose' | 'authorize' | 'done'>('choose')
+const step = ref<'choose' | 'authorize' | 'models' | 'done'>('choose')
+const selectedModels = ref<string[]>([])
+const modelsValid = ref(false)
 const platform = ref('')
 const authType = ref('')
 const upstream = ref<Upstream | null>(null)
@@ -116,9 +119,9 @@ watch(open, (v) => {
     upstream.value = props.resume
     platform.value = props.resume.platform
     authType.value = props.resume.auth_type
-    step.value = 'authorize'
+    step.value = props.resume.status === 'selecting_models' ? 'models' : 'authorize'
     // 读取代理策略，判断未绑定代理的上游是否只能通过导入接入。
-    void loadProxyChoices()
+    if (step.value === 'authorize') void loadProxyChoices()
   } else {
     proxyID.value = ''
     void loadProxyChoices()
@@ -173,13 +176,22 @@ async function submit() {
     : (isOAuth.value ? seller.completeOAuth(id, code.value.trim()) : seller.submitCodingKey(id, body)))
   if (u) {
     upstream.value = u
-    step.value = 'done'
+    step.value = u.status === 'selecting_models' ? 'models' : 'done'
     importText.value = ''
     emit('done')
   } else if (importing && pendingProxy.value) {
     // 代理检测通过后账号创建仍可能失败，此时代理已绑定，刷新以显示正确的代理提示。
     seller.upstream(id).then((d) => { if (upstream.value?.id === id) upstream.value = d }).catch(() => {})
   }
+}
+
+async function submitModels() {
+  if (!upstream.value || !modelsValid.value) return
+  const u = await run(() => seller.setUpstreamModels(upstream.value!.id, [...selectedModels.value]))
+  if (!u) return
+  upstream.value = u
+  step.value = 'done'
+  emit('done')
 }
 
 function goDetail() {
@@ -333,6 +345,12 @@ function goDetail() {
       </template>
     </template>
 
+    <template v-else-if="step === 'models'">
+      <h2 class="font-display text-lg font-bold">选择挂售模型</h2>
+      <p class="text-sm text-ink-600">账号接入已完成。选择要挂售的模型后开始上架检测，通过后才能发布商品。</p>
+      <ModelWhitelistSelector v-if="upstream" v-model="selectedModels" :upstream-id="upstream.id" :disabled="busy" @valid="modelsValid = $event" />
+    </template>
+
     <template v-else>
       <div v-if="upstream?.status === 'verifying'" class="callout callout-ok">
         授权完成，正在进行上架检测（通常几分钟内完成）。检测通过后就可以挂单了，检测报告可以在上游详情中查看。
@@ -345,7 +363,8 @@ function goDetail() {
     <template #footer>
       <button type="button" class="xm-btn xm-btn-ghost" @click="open = false">关闭</button>
       <button v-if="step === 'choose'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || loadingProxies || proxyLoadError || !platform || !authType || (requireSellerProxy && !proxyID)" @click="create">下一步</button>
-      <button v-else-if="step === 'authorize'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || (mode === 'import' ? !canImport : (isOAuth ? !code.trim() : !apiKey.trim()))" @click="submit">{{ mode === 'import' ? '导入并检测' : '提交' }}</button>
+      <button v-else-if="step === 'authorize'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || (mode === 'import' ? !canImport : (isOAuth ? !code.trim() : !apiKey.trim()))" @click="submit">{{ mode === 'import' ? '导入账号' : '提交' }}</button>
+      <button v-else-if="step === 'models'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || !modelsValid" @click="submitModels">确认模型并开始检测</button>
       <button v-else type="button" class="xm-btn xm-btn-primary" @click="goDetail">查看上游</button>
     </template>
   </ModalDialog>
