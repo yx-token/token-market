@@ -50,10 +50,16 @@ const active = ref(0)
 const triggerRef = ref<HTMLElement | null>(null)
 const listRef = ref<HTMLElement | null>(null)
 const searchRef = ref<HTMLInputElement | null>(null)
-const { style: panelStyle, open: placePanel, close: unplacePanel } = usePopoverPosition(triggerRef, {
-  width: props.panelWidth ?? 0,
+const { style: panelStyle, update: updatePanel, open: placePanel, close: unplacePanel } = usePopoverPosition(triggerRef, {
+  width: (rect) => props.panelWidth ?? Math.max(rect.width, 240),
   maxHeight: 320,
 })
+
+// 多选标签换行或外部修改宽度后，重新对齐仍打开的面板。
+watch(() => [props.modelValue, props.panelWidth], async () => {
+  await nextTick()
+  if (isOpen.value) updatePanel()
+}, { deep: true })
 
 // 远程搜索结果与状态；remote 未提供时退回纯本地过滤
 const remoteResults = ref<SelectOption[]>([])
@@ -247,6 +253,7 @@ function onKeydown(e: KeyboardEvent) {
   }
   if (e.key === 'Escape') {
     e.preventDefault()
+    e.stopPropagation()
     closePanel()
   } else if (e.key === 'ArrowDown') {
     e.preventDefault()
@@ -322,10 +329,9 @@ const emptyHint = computed(() => {
       @click="openPanel"
     >
       <span v-if="!multiple || !selected.length" class="ss-value">{{ displayText }}</span>
-      <span v-else class="ss-value ss-value--ph">{{ placeholder }}</span>
       <span class="ss-tags" v-if="multiple && selected.length">
         <span v-for="v in selected" :key="v" class="ss-tag" :class="{ 'is-stale': !known.has(v) }">
-          {{ displayOne(v) }}
+          <span class="ss-tag-text">{{ displayOne(v) }}</span>
           <button type="button" class="ss-tag-x" tabindex="-1" :aria-label="`移除 ${displayOne(v)}`" @click="remove(v, $event)">✕</button>
         </span>
       </span>
@@ -405,12 +411,10 @@ const emptyHint = computed(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ss-value--ph {
-  opacity: 0.65;
-}
 .ss-chevron {
   flex: none;
-  font-size: 0.7rem;
+  font-size: 1rem;
+  line-height: 1;
   opacity: 0.6;
   transition: transform 0.15s ease;
 }
@@ -419,12 +423,15 @@ const emptyHint = computed(() => {
 }
 .ss-tags {
   display: flex;
-  flex: none;
+  flex: 1;
+  min-width: 0;
   flex-wrap: wrap;
   gap: 0.25rem;
 }
 .ss-tag {
   display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 0.2rem;
   border-radius: 3px;
@@ -432,11 +439,16 @@ const emptyHint = computed(() => {
   padding: 1px 0.25rem 1px 0.4rem;
   font-size: 0.75rem;
 }
+.ss-tag-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .ss-tag.is-stale {
   background: #fdf3e7;
   color: #b45309;
 }
 .ss-tag-x {
+  flex: none;
   border: 0;
   background: transparent;
   color: inherit;

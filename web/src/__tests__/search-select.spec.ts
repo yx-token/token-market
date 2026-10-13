@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { h, nextTick } from 'vue'
+import { routeLocationKey } from 'vue-router'
 import SearchSelect from '@/components/common/SearchSelect.vue'
+import ModalDialog from '@/components/ModalDialog.vue'
 import type { SelectOption } from '@/components/common/searchSelect'
 
 const opts: SelectOption[] = [
@@ -17,6 +19,8 @@ const panelItems = () => [...(panel()?.querySelectorAll<HTMLElement>('.ss-opt') 
 // Teleport 的面板挂在 body 上，用例之间必须清干净，否则会命中上一个用例的残留节点
 afterEach(() => {
   document.body.innerHTML = ''
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 function select(props: {
@@ -26,6 +30,7 @@ function select(props: {
   placeholder?: string
   disabled?: boolean
   loading?: boolean
+  panelWidth?: number
   id?: string
   remote?: (q: string) => Promise<SelectOption[]>
   remoteDebounce?: number
@@ -40,6 +45,106 @@ async function open(wrapper: ReturnType<typeof select>) {
 }
 
 describe('SearchSelect', () => {
+  it('默认面板与触发器同宽，滚动和缩放时重新测量', async () => {
+    vi.stubGlobal('innerWidth', 1024)
+    const wrapper = select({ options: opts })
+    let rect = new DOMRect(100, 100, 360, 36)
+    vi.spyOn(wrapper.get('.ss-trigger').element, 'getBoundingClientRect').mockImplementation(() => rect)
+    await open(wrapper)
+    expect(panel()!.style.width).toBe('360px')
+    expect(panel()!.style.top).toBe('144px')
+    rect = new DOMRect(100, 80, 360, 36)
+    document.dispatchEvent(new Event('scroll'))
+    await nextTick()
+    expect(panel()!.style.top).toBe('124px')
+    rect = new DOMRect(100, 80, 400, 36)
+    window.dispatchEvent(new Event('resize'))
+    await nextTick()
+    expect(panel()!.style.width).toBe('400px')
+    wrapper.unmount()
+  })
+
+  it.each([
+    [180, 1024, 240],
+    [1200, 800, 784],
+    [100, 200, 184],
+  ])('触发器宽 %ipx、视口宽 %ipx 时，面板宽 %ipx', async (triggerWidth, viewportWidth, expected) => {
+    vi.stubGlobal('innerWidth', viewportWidth)
+    const wrapper = select({ options: opts })
+    vi.spyOn(wrapper.get('.ss-trigger').element, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, triggerWidth, 36))
+    await open(wrapper)
+    expect(panel()!.style.width).toBe(`${expected}px`)
+    expect(Number.parseFloat(panel()!.style.left) + expected).toBeLessThanOrEqual(viewportWidth - 8)
+    wrapper.unmount()
+  })
+
+  it('指定 panelWidth 时使用指定值，外部更新后仍生效', async () => {
+    const wrapper = select({ options: opts, panelWidth: 480 })
+    vi.spyOn(wrapper.get('.ss-trigger').element, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 360, 36))
+    await open(wrapper)
+    expect(panel()!.style.width).toBe('480px')
+    await wrapper.setProps({ panelWidth: 300 })
+    await flushPromises()
+    expect(panel()!.style.width).toBe('300px')
+    wrapper.unmount()
+  })
+
+  it('ModalDialog 内 Esc 先关闭下拉，再关闭弹窗', async () => {
+    const wrapper = mount(ModalDialog, {
+      props: { open: true, title: '编辑策略' },
+      slots: { default: () => h(SearchSelect, { options: opts }) },
+      attachTo: document.body,
+      global: { provide: { [routeLocationKey as symbol]: { path: '/console/test' } } },
+    })
+    await wrapper.findComponent(SearchSelect).get('.ss-trigger').trigger('click')
+    await flushPromises()
+    const search = panel()!.querySelector<HTMLInputElement>('.ss-search')!
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    search.dispatchEvent(escape)
+    await flushPromises()
+    expect(escape.defaultPrevented).toBe(true)
+    expect(panel()).toBeNull()
+    expect(wrapper.emitted('update:open')).toBeUndefined()
+    expect(document.body.querySelector('[role="dialog"]')).toBeTruthy()
+    expect(document.activeElement?.classList.contains('ss-trigger')).toBe(true)
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wrapper.emitted('update:open')).toEqual([[false]])
+    wrapper.unmount()
+  })
+
+  it('ModalDialog 忽略已处理的 Esc，普通 Esc 只关闭最上层弹窗', async () => {
+    const mountDialog = () => mount(ModalDialog, {
+      props: { open: true, title: '弹窗' },
+      global: { provide: { [routeLocationKey as symbol]: { path: '/console/test' } } },
+    })
+    const lower = mountDialog()
+    const upper = mountDialog()
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
+    handled.preventDefault()
+    window.dispatchEvent(handled)
+    expect(upper.emitted('update:open')).toBeUndefined()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await nextTick()
+    expect(upper.emitted('update:open')).toEqual([[false]])
+    expect(lower.emitted('update:open')).toBeUndefined()
+    upper.unmount()
+    lower.unmount()
+  })
+
+  it('点击搜索框或选项保持面板，点击外部关闭', async () => {
+    const wrapper = select({ options: opts, multiple: true })
+    await open(wrapper)
+    panel()!.querySelector('.ss-search')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    panelItems()[0]!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await nextTick()
+    expect(panel()).toBeTruthy()
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await flushPromises()
+    expect(panel()).toBeNull()
+    wrapper.unmount()
+  })
+
   it('单选：输入过滤并回车选择', async () => {
     const wrapper = select({ modelValue: '', options: opts, placeholder: '选择厂商' })
     await open(wrapper)
@@ -199,7 +304,7 @@ describe('SearchSelect', () => {
     const wrapper = select({ modelValue: '', options: opts })
     await open(wrapper)
     const search = panel()!.querySelector<HTMLInputElement>('.ss-search')!
-    // 無点已移到搜索框；在这里按方向键 + Enter 应能选中，不应因事件不冒泡而失效
+    // 焦点已移到搜索框；在这里按方向键 + Enter 应能选中，不应因事件不冒泡而失效
     search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
     await nextTick()
     expect(panel()!.querySelector('[data-active="true"]')!.textContent).toContain('ChatGPT')
@@ -243,9 +348,10 @@ describe('SearchSelect', () => {
     // 已选值只以标签形式出现一次，不再同时输出 “A、B” 汇总文本
     const tags = wrapper.findAll('.ss-tag')
     expect(tags).toHaveLength(2)
-    // 有已选值时不输出汇总 .ss-value 文本，只输出 placeholder 占位
-    const valueSpan = wrapper.get('.ss-value')
-    expect(valueSpan.text()).toBe('厂商')
+    // 有已选值时只显示标签；清空后再显示占位。
+    expect(wrapper.find('.ss-value').exists()).toBe(false)
+    await wrapper.setProps({ modelValue: [] })
+    expect(wrapper.get('.ss-value').text()).toBe('厂商')
     wrapper.unmount()
   })
 
