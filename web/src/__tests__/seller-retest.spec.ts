@@ -133,10 +133,15 @@ describe('卖家手动复测：只在检测结果异常时可用', () => {
     expect(wrapper.text()).toContain('检测中')
     expect(wrapper.text()).toContain('已答 2 / 共 5 题')
     const calls = vi.mocked(seller.probeRuns).mock.calls.length
+    const detailCalls = vi.mocked(seller.upstream).mock.calls.length
+    const reportCalls = vi.mocked(seller.reports).mock.calls.length
     await vi.advanceTimersByTimeAsync(10000)
     await flushPromises()
     expect(seller.probeRuns).toHaveBeenCalledTimes(calls + 1)
     expect(wrapper.text()).toContain('已完成')
+    // 检测全部结束后整页刷新一次，带出新的上游状态与报告
+    expect(seller.upstream).toHaveBeenCalledTimes(detailCalls + 1)
+    expect(seller.reports).toHaveBeenCalledTimes(reportCalls + 1)
     await vi.advanceTimersByTimeAsync(20000)
     expect(seller.probeRuns).toHaveBeenCalledTimes(calls + 1)
     wrapper.unmount()
@@ -154,6 +159,25 @@ describe('卖家手动复测：只在检测结果异常时可用', () => {
     await wrapper.findAll('button').find((button) => button.text().includes('查看报告'))!.trigger('click')
     await flushPromises()
     expect(seller.report).toHaveBeenCalledWith(12)
+    wrapper.unmount()
+  })
+
+  it('已结束的记录显示结论，第三方检测站与状态用中文', async () => {
+    vi.mocked(seller.probeRuns).mockResolvedValue([{
+      id: 30, trigger: 'admin', status: 'third_party', flows: ['identity'], models: ['gpt-6.1-sol'], queued_at: '',
+      progress: { answered: 0, total: null }, third_party: [{ provider: 'bazaarlink', status: 'running' }], report_id: null, verdict: null,
+    }, {
+      id: 29, trigger: 'admin', status: 'done', flows: ['identity'], models: ['gpt-6.1-sol'], queued_at: '',
+      progress: { answered: 0, total: null }, third_party: [{ provider: 'bazaarlink', status: 'completed' }], report_id: 9, verdict: 'normal',
+    }])
+    const wrapper = await mountView({ ...base, manual_retest: { allowed: false } })
+    const rows = wrapper.get('table').findAll('tbody tr')
+    expect(rows[0].text()).toContain('第三方核验中')
+    expect(rows[0].text()).toContain('BazaarLink：检测中')
+    expect(rows[0].text()).not.toContain('running')
+    expect(rows[1].text()).toContain('BazaarLink：已完成')
+    expect(rows[1].findComponent({ name: 'StatusBadge' }).exists()).toBe(true)
+    expect(rows[1].text()).not.toContain('已完成已完成')
     wrapper.unmount()
   })
 

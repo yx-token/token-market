@@ -298,8 +298,21 @@ itemsLoop:
 	if len(encoded) > maxExecutionSnapshot {
 		return plan, fmt.Errorf("执行快照超过 %d MiB", maxExecutionSnapshot>>20)
 	}
-	_, err = e.DB.Exec(ctx, `UPDATE probe_runs SET execution_snapshot = $2 WHERE id = $1 AND COALESCE((execution_snapshot->>'schema_version')::int,0)=0`, run.id, encoded)
+	_, err = e.DB.Exec(ctx, `UPDATE probe_runs SET execution_snapshot = $2, planned = $3 WHERE id = $1 AND COALESCE((execution_snapshot->>'schema_version')::int,0)=0`, run.id, encoded, plannedSteps(plan))
 	return plan, err
+}
+
+// plannedSteps 是快照计划的总题数：所有实例的步骤数之和，与 probe_results 每步一行的口径一致；
+// 没有实例（例如纯第三方核验）时为 NULL，界面显示「—」而不是「共 0 题」。
+func plannedSteps(plan executionSnapshot) *int {
+	if len(plan.Instances) == 0 {
+		return nil
+	}
+	total := 0
+	for _, instance := range plan.Instances {
+		total += len(instance.Steps)
+	}
+	return &total
 }
 
 func expandFrozen(prompt string, rng *rand.Rand) (string, string) { return expandPrompt(prompt, rng) }

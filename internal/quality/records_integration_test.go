@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DueGin/token-market/internal/listing"
+	"github.com/DueGin/token-market/internal/platform/db"
 	"github.com/DueGin/token-market/internal/testutil"
 )
 
@@ -27,8 +28,9 @@ func TestRunSummaryPlannedStepsAndSellerProbeRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	var runningID, oldID int64
-	if err := pool.QueryRow(ctx, `INSERT INTO probe_runs(upstream_id,batch_id,trigger,policy_version,model,status,execution_snapshot,queued_at)
-		VALUES($1,'records-running','admin',1,'模型甲','running', $2, now()-interval '2 minutes') RETURNING id`, upstreamID,
+	// planned 由写执行快照时同步记录（见 plannedSteps），这里按同样口径写入
+	if err := pool.QueryRow(ctx, `INSERT INTO probe_runs(upstream_id,batch_id,trigger,policy_version,model,status,execution_snapshot,planned,queued_at)
+		VALUES($1,'records-running','admin',1,'模型甲','running', $2, 5, now()-interval '2 minutes') RETURNING id`, upstreamID,
 		`{"instances":[{"steps":[{},{}]},{"steps":[{},{},{}]}]}`).Scan(&runningID); err != nil {
 		t.Fatal(err)
 	}
@@ -83,3 +85,47 @@ func TestRunSummaryPlannedStepsAndSellerProbeRuns(t *testing.T) {
 	}
 	_ = oldID
 }
+
+// 0032 从旧执行快照回填计划总题数：多实例多步骤求和，没有快照或实例数组的旧记录保持 NULL。
+func TestPlannedMigrationBackfillsFromSnapshot(t *testing.T) {
+	_, pool := testutil.NewDatabase(t)
+	ctx := context.Background()
+	const migration = "0032_probe_runs_planned.sql"
+	if _, err := db.Migrate(ctx, pool, migrationsThrough(t, migration, false)); err != nil {
+		t.Fatal(err)
+	}
+	var seller, upstream int64
+	if err := pool.QueryRow(ctx, `INSERT INTO users(email,password_hash) VALUES('planned-backfill@test','unused') RETURNING id`).Scan(&seller); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO upstreams(seller_id,platform,auth_type) VALUES($1,'anthropic','oauth') RETURNING id`, seller).Scan(&upstream); err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]int64{}
+	for name, snapshot := range map[string]string{
+		"多实例": `{"instances":[{"steps":[{},{}]},{"steps":[{},{},{}]}]}`,
+		"空实例": `{"instances":[]}`,
+		"无快照": `{}`,
+	} {
+		var id int64
+		if err := pool.QueryRow(ctx, `INSERT INTO probe_runs(upstream_id,batch_id,trigger,policy_version,model,status,execution_snapshot)
+			VALUES($1,$2,'admin',1,'模型','done',$3) RETURNING id`, upstream, "planned-"+name, snapshot).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids[name] = id
+	}
+	if _, err := db.Migrate(ctx, pool, migrationsThrough(t, migration, true)); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]*int{"多实例": intPointer(5), "空实例": nil, "无快照": nil} {
+		var got *int
+		if err := pool.QueryRow(ctx, `SELECT planned FROM probe_runs WHERE id=$1`, ids[name]).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if (got == nil) != (want == nil) || got != nil && *got != *want {
+			t.Fatalf("%s 回填计划题数错误：得到 %v，期望 %v", name, got, want)
+		}
+	}
+}
+
+func intPointer(v int) *int { return &v }

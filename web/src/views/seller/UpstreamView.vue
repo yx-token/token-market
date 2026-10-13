@@ -76,7 +76,12 @@ function startPolling() {
       return
     }
     await probeRuns.load()
-    if (!hasRunningRuns.value) stopPolling()
+    // 上架检测期间上游状态会随检测推进变化；检测全部结束后再整页刷新一次，带出新报告与健康状态
+    if (u.value?.status === 'verifying') await detail.load()
+    if (!hasRunningRuns.value) {
+      stopPolling()
+      await Promise.all([detail.load(), reports.load()])
+    }
   }, 10000)
 }
 onMounted(async () => {
@@ -281,6 +286,15 @@ async function submitAppeal() {
   }
 }
 const appealable = appealableReport
+
+function thirdPartyStatusText(status: string) {
+  const names: Record<string, string> = { pending: '排队中', running: '检测中', completed: '已完成', failed: '失败', timeout: '超时', skipped: '已跳过' }
+  return names[status] ?? status
+}
+
+function providerText(provider: string) {
+  return provider === 'bazaarlink' ? 'BazaarLink' : provider
+}
 
 function runStatusText(status: string) {
   const names: Record<string, string> = {
@@ -504,7 +518,7 @@ function intelligenceText(run: SellerProbeRun) {
         :columns="[
           { key: 'queued_at', label: '时间' },
           { key: 'trigger', label: '类型' },
-          { key: 'status', label: '状态' },
+          { key: 'status', label: '状态 / 结论' },
           { key: 'flows', label: '流程' },
           { key: 'models', label: '测试模型' },
           { key: 'progress', label: '进度' },
@@ -521,7 +535,10 @@ function intelligenceText(run: SellerProbeRun) {
           <div v-if="row.started_at" class="text-xs text-slate-500">开始时间 {{ dateTime(row.started_at) }}</div>
         </template>
         <template #cell-trigger="{ row }"><StatusBadge kind="trigger" :value="row.trigger" /></template>
-        <template #cell-status="{ row }">{{ runStatusText(row.status) }}</template>
+        <template #cell-status="{ row }">
+          <StatusBadge v-if="row.verdict" kind="verdict" :value="row.verdict" />
+          <span v-else>{{ runStatusText(row.status) }}</span>
+        </template>
         <template #cell-flows="{ row }">{{ row.flows?.length ? row.flows.map(detectionFlowText).join(' / ') : '—' }}</template>
         <template #cell-models="{ row }">{{ row.models?.length ? row.models.join(' / ') : '—' }}</template>
         <template #cell-progress="{ row }">
@@ -532,7 +549,7 @@ function intelligenceText(run: SellerProbeRun) {
         <template #cell-score="{ row }">{{ intelligenceText(row) }}</template>
         <template #cell-third_party="{ row }">
           <span v-if="!row.third_party?.length">—</span>
-          <span v-for="site in row.third_party" :key="site.provider" class="mr-2 text-xs">{{ site.provider }}：{{ site.status }}</span>
+          <span v-for="site in row.third_party" :key="site.provider" class="mr-2 text-xs">{{ providerText(site.provider) }}：{{ thirdPartyStatusText(site.status) }}</span>
         </template>
         <template #cell-actions="{ row }">
           <button v-if="row.report_id" class="btn-ghost btn-sm" :disabled="reportLoading" @click="openReportDetail(row.report_id)">查看报告</button>

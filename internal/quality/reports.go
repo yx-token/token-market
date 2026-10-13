@@ -446,9 +446,8 @@ type RunDetail struct {
 	RefResults []RunResult `json:"reference_results,omitempty"`
 }
 
-const plannedRunColumn = `(SELECT SUM(jsonb_array_length(instance->'steps'))::int
-	FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.execution_snapshot->'instances') = 'array'
-		THEN r.execution_snapshot->'instances' ELSE '[]'::jsonb END) instance)`
+// plannedRunColumn 读取写快照时记录的计划总题数，列表查询不解析可达数 MB 的执行快照。
+const plannedRunColumn = `r.planned`
 
 const runSummaryColumns = `r.id, r.upstream_id, r.batch_id, r.trigger, r.model, r.status, r.summary,
 	(SELECT count(*) FROM probe_results x WHERE x.run_id = r.id),
