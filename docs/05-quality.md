@@ -264,7 +264,7 @@ D13 使用可归因分母；D04 仅统计已确认窗口未耗尽的异常 429�
 
 ## 12. 迁移与校准
 
-`0029_detection_flows.sql` 增加策略 flows、运行 flows / identity_source / models、按流程 next / last 时间、suspected_flows、adaptive_attempts、deductions_reset_at、第三方运行唯一索引及只读的挂售白名单列。测智配置由旧开关、周期、完整触发和 models 复制；身份默认 third_party，开关及触发取原检测站配置，next 时间由旧 next_scheduled_at 回填。旧运行流程保持空数组，不推断历史执行范围。
+`0029_detection_flows.sql` 增加策略 flows、运行 flows / identity_source / models、按流程 next / last 时间、suspected_flows、adaptive_attempts、deductions_reset_at、第三方运行唯一索引及只读的挂售白名单列。测智流程一律启用（厂商「是否检测」总开关仍只管上架以外的检测，上架始终测智），定时、周期、完整触发和 models 由旧配置复制；身份来源默认 third_party，触发取原检测站配置，但流程开关与定时**一律先关闭**：第三方检测站要求 Edge 对外地址为公网 https，未就绪时上架会因身份核验没有结论而失败，管理员确认可用后在检测策略中开启。next 时间由旧 next_scheduled_at 回填。旧运行流程保持空数组，不推断历史执行范围。
 
 带型号的旧 iq / reasoning 题原地迁入 D07，其余旧智力题下线，不删除历史题目与结果。旧题下线、流程执行与新结论规则必须一起发布；停用旧题后不能继续靠旧题可用样本或旧 SPRT 决定上架。白名单及模型目录的接入、修改与市场展示见数据模型和相关 API 文档。
 

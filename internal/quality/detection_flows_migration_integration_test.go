@@ -88,7 +88,8 @@ func TestDetectionFlowsMigrationPreservesLegacyHistory(t *testing.T) {
 		p.Flows.Intelligence.Models[0].ExpectedPassRate != nil {
 		t.Fatalf("旧测智配置没有迁入 flows：%+v", p.Flows.Intelligence)
 	}
-	if !p.Flows.Identity.Enabled || !p.Flows.Identity.ScheduledEnabled || p.Flows.Identity.Source != "third_party" ||
+	// 身份核验上线时先关闭，等 https 的 Edge 地址与检测站就绪后由管理员开启；来源与触发照常迁入。
+	if p.Flows.Identity.Enabled || p.Flows.Identity.ScheduledEnabled || p.Flows.Identity.Source != "third_party" ||
 		!reflect.DeepEqual(p.Flows.Identity.Triggers, []string{"admin", "appeal", "scheduled"}) {
 		t.Fatalf("身份来源和检测站触发并集迁移错误：%+v", p.Flows.Identity)
 	}

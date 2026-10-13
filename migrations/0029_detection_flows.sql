@@ -16,13 +16,12 @@ SET flows = jsonb_build_object(
             FROM unnest(policy.models) WITH ORDINALITY AS models(model, ordinal)
         ), '[]'::jsonb)
     ),
+    -- 身份核验流程上线时一律先关闭：第三方检测站要求 Edge 对外地址为公网 https，未就绪时上架会因身份核验
+    -- 没有结论而失败。检测站配置与触发类型照常迁入，管理员确认可用后在检测策略里开启。
     'identity', jsonb_build_object(
-        'enabled', jsonb_array_length(policy.third_party) > 0,
+        'enabled', false,
         'source', 'third_party',
-        'scheduled_enabled', policy.scheduled_enabled AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements(policy.third_party) AS site
-            WHERE COALESCE(site->'triggers', '[]'::jsonb) ? 'scheduled'
-        ),
+        'scheduled_enabled', false,
         'interval_minutes', policy.interval_minutes,
         'triggers', COALESCE((
             SELECT jsonb_agg(trigger ORDER BY trigger)
