@@ -275,9 +275,10 @@ func PublicChecks(checks map[string]Check) map[string]Check {
 		default:
 			check.Status = "inconclusive"
 			check.Reason = "本次证据不足，暂时无法判定。"
-			if code == "capability_unknown" {
+			switch code {
+			case "capability_unknown":
 				check.Reason = "模型官方能力尚未登记，暂时无法判定此项。"
-			} else if code == "needs_baseline" {
+			case "needs_baseline":
 				check.Reason = "该项需要基线账号对照，暂时无法判定。"
 			}
 		}

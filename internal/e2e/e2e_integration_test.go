@@ -374,7 +374,7 @@ func (c *client) expect(status int, method, path string, body any) string {
 func (c *client) selectOnboardingModels(method, path, raw string, out any) {
 	c.e.t.Helper()
 	if method != http.MethodPost || !strings.HasPrefix(path, "/api/seller/upstreams/") ||
-		!(strings.HasSuffix(path, "/oauth/complete") || strings.HasSuffix(path, "/coding-key") || strings.HasSuffix(path, "/import")) {
+		!strings.HasSuffix(path, "/oauth/complete") && !strings.HasSuffix(path, "/coding-key") && !strings.HasSuffix(path, "/import") {
 		return
 	}
 	var response struct {

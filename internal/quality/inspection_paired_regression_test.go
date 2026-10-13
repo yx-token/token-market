@@ -35,7 +35,8 @@ func pairedRegressionCases() []pairedRegressionCase {
 				o.Target.TTFT, o.Ref.TTFT = time.Second, time.Second
 				o.Target.Duration, o.Ref.Duration = 2*time.Second, 2*time.Second
 				o.Target.OutputTokens, o.Ref.OutputTokens = 100, 100
-				if name == "差异配对" {
+				switch name {
+				case "差异配对":
 					o.TargetPass = i >= 20
 					o.Target.InputTokens = int64Pointer(50)
 					o.Target.ResponseModel = "claude-haiku-4-5"
@@ -57,13 +58,13 @@ func pairedRegressionCases() []pairedRegressionCase {
 					if key == "D07" && i < 3 {
 						o.Target.Flags = []string{"refusal"}
 					}
-				} else if name == "基线未兑现" {
+				case "基线未兑现":
 					o.RefPass = false
 					o.Ref.ReasoningTokens = 0
 					if key == "A04" || key == "A05" {
 						o.Ref.HTTPStatus, o.Ref.ErrorClass = 503, "http_5xx"
 					}
-				} else if name == "部分证据" {
+				case "部分证据":
 					if i%3 == 0 {
 						o.Ref = nil
 					}

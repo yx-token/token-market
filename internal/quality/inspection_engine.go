@@ -11,8 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var inspectionSuites = []string{"inspection_authenticity", "inspection_capability", "inspection_context", "inspection_function", "inspection_output", "inspection_performance"}
-
 func inspectionItemKey(it Item) string { return it.CheckKey }
 
 func (e *Engine) inspectionAssessment(ctx context.Context, run runRow, ref *runRow, u *upstreamRow, plan executionSnapshot, rows []Outcome, st InspectionSettings, a Assessment) (Assessment, error) {
@@ -353,7 +351,7 @@ func (e *Engine) inspectionRecoveryComplete(ctx context.Context, u *upstreamRow,
 	}
 	for _, key := range failed {
 		if len(flows) > 0 {
-			if d, ok := inspection.Lookup(key); ok && !containsAny(flows, d.Flow) && !(d.Flow == "common" && containsAny(flows, "intelligence")) {
+			if d, ok := inspection.Lookup(key); ok && !containsAny(flows, d.Flow) && (d.Flow != "common" || !containsAny(flows, "intelligence")) {
 				continue
 			}
 		}

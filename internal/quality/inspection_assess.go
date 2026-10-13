@@ -97,7 +97,7 @@ func Inspect(rows []Outcome, st InspectionSettings, now time.Time, options ...In
 			continue
 		}
 		// A15 默认停用时仍说明对照要求，既不启用采样也不参与扣价。
-		if !d.Enabled && !(itemMode && d.Key == "A15") {
+		if !d.Enabled && (!itemMode || d.Key != "A15") {
 			c.Status = "not_applicable"
 			c.Reason = "此项规则未启用。"
 			c.Evidence.Code = "disabled"

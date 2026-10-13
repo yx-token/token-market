@@ -132,9 +132,10 @@ func TestAggregatePricingIndependentOfModeRoleAndCalibration(t *testing.T) {
 					result := Aggregate(map[string]Check{key: check}, nil, mode, s)
 					definition, _ := Effective(key, s)
 					want := 1.0
-					if status == "warning" {
+					switch status {
+					case "warning":
 						want = definition.Coefficients["warning"]
-					} else if status == "fail" {
+					case "fail":
 						want = definition.Coefficients["severe"]
 					}
 					if result.QualityFactor == nil || math.Abs(*result.QualityFactor-want) > 1e-12 || !result.Checks[key].Applied || result.Checks[key].Factor == nil || *result.Checks[key].Factor != want || result.Provisional {

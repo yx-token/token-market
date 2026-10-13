@@ -79,11 +79,12 @@ func buildCapabilityDefaults() []ModelCapability {
 	}
 	for _, model := range []string{"grok-4.7", "grok-4.6", "grok-4.5", "grok-4.3", "grok-build-0.1"} {
 		window, efforts := 500000, []string{"low", "medium", "high", "xhigh"}
-		if model == "grok-4.5" {
+		switch model {
+		case "grok-4.5":
 			efforts = efforts[:3] // 官方文档对 xhigh 有冲突，只登记一致部分。
-		} else if model == "grok-4.3" {
+		case "grok-4.3":
 			window, efforts = 1000000, append([]string{"none"}, efforts...)
-		} else if model == "grok-build-0.1" {
+		case "grok-build-0.1":
 			window, efforts = 256000, nil
 		}
 		// 无输出上限不能伪造为一个有限值，来源中保留官方说明。
@@ -95,9 +96,10 @@ func buildCapabilityDefaults() []ModelCapability {
 	for _, model := range []string{"k3", "kimi-k3", "kimi-for-coding", "kimi-for-coding-highspeed"} {
 		window, output, efforts := 1048576, 0, []string{"low", "high", "max"}
 		var cache *bool
-		if model == "kimi-k3" {
+		switch model {
+		case "kimi-k3":
 			output, cache = 1048576, capabilityBool(true)
-		} else if model == "kimi-for-coding-highspeed" {
+		case "kimi-for-coding-highspeed":
 			window, efforts = 262144, nil
 		}
 		add("kimi", model, window, output, efforts, cache, "docs/research/inspection/model-landscape.md 第5章1.2节；https://www.kimi.com/code/docs/kimi-code/models.html")
@@ -107,9 +109,10 @@ func buildCapabilityDefaults() []ModelCapability {
 	}
 	for _, model := range []string{"MiniMax-M3.1-Flash-Preview", "MiniMax-M3", "MiniMax-M2.7"} {
 		window, output, efforts := 1000000, 524288, five
-		if model == "MiniMax-M3" {
+		switch model {
+		case "MiniMax-M3":
 			efforts = nil
-		} else if model == "MiniMax-M2.7" {
+		case "MiniMax-M2.7":
 			window, output, efforts = 204800, 204800, nil
 		}
 		add("minimax", model, window, output, efforts, nil, "docs/research/inspection/model-landscape.md 第5章3.2节；https://platform.minimax.cn/docs/guides/text-generation.md")

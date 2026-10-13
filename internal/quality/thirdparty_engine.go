@@ -31,10 +31,6 @@ type tpResult struct {
 	Summary   map[string]any `json:"summary,omitempty"`
 }
 
-var verdictRanks = map[string]int{"normal": 0, "inconclusive": 1, "suspected": 2, "degraded": 3, "unavailable": 4}
-
-func verdictRank(v string) int { return verdictRanks[v] }
-
 func (e *Engine) thirdPartyClient() *http.Client {
 	if e.ThirdPartyHTTP != nil {
 		return e.ThirdPartyHTTP
