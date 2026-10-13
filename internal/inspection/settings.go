@@ -22,10 +22,10 @@ type DB interface {
 
 func Defaults() Settings {
 	s := Settings{
-		Mode: ModeTrial, CheckOverrides: map[string]CheckOverride{},
+		Mode: ModeTrial, CheckOverrides: map[string]CheckOverride{}, ModelCapabilities: []ModelCapabilityOverride{},
 		GradeThresholds: map[string]float64{"S": 1.02, "A": 0.93, "B": 0.82, "C": 0.65},
 		GradeHysteresis: 0.02, DowngradeConfirmations: 2,
-		TokenBudgets: map[string]TokenBudget{"full": {Input: 1300000, Output: 640000}, "quick": {Input: 80000, Output: 160000}},
+		TokenBudgets: map[string]TokenBudget{"full": {Input: 2000000, Output: 640000}, "quick": {Input: 80000, Output: 160000}},
 	}
 	s.SRequirements.GateFreeDays, s.SRequirements.AvailabilityDays, s.SRequirements.MinAvailability = 30, 7, 0.995
 	s.Scheduling.MinimumGrade, s.Scheduling.Strategy = "B", "quality_adjusted"
@@ -36,6 +36,9 @@ func Defaults() Settings {
 }
 
 func (s Settings) Validate() error {
+	if err := validateCapabilityOverrides(s.ModelCapabilities); err != nil {
+		return err
+	}
 	if s.Mode != ModeTrial && s.Mode != ModeFormal {
 		return errors.New("质检模式须为 trial 或 formal")
 	}

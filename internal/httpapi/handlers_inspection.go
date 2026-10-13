@@ -9,12 +9,19 @@ import (
 	"github.com/DueGin/token-market/internal/platform/httpx"
 )
 
+func inspectionSettingsView(st inspection.Settings) any {
+	return struct {
+		inspection.Settings
+		Defaults []inspection.ModelCapability `json:"model_capability_defaults"`
+	}{st, inspection.CapabilityDefaults()}
+}
+
 func (s *Server) inspectionSettings(w http.ResponseWriter, r *http.Request) error {
 	st, err := inspection.Load(r.Context(), s.DB)
 	if err != nil {
 		return err
 	}
-	return ok(w, st)
+	return ok(w, inspectionSettingsView(st))
 }
 
 func (s *Server) updateInspectionSettings(w http.ResponseWriter, r *http.Request) error {
@@ -44,7 +51,7 @@ func (s *Server) updateInspectionSettings(w http.ResponseWriter, r *http.Request
 	if s.Kicker != nil {
 		s.Kicker.Kick(r.Context())
 	}
-	return ok(w, st)
+	return ok(w, inspectionSettingsView(st))
 }
 
 func (s *Server) inspectionChecks(w http.ResponseWriter, r *http.Request) error {

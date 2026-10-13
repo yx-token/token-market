@@ -22,11 +22,12 @@ type CheckOverride struct {
 }
 
 type Settings struct {
-	Mode                   string                   `json:"mode"`
-	CheckOverrides         map[string]CheckOverride `json:"check_overrides"`
-	GradeThresholds        map[string]float64       `json:"grade_thresholds"`
-	GradeHysteresis        float64                  `json:"grade_hysteresis"`
-	DowngradeConfirmations int                      `json:"downgrade_confirmations"`
+	Mode                   string                    `json:"mode"`
+	CheckOverrides         map[string]CheckOverride  `json:"check_overrides"`
+	ModelCapabilities      []ModelCapabilityOverride `json:"model_capabilities"`
+	GradeThresholds        map[string]float64        `json:"grade_thresholds"`
+	GradeHysteresis        float64                   `json:"grade_hysteresis"`
+	DowngradeConfirmations int                       `json:"downgrade_confirmations"`
 	SRequirements          struct {
 		GateFreeDays     int     `json:"gate_free_days"`
 		AvailabilityDays int     `json:"availability_days"`
