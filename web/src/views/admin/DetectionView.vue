@@ -50,7 +50,8 @@ const vendors = ref<VendorConfig[]>([])
 const upstreams = ref<Upstream[]>([])
 const modelOptions = computed<SelectOption[]>(() => {
   const policyModels = (policies.data.value ?? []).flatMap((p) => [
-    ...(p.flows?.intelligence.models.map((m) => m.model) ?? p.models), ...(p.third_party ?? []).map((t) => t.model ?? ''),
+    ...(p.flows?.intelligence.models.map((m) => m.model) ?? p.models), ...(p.flows?.degradation.models.map((m) => m.model) ?? []),
+    ...(p.third_party ?? []).map((t) => t.model ?? ''),
   ])
   return [...new Set([...priceModels.value, ...policyModels, ...probeModels.value])]
     .filter(Boolean).map((m) => ({ value: m, text: m }))
@@ -85,25 +86,31 @@ const form = reactive({
   tokenBudgets: '{}',
   flows: {
     intelligence: { enabled: true, scheduled_enabled: true, interval_minutes: 360, triggers: [] as string[], full_triggers: [] as string[], models: [] as { model: string; expected_pass_rate: number | '' | null }[] },
+    degradation: { enabled: false, scheduled_enabled: false, interval_minutes: 360, triggers: [] as string[], full_triggers: [] as string[], models: [] as { model: string; expected_pass_rate: number | '' | null }[] },
     identity: { enabled: false, source: 'third_party' as 'third_party' | 'self', scheduled_enabled: false, interval_minutes: 1440, triggers: [] as string[], full_triggers: [] as string[] },
   },
 })
 const newAuth = reactive({ platform: '', authType: '' })
 const override = reactive({ upstream: '', mode: 'on', scheduled: '', expires: '', reason: '' })
-const selectedFlows = ref<DetectionFlow[]>(['intelligence', 'identity'])
-const flowOptions = (['intelligence', 'identity'] as DetectionFlow[]).map((value) => ({ value, text: detectionFlowText(value) }))
+const selectedFlows = ref<DetectionFlow[]>(['intelligence', 'degradation', 'identity'])
+const flowOptions = (['intelligence', 'degradation', 'identity'] as DetectionFlow[]).map((value) => ({ value, text: detectionFlowText(value) }))
 
 // 旧策略只用于兼容回填；保存时统一写入新的流程配置。
 function policyFlows(p: Policy): DetectionFlows {
   if (p.flows) return p.flows
+  const models = p.models.map((model) => ({ model, expected_pass_rate: null }))
   return {
-    intelligence: { enabled: p.enabled, scheduled_enabled: p.scheduled_enabled, interval_minutes: p.interval_minutes, triggers: triggerOptions.map((t) => t.value), full_triggers: p.full_triggers ?? ['onboarding', 'admin', 'appeal', 'recovery'], models: p.models.map((model) => ({ model, expected_pass_rate: null })) },
+    intelligence: { enabled: p.enabled, scheduled_enabled: p.scheduled_enabled, interval_minutes: p.interval_minutes, triggers: triggerOptions.map((t) => t.value), full_triggers: p.full_triggers ?? ['onboarding', 'admin', 'appeal', 'recovery'], models },
+    // 旧策略没有降智配置，回填时沿用测智的模型与周期
+    degradation: { enabled: p.enabled, scheduled_enabled: false, interval_minutes: p.interval_minutes, triggers: triggerOptions.map((t) => t.value), full_triggers: p.full_triggers ?? ['onboarding', 'admin', 'appeal', 'recovery'], models: structuredClone(models) },
     identity: { enabled: !!p.third_party?.length, source: 'third_party', scheduled_enabled: false, interval_minutes: 1440, triggers: [...new Set((p.third_party ?? []).flatMap((t) => t.triggers ?? []))], full_triggers: triggerOptions.map((t) => t.value) },
   }
 }
 
 function flowSummary(p: Policy, flow: DetectionFlow): string {
   const config = policyFlows(p)[flow]
+  // 后端尚未回填降智配置时按未配置展示，避免整表报错
+  if (!config) return '—'
   const source = flow === 'identity' ? ` · ${identitySourceText(policyFlows(p).identity.source)}` : ''
   return `${config.enabled ? '开' : '关'}${source} · ${config.scheduled_enabled ? `每 ${config.interval_minutes} 分钟` : `定时关（${config.interval_minutes} 分钟）`}`
 }
@@ -203,7 +210,20 @@ async function save() {
     toast.error('测智模型不能重复')
     return
   }
-  for (const flow of [form.flows.intelligence, form.flows.identity]) {
+  // 降智检测与测智同构，但模型列表独立配置、单独校验
+  const degradationModels = form.flows.degradation.models.map((m) => ({
+    model: m.model.trim(),
+    expected_pass_rate: m.expected_pass_rate === '' || m.expected_pass_rate === null ? null : Number(m.expected_pass_rate),
+  }))
+  if (degradationModels.some((m) => !m.model || (m.expected_pass_rate !== null && (!Number.isFinite(m.expected_pass_rate) || m.expected_pass_rate <= 0 || m.expected_pass_rate > 1)))) {
+    toast.error('请填写降智检测模型 ID，期望通过率需大于 0 且不超过 1，或留空使用默认值')
+    return
+  }
+  if (new Set(degradationModels.map((m) => m.model)).size !== degradationModels.length) {
+    toast.error('降智检测模型不能重复')
+    return
+  }
+  for (const flow of [form.flows.intelligence, form.flows.degradation, form.flows.identity]) {
     if (!Number.isInteger(Number(flow.interval_minutes)) || Number(flow.interval_minutes) < 10) {
       toast.error('检测周期需为至少 10 分钟的整数')
       return
@@ -215,6 +235,7 @@ async function save() {
   }
   const flows: DetectionFlows = {
     intelligence: { ...form.flows.intelligence, interval_minutes: Number(form.flows.intelligence.interval_minutes), models },
+    degradation: { ...form.flows.degradation, interval_minutes: Number(form.flows.degradation.interval_minutes), models: degradationModels },
     identity: { ...form.flows.identity, interval_minutes: Number(form.flows.identity.interval_minutes) },
   }
   const body = {
@@ -361,6 +382,7 @@ async function probe() {
         { key: 'enabled', label: '是否检测' },
         { key: 'scheduled_enabled', label: '是否定时检测' },
         { key: 'intelligence', label: '测智' },
+        { key: 'degradation', label: '降智检测' },
         { key: 'identity', label: '身份核验' },
         { key: 'daily_budget_usd', label: '每日预算', align: 'right' },
         { key: 'third_party', label: '第三方检测' },
@@ -385,6 +407,7 @@ async function probe() {
         </button>
       </template>
       <template #cell-intelligence="{ row }">{{ flowSummary(row, 'intelligence') }}</template>
+      <template #cell-degradation="{ row }">{{ flowSummary(row, 'degradation') }}</template>
       <template #cell-identity="{ row }">{{ flowSummary(row, 'identity') }}</template>
       <template #cell-daily_budget_usd="{ row }">{{ row.daily_budget_usd }}</template>
       <template #cell-third_party="{ row }">
@@ -509,6 +532,28 @@ async function probe() {
           <button type="button" class="btn btn-secondary" :aria-label="`删除第 ${index + 1} 个测智模型`" @click="form.flows.intelligence.models.splice(index, 1)">删除</button>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" @click="form.flows.intelligence.models.push({ model: '', expected_pass_rate: null })">添加测智模型</button>
+      </div>
+    </section>
+    <section aria-labelledby="degradation-title" class="space-y-3 border-t border-slate-100 pt-3">
+      <h3 id="degradation-title" class="text-sm font-medium text-slate-700">降智检测</h3>
+      <div class="flex flex-wrap gap-6 text-sm">
+        <label class="flex items-center gap-2"><input id="degradation-enabled" v-model="form.flows.degradation.enabled" type="checkbox" /> 开启降智检测</label>
+        <label class="flex items-center gap-2"><input id="degradation-scheduled" v-model="form.flows.degradation.scheduled_enabled" type="checkbox" /> 定时检测</label>
+      </div>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div><label class="label" for="degradation-interval">周期（分钟）</label><input id="degradation-interval" v-model.number="form.flows.degradation.interval_minutes" class="input" type="number" min="10" /></div>
+        <div><label class="label" for="degradation-triggers">触发类型</label><SearchSelect id="degradation-triggers" v-model="form.flows.degradation.triggers" :options="triggerOptions" multiple placeholder="选择触发类型" /></div>
+        <div class="sm:col-span-2"><label class="label" for="degradation-full-triggers">完整检测触发类型</label><SearchSelect id="degradation-full-triggers" v-model="form.flows.degradation.full_triggers" :options="triggerOptions" multiple placeholder="选择触发类型" /></div>
+      </div>
+      <div>
+        <p class="label">降智检测模型</p>
+        <p class="hint mb-2">独立于测智配置；每次检测取全部配置模型与挂售白名单的交集。期望通过率留空时使用检测项默认值。</p>
+        <div v-for="(model, index) in form.flows.degradation.models" :key="index" class="mb-2 grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_10rem_auto]">
+          <div><label class="label" :for="`degradation-model-${index}`">模型 ID</label><SearchSelect :id="`degradation-model-${index}`" v-model="model.model" :options="modelOptions" creatable placeholder="选择或输入模型 ID" /></div>
+          <div><label class="label" :for="`degradation-rate-${index}`">期望通过率</label><input :id="`degradation-rate-${index}`" v-model="model.expected_pass_rate" class="input" type="number" min="0.0001" max="1" step="0.01" placeholder="使用默认值" /></div>
+          <button type="button" class="btn btn-secondary" :aria-label="`删除第 ${index + 1} 个降智检测模型`" @click="form.flows.degradation.models.splice(index, 1)">删除</button>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" @click="form.flows.degradation.models.push({ model: '', expected_pass_rate: null })">添加降智检测模型</button>
       </div>
     </section>
     <section aria-labelledby="identity-title" class="space-y-3 border-t border-slate-100 pt-3">
