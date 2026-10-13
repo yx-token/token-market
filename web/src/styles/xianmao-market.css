@@ -372,31 +372,47 @@
       left: 100%;
       top: 0;
       height: 100%;
-      width: min(520px, 52vw);
+      /* 铺满运营区中部（横幅+四宫格区域），容纳多列分组 */
+      width: min(720px, max(480px, calc(100vw - 280px)));
       background: #fff;
       border-radius: 0 16px 16px 0;
       box-shadow: 8px 4px 28px rgba(0, 0, 0, 0.08);
-      padding: 18px 22px 20px;
+      padding: 16px 18px 14px;
       overflow: auto;
       z-index: 8;
       box-sizing: border-box;
     }
     .cat-row:hover .cat-flyout,
     .xm-market .cat-row.is-open .cat-flyout { display: block; }
+    /* 分组多列铺满：每组一列，组内链接双列排满 */
+    .xm-market .cat-flyout .fly-sections {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+      gap: 14px 18px;
+      align-content: start;
+      min-height: 100%;
+    }
     .xm-market .cat-flyout .sec {
       display: flex;
-      gap: 10px;
-      align-items: flex-start;
-      margin-bottom: 14px;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+      padding: 0 12px 0 0;
+      border-right: 1px solid #f0f0f0;
+      border-bottom: 0;
       font-size: 13px;
       line-height: 1.7;
     }
-    .xm-market .cat-flyout .sec:last-child { margin-bottom: 0; }
+    .xm-market .cat-flyout .sec:last-child {
+      border-right: 0;
+      padding-right: 0;
+    }
     .xm-market .cat-flyout .sec-title {
-      flex: 0 0 88px;
+      flex: none;
       font-weight: 700;
       color: #1f1f1f;
       white-space: nowrap;
+      font-size: 13px;
     }
     .xm-market .cat-flyout .sec-title::after {
       content: " ›";
@@ -405,16 +421,24 @@
     }
     .xm-market .cat-flyout .sec-items {
       flex: 1;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px 16px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 4px 10px;
+      align-content: start;
       min-width: 0;
     }
     .xm-market .cat-flyout .sec-items a {
       color: #555;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .xm-market .cat-flyout .sec-items a:hover { color: #f58300; }
+    /* 分组很少时（如供给形态）链接改单列，避免空半边 */
+    .xm-market .cat-flyout .fly-sections:has(.sec:only-child) .sec-items,
+    .xm-market .cat-flyout .sec:has(.sec-items a:nth-child(-n+4):last-child) .sec-items {
+      grid-template-columns: 1fr;
+    }
 
     .xm-market .promo-banner {
       position: relative;

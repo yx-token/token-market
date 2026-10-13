@@ -399,6 +399,20 @@ const vendorPlatById: Record<string, string> = {
   zhipu: '智谱',
   minimax: 'MiniMax',
   grok: 'Grok',
+  deepseek: 'DeepSeek',
+  qwen: '通义千问',
+  mistral: 'Mistral',
+  meta_llama: 'Llama',
+  cohere: 'Cohere',
+  perplexity: 'Perplexity',
+  amazon: 'Amazon',
+  microsoft: 'Microsoft',
+  nvidia: 'NVIDIA',
+  baidu: '百度',
+  bytedance: '字节跳动',
+  tencent: '腾讯',
+  ai21: 'AI21',
+  inflection: 'Inflection',
 }
 
 export function categoryToAction(
@@ -413,6 +427,142 @@ export function categoryToAction(
     if (cat.id === 'channel') return { kindTab: 'channel' }
     if (cat.id === 'quota_pack') return { kindTab: 'pack' }
     if (cat.id === 'pool') return { plat: '保障池' }
+    if (cat.id === 'subscription') return { tag: 'subscription' }
+    if (cat.id === 'payg') return { tag: 'payg' }
   }
   return { tag: cat.id }
+}
+
+type CatNode = {
+  id: string
+  name: string
+  sort: number
+  enabled?: boolean
+  icon?: string
+  children?: CatNode[]
+}
+
+type NavItem = { text: string; action: MarketAction }
+
+/** 飞层分组：把过长子类切成多栏，避免一整坨挤在一起 */
+const SECTION_SPLITS: Record<string, { title: string; ids: string[] }[]> = {
+  vendor: [
+    { title: '国际头部', ids: ['claude', 'chatgpt', 'gemini', 'grok', 'mistral', 'cohere', 'perplexity'] },
+    { title: '国内头部', ids: ['kimi', 'zhipu', 'minimax', 'deepseek', 'qwen', 'baidu', 'bytedance', 'tencent'] },
+    { title: '云与开源', ids: ['meta_llama', 'amazon', 'microsoft', 'nvidia', 'ai21', 'inflection', 'other_vendor'] },
+  ],
+  usecase: [
+    { title: '开发与对话', ids: ['uc_programming', 'uc_agents', 'uc_chat', 'uc_technology', 'uc_data'] },
+    { title: '内容与增长', ids: ['uc_content', 'uc_marketing', 'uc_seo', 'uc_translation', 'uc_roleplay', 'uc_customer'] },
+    { title: '专业领域', ids: ['uc_research', 'uc_documents', 'uc_math', 'uc_science', 'uc_legal', 'uc_finance', 'uc_health', 'uc_academia', 'uc_trivia'] },
+  ],
+  capability: [
+    { title: '理解与推理', ids: ['cap_vision', 'cap_reasoning', 'cap_file', 'cap_tools', 'cap_structured', 'cap_web'] },
+    { title: '生成与媒体', ids: ['cap_image_gen', 'cap_video', 'cap_audio', 'cap_realtime'] },
+    { title: '检索与效率', ids: ['cap_embedding', 'cap_rerank', 'cap_caching', 'cap_fast', 'cap_batch'] },
+  ],
+  region: [
+    { title: '中文区', ids: ['intl', 'cn'] },
+    { title: '亚太', ids: ['jp', 'kr', 'sg', 'in', 'au'] },
+    { title: '欧美及其他', ids: ['us', 'eu', 'uk', 'br', 'me', 'global'] },
+  ],
+  scene: [
+    { title: '价格与品质', ids: ['low_rate', 'cheap', 'featured', 'grade_s', 'stable', 'refundable'] },
+    { title: '场景与规格', ids: ['coding', 'long_ctx', 'multilingual', 'open_weight', 'enterprise', 'newbie', 'high_tpm'] },
+  ],
+  offer: [
+    { title: '计费形态', ids: ['channel', 'quota_pack', 'pool', 'subscription', 'payg'] },
+  ],
+}
+
+/** 侧栏快捷入口：每行 3 个，覆盖主入口且不过长 */
+const LABEL_IDS: Record<string, string[]> = {
+  vendor: ['claude', 'chatgpt', 'gemini'],
+  offer: ['channel', 'quota_pack', 'pool'],
+  scene: ['coding', 'featured', 'low_rate'],
+  region: ['intl', 'cn', 'us'],
+  usecase: ['uc_programming', 'uc_agents', 'uc_chat'],
+  capability: ['cap_vision', 'cap_tools', 'cap_reasoning'],
+}
+
+const ROOT_ICON: Record<string, string> = {
+  vendor: 'chat',
+  offer: 'tag',
+  scene: 'code',
+  region: 'more',
+  usecase: 'code',
+  capability: 'tag',
+}
+
+function sortedEnabled(nodes: CatNode[] | undefined): CatNode[] {
+  return [...(nodes ?? [])]
+    .filter((c) => c.enabled !== false)
+    .sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id))
+}
+
+function toItem(cat: CatNode, rootId: string): NavItem {
+  return { text: cat.name, action: categoryToAction(cat, rootId) }
+}
+
+function splitSections(rootId: string, children: CatNode[]): { title: string; items: NavItem[] }[] {
+  const byId = new Map(children.map((c) => [c.id, c]))
+  const splits = SECTION_SPLITS[rootId]
+  if (!splits?.length) {
+    if (!children.length) return []
+    // 未知根：按每组最多 6 个切开
+    const out: { title: string; items: NavItem[] }[] = []
+    for (let i = 0; i < children.length; i += 6) {
+      const chunk = children.slice(i, i + 6)
+      out.push({
+        title: i === 0 ? '全部' : `更多 ${Math.floor(i / 6) + 1}`,
+        items: chunk.map((c) => toItem(c, rootId)),
+      })
+    }
+    return out
+  }
+  const used = new Set<string>()
+  const sections: { title: string; items: NavItem[] }[] = []
+  for (const s of splits) {
+    const items: NavItem[] = []
+    for (const id of s.ids) {
+      const c = byId.get(id)
+      if (!c) continue
+      used.add(id)
+      items.push(toItem(c, rootId))
+    }
+    if (items.length) sections.push({ title: s.title, items })
+  }
+  const rest = children.filter((c) => !used.has(c.id)).map((c) => toItem(c, rootId))
+  if (rest.length) sections.push({ title: '其他', items: rest })
+  return sections
+}
+
+/**
+ * 市场分类树 → 首页侧栏导航：飞层按主题分栏铺满，侧栏每行 3 个快捷入口；子类全量收录。
+ */
+export function buildCategoryNavGroups(tree: CatNode[] | null | undefined): CategoryGroup[] {
+  const roots = sortedEnabled(tree ?? [])
+  return roots.map((root) => {
+    const children = sortedEnabled(root.children)
+    const sections = splitSections(root.id, children)
+    const want = LABEL_IDS[root.id] ?? children.slice(0, 3).map((c) => c.id)
+    const labels: NavItem[] = []
+    const byId = new Map(children.map((c) => [c.id, c]))
+    for (const id of want) {
+      const c = byId.get(id)
+      if (c) labels.push(toItem(c, root.id))
+      if (labels.length >= 3) break
+    }
+    if (!labels.length) {
+      labels.push({ text: root.name, action: categoryToAction(root, root.id) })
+    }
+    return {
+      id: root.id,
+      enabled: true,
+      sort: root.sort,
+      icon: root.icon || ROOT_ICON[root.id] || 'chat',
+      labels,
+      sections,
+    }
+  })
 }

@@ -51,7 +51,8 @@ const triggerRef = ref<HTMLElement | null>(null)
 const listRef = ref<HTMLElement | null>(null)
 const searchRef = ref<HTMLInputElement | null>(null)
 const { style: panelStyle, open: placePanel, close: unplacePanel } = usePopoverPosition(triggerRef, {
-  width: props.panelWidth ?? 0,
+  // 未指定时由 usePopoverPosition 按触发器实测宽度计算，勿传 0（会变成 0px 竖线）
+  width: props.panelWidth,
   maxHeight: 320,
 })
 

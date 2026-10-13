@@ -15,8 +15,8 @@ import { copyText } from '@/utils/clipboard'
 import { sampleRequest } from '@/utils/keySample'
 import {
   apiToPlat,
+  buildCategoryNavGroups,
   catIconSvg,
-  categoryToAction,
   coverFor,
   tileThemeIcon,
   type FeedSku,
@@ -24,13 +24,6 @@ import {
 } from '@/market/config'
 
 type TileThumb = { key: string; img: string; price: string; href?: string }
-type NavLabel = { text: string; action: MarketAction }
-type NavGroup = {
-  id: string
-  icon: string
-  labels: NavLabel[]
-  sections: { title: string; items: NavLabel[] }[]
-}
 type DisplayTile = {
   id: string
   title: string
@@ -89,28 +82,8 @@ async function quickOpen(sku: FeedSku) {
   }
 }
 
-/** 侧栏类目：直接读市场分类树 */
-const groups = computed((): NavGroup[] => {
-  const roots = [...(catTree.value ?? [])]
-    .filter((r) => r.enabled !== false)
-    .sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id))
-  return roots.map((root) => {
-    const children = [...(root.children ?? [])]
-      .filter((c) => c.enabled !== false)
-      .sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id))
-    const items = children.map((c) => ({
-      text: c.name,
-      action: categoryToAction(c, root.id),
-    }))
-    const labels = (items.length ? items.slice(0, 3) : [{ text: root.name, action: categoryToAction(root, root.id) }]) as NavLabel[]
-    return {
-      id: root.id,
-      icon: root.icon || 'chat',
-      labels,
-      sections: items.length ? [{ title: root.name, items }] : [],
-    }
-  })
-})
+/** 侧栏类目：分类树切成多组飞层，每行只留 2 个快捷入口 */
+const groups = computed(() => buildCategoryNavGroups(catTree.value))
 
 /** 四宫格：优先推荐接口；不足时用运营位默认补齐到 4 格 */
 const tiles = computed((): DisplayTile[] => {
@@ -427,15 +400,17 @@ watch(
             </template>
           </div>
           <div v-if="g.sections?.length" class="cat-flyout" role="region" :aria-label="g.labels.map((l) => l.text).join(' / ')">
-            <div v-for="sec in g.sections" :key="sec.title" class="sec">
-              <div class="sec-title">{{ sec.title }}</div>
-              <div class="sec-items">
-                <a
-                  v-for="it in sec.items"
-                  :key="it.text"
-                  href="#feed"
-                  @click.prevent="applyAction(it.action)"
-                >{{ it.text }}</a>
+            <div class="fly-sections">
+              <div v-for="sec in g.sections" :key="sec.title" class="sec">
+                <div class="sec-title">{{ sec.title }}</div>
+                <div class="sec-items">
+                  <a
+                    v-for="it in sec.items"
+                    :key="it.text"
+                    href="#feed"
+                    @click.prevent="applyAction(it.action)"
+                  >{{ it.text }}</a>
+                </div>
               </div>
             </div>
           </div>

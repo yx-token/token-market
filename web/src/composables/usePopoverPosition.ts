@@ -1,12 +1,12 @@
 import { nextTick, onUnmounted, ref, type Ref } from 'vue'
 
-/** 将浮层挂到 body 时，按触发器位置计算 fixed 坐标，避免被 overflow 裁切 */
+/** 将浮层挂到 body 时，按触发器位置计算 fixed 坐标，避免被 overflow 裁切。
+ *  width 未传或 ≤0 时与触发器同宽（勿把 0 当成有效宽度，否则会出现 0px 竖线）。 */
 export function usePopoverPosition(
   triggerRef: Ref<HTMLElement | null>,
   opts: { width?: number; gap?: number; maxHeight?: number } = {},
 ) {
   const gap = opts.gap ?? 8
-  const preferWidth = opts.width ?? 680
   const style = ref<Record<string, string>>({
     position: 'fixed',
     top: '0',
@@ -20,7 +20,8 @@ export function usePopoverPosition(
     const rect = el.getBoundingClientRect()
     const vw = window.innerWidth
     const vh = window.innerHeight
-    const width = Math.min(preferWidth, vw - 16)
+    const prefer = opts.width && opts.width > 0 ? opts.width : rect.width
+    const width = Math.min(Math.max(prefer, 1), vw - 16)
     let left = rect.left
     if (left + width > vw - 8) left = Math.max(8, vw - width - 8)
     if (left < 8) left = 8
