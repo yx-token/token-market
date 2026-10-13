@@ -233,7 +233,6 @@ func PublicChecks(checks map[string]Check) map[string]Check {
 		}
 		check.Key = key
 		check.Metrics = map[string]Metric{}
-		check.Factor = nil
 		check.Evidence.GeneratorVersion = nil
 		code := check.Evidence.Code
 		check.Evidence.Code = ""

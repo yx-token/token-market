@@ -91,7 +91,7 @@ func TestPublicItemReportDoesNotExposeCapabilitiesOrThresholds(t *testing.T) {
 		"model_capabilities":        []inspection.ModelCapability{{Platform: "openai", Model: "私有型号登记"}},
 	})
 	safe := publicReportSummary(raw)
-	for _, secret := range []string{"expected_pass_rate", "relative_score", "target_pass_rate", "model_capabilit", "inspection_settings", "私有型号登记", "item_pass_rate_low", "0.9", "0.7"} {
+	for _, secret := range []string{"expected_pass_rate", "relative_score", "target_pass_rate", "model_capabilit", "inspection_settings", "私有型号登记", "item_pass_rate_low", "0.9"} {
 		if strings.Contains(string(safe), secret) {
 			t.Fatalf("卖家接口泄露 %s：%s", secret, safe)
 		}
@@ -102,7 +102,7 @@ func TestPublicItemReportDoesNotExposeCapabilitiesOrThresholds(t *testing.T) {
 	if err := json.Unmarshal(safe, &report); err != nil {
 		t.Fatal(err)
 	}
-	if c := report.Checks["D07"]; c.Status != "fail" || c.Evidence.Source != "item_probe" || c.Factor != nil {
-		t.Fatalf("卖家接口丢失安全结论或泄露系数：%+v", c)
+	if c := report.Checks["D07"]; c.Status != "fail" || c.Evidence.Source != "item_probe" || c.Factor == nil {
+		t.Fatalf("卖家接口丢失安全结论或单项系数：%+v", c)
 	}
 }

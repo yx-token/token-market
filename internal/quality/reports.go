@@ -151,24 +151,17 @@ func scanAppeal(row pgx.Row) (*Appeal, error) {
 
 // CreateAppeal 卖家对降智、不可用或正式扣价项提出申诉。
 func CreateAppeal(ctx context.Context, db DB, sellerID, reportID int64, reason string) (*Appeal, error) {
-	// 申诉资格使用内部证据；卖家摘要已隐藏单项系数，不能用来判断是否实际扣价。
-	var verdict string
-	var raw json.RawMessage
-	err := db.QueryRow(ctx, `SELECT verdict, summary FROM test_reports
-		WHERE id = $1 AND upstream_id IN (SELECT id FROM upstreams WHERE seller_id = $2)`, reportID, sellerID).Scan(&verdict, &raw)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, httpx.NotFound("REPORT_NOT_FOUND", "报告不存在")
-	}
+	r, err := SellerReport(ctx, db, sellerID, reportID)
 	if err != nil {
 		return nil, err
 	}
 	var summary struct {
 		Checks map[string]inspection.Check `json:"checks"`
 	}
-	if err := json.Unmarshal(raw, &summary); err != nil {
+	if err := json.Unmarshal(r.Summary, &summary); err != nil {
 		return nil, err
 	}
-	if verdict != "degraded" && verdict != "unavailable" && !hasAppliedDiscount(summary.Checks) {
+	if r.Verdict != "degraded" && r.Verdict != "unavailable" && !hasAppliedDiscount(summary.Checks) {
 		return nil, httpx.BadRequest("NOT_APPEALABLE", "只有降智、不可用或正式扣价项可以申诉")
 	}
 	if reason == "" {

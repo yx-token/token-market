@@ -602,8 +602,8 @@ func TestInspectionPricingDiscountAppealAndQuickHistory(t *testing.T) {
 	if err := json.Unmarshal(publicReport.Summary, &publicSummary); err != nil {
 		t.Fatal(err)
 	}
-	if publicSummary.Checks["D08"].Factor != nil || !publicSummary.Checks["D08"].Applied {
-		t.Fatalf("卖家摘要须保留实际扣价状态并隐藏单项系数：%s", publicReport.Summary)
+	if publicSummary.Checks["D08"].Factor == nil || !publicSummary.Checks["D08"].Applied {
+		t.Fatalf("卖家摘要须保留实际扣价状态与生效系数，申诉入口依赖它们：%s", publicReport.Summary)
 	}
 	otherSeller := f.e.newUser("other-appeal-seller@market.test")
 	otherSeller.expect(http.StatusNotFound, "POST", fmt.Sprintf("/api/seller/reports/%d/appeal", reportID), map[string]string{"reason": "不能申诉其他卖家的报告"})

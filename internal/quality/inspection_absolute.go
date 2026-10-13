@@ -266,7 +266,8 @@ func inspectItemBoundary(c *inspection.Check, own []Outcome, d inspection.Effect
 			uncertain = true
 			continue
 		}
-		if d.Key == "A05" && window > 0 {
+		// 窗口未登记也要核对首尾标记与输入计数，网关静默截断不能算作接受
+		if d.Key == "A05" {
 			input := totalInspectionInput(o.Target)
 			if input == nil || float64(*input) < float64(probe)*d.Thresholds["min_input_ratio"] || !o.TargetPass {
 				uncertain = true

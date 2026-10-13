@@ -250,11 +250,11 @@ func TestPublicItemChecksRedactionAndAdvice(t *testing.T) {
 			c.Evidence.Source, c.Evidence.Code = "item_probe", tt.code
 			c.Metrics["expected_pass_rate"] = Metric{Value: number(.9), Unit: "fraction"}
 			public := PublicChecks(map[string]Check{"D07": c})["D07"]
-			if public.Evidence.Source != "item_probe" || public.Evidence.Code != "" || len(public.Metrics) != 0 || public.Factor != nil || public.Reason != tt.reason {
+			if public.Evidence.Source != "item_probe" || public.Evidence.Code != "" || len(public.Metrics) != 0 || public.Factor == nil || public.Reason != tt.reason {
 				t.Fatalf("卖家摘要未脱敏或丢失安全说明：%+v", public)
 			}
 			raw, _ := json.Marshal(public)
-			for _, secret := range []string{tt.code, "expected_pass_rate", "私有题面", "判分器", "0.9", "0.7"} {
+			for _, secret := range []string{tt.code, "expected_pass_rate", "私有题面", "判分器", "0.9"} {
 				if strings.Contains(string(raw), secret) {
 					t.Fatalf("卖家摘要泄露 %s：%s", secret, raw)
 				}
