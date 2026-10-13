@@ -228,7 +228,7 @@ func TestAPISurface(t *testing.T) {
 		{buyer, "/api/buyer/keys"}, {buyer, fmt.Sprintf("/api/buyer/keys/%d", poolKey.Detail.ID)}, {buyer, "/api/buyer/usage?model=claude-sonnet-4-5"},
 		{buyer, fmt.Sprintf("/api/buyer/usage?key_id=%d", chainKey.Detail.ID)}, {buyer, "/api/buyer/bills?days=7"},
 		{sellerA, "/api/seller/vendors"}, {sellerA, "/api/seller/upstreams"}, {sellerA, fmt.Sprintf("/api/seller/upstreams/%d", upA.ID)}, {sellerC, fmt.Sprintf("/api/seller/upstreams/%d", upC.ID)},
-		{sellerA, fmt.Sprintf("/api/seller/upstreams/%d/reports", upA.ID)}, {sellerA, fmt.Sprintf("/api/seller/upstreams/%d/quality-trend", upA.ID)},
+		{sellerA, fmt.Sprintf("/api/seller/upstreams/%d/reports", upA.ID)}, {sellerA, fmt.Sprintf("/api/seller/upstreams/%d/probe-runs", upA.ID)},
 		{sellerA, "/api/seller/listings"}, {sellerA, fmt.Sprintf("/api/seller/listings/%d", la.Listing.ID)}, {sellerA, "/api/seller/earnings"},
 		{sellerA, "/api/seller/earnings/lines"}, {sellerA, fmt.Sprintf("/api/seller/earnings/lines?upstream_id=%d", upA.ID)}, {sellerA, "/api/seller/withdrawals"},
 		{admin, "/api/admin/settings"}, {admin, "/api/admin/vendors"}, {admin, "/api/admin/proxies"}, {admin, "/api/admin/pools"},

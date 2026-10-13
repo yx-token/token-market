@@ -138,7 +138,7 @@ OAuth 授权、Coding Key 和账号导入成功后进入 `selecting_models`（�
 |---|---|---|
 | GET | `/api/seller/upstreams/:id/reports` | 报告列表 |
 | GET | `/api/seller/reports/:id` | 报告详情（脱敏，不含题目、答案与基线信息，见 [05](05-quality.md) 第 8 节） |
-| GET | `/api/seller/upstreams/:id/quality-trend` | 每日智力相对分与异常次数：`days`（默认 30） |
+| GET | `/api/seller/upstreams/:id/probe-runs` | 检测记录（进行中的优先，含流程、模型、答题进度和第三方状态；不含题面、回答、判分器、实例哈希、内部摘要或基线运行），支持 `limit` / `offset` |
 | POST | `/api/seller/upstreams/:id/retest` | 手动复测（每日限次，厂商须开启检测；健康异常、最近检测失败/证据不足或已有生效扣价时可用，否则 409 `RETEST_NOT_NEEDED`）。检测异常流程，复测由卖家承担、不结算收益；详情 `manual_retest` 给出能否复测及原因 |
 | POST | `/api/seller/reports/:id/appeal` | 对暂停结论或已生效且系数小于 1 的扣价申诉：`reason` |
 
@@ -189,7 +189,7 @@ OAuth 授权、Coding Key 和账号导入成功后进入 `selecting_models`（�
 | 单上游检测覆盖 | `PUT /api/admin/upstreams/:id/detection-override`、`DELETE …` |
 | 手动检测 | `POST /api/admin/upstreams/:id/probe`：请求体可选 `{"flows":["intelligence","identity"]}`，省略检测全部已启用流程；对关闭检测总开关的厂商也可执行 |
 | 检测明细 | `GET /api/admin/upstreams/:id/probe-runs`（最近的检测记录，含 flows / identity_source / models，不含基线对照检测，`limit` 默认 20）、`GET /api/admin/probe-runs/:id`（逐题结果：题目、是否通过、耗时、token、回答片段前 500 字符，附同批次基线账号的结果） |
-| 检测记录 | `GET /api/admin/probe-runs`（全部上游的检测记录，含 flows / identity_source / models 及各套件题数与通过数；筛选 `platform`、`upstream_id`、`model`、`trigger`（为空时不含基线对照，`reference` 只看基线对照）、`status`、`verdict`、`from` / `to`（本地日期 YYYY-MM-DD，含当天）、`limit` / `offset`）、`GET /api/admin/probe-item-stats`（按题统计，被测上游与基线账号分开统计，筛选同上）、`GET /api/admin/probe-items/:id/results`（一道题最近的答题结果，含基线对照，`limit` 默认 50） |
+| 检测记录 | `GET /api/admin/probe-runs`（全部上游的检测记录，含 flows / identity_source / models、已答题数 / 通过数及执行快照计算的计划总题数；无快照的旧记录 `planned` 为 null；筛选 `platform`、`upstream_id`、`model`、`trigger`（为空时不含基线对照，`reference` 只看基线对照）、`status`、`verdict`、`from` / `to`（本地日期 YYYY-MM-DD，含当天）、`limit` / `offset`）、`GET /api/admin/probe-item-stats`（按题统计，被测上游与基线账号分开统计，筛选同上）、`GET /api/admin/probe-items/:id/results`（一道题最近的答题结果，含基线对照，`limit` 默认 50） |
 | 题库 | `GET/POST /api/admin/probe-items`、`PUT /api/admin/probe-items/:id`、`POST /api/admin/probe-items/:id/retire`；新建拒绝旧 iq / reasoning / long_context 套件 |
 | 基线账号 | `GET/POST /api/admin/reference-accounts`、`DELETE /api/admin/reference-accounts/:id`（授权复用卖家的授权接口） |
 | 质量看板 | `GET /api/admin/quality/overview`（各厂商健康与等级分布、官方全局事件、降智上游列表） |
