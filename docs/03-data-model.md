@@ -91,6 +91,9 @@ upstreams (
   probe_group_id       bigint,             -- sub2api tm-probe-<id>
   tier                 text,               -- 订阅档位，如 pro / max_5x / max_20x
   account_email        text,               -- 官方账号邮箱，授权或导入时识别，作为控制台中的账号名称
+  model_whitelist      text[],             -- 挂售模型；NULL 表示存量未声明，不限制模型
+  model_catalog        text[] not null default '{}', -- 账号模型目录，选择白名单前获取并缓存
+  model_catalog_at     timestamptz,        -- 最近成功获取目录的时间
   privacy_ok           boolean,
   self_reserve_percent smallint not null default 0,   -- 卖家自留比例，换算成 sub2api 窗口阈值
   created_at           timestamptz not null default now(),
@@ -147,6 +150,10 @@ proxies (                                -- 平台和卖家代理库存
 );
 -- 卖家代理地址 (lower(host), port) 唯一；非 removed 上游的 proxy_id 唯一。
 ```
+
+新卖家账号创建成功后先进入 `selecting_models`（待选择挂售模型），保存账号模型目录；卖家提交非空白名单后执行隐私设置检查，再进入 `verifying` 开始上架检测；隐私设置失败时进入 `verify_failed`，保留已选白名单供重试。OAuth、Coding Key 与账号导入均经过这一步；平台基线账号以及已保存白名单的接入重试沿用自动检测流程；存量未声明白名单的检测重试仍按不限模型处理。目录非空时白名单必须是目录的子集；目录为空时允许手动输入模型 ID。刷新目录只更新 `model_catalog`、`model_catalog_at`，不改变已保存的白名单；已有白名单且直接同步失败时，将查询结果合入缓存目录，避免映射过滤导致完整目录丢失。
+
+白名单按恒等映射写入 sub2api 账号的 `credentials.model_mapping`，例如 `{"claude-sonnet-4-5":"claude-sonnet-4-5"}`，通过批量更新的 JSON 合并保留其他登录凭证。重新授权和导入后也恢复已保存的白名单。`model_whitelist = NULL` 的存量上游继续允许全部模型，卖家详情页提示补填；市场返回的 `models` 是已声明白名单，未声明时为空数组，按模型筛选仍包括这类不限制模型的上游。
 
 ## 4. 默认分组与调度
 

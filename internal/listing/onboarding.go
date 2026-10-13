@@ -616,28 +616,11 @@ func (s *Service) createAccount(ctx context.Context, u *Upstream, accountType st
 	return err
 }
 
-// afterAccountCreated 完成隐私设置，先缓存模型目录，再等待卖家选择挂售模型。
+// afterAccountCreated 先缓存模型目录，再等待新卖家账号选择挂售模型。
 func (s *Service) afterAccountCreated(ctx context.Context, upstreamID int64, requireModelSelection bool) (*Upstream, error) {
 	u, err := GetUpstream(ctx, s.DB, upstreamID)
 	if err != nil {
 		return nil, err
-	}
-	if privacyPlatforms[u.Platform] && u.AuthType == "oauth" {
-		ok := false
-		if acc, err := s.Admin.SetPrivacy(ctx, *u.Sub2APIAccountID); err != nil {
-			s.Log.Warn("set privacy failed", "upstream_id", u.ID, "err", err)
-		} else if mode, _ := acc.Extra["privacy_mode"].(string); mode != "" {
-			ok = true
-		}
-		if _, err := s.DB.Exec(ctx, "UPDATE upstreams SET privacy_ok = $2 WHERE id = $1", u.ID, ok); err != nil {
-			return nil, err
-		}
-		if !ok {
-			if err := s.transitionAccountStatus(ctx, u, StatusVerifyFailed, strPtr("cannot disable training data usage on this account")); err != nil {
-				return nil, err
-			}
-			return GetUpstream(ctx, s.DB, u.ID)
-		}
 	}
 	if requireModelSelection && !u.IsReference && u.ModelWhitelist == nil {
 		if err := s.transitionAccountStatus(ctx, u, StatusSelectingModels, nil); err != nil {
@@ -686,6 +669,24 @@ func (s *Service) failStartingVerification(ctx context.Context, upstreamID int64
 }
 
 func (s *Service) startVerification(ctx context.Context, u *Upstream) (*Upstream, error) {
+	// 新账号先保存白名单；隐私设置失败后的重试不会绕过首次模型选择。
+	if privacyPlatforms[u.Platform] && u.AuthType == "oauth" {
+		ok := false
+		if acc, err := s.Admin.SetPrivacy(ctx, *u.Sub2APIAccountID); err != nil {
+			s.Log.Warn("set privacy failed", "upstream_id", u.ID, "err", err)
+		} else if mode, _ := acc.Extra["privacy_mode"].(string); mode != "" {
+			ok = true
+		}
+		if _, err := s.DB.Exec(ctx, "UPDATE upstreams SET privacy_ok = $2 WHERE id = $1", u.ID, ok); err != nil {
+			return nil, err
+		}
+		if !ok {
+			if err := s.transitionAccountStatus(ctx, u, StatusVerifyFailed, strPtr("cannot disable training data usage on this account")); err != nil {
+				return nil, err
+			}
+			return GetUpstream(ctx, s.DB, u.ID)
+		}
+	}
 	if err := s.transitionAccountStatus(ctx, u, StatusVerifying, nil); err != nil {
 		// 更新响应丢失时也尝试清理；条件更新不会覆盖删除、冻结或已经完成的检测。
 		if errors.Is(err, ErrBadState) {
@@ -703,7 +704,8 @@ func (s *Service) startVerification(ctx context.Context, u *Upstream) (*Upstream
 		var he *httpx.Error
 		reason := "上架检测暂时无法开始，请重试"
 		if errors.As(startErr, &he) {
-			reason += "：" + he.Message
+			// 沿用既有策略错误的失败原因格式，保持检测接口兼容。
+			reason = "onboarding check could not start: " + he.Message
 		}
 		cleanupErr := s.failStartingVerification(ctx, u.ID, reason)
 		if he == nil || cleanupErr != nil {
