@@ -82,7 +82,7 @@ async function quickOpen(sku: FeedSku) {
   }
 }
 
-/** 侧栏类目：分类树切成多组飞层，每行只留 2 个快捷入口 */
+/** 侧栏类目：分类树切成多组飞层，每行 3 个快捷入口 */
 const groups = computed(() => buildCategoryNavGroups(catTree.value))
 
 /** 四宫格：优先推荐接口；不足时用运营位默认补齐到 4 格 */
