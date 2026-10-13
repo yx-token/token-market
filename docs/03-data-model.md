@@ -270,6 +270,7 @@ probe_runs (                            -- 同上游串行，一次触发一条�
   models             text[] not null default '{}', -- 本次全部测智模型
   model              text not null,      -- 主模型，兼容旧字段
   mode               text not null,      -- full / quick；旧记录可能为 legacy
+  planned            integer,            -- 计划总题数＝快照中所有实例的步骤数之和；无快照的旧记录为空
   execution_snapshot jsonb not null,     -- 冻结策略、各流程模式、设置、题目与实例
   deadline_at        timestamptz,
   status             text not null,      -- queued / running / third_party / done / failed / skipped_budget / skipped_disabled
