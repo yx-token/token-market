@@ -53,3 +53,20 @@ func TestUpstreamModelsPreservesUndeclaredWhitelist(t *testing.T) {
 		t.Fatalf("未声明白名单与空目录必须保留各自含义：%s", raw)
 	}
 }
+
+func TestModelsEditableRequiresCompletedAccountCreation(t *testing.T) {
+	accountID := int64(8)
+	for _, status := range []string{StatusSelectingModels, StatusVerifying, StatusVerifyFailed, StatusReady, StatusListed, StatusSuspended} {
+		if !modelsEditable(&Upstream{Status: status, Sub2APIAccountID: &accountID}) {
+			t.Errorf("已接入账号在状态 %s 应允许修改白名单", status)
+		}
+		if modelsEditable(&Upstream{Status: status}) {
+			t.Errorf("状态 %s 没有底层账号时不能修改白名单", status)
+		}
+	}
+	for _, status := range []string{StatusDraft, StatusAuthorizing, StatusFailed, StatusRemoving, StatusRemoved, ""} {
+		if modelsEditable(&Upstream{Status: status, Sub2APIAccountID: &accountID}) {
+			t.Errorf("接入未完成或正在删除的状态 %s 不能修改白名单", status)
+		}
+	}
+}

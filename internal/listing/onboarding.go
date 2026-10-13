@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DueGin/token-market/internal/platform/crypto"
@@ -48,6 +49,9 @@ type Service struct {
 	Settings func(ctx context.Context) (settings.Settings, error)
 	Log      *slog.Logger
 	Now      func() time.Time
+
+	modelLocksOnce sync.Once
+	modelLockSlots chan struct{}
 }
 
 func (s *Service) kick(ctx context.Context) {
@@ -249,6 +253,11 @@ func (o AuthorizationOptions) validate(spec oauthSpec) (AuthorizationOptions, er
 
 // StartAuthorization 生成厂商授权链接。卖家在官方页面登录后把回调地址或授权码提交回来。
 func (s *Service) StartAuthorization(ctx context.Context, sellerID, upstreamID int64, opts AuthorizationOptions) (*AuthorizationStart, error) {
+	release, err := s.lockAccountModels(ctx, upstreamID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
@@ -279,6 +288,11 @@ func (s *Service) StartAuthorization(ctx context.Context, sellerID, upstreamID i
 // StartReauthorization 授权失效（令牌被撤销、密码修改等）时重新授权：沿用原 sub2api 账号，
 // 换到新令牌后只更新凭证，上游状态、挂单与质量记录都保持不变。必须是同一个官方账号。
 func (s *Service) StartReauthorization(ctx context.Context, sellerID, upstreamID int64, opts AuthorizationOptions) (*AuthorizationStart, error) {
+	release, err := s.lockAccountModels(ctx, upstreamID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
@@ -320,6 +334,11 @@ func (s *Service) beginOAuth(ctx context.Context, u *Upstream, spec oauthSpec, o
 // CompleteAuthorization 用卖家提交的授权码换取令牌并在 sub2api 中创建账号；
 // 已有账号的上游（重新授权）只更新凭证。
 func (s *Service) CompleteAuthorization(ctx context.Context, sellerID, upstreamID int64, input string) (*Upstream, error) {
+	release, err := s.lockAccountModels(ctx, upstreamID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
@@ -376,16 +395,11 @@ func (s *Service) CompleteAuthorization(ctx context.Context, sellerID, upstreamI
 		return nil, err
 	}
 	_, _ = s.DB.Exec(ctx, "DELETE FROM upstream_oauth_sessions WHERE upstream_id = $1", u.ID)
-	return s.afterAccountCreated(ctx, u.ID)
+	return s.afterAccountCreated(ctx, u.ID, true)
 }
 
 func (s *Service) applyReauthorization(ctx context.Context, u *Upstream, spec oauthSpec, tok map[string]any) (*Upstream, error) {
-	release, err := s.lockAccountModels(ctx, u.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	u, err = GetUpstream(ctx, s.DB, u.ID)
+	u, err := GetUpstream(ctx, s.DB, u.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -450,6 +464,16 @@ var teamID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // SubmitCodingKey 接入国产 Coding Plan：用 key 创建账号，并向官方查询窗口用量确认确实是订阅 key。
 func (s *Service) SubmitCodingKey(ctx context.Context, sellerID, upstreamID int64, in CodingKeyInput) (*Upstream, error) {
+	release, err := s.lockAccountModels(ctx, upstreamID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	return s.submitCodingKey(ctx, sellerID, upstreamID, in)
+}
+
+// submitCodingKey 由已经持有上游锁的直接接入或账号导入调用，避免重复加锁。
+func (s *Service) submitCodingKey(ctx context.Context, sellerID, upstreamID int64, in CodingKeyInput) (*Upstream, error) {
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
@@ -525,7 +549,7 @@ func (s *Service) SubmitCodingKey(ctx context.Context, sellerID, upstreamID int6
 			return nil, err
 		}
 	}
-	return s.afterAccountCreated(ctx, u.ID)
+	return s.afterAccountCreated(ctx, u.ID, true)
 }
 
 // claimIdentity 记录官方账号身份，同一账号不能被重复挂到平台。
@@ -593,7 +617,7 @@ func (s *Service) createAccount(ctx context.Context, u *Upstream, accountType st
 }
 
 // afterAccountCreated 完成隐私设置，先缓存模型目录，再等待卖家选择挂售模型。
-func (s *Service) afterAccountCreated(ctx context.Context, upstreamID int64) (*Upstream, error) {
+func (s *Service) afterAccountCreated(ctx context.Context, upstreamID int64, requireModelSelection bool) (*Upstream, error) {
 	u, err := GetUpstream(ctx, s.DB, upstreamID)
 	if err != nil {
 		return nil, err
@@ -609,14 +633,14 @@ func (s *Service) afterAccountCreated(ctx context.Context, upstreamID int64) (*U
 			return nil, err
 		}
 		if !ok {
-			if err := setUpstreamStatus(ctx, s.DB, u.ID, StatusVerifyFailed, strPtr("cannot disable training data usage on this account")); err != nil {
+			if err := s.transitionAccountStatus(ctx, u, StatusVerifyFailed, strPtr("cannot disable training data usage on this account")); err != nil {
 				return nil, err
 			}
 			return GetUpstream(ctx, s.DB, u.ID)
 		}
 	}
-	if !u.IsReference && u.ModelWhitelist == nil {
-		if err := setUpstreamStatus(ctx, s.DB, u.ID, StatusSelectingModels, nil); err != nil {
+	if requireModelSelection && !u.IsReference && u.ModelWhitelist == nil {
+		if err := s.transitionAccountStatus(ctx, u, StatusSelectingModels, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -630,8 +654,8 @@ func (s *Service) afterAccountCreated(ctx context.Context, upstreamID int64) (*U
 			s.Log.Warn("获取上游模型目录失败", "upstream_id", u.ID, "err", err)
 		}
 	}
-	// 基线账号由管理员管理，仍沿用原有检测入口；已选模型的上游重试检测无需重复选择。
-	if u.IsReference || u.ModelWhitelist != nil {
+	// 基线账号和存量未声明白名单的检测重试仍不限模型；新接入须完成模型选择。
+	if u.IsReference || u.ModelWhitelist != nil || !requireModelSelection {
 		if err := s.Admin.SetAccountModelWhitelist(ctx, *u.Sub2APIAccountID, u.ModelWhitelist); err != nil {
 			return nil, fmt.Errorf("接入后同步挂售模型：%w", err)
 		}
@@ -640,23 +664,50 @@ func (s *Service) afterAccountCreated(ctx context.Context, upstreamID int64) (*U
 	return GetUpstream(ctx, s.DB, u.ID)
 }
 
+// transitionAccountStatus 只推进本次读取的状态，防止并发删除或冻结被接入流程覆盖。
+func (s *Service) transitionAccountStatus(ctx context.Context, u *Upstream, next string, reason *string) error {
+	tag, err := s.DB.Exec(ctx, `UPDATE upstreams SET status = $2, failure_reason = $3, updated_at = now()
+		WHERE id = $1 AND status = $4`, u.ID, next, reason, u.Status)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrBadState
+	}
+	u.Status = next
+	return nil
+}
+
+// failStartingVerification 即使请求已取消，也让未能入队的上游回到可重试状态。
+func (s *Service) failStartingVerification(ctx context.Context, upstreamID int64, reason string) error {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	return MarkVerified(cleanup, s.DB, upstreamID, false, reason)
+}
+
 func (s *Service) startVerification(ctx context.Context, u *Upstream) (*Upstream, error) {
-	if err := setUpstreamStatus(ctx, s.DB, u.ID, StatusVerifying, nil); err != nil {
-		return nil, err
-	}
-	if s.Quality == nil {
-		return nil, errors.New("quality engine not configured")
-	}
-	if err := s.Quality.StartOnboardingCheck(ctx, u.ID, u.Platform, u.AuthType); err != nil {
-		var he *httpx.Error
-		if !errors.As(err, &he) {
-			// 白名单已经保存，入队失败后必须可从检测失败状态重试，避免永远停在检测中。
-			_ = MarkVerified(ctx, s.DB, u.ID, false, "上架检测暂时无法开始，请重试")
+	if err := s.transitionAccountStatus(ctx, u, StatusVerifying, nil); err != nil {
+		// 更新响应丢失时也尝试清理；条件更新不会覆盖删除、冻结或已经完成的检测。
+		if errors.Is(err, ErrBadState) {
 			return nil, err
 		}
-		// 检测无法开始（例如策略没有配置模型）：记为检测失败，配置修正后可以重新检测
-		if err := MarkVerified(ctx, s.DB, u.ID, false, "onboarding check could not start: "+he.Message); err != nil {
-			return nil, err
+		return nil, errors.Join(err, s.failStartingVerification(ctx, u.ID, "上架检测暂时无法开始，请重试"))
+	}
+	var startErr error
+	if s.Quality == nil {
+		startErr = errors.New("未配置质量检测引擎")
+	} else {
+		startErr = s.Quality.StartOnboardingCheck(ctx, u.ID, u.Platform, u.AuthType)
+	}
+	if startErr != nil {
+		var he *httpx.Error
+		reason := "上架检测暂时无法开始，请重试"
+		if errors.As(startErr, &he) {
+			reason += "：" + he.Message
+		}
+		cleanupErr := s.failStartingVerification(ctx, u.ID, reason)
+		if he == nil || cleanupErr != nil {
+			return nil, errors.Join(startErr, cleanupErr)
 		}
 	}
 	return GetUpstream(ctx, s.DB, u.ID)
@@ -664,6 +715,11 @@ func (s *Service) startVerification(ctx context.Context, u *Upstream) (*Upstream
 
 // RetryVerification 在上架检测失败后重新检测。
 func (s *Service) RetryVerification(ctx context.Context, sellerID, upstreamID int64) (*Upstream, error) {
+	release, err := s.lockAccountModels(ctx, upstreamID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
@@ -671,7 +727,7 @@ func (s *Service) RetryVerification(ctx context.Context, sellerID, upstreamID in
 	if u.Status != StatusVerifyFailed || u.Sub2APIAccountID == nil {
 		return nil, ErrBadState
 	}
-	return s.afterAccountCreated(ctx, u.ID)
+	return s.afterAccountCreated(ctx, u.ID, false)
 }
 
 // SetSelfReserve 设置卖家自留比例（窗口用量达到 100 − 自留比例 时暂停调度）。
@@ -695,6 +751,11 @@ func (s *Service) SetSelfReserve(ctx context.Context, sellerID, upstreamID int64
 
 // Remove 删除上游：关闭挂单并交给调度器从 sub2api 移除账号。
 func (s *Service) Remove(ctx context.Context, sellerID, upstreamID int64) error {
+	release, err := s.lockAccountModels(ctx, upstreamID)
+	if err != nil {
+		return err
+	}
+	defer release()
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return err
@@ -735,6 +796,11 @@ func (s *Service) remove(ctx context.Context, u *Upstream) error {
 
 // AdminSetSuspended 管理员冻结或解冻上游。冻结后不再面向买家。
 func (s *Service) AdminSetSuspended(ctx context.Context, upstreamID int64, suspend bool, reason string) (*Upstream, error) {
+	release, err := s.lockAccountModels(ctx, upstreamID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	u, err := GetUpstream(ctx, s.DB, upstreamID)
 	if err != nil {
 		return nil, err
@@ -761,6 +827,11 @@ func (s *Service) AdminSetSuspended(ctx context.Context, upstreamID int64, suspe
 
 // AdminRemove 管理员强制删除上游。
 func (s *Service) AdminRemove(ctx context.Context, upstreamID int64) error {
+	release, err := s.lockAccountModels(ctx, upstreamID)
+	if err != nil {
+		return err
+	}
+	defer release()
 	u, err := GetUpstream(ctx, s.DB, upstreamID)
 	if err != nil {
 		return err

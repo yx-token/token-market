@@ -168,19 +168,12 @@ func (a *importedAccount) validate(platform, authType string) error {
 }
 
 func (s *Service) ImportAccount(ctx context.Context, sellerID, upstreamID int64, in ImportAccountInput) (*Upstream, error) {
-	// 同一上游的导入串行执行，防止并发提交两份凭证争用账号与身份记录。
-	tx, err := s.DB.Begin(ctx)
+	// 导入、授权与模型选择共用连接锁，外部请求期间不占用数据库事务。
+	release, err := s.lockAccountModels(ctx, upstreamID)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	var locked bool
-	if err := tx.QueryRow(ctx, "SELECT pg_try_advisory_xact_lock($1)", -upstreamID).Scan(&locked); err != nil {
-		return nil, err
-	}
-	if !locked {
-		return nil, ErrBadState
-	}
+	defer release()
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
@@ -218,7 +211,7 @@ func (s *Service) ImportAccount(ctx context.Context, sellerID, upstreamID int64,
 	}
 	if IsCodingAuthType(u.Platform, u.AuthType) {
 		// 沿用固定官方地址、团队参数校验及官方订阅额度校验。
-		return s.SubmitCodingKey(ctx, sellerID, upstreamID, CodingKeyInput{
+		return s.submitCodingKey(ctx, sellerID, upstreamID, CodingKeyInput{
 			APIKey: str(a.Credentials, "api_key"), Organization: str(a.Credentials, "zhipu_organization"), Project: str(a.Credentials, "zhipu_project"),
 		})
 	}
@@ -263,7 +256,7 @@ func (s *Service) ImportAccount(ctx context.Context, sellerID, upstreamID int64,
 		return nil, err
 	}
 	_, _ = s.DB.Exec(ctx, "DELETE FROM upstream_oauth_sessions WHERE upstream_id = $1", u.ID)
-	return s.afterAccountCreated(ctx, u.ID)
+	return s.afterAccountCreated(ctx, u.ID, true)
 }
 
 // bindImportedProxy 把导出文件中的代理登记到卖家代理库存，实测连通后独占绑定到上游。

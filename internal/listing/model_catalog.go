@@ -2,6 +2,7 @@ package listing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -32,20 +33,41 @@ func (s *Service) GetModels(ctx context.Context, sellerID, upstreamID int64) (*U
 }
 
 // lockAccountModels 用连接级锁串行化白名单和重新授权，外部请求不占用数据库事务。
-// 与导入路径已有的上游锁使用同一个键，防止选择过程覆盖尚未完成的导入。
+// 接入、检测重试和删除共用同一个键，防止旧操作覆盖已经保存的新状态。
 func (s *Service) lockAccountModels(ctx context.Context, upstreamID int64) (func(), error) {
+	s.modelLocksOnce.Do(func() {
+		// 锁会持有连接，后续查询和检测入队仍需连接池；至少留出一条连接避免互相等待。
+		capacity := min(4, int(s.DB.Config().MaxConns)-1)
+		if capacity > 0 {
+			s.modelLockSlots = make(chan struct{}, capacity)
+		}
+	})
+	if s.modelLockSlots == nil {
+		return nil, httpx.Unavailable("MODEL_LOCK_UNAVAILABLE", "模型操作需要数据库连接池至少配置两条连接")
+	}
+	select {
+	case s.modelLockSlots <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		return nil, httpx.Conflict("UPSTREAM_BUSY", "上游操作繁忙，请稍后重试")
+	}
+	freeSlot := func() { <-s.modelLockSlots }
 	conn, err := s.DB.Acquire(ctx)
 	if err != nil {
+		freeSlot()
 		return nil, err
 	}
 	var locked bool
 	if err := conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", -upstreamID).Scan(&locked); err != nil {
 		_ = conn.Conn().Close(context.WithoutCancel(ctx))
 		conn.Release()
+		freeSlot()
 		return nil, err
 	}
 	if !locked {
 		conn.Release()
+		freeSlot()
 		return nil, httpx.Conflict("UPSTREAM_BUSY", "上游正在处理其他操作，请稍后重试")
 	}
 	return func() {
@@ -56,11 +78,20 @@ func (s *Service) lockAccountModels(ctx context.Context, upstreamID int64) (func
 			_ = conn.Conn().Close(cleanup)
 		}
 		conn.Release()
+		freeSlot()
 	}, nil
 }
 
 func modelsEditable(u *Upstream) bool {
-	return u.Sub2APIAccountID != nil && u.Status != StatusRemoving && u.Status != StatusRemoved && u.Status != StatusFailed
+	if u.Sub2APIAccountID == nil {
+		return false
+	}
+	switch u.Status {
+	case StatusSelectingModels, StatusVerifying, StatusVerifyFailed, StatusReady, StatusListed, StatusSuspended:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) RefreshModels(ctx context.Context, sellerID, upstreamID int64) (*UpstreamModels, error) {
@@ -169,7 +200,7 @@ func (s *Service) SetModels(ctx context.Context, sellerID, upstreamID int64, mod
 		return nil, err
 	}
 	if err := s.Admin.SetAccountModelWhitelist(ctx, *u.Sub2APIAccountID, selected); err != nil {
-		return nil, fmt.Errorf("同步挂售模型白名单：%w", err)
+		return nil, errors.Join(fmt.Errorf("同步挂售模型白名单：%w", err), s.restoreModelMapping(ctx, u))
 	}
 	tag, err := s.DB.Exec(ctx, `UPDATE upstreams SET model_whitelist = $2, updated_at = now()
 		WHERE id = $1 AND seller_id = $3 AND sub2api_account_id = $4 AND status = $5`, u.ID, selected, sellerID, *u.Sub2APIAccountID, u.Status)
@@ -187,7 +218,7 @@ func (s *Service) SetModels(ctx context.Context, sellerID, upstreamID int64, mod
 	return GetUpstream(ctx, s.DB, u.ID)
 }
 
-// 本地写入失败时恢复旧映射，避免 sub2api 与市场展示产生持久分歧；重试提交仍然幂等。
+// 写入结果不确定或本地保存失败时恢复旧映射，避免 sub2api 与市场展示产生持久分歧；重试提交仍然幂等。
 func (s *Service) restoreModelMapping(ctx context.Context, u *Upstream) error {
 	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -197,11 +228,18 @@ func (s *Service) restoreModelMapping(ctx context.Context, u *Upstream) error {
 		}
 		return nil
 	}
-	_, err := s.Admin.BulkUpdateAccounts(restoreCtx, adminclient.BulkUpdateAccountsInput{
+	raw, err := s.Admin.BulkUpdateAccounts(restoreCtx, adminclient.BulkUpdateAccountsInput{
 		AccountIDs: []int64{*u.Sub2APIAccountID}, Credentials: map[string]any{"model_mapping": modelMapping(u.ModelWhitelist)},
 	})
 	if err != nil {
 		return fmt.Errorf("恢复原挂售模型映射失败：%w", err)
+	}
+	var result struct {
+		Success int `json:"success"`
+		Failed  int `json:"failed"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil || result.Success != 1 || result.Failed != 0 {
+		return errors.New("恢复原挂售模型映射失败：账号未成功更新")
 	}
 	return nil
 }
