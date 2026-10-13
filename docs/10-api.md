@@ -134,8 +134,8 @@
 | GET | `/api/seller/upstreams/:id/reports` | 报告列表 |
 | GET | `/api/seller/reports/:id` | 报告详情（脱敏，不含题目、答案与基线信息，见 [05](05-quality.md) 第 8 节） |
 | GET | `/api/seller/upstreams/:id/quality-trend` | 每日智力相对分与异常次数：`days`（默认 30） |
-| POST | `/api/seller/upstreams/:id/retest` | 手动复测（每日限次，仅该厂商开启检测且最近结果异常时可用，否则 409 `RETEST_NOT_NEEDED`；复测探测由卖家承担、不结算收益）。上游详情的 `manual_retest` 字段给出当前能否复测及原因 |
-| POST | `/api/seller/reports/:id/appeal` | 对降智 / 不可用的判定申诉：`reason` |
+| POST | `/api/seller/upstreams/:id/retest` | 手动复测（每日限次，厂商须开启检测；健康异常、最近检测失败/证据不足或已有生效扣价时可用，否则 409 `RETEST_NOT_NEEDED`）。检测异常流程，复测由卖家承担、不结算收益；详情 `manual_retest` 给出能否复测及原因 |
+| POST | `/api/seller/reports/:id/appeal` | 对暂停结论或已生效且系数小于 1 的扣价申诉：`reason` |
 
 ### 4.4 收益与提现
 
@@ -177,16 +177,18 @@
 | 厂商 | `GET /api/admin/vendors`、`PUT /api/admin/vendors/:platform`：是否开放接入、开放的接入方式（`auth_types`，只能从 `supported_auth_types` 中选）、寄售倍率区间、回收基础倍率表（按档位）、默认并发、限流参数 |
 | 代理库存 | `GET/POST /api/admin/proxies`、`POST /api/admin/proxies/:id/sync`（同步到 sub2api）、`/test`、`/quality-check`、`/disable`、`/enable`；检测响应与卖家接口相同。列表包含平台代理和卖家代理，`seller_id` 区分来源，后台新增代理归平台 |
 | 默认分组 | `GET/POST /api/admin/pools`、`PUT /api/admin/pools/:id`（售价 D、最低毛利、安全缓冲、启用）、`POST /api/admin/pools/:id/sync` |
-| 检测策略 | `GET /api/admin/detection-policies`、`PUT /api/admin/detection-policies/:platform[?auth_type=]`（`enabled`、`scheduled_enabled`、周期、套件、模型、预算、阈值、`auto_pause`、`default_grade`、`third_party`，见 [05](05-quality.md) 第 3、9 节） |
+| 检测策略 | `GET /api/admin/detection-policies`、`PUT /api/admin/detection-policies/:platform[?auth_type=]`：总开关 enabled / scheduled_enabled、flows 的两条独立流程、预算、default_grade、third_party；旧 suites / models / interval_minutes / full_triggers 保留返回但已废弃，见 [05](05-quality.md) 第 3、9 节 |
+| 质检设置 | `GET/PUT /api/admin/inspection/settings`：mode、预算、并发、恢复、等级、调度、模型能力等，部分更新 |
+| 检测项 | `GET /api/admin/inspection/checks` 返回 flow、pricing、default_pricing=false、warning/severe 系数与校准；`PUT /api/admin/inspection/checks/:key` 覆盖 enabled、pricing（true/false/null）、calibrated、calibration_note、coefficients、thresholds |
 | 第三方检测 | `GET /api/admin/detection-providers`（可接入的检测站、配置、最近 1 小时提交次数）、`PUT /api/admin/detection-providers/:name`（`enabled`、`base_url`、`api_key`、`settings`、`max_runs_per_hour`、`timeout_minutes`）、`GET /api/admin/third-party-checks[?upstream_id=]` |
 | 单上游检测覆盖 | `PUT /api/admin/upstreams/:id/detection-override`、`DELETE …` |
-| 手动检测 | `POST /api/admin/upstreams/:id/probe`（对关闭检测的厂商也可执行） |
-| 检测明细 | `GET /api/admin/upstreams/:id/probe-runs`（最近的检测记录，不含基线对照检测，`limit` 默认 20）、`GET /api/admin/probe-runs/:id`（逐题结果：题目、是否通过、耗时、token、回答片段前 500 字符，附同批次基线账号的结果） |
-| 检测记录 | `GET /api/admin/probe-runs`（全部上游的检测记录，带各套件题数与通过数；筛选 `platform`、`upstream_id`、`model`、`trigger`（为空时不含基线对照，`reference` 只看基线对照）、`status`、`verdict`、`from` / `to`（本地日期 YYYY-MM-DD，含当天）、`limit` / `offset`）、`GET /api/admin/probe-item-stats`（按题统计，被测上游与基线账号分开统计，筛选同上）、`GET /api/admin/probe-items/:id/results`（一道题最近的答题结果，含基线对照，`limit` 默认 50） |
-| 题库 | `GET/POST /api/admin/probe-items`、`PUT /api/admin/probe-items/:id`、`POST /api/admin/probe-items/:id/retire` |
+| 手动检测 | `POST /api/admin/upstreams/:id/probe`：请求体可选 `{"flows":["intelligence","identity"]}`，省略检测全部已启用流程；对关闭检测总开关的厂商也可执行 |
+| 检测明细 | `GET /api/admin/upstreams/:id/probe-runs`（最近的检测记录，含 flows / identity_source / models，不含基线对照检测，`limit` 默认 20）、`GET /api/admin/probe-runs/:id`（逐题结果：题目、是否通过、耗时、token、回答片段前 500 字符，附同批次基线账号的结果） |
+| 检测记录 | `GET /api/admin/probe-runs`（全部上游的检测记录，含 flows / identity_source / models 及各套件题数与通过数；筛选 `platform`、`upstream_id`、`model`、`trigger`（为空时不含基线对照，`reference` 只看基线对照）、`status`、`verdict`、`from` / `to`（本地日期 YYYY-MM-DD，含当天）、`limit` / `offset`）、`GET /api/admin/probe-item-stats`（按题统计，被测上游与基线账号分开统计，筛选同上）、`GET /api/admin/probe-items/:id/results`（一道题最近的答题结果，含基线对照，`limit` 默认 50） |
+| 题库 | `GET/POST /api/admin/probe-items`、`PUT /api/admin/probe-items/:id`、`POST /api/admin/probe-items/:id/retire`；新建拒绝旧 iq / reasoning / long_context 套件 |
 | 基线账号 | `GET/POST /api/admin/reference-accounts`、`DELETE /api/admin/reference-accounts/:id`（授权复用卖家的授权接口） |
 | 质量看板 | `GET /api/admin/quality/overview`（各厂商健康与等级分布、官方全局事件、降智上游列表） |
-| 申诉 | `GET /api/admin/appeals`、`POST /api/admin/appeals/:id/resolve`（`action`：`retest` / `overturn` / `uphold`） |
+| 申诉 | `GET /api/admin/appeals`、`POST /api/admin/appeals/:id/resolve`（`action`：`retest` / `overturn` / `uphold`）；人工 overturn 将 Q 恢复为 1、清空估价时间并等待新检测，保留历史报告 |
 | 上游 | `GET /api/admin/upstreams`、`POST /api/admin/upstreams/:id/suspend`、`/unsuspend`、`DELETE /api/admin/upstreams/:id` |
 | 用户与实名 | `GET /api/admin/kyc`、`POST /api/admin/kyc/:id/review`、`POST /api/admin/users/:id/status`（冻结 / 解冻） |
 | 充值 | `GET /api/admin/recharges`、`POST /api/admin/recharges/:id/confirm`（只用于人工充值单）、`POST /api/admin/recharges/:id/sync`（向渠道查单）、`POST /api/admin/recharges/:id/refund`（代买家按充值单退款，参数与规则同买家接口） |
@@ -198,5 +200,31 @@
 | 账本 | `GET /api/admin/ledger`（平台现金、收入、探测成本、调整、买家余额合计、卖家应付合计） |
 | sub2api 状态 | `GET /api/admin/sub2api/status`（版本、迁移指纹、兼容自检状态、出站队列积压、入账游标） |
 | 审计 | `GET /api/admin/audit-logs`（可按 `target` 筛选） |
+
+检测策略的 flows 字段结构如下。每个流程分别保存开关、周期、触发类型与完整检测触发；身份来源第三方且开启时必须有已启用检测站。expected_pass_rate 为空或 `(0,1]`，为空沿用检测项阈值；third_party 内原 triggers 已废弃，执行以 identity.triggers 为准。
+
+第三方 on_mismatch / on_submodel_mismatch 支持 degraded、suspected、ignore；ignore 折算为 normal 与身份 pass，不产生疑似或扣价。执行实例最多 `200 × max(1, 测智模型数)`，快照最多 32 MiB，超限运行明确失败，不执行删减计划。
+
+```json
+{
+  "flows": {
+    "intelligence": {
+      "enabled": true, "scheduled_enabled": true, "interval_minutes": 360,
+      "triggers": ["onboarding", "scheduled", "recovery", "seller_manual", "admin", "adaptive", "appeal"],
+      "full_triggers": ["onboarding", "appeal", "admin"],
+      "models": [{"model": "gpt-6-astra", "expected_pass_rate": null}]
+    },
+    "identity": {
+      "enabled": true, "source": "third_party", "scheduled_enabled": false, "interval_minutes": 1440,
+      "triggers": ["onboarding", "admin", "appeal"],
+      "full_triggers": ["onboarding", "appeal", "admin", "scheduled", "recovery", "seller_manual", "adaptive"]
+    }
+  }
+}
+```
+
+运行与报告 summary 新增 flows、identity_source、models，以及 intelligence / identity 两个区块（status、inherited_at；身份还有 source）。测智状态允许 pass / warning / fail / inconclusive / not_applicable / not_run，身份不含 not_applicable。管理员 intelligence.models[] 还包含 target_pass_rate、expected_pass_rate、samples；卖家只返回 model、status。卖家 checks 的 applied=true 项保留 factor。旧报告没有流程字段时继续用 summary.suites 展示，详见 [05 第 8 节](05-quality.md#8-卖家测试报告)。
+
+测智历史只沿用当前模型集合的有效结果，模型期望或该检测项定义变化后须重测；其他项配置变化不使历史失效。申诉复测正常且无生效扣价时自动推翻，证据边界取本轮开始时间（未开始取入队时间），本轮通过结果继续用于估价；人工推翻以当前时间清旧证据，摘要等待新检测。
 
 **与设计稿的差异**：价格类设置合并在"系统设置"与"厂商"中，没有单独的 `/pricing`；提现审核用一个 `review` 接口；调账不设审批流（记录审计日志与原因）；第一期没有赠送余额，钱包不拆分现金与赠送；Key 详情不显示熔断状态（熔断在各 Edge 实例内存中）。
