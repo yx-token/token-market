@@ -149,9 +149,25 @@ const state = reactive({
   sort: 'default',
   q: '',
   tag: '',
+  model: '',
 })
 
-const listings = useLoader(() => market.listings({ sort: 'price', limit: '200' }), [] as MarketItem[] | null)
+const modelChoices = ref<string[]>([])
+let modelRequest = 0
+let lastModelItems: MarketItem[] | null = []
+const listings = useLoader(async () => {
+  const serial = ++modelRequest
+  try {
+    const items = await market.listings({ sort: 'price', limit: '200', ...(state.model ? { model: state.model } : {}) })
+    if (serial !== modelRequest) return lastModelItems
+    lastModelItems = items
+    modelChoices.value = [...new Set([...modelChoices.value, ...(items ?? []).flatMap((it) => it.models ?? [])])].sort()
+    return items
+  } catch (e) {
+    if (serial !== modelRequest) return lastModelItems
+    throw e
+  }
+}, [] as MarketItem[] | null)
 const pools = useLoader(() => market.pools(), [] as PoolItem[] | null)
 
 function syncFromRoute() {
@@ -160,6 +176,8 @@ function syncFromRoute() {
   state.tag = typeof route.query.tag === 'string' ? route.query.tag : ''
   state.q = typeof route.query.q === 'string' ? route.query.q : ''
   state.grade = typeof route.query.grade === 'string' ? route.query.grade : state.grade
+  const model = typeof route.query.model === 'string' ? route.query.model.trim() : ''
+  state.model = model
 }
 
 function applyAction(action: MarketAction) {
@@ -183,6 +201,14 @@ function setKind(kind: string) {
   router.replace({ query })
 }
 
+function setModel(event: Event) {
+  const model = (event.target as HTMLInputElement).value.trim()
+  const query = { ...route.query }
+  if (model) query.model = model
+  else delete query.model
+  router.replace({ query })
+}
+
 function toSku(it: MarketItem): FeedSku {
   const plat = apiToPlat[it.platform] || it.platform
   const isPack = it.sku_kind === 'pack' || it.mode === 'pack'
@@ -191,6 +217,7 @@ function toSku(it: MarketItem): FeedSku {
   return {
     id: `l-${it.listing_id}`,
     listingId: it.listing_id,
+    models: it.models ?? [],
     apiPlatform: it.platform,
     kind: isPack ? 'pack' : 'channel',
     plat,
@@ -356,6 +383,7 @@ const tileThumbs = computed(() => {
 const feedSkus = computed(() => {
   // 只展示真实挂单；空货架不再用 demoSkus 假数据
   let list = [...allSkus.value]
+  if (state.model) list = list.filter((s) => !s.pool && (!s.models?.length || s.models.includes(state.model)))
   if (state.kind === 'pack' || state.kind === 'channel') list = list.filter((s) => s.kind === state.kind)
   if (state.plat === '保障池') list = list.filter((s) => s.pool || s.plat === '保障池')
   else if (state.plat) list = list.filter((s) => s.plat === state.plat)
@@ -405,7 +433,11 @@ onMounted(() => {
 
 watch(
   () => route.query,
-  () => syncFromRoute(),
+  () => {
+    const previousModel = state.model
+    syncFromRoute()
+    if (previousModel !== state.model) void listings.load()
+  },
 )
 </script>
 
@@ -509,6 +541,9 @@ watch(
     </div>
 
     <div class="facet-bar" aria-label="筛选">
+      <label for="f-model">模型</label>
+      <input id="f-model" :value="state.model" list="market-models" placeholder="全部模型" class="input !w-48" @change="setModel" />
+      <datalist id="market-models"><option v-for="model in modelChoices" :key="model" :value="model" /></datalist>
       <label for="f-grade">等级</label>
       <select id="f-grade" v-model="state.grade">
         <option value="">全部</option>

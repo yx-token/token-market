@@ -57,6 +57,9 @@ export const buyer = {
 }
 
 export const seller = {
+  upstreamModels: (id: number) => http.get<T.UpstreamModels>(`/api/seller/upstreams/${id}/models`),
+  refreshUpstreamModels: (id: number) => http.post<T.UpstreamModels>(`/api/seller/upstreams/${id}/models/refresh`, {}, 30000),
+  setUpstreamModels: (id: number, models: string[]) => http.put<T.Upstream>(`/api/seller/upstreams/${id}/models`, { models }),
   proxies: () => http.get<T.Proxy[] | null>('/api/seller/proxies'),
   createProxy: (body: T.CreateProxyInput) => http.post<T.Proxy>('/api/seller/proxies', body),
   updateProxy: (id: number, body: T.CreateProxyInput) => http.put<T.Proxy>(`/api/seller/proxies/${id}`, body),

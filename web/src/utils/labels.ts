@@ -29,6 +29,7 @@ const table: Record<string, Record<string, Label>> = {
     go: { text: 'Go 订阅', tone: 'yellow' },
   },
   upstreamStatus: {
+    selecting_models: { text: '待选择挂售模型', tone: 'yellow' },
     draft: { text: '草稿', tone: 'gray' },
     authorizing: { text: '授权中', tone: 'blue' },
     verifying: { text: '检测中', tone: 'blue' },

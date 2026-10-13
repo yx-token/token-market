@@ -4,9 +4,9 @@ import { createPinia } from 'pinia'
 import { defineComponent } from 'vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
 import { market, seller } from '@/api'
-import type { MarketConfig, Proxy } from '@/api/types'
+import type { MarketConfig, Proxy, Upstream } from '@/api/types'
 
-vi.mock('@/api', () => ({ market: { config: vi.fn() }, seller: { proxies: vi.fn(), createUpstream: vi.fn(), importAccount: vi.fn(), upstream: vi.fn() } }))
+vi.mock('@/api', () => ({ market: { config: vi.fn() }, seller: { proxies: vi.fn(), createUpstream: vi.fn(), importAccount: vi.fn(), upstream: vi.fn(), completeOAuth: vi.fn(), submitCodingKey: vi.fn(), upstreamModels: vi.fn(), refreshUpstreamModels: vi.fn(), setUpstreamModels: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 const connected = { success: true, message: 'ok', latency_ms: 120 }
@@ -27,6 +27,8 @@ async function openWizard(required = true) {
 describe('onboarding proxy selection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(seller.upstreamModels).mockResolvedValue({ catalog: ['claude-sonnet-4-5', 'claude-opus-4-1'], whitelist: null, fetched_at: null })
+    vi.mocked(seller.setUpstreamModels).mockResolvedValue({ id: 10, status: 'verifying', platform: 'anthropic', auth_type: 'oauth' } as Upstream)
     vi.mocked(seller.proxies).mockResolvedValue([proxy(1), proxy(2, { status: 'assigned', assigned_upstream_id: 7 }), proxy(3, { status: 'disabled' }), proxy(4, { sub2api_proxy_id: undefined })])
     vi.mocked(seller.createUpstream).mockResolvedValue({ id: 10, platform: 'anthropic', auth_type: 'oauth', proxy_id: 1 } as Awaited<ReturnType<typeof seller.createUpstream>>)
   })
@@ -89,7 +91,7 @@ describe('onboarding proxy selection', () => {
     await wrapper.findAll('button').find((b) => b.text() === '下一步')!.trigger('click')
     await flushPromises()
     await wrapper.findAll('button').find((b) => b.text() === '导入 sub2api 账号')!.trigger('click')
-    const submit = () => wrapper.findAll('button').find((b) => b.text() === '导入并检测')!
+    const submit = () => wrapper.findAll('button').find((b) => b.text() === '导入账号')!
     expect(submit().attributes('disabled')).toBeDefined()
     await wrapper.get('#account-import-json').setValue('{bad json')
     expect(wrapper.text()).toContain('请输入有效的 JSON')
@@ -103,10 +105,14 @@ describe('onboarding proxy selection', () => {
     await wrapper.get('#account-import-selection').setValue(1)
     expect(submit().attributes('disabled')).toBeUndefined()
     expect(wrapper.text()).toContain('导入账号沿用本上游已绑定的代理')
-    vi.mocked(seller.importAccount).mockResolvedValue({ id: 10, status: 'verifying', platform: 'anthropic', auth_type: 'oauth' } as Awaited<ReturnType<typeof seller.importAccount>>)
+    vi.mocked(seller.importAccount).mockResolvedValue({ id: 10, status: 'selecting_models', platform: 'anthropic', auth_type: 'oauth' } as Awaited<ReturnType<typeof seller.importAccount>>)
     await submit().trigger('click')
     await flushPromises()
     expect(seller.importAccount).toHaveBeenCalledWith(10, data, 1)
+    expect(wrapper.text()).toContain('选择挂售模型')
+    await wrapper.findAll('button').find((b) => b.text() === '确认模型并开始检测')!.trigger('click')
+    await flushPromises()
+    expect(seller.setUpstreamModels).toHaveBeenCalledWith(10, ['claude-sonnet-4-5', 'claude-opus-4-1'])
     expect(wrapper.text()).toContain('正在进行上架检测')
     wrapper.unmount()
   })
@@ -120,7 +126,7 @@ describe('onboarding proxy selection', () => {
     await flushPromises()
     expect(seller.createUpstream).toHaveBeenCalledWith('anthropic', 'oauth', undefined, true)
     expect(wrapper.findAll('button').find((b) => b.text() === '官方授权')!.attributes('disabled')).toBeDefined()
-    const submit = () => wrapper.findAll('button').find((b) => b.text() === '导入并检测')!
+    const submit = () => wrapper.findAll('button').find((b) => b.text() === '导入账号')!
     const key = 'socks5|198.51.100.7|1080|user|secret-pass'
     const data = { type: 'sub2api-data', version: 1,
       proxies: [{ proxy_key: key, name: 'exported ip', protocol: 'socks5', host: '198.51.100.7', port: 1080, username: 'user', password: 'secret-pass', status: 'active' }],
@@ -139,11 +145,54 @@ describe('onboarding proxy selection', () => {
     expect(wrapper.text()).toContain('exported ip · socks5://198.51.100.7:1080')
     expect(wrapper.text()).not.toContain('secret-pass')
     expect(submit().attributes('disabled')).toBeUndefined()
-    vi.mocked(seller.importAccount).mockResolvedValue({ id: 11, status: 'verifying', platform: 'anthropic', auth_type: 'oauth', proxy_id: 5 } as Awaited<ReturnType<typeof seller.importAccount>>)
+    vi.mocked(seller.importAccount).mockResolvedValue({ id: 11, status: 'selecting_models', platform: 'anthropic', auth_type: 'oauth', proxy_id: 5 } as Awaited<ReturnType<typeof seller.importAccount>>)
     await submit().trigger('click')
     await flushPromises()
     expect(seller.importAccount).toHaveBeenCalledWith(11, data, 1)
+    expect(wrapper.text()).toContain('选择挂售模型')
+    await wrapper.findAll('button').find((b) => b.text() === '确认模型并开始检测')!.trigger('click')
+    await flushPromises()
+    expect(seller.setUpstreamModels).toHaveBeenCalledWith(11, ['claude-sonnet-4-5', 'claude-opus-4-1'])
     expect(wrapper.text()).toContain('正在进行上架检测')
+    wrapper.unmount()
+  })
+
+  it('OAuth 授权后先选择模型，提交白名单后才进入检测', async () => {
+    vi.mocked(seller.completeOAuth).mockResolvedValue({ id: 10, status: 'selecting_models', platform: 'anthropic', auth_type: 'oauth' } as Upstream)
+    const wrapper = await openWizard()
+    await wrapper.get('#onboarding-proxy').setValue('1')
+    await wrapper.findAll('button').find((b) => b.text() === '下一步')!.trigger('click')
+    await flushPromises()
+    await wrapper.get('#code').setValue('授权码')
+    await wrapper.findAll('button').find((b) => b.text() === '提交')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('选择挂售模型')
+    expect(seller.setUpstreamModels).not.toHaveBeenCalled()
+    await wrapper.findAll('input[type="checkbox"]')[1]!.setValue(false)
+    await wrapper.findAll('button').find((b) => b.text() === '确认模型并开始检测')!.trigger('click')
+    await flushPromises()
+    expect(seller.setUpstreamModels).toHaveBeenCalledWith(10, ['claude-sonnet-4-5'])
+    expect(wrapper.text()).toContain('正在进行上架检测')
+    wrapper.unmount()
+  })
+
+  it('Coding Key 接入后进入选择模型，并可从该状态继续接入', async () => {
+    vi.mocked(seller.submitCodingKey).mockResolvedValue({ id: 10, status: 'selecting_models', platform: 'zhipu', auth_type: 'coding' } as Upstream)
+    const wrapper = await openWizard()
+    await wrapper.setProps({ open: false, resume: { id: 10, platform: 'zhipu', auth_type: 'coding', proxy_id: 1, status: 'draft' } as Upstream })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    await wrapper.get('#key').setValue('订阅密钥')
+    await wrapper.findAll('button').find((b) => b.text() === '提交')!.trigger('click')
+    await flushPromises()
+    expect(seller.submitCodingKey).toHaveBeenCalledWith(10, { api_key: '订阅密钥' })
+    expect(wrapper.text()).toContain('选择挂售模型')
+    await wrapper.setProps({ open: false, resume: { id: 12, platform: 'zhipu', auth_type: 'coding', status: 'selecting_models' } as Upstream })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    expect(wrapper.text()).toContain('选择挂售模型')
+    expect(seller.upstreamModels).toHaveBeenLastCalledWith(12)
+    expect(wrapper.find('#key').exists()).toBe(false)
     wrapper.unmount()
   })
 })

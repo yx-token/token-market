@@ -309,6 +309,7 @@ export const apiToPlat: Record<string, string> = Object.fromEntries(
 )
 
 export type FeedSku = {
+  models?: string[]
   id: string
   listingId?: number
   /** 平台保障池分组名（route.pool） */

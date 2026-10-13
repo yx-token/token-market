@@ -31,6 +31,7 @@ export interface MarketConfig {
 }
 
 export interface MarketItem {
+  models?: string[]
   listing_id: number
   platform: string
   auth_type: string
@@ -293,6 +294,9 @@ export interface BillDay {
 }
 
 export interface Upstream {
+  model_whitelist?: string[] | null
+  model_catalog?: string[]
+  model_catalog_at?: string | null
   id: number
   proxy_id?: number
   seller_id: number
@@ -323,6 +327,12 @@ export interface Upstream {
   failure_reason?: string
   created_at: string
   updated_at: string
+}
+
+export interface UpstreamModels {
+  catalog: string[]
+  whitelist: string[] | null
+  fetched_at: string | null
 }
 
 export interface Listing {
