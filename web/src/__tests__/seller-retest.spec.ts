@@ -100,38 +100,33 @@ describe('卖家手动复测：只在检测结果异常时可用', () => {
     wrapper.unmount()
   })
 
-  it('检测记录显示测智中文状态，旧报告继续回退为相对分', async () => {
-    const statuses = ['pass', 'warning', 'fail', 'not_run', 'not_applicable', 'inconclusive'] as const
-    const reports: Report[] = statuses.map((status, index) => ({
-      id: index + 1, upstream_id: 5, trigger: 'scheduled', verdict: 'normal', created_at: '', impact: {},
-      summary: { verdict: 'normal', trigger: 'scheduled', model: 'gpt-6-astra', checked_at: '', baseline: false, intelligence: { status, models: [] }, suites: { iq: { relative_score: 0.95, samples: 8 } } },
-    }))
-    reports.push({ id: 7, upstream_id: 5, trigger: 'scheduled', verdict: 'normal', created_at: '', impact: {}, summary: { verdict: 'normal', trigger: 'scheduled', model: '旧型号', checked_at: '', baseline: false, suites: { iq: { relative_score: 0.75, samples: 8 } } } })
-    vi.mocked(seller.reports).mockResolvedValue(reports)
-    const runs: SellerProbeRun[] = reports.map((report, index) => ({
-      id: index + 1, trigger: 'scheduled', status: 'done', flows: ['intelligence'], models: ['gpt-6-astra'],
-      queued_at: '', progress: { answered: 1, total: 1 }, third_party: [], report_id: report.id, verdict: report.verdict,
-    }))
-    vi.mocked(seller.probeRuns).mockResolvedValue(runs)
+  it('检测记录只剩时间、类型、状态、结论、操作五列，不再露出进度与第三方', async () => {
+    vi.mocked(seller.probeRuns).mockResolvedValue([
+      { id: 1, trigger: 'scheduled', status: 'done', queued_at: '', report_id: 3, verdict: 'normal' },
+      { id: 2, trigger: 'admin', status: 'running', queued_at: '', report_id: null, verdict: null },
+    ])
     const wrapper = await mountView({ ...base, manual_retest: { allowed: false } })
     const table = wrapper.get('table')
-    expect(table.findAll('thead th').map((cell) => cell.text())).toContain('测智')
-    expect(table.findAll('tbody tr').map((row) => row.findAll('td')[6].text())).toEqual(['正常', '偏低（扣价）', '显著偏低（疑似）', '未测', '不适用', '无法判定', '75%'])
-    expect(wrapper.text()).not.toContain('质量趋势')
+    expect(table.findAll('thead th').map((cell) => cell.text())).toEqual(['时间', '类型', '状态', '结论', '操作'])
+    const rows = table.findAll('tbody tr')
+    expect(rows[0].text()).toContain('已完成')
+    expect(rows[0].text()).toContain('查看报告')
+    expect(rows[1].text()).toContain('检测中')
+    for (const gone of ['进度', '已答', '测试模型', '流程', '第三方', 'BazaarLink']) expect(wrapper.text()).not.toContain(gone)
+    expect(wrapper.text()).not.toContain('测智')
     wrapper.unmount()
   })
 
   it('进行中的记录每十秒刷新，全部结束后停止轮询，离开页面清理定时器', async () => {
     vi.useFakeTimers()
     const running: SellerProbeRun = {
-      id: 10, trigger: 'onboarding', status: 'running', flows: ['intelligence'], models: ['gpt-6-astra'], queued_at: '',
-      started_at: '2026-10-13T00:00:00Z', progress: { answered: 2, total: 5 }, third_party: [], report_id: null, verdict: null,
+      id: 10, trigger: 'onboarding', status: 'running', queued_at: '',
+      started_at: '2026-10-13T00:00:00Z', report_id: null, verdict: null,
     }
-    const done: SellerProbeRun = { ...running, status: 'done', finished_at: '2026-10-13T00:01:00Z', progress: { answered: 5, total: 5 } }
+    const done: SellerProbeRun = { ...running, status: 'done', finished_at: '2026-10-13T00:01:00Z' }
     vi.mocked(seller.probeRuns).mockResolvedValueOnce([running]).mockResolvedValueOnce([done])
     const wrapper = await mountView({ ...base, manual_retest: { allowed: false } })
     expect(wrapper.text()).toContain('检测中')
-    expect(wrapper.text()).toContain('已答 2 / 共 5 题')
     const calls = vi.mocked(seller.probeRuns).mock.calls.length
     const detailCalls = vi.mocked(seller.upstream).mock.calls.length
     const reportCalls = vi.mocked(seller.reports).mock.calls.length
@@ -152,8 +147,7 @@ describe('卖家手动复测：只在检测结果异常时可用', () => {
     const report: Report = { id: 12, upstream_id: 5, trigger: 'admin', verdict: 'normal', created_at: '', impact: {}, summary: { verdict: 'normal', trigger: 'admin', model: 'gpt-6-astra', checked_at: '', baseline: false, suites: {} } }
     vi.mocked(seller.report).mockResolvedValue(report)
     vi.mocked(seller.probeRuns).mockResolvedValue([{
-      id: 12, trigger: 'admin', status: 'done', flows: ['intelligence'], models: ['gpt-6-astra'], queued_at: '',
-      progress: { answered: 1, total: 1 }, third_party: [], report_id: 12, verdict: 'normal',
+      id: 12, trigger: 'admin', status: 'done', queued_at: '', report_id: 12, verdict: 'normal',
     }])
     const wrapper = await mountView({ ...base, manual_retest: { allowed: false } })
     await wrapper.findAll('button').find((button) => button.text().includes('查看报告'))!.trigger('click')
@@ -162,20 +156,16 @@ describe('卖家手动复测：只在检测结果异常时可用', () => {
     wrapper.unmount()
   })
 
-  it('已结束的记录显示结论，第三方检测站与状态用中文', async () => {
+  it('已结束的记录显示结论徽标，未结束时显示中文状态', async () => {
     vi.mocked(seller.probeRuns).mockResolvedValue([{
-      id: 30, trigger: 'admin', status: 'third_party', flows: ['identity'], models: ['gpt-6.1-sol'], queued_at: '',
-      progress: { answered: 0, total: null }, third_party: [{ provider: 'bazaarlink', status: 'running' }], report_id: null, verdict: null,
+      id: 30, trigger: 'admin', status: 'third_party', queued_at: '', report_id: null, verdict: null,
     }, {
-      id: 29, trigger: 'admin', status: 'done', flows: ['identity'], models: ['gpt-6.1-sol'], queued_at: '',
-      progress: { answered: 0, total: null }, third_party: [{ provider: 'bazaarlink', status: 'completed' }], report_id: 9, verdict: 'normal',
+      id: 29, trigger: 'admin', status: 'done', queued_at: '', report_id: 9, verdict: 'normal',
     }])
     const wrapper = await mountView({ ...base, manual_retest: { allowed: false } })
     const rows = wrapper.get('table').findAll('tbody tr')
     expect(rows[0].text()).toContain('第三方核验中')
-    expect(rows[0].text()).toContain('BazaarLink：检测中')
-    expect(rows[0].text()).not.toContain('running')
-    expect(rows[1].text()).toContain('BazaarLink：已完成')
+    expect(rows[0].text()).not.toContain('third_party')
     expect(rows[1].findComponent({ name: 'StatusBadge' }).exists()).toBe(true)
     expect(rows[1].text()).not.toContain('已完成已完成')
     wrapper.unmount()
@@ -187,7 +177,7 @@ describe('卖家手动复测：只在检测结果异常时可用', () => {
       ['failed', '未完成'], ['skipped_budget', '预算跳过'], ['skipped_disabled', '已停用跳过'],
     ] as const
     vi.mocked(seller.probeRuns).mockResolvedValue(statuses.map(([status], index) => ({
-      id: index + 1, trigger: 'admin', status, flows: [], models: [], queued_at: '', progress: { answered: 0, total: null }, third_party: [], report_id: null, verdict: null,
+      id: index + 1, trigger: 'admin', status, queued_at: '', report_id: null, verdict: null,
     })))
     const wrapper = await mountView({ ...base, manual_retest: { allowed: false } })
     for (const [, text] of statuses) expect(wrapper.text()).toContain(text)

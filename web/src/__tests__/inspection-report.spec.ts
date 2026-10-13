@@ -54,7 +54,7 @@ describe('质检报告与估价', () => {
     expect(appealableReport(report())).toBe(false)
   })
 
-  it('新报告按流程归类，第三方卡片归入身份区块并标明沿用时间', () => {
+  it('新报告按流程归类，核验结果归入身份区块并标明沿用时间', () => {
     const result = (key: string, name = key): InspectionCheckResult => ({ ...check, key, name, status: 'pass', role: 'display', factor: null, impact: '' })
     const keys = ['D05', 'D10', 'D04', 'D13', 'D07', 'D07.honesty', 'D09', 'D06', 'A06', 'A01', 'A02', 'A03', 'A12', 'A15', 'A04', 'A05', 'A11.tools', 'D08', 'D12', 'third_party']
     const value = report({
@@ -62,7 +62,7 @@ describe('质检报告与估价', () => {
       intelligence: { status: 'warning', inherited_at: '2026-10-10T04:00:00Z', models: [{ model: 'gpt-6-astra', status: 'warning', target_pass_rate: 0.8, expected_pass_rate: 0.9, samples: 57 }] },
       identity: { source: 'third_party', status: 'pass', inherited_at: '2026-10-11T04:00:00Z' },
       checks: Object.fromEntries(keys.map((key) => [key, result(key)])),
-      third_party: [{ provider: 'bazaarlink', status: 'completed', verdict: 'normal', model: 'gpt-6-astra', summary: { verdict_status: 'clean_match' } }],
+      verification: { status: 'pass', verdict_text: '家族与具体型号都与声明一致', categories: [{ key: 'identity', name: '身份识别', total: 29, passed: 29, warning: 0, failed: 0, error: 0 }], risks: [] },
     })
     const wrapper = mount(ReportDetail, { props: { report: value } })
     expect(wrapper.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['common', 'intelligence', 'identity'])
@@ -80,11 +80,98 @@ describe('质检报告与估价', () => {
     expect(identity.text()).toContain('来源：第三方检测')
     expect(identity.text()).toContain('家族与具体型号都与声明一致')
     expect(identity.text()).toContain('沿用 2026-10-11')
-    expect(wrapper.findAllComponents({ name: 'ThirdPartyResult' })).toHaveLength(1)
+    expect(wrapper.findAllComponents({ name: 'ThirdPartyResult' })).toHaveLength(0)
     expect(wrapper.text()).not.toContain('试运行，不影响价格')
   })
 
-  it('身份来源为第三方时，未执行的自有检测项收起，只保留第三方结论', () => {
+  it('核验结果展示各大类计数与风险项，并隐藏渠道名与站点链接', () => {
+    const value = report({
+      flows: ['intelligence', 'identity'], identity_source: 'third_party', models: ['gpt-6-astra'],
+      intelligence: { status: 'pass', inherited_at: null, models: [{ model: 'gpt-6-astra', status: 'pass' }] },
+      identity: { source: 'third_party', status: 'warning', inherited_at: null },
+      checks: { third_party: { ...check, key: 'third_party', name: '身份核验', status: 'warning', role: 'gate', factor: null, impact: '' } },
+      verification: {
+        status: 'fail',
+        verdict_text: '证据指向其他模型家族',
+        true_model: 'gpt-6.1-sol',
+        checked_at: '2026-10-14T02:00:00Z',
+        categories: [
+          { key: 'identity', name: '身份识别', total: 29, passed: 29, warning: 0, failed: 0, error: 0 },
+          { key: 'integrity', name: '完整性检查', total: 12, passed: 4, warning: 5, failed: 1, error: 2 },
+        ],
+        risks: [
+          { category_name: '完整性检查', label: 'Context 长度測試', severity: 'fail', reason: 'HTTP 503' },
+          { category_name: '安全探针', label: '越狱探针', severity: 'warning', reason: '' },
+        ],
+      },
+      // 管理端字段即使混进卖家报告也不该被渲染
+      third_party: [{ provider: 'bazaarlink', status: 'completed', verdict: 'degraded', model: 'gpt-6-astra', report_url: 'https://vendor.example/report/1', summary: { verdict_status: 'plain_mismatch' } }],
+    })
+    const wrapper = mount(ReportDetail, { props: { report: value } })
+    const block = wrapper.get('[data-testid="identity-verification"]')
+    expect(block.text()).toContain('核验结果')
+    expect(block.text()).not.toContain('第三方')
+    expect(block.text()).toContain('证据指向其他模型家族')
+    expect(block.text()).toContain('结论型号：gpt-6.1-sol')
+    const categories = block.get('[data-testid="verification-categories"]').findAll('[data-category]')
+    expect(categories.map((c) => c.attributes('data-category'))).toEqual(['identity', 'integrity'])
+    expect(categories[0].text()).toContain('身份识别')
+    expect(categories[0].text()).toContain('29 通过 / 共 29 项')
+    expect(categories[1].text()).toContain('4 通过 · 5 警告 · 1 未通过 · 2 出错 / 共 12 项')
+    const risks = block.get('[data-testid="verification-risks"]').findAll('[data-risk-severity]')
+    expect(risks).toHaveLength(2)
+    expect(risks[0].text()).toContain('完整性检查')
+    expect(risks[0].text()).toContain('Context 长度測試')
+    expect(risks[0].text()).toContain('（未通过）')
+    expect(risks[0].text()).toContain('HTTP 503')
+    expect(risks[1].text()).toContain('（警告）')
+    expect(wrapper.text()).not.toContain('BazaarLink')
+    expect(wrapper.text()).not.toContain('bazaarlink')
+    expect(wrapper.text()).not.toContain('vendor.example')
+    expect(wrapper.text()).not.toContain('查看检测站报告')
+    wrapper.unmount()
+  })
+
+  it('没有风险项时显示未发现风险项，没有核验结果时不渲染该区块', () => {
+    const base: Partial<Report['summary']> = {
+      flows: ['identity'], identity_source: 'third_party', models: ['gpt-6-astra'],
+      identity: { source: 'third_party', status: 'pass', inherited_at: null },
+      checks: { third_party: { ...check, key: 'third_party', name: '身份核验', status: 'pass', role: 'gate', factor: null, impact: '' } },
+    }
+    const clean = mount(ReportDetail, { props: { report: report({ ...base, verification: { status: 'pass', verdict_text: '家族与具体型号都与声明一致', categories: [], risks: [] } }) } })
+    expect(clean.get('[data-testid="verification-risks"]').text()).toContain('未发现风险项')
+    clean.unmount()
+    const missing = mount(ReportDetail, { props: { report: report({ ...base }) } })
+    expect(missing.get('[data-testid="identity-verification"]').text()).toContain('暂无核验结果')
+    expect(missing.find('[data-testid="verification-result"]').exists()).toBe(false)
+    missing.unmount()
+  })
+
+  it('降智流程只在报告确实跑过时出现，D14 归入降智区块', () => {
+    const withFlow = mount(ReportDetail, {
+      props: {
+        report: report({
+          intelligence: { status: 'pass', models: [] },
+          degradation: { status: 'warning', inherited_at: null, models: [{ model: 'gpt-6-astra', status: 'warning' }] },
+          identity: { source: 'self', status: 'not_run' },
+          checks: { D14: { ...check, key: 'D14', name: '降智检测', status: 'warning', factor: null, impact: '' }, D07: { ...check, key: 'D07', name: '智力测试', status: 'pass' } },
+        }),
+      },
+    })
+    expect(withFlow.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['common', 'intelligence', 'degradation', 'identity'])
+    const degradation = withFlow.get('[data-flow="degradation"]')
+    expect(degradation.text()).toContain('降智检测')
+    expect(degradation.text()).toContain('偏低（扣价）')
+    expect(degradation.findAll('[data-check-key]').map((row) => row.attributes('data-check-key'))).toEqual(['D14'])
+    expect(withFlow.get('[data-flow="intelligence"]').findAll('[data-check-key]').map((row) => row.attributes('data-check-key'))).toEqual(['D07'])
+    withFlow.unmount()
+    // 旧报告没有降智结论时不多出整块「未测」
+    const legacy = mount(ReportDetail, { props: { report: report({ intelligence: { status: 'pass', models: [] }, identity: { source: 'self', status: 'not_run' } }) } })
+    expect(legacy.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['common', 'intelligence', 'identity'])
+    legacy.unmount()
+  })
+
+  it('身份来源为第三方时，未执行的自有检测项收起，只保留核验结论', () => {
     const idle = (key: string, name: string): InspectionCheckResult => ({ ...check, key, name, status: 'not_run', role: 'display', factor: null, impact: '' })
     const value = report({
       flows: ['intelligence', 'identity'], identity_source: 'third_party', models: ['gpt-6-astra'],
@@ -94,9 +181,9 @@ describe('质检报告与估价', () => {
         D07: { ...check, key: 'D07', name: '智力测试', status: 'pass', role: 'factor', factor: null, impact: '' },
         A02: idle('A02', '响应型号一致'),
         A11_tools: idle('A11.tools', '工具调用'),
-        third_party: { ...check, key: 'third_party', name: '第三方身份核验', status: 'pass', role: 'gate', factor: null, impact: '' },
+        third_party: { ...check, key: 'third_party', name: '身份核验', status: 'pass', role: 'gate', factor: null, impact: '' },
       },
-      third_party: [{ provider: 'bazaarlink', status: 'completed', verdict: 'normal', model: 'gpt-6-astra', summary: { verdict_status: 'clean_match' } }],
+      verification: { status: 'pass', verdict_text: '家族与具体型号都与声明一致', categories: [], risks: [] },
     })
     const identity = mount(ReportDetail, { props: { report: value } }).get('[data-flow="identity"]')
     expect(identity.findAll('[data-check-key]').map((row) => row.attributes('data-check-key'))).toEqual(['third_party'])

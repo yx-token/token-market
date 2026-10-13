@@ -4,31 +4,49 @@ import { computed } from 'vue'
 import type { InspectionCheckResult, InspectionFlow, Report } from '@/api/types'
 import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import ThirdPartyResult from '@/components/ThirdPartyResult.vue'
+import VerificationResult from '@/components/VerificationResult.vue'
 import { dateTime, ms, percent } from '@/utils/format'
 import { identitySourceText, inspectionCategories, inspectionStatuses, intelligenceStatusText } from '@/utils/inspection'
 
 const props = withDefaults(defineProps<{ report: Report; admin?: boolean }>(), { admin: false })
-const hasFlows = computed(() => props.report.summary.intelligence !== undefined || props.report.summary.identity !== undefined || props.report.summary.flows !== undefined || props.report.summary.identity_source !== undefined || props.report.summary.models !== undefined)
+const hasFlows = computed(() => props.report.summary.intelligence !== undefined || props.report.summary.degradation !== undefined || props.report.summary.identity !== undefined || props.report.summary.flows !== undefined || props.report.summary.identity_source !== undefined || props.report.summary.models !== undefined)
 // 新报告的试算标记表示未启用扣价，使用副本避免复用旧组件的覆盖不足文案。
 const flowAppraisal = computed(() => props.report.summary.appraisal ? { ...props.report.summary.appraisal, provisional: false } : undefined)
 const identitySource = computed(() => props.report.summary.identity?.source ?? props.report.summary.identity_source)
 const commonOrder = ['D13', 'D04', 'D10', 'D05']
+// D14（降智检测）与测智同属能力类，归入降智区块
+const degradationOrder = ['D14']
+/** 测智与降智共用能力类状态文案 */
+function isCapabilityFlow(key: string): boolean {
+  return key === 'intelligence' || key === 'degradation'
+}
+
+/** 能力类流程的逐模型结论（测智 / 降智各自独立） */
+function capabilityModels(key: string): NonNullable<Report['summary']['intelligence']>['models'] {
+  const summary = key === 'degradation' ? props.report.summary.degradation : props.report.summary.intelligence
+  return summary?.models ?? []
+}
 
 // 报告不返回完整 registry，使用约定的检测项键推导展示归属。
 function checkFlow(check: InspectionCheckResult): InspectionFlow {
   if (commonOrder.includes(check.key)) return 'common'
+  if (degradationOrder.includes(check.key)) return 'degradation'
   if (check.key.startsWith('D07') || ['D09', 'D06', 'A06'].includes(check.key)) return 'intelligence'
   return 'identity'
 }
 
 const flowSections = computed(() => {
   const checks = Object.values(props.report.summary.checks ?? {})
-  return [
+  const sections: { key: InspectionFlow; name: string; status?: InspectionCheckResult['status']; inheritedAt?: string | null }[] = [
     { key: 'common', name: '可用与性能', status: undefined, inheritedAt: undefined },
     { key: 'intelligence', name: '测智', status: props.report.summary.intelligence?.status ?? 'not_run', inheritedAt: props.report.summary.intelligence?.inherited_at },
-    { key: 'identity', name: '身份与功能核验', status: props.report.summary.identity?.status ?? 'not_run', inheritedAt: props.report.summary.identity?.inherited_at },
-  ].map((section) => {
+  ]
+  // 降智流程只在本次报告确实跑过时展示，避免给旧报告多出整块「未测」
+  if (props.report.summary.degradation) {
+    sections.push({ key: 'degradation', name: '降智检测', status: props.report.summary.degradation.status ?? 'not_run', inheritedAt: props.report.summary.degradation.inherited_at })
+  }
+  sections.push({ key: 'identity', name: '身份与功能核验', status: props.report.summary.identity?.status ?? 'not_run', inheritedAt: props.report.summary.identity?.inherited_at })
+  return sections.map((section) => {
     const own = checks.filter((check) => checkFlow(check) === section.key).sort((a, b) => section.key === 'common' ? commonOrder.indexOf(a.key) - commonOrder.indexOf(b.key) : a.key.localeCompare(b.key))
     // 未执行的项（例如身份来源为第三方时的自有检测项）收起显示，避免整屏「未测」淹没结论
     return { ...section, checks: own, shown: own.filter((check) => check.status !== 'not_run'), idle: own.filter((check) => check.status === 'not_run') }
@@ -75,13 +93,13 @@ const suggestionText: Record<string, string> = {
         <div class="border-b border-slate-200 bg-slate-50 px-3 py-2">
           <div class="flex flex-wrap items-center gap-2">
             <h3 class="font-medium">{{ section.name }}</h3>
-            <span v-if="section.status" class="rounded px-2 py-0.5 text-xs" :class="statusTone(section.status)">{{ section.key === 'intelligence' ? intelligenceStatusText(section.status) : inspectionStatuses[section.status] ?? section.status }}</span>
+            <span v-if="section.status" class="rounded px-2 py-0.5 text-xs" :class="statusTone(section.status)">{{ isCapabilityFlow(section.key) ? intelligenceStatusText(section.status) : inspectionStatuses[section.status] ?? section.status }}</span>
             <span v-if="section.key === 'identity' && identitySource" class="text-xs text-slate-500">来源：{{ identitySourceText(identitySource) }}</span>
           </div>
           <p v-if="section.inheritedAt" class="mt-1 text-xs text-slate-500">沿用 {{ dateTime(section.inheritedAt) }} 的结果</p>
         </div>
-        <div v-if="section.key === 'intelligence' && report.summary.intelligence?.models?.length" class="divide-y divide-slate-100 border-b border-slate-100" data-testid="intelligence-models">
-          <div v-for="model in report.summary.intelligence.models" :key="model.model" class="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2" :data-model="model.model">
+        <div v-if="isCapabilityFlow(section.key) && capabilityModels(section.key).length" class="divide-y divide-slate-100 border-b border-slate-100" :data-testid="`${section.key}-models`">
+          <div v-for="model in capabilityModels(section.key)" :key="model.model" class="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2" :data-model="model.model">
             <span class="min-w-0 break-all font-medium">{{ model.model }}</span>
             <span class="rounded px-2 py-0.5 text-xs" :class="statusTone(model.status)">{{ intelligenceStatusText(model.status) }}</span>
             <template v-if="admin">
@@ -90,20 +108,9 @@ const suggestionText: Record<string, string> = {
             </template>
           </div>
         </div>
-        <div v-if="section.key === 'identity' && identitySource === 'third_party'" class="space-y-2 p-3" data-testid="identity-third-party">
-          <ThirdPartyResult
-            v-for="result in report.summary.third_party ?? []"
-            :key="result.provider"
-            :provider="result.provider"
-            :status="result.status"
-            :outcome="result.outcome"
-            :verdict="result.verdict"
-            :model="result.model"
-            :report-url="result.report_url"
-            :error="result.error"
-            :summary="result.summary"
-          />
-          <p v-if="!report.summary.third_party?.length" class="text-slate-500">暂无第三方检测结果</p>
+        <div v-if="section.key === 'identity' && identitySource === 'third_party'" class="space-y-2 p-3" data-testid="identity-verification">
+          <VerificationResult v-if="report.summary.verification" :verification="report.summary.verification" />
+          <p v-else class="text-slate-500">暂无核验结果</p>
         </div>
         <div v-for="check in section.shown" :key="check.key" class="border-b border-slate-100 p-3 last:border-b-0" :data-check-key="check.key">
           <div class="flex flex-wrap items-center gap-2">
@@ -123,6 +130,7 @@ const suggestionText: Record<string, string> = {
         </details>
         <p v-if="!section.checks.length && section.key === 'common'" class="p-3 text-slate-500">暂无可用与性能检测结果</p>
         <p v-else-if="!section.checks.length && section.key === 'intelligence' && !report.summary.intelligence?.models?.length" class="p-3 text-slate-500">{{ section.status === 'not_applicable' ? '挂售模型未配置测智' : '暂无测智检测结果' }}</p>
+        <p v-else-if="!section.checks.length && section.key === 'degradation' && !report.summary.degradation?.models?.length" class="p-3 text-slate-500">{{ section.status === 'not_applicable' ? '挂售模型未配置降智检测' : '暂无降智检测结果' }}</p>
         <p v-else-if="!section.checks.length && section.key === 'identity' && identitySource !== 'third_party'" class="p-3 text-slate-500">暂无身份与功能核验结果</p>
       </section>
       <InspectionAppraisal :appraisal="flowAppraisal" :grade="report.summary.grade" :quality-factor="report.summary.quality_factor" />
@@ -216,20 +224,8 @@ const suggestionText: Record<string, string> = {
         <dd>{{ dateTime(String(report.impact.next_check_at)) }}</dd>
       </template>
     </dl>
-    <div v-if="!hasFlows && report.summary.third_party?.length" class="space-y-2">
-      <div class="font-medium text-slate-700">第三方检测</div>
-      <ThirdPartyResult
-        v-for="t in report.summary.third_party"
-        :key="t.provider"
-        :provider="t.provider"
-        :status="t.status"
-        :outcome="t.outcome"
-        :verdict="t.verdict"
-        :model="t.model"
-        :report-url="t.report_url"
-        :error="t.error"
-        :summary="t.summary"
-      />
+    <div v-if="!hasFlows && report.summary.verification" class="space-y-2">
+      <VerificationResult :verification="report.summary.verification" />
     </div>
     <div v-if="report.summary.suggestions?.length" class="callout">
       <div class="mb-1 font-medium text-slate-700">建议</div>
