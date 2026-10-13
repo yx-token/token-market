@@ -490,6 +490,8 @@ export interface UpstreamDetail extends Upstream {
   reset_credits_supported: boolean
   /** 能否授权平台自动用卡（Codex） */
   auto_reset_supported: boolean
+  /** 能否手动复测：检测正常时不允许，code 为拒绝原因的错误码 */
+  manual_retest?: { allowed: boolean; code?: string }
 }
 
 export interface AuthorizationStart {
@@ -1181,6 +1183,8 @@ export interface SellerUsageRecord {
   duration_ms?: number
   total_cost: number
   payout: number
+  /** 上架检测或卖家手动复测的探测：消耗卖家自己的额度，不结算收益 */
+  seller_borne?: boolean
 }
 
 export interface QuotaWindow {

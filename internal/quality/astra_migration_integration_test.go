@@ -21,34 +21,41 @@ const astraMigration = "0027_astra_pigeonhole_capability.sql"
 func preAstraMigrationDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	_, pool := testutil.NewDatabase(t)
+	if _, err := db.Migrate(context.Background(), pool, migrationsThrough(t, astraMigration, false)); err != nil {
+		t.Fatal(err)
+	}
+	return pool
+}
+
+// migrationsThrough 取到指定迁移为止的脚本；只验证 0027 本身，后续新增迁移不影响这些用例。
+func migrationsThrough(t *testing.T, last string, inclusive bool) fstest.MapFS {
+	t.Helper()
 	names, err := fs.Glob(migrations.FS, "*.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := fstest.MapFS{}
+	picked := fstest.MapFS{}
 	for _, name := range names {
-		if name >= astraMigration {
+		if name > last || name == last && !inclusive {
 			continue
 		}
 		raw, err := migrations.FS.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
 		}
-		previous[name] = &fstest.MapFile{Data: raw}
+		picked[name] = &fstest.MapFile{Data: raw}
 	}
-	if _, err := db.Migrate(context.Background(), pool, previous); err != nil {
-		t.Fatal(err)
-	}
-	return pool
+	return picked
 }
 
 func applyAstraMigration(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	applied, err := db.Migrate(context.Background(), pool, migrations.FS)
+	through := migrationsThrough(t, astraMigration, true)
+	applied, err := db.Migrate(context.Background(), pool, through)
 	if err != nil || !reflect.DeepEqual(applied, []string{astraMigration}) {
 		t.Fatalf("升级到 0027 失败：%v %v", applied, err)
 	}
-	if applied, err := db.Migrate(context.Background(), pool, migrations.FS); err != nil || len(applied) != 0 {
+	if applied, err := db.Migrate(context.Background(), pool, through); err != nil || len(applied) != 0 {
 		t.Fatalf("迁移重复执行不应再改版本：%v %v", applied, err)
 	}
 }

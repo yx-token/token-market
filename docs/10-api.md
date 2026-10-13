@@ -134,7 +134,7 @@
 | GET | `/api/seller/upstreams/:id/reports` | 报告列表 |
 | GET | `/api/seller/reports/:id` | 报告详情（脱敏，不含题目、答案与基线信息，见 [05](05-quality.md) 第 8 节） |
 | GET | `/api/seller/upstreams/:id/quality-trend` | 每日智力相对分与异常次数：`days`（默认 30） |
-| POST | `/api/seller/upstreams/:id/retest` | 手动复测（每日限次，仅该厂商开启检测时可用） |
+| POST | `/api/seller/upstreams/:id/retest` | 手动复测（每日限次，仅该厂商开启检测且最近结果异常时可用，否则 409 `RETEST_NOT_NEEDED`；复测探测由卖家承担、不结算收益）。上游详情的 `manual_retest` 字段给出当前能否复测及原因 |
 | POST | `/api/seller/reports/:id/appeal` | 对降智 / 不可用的判定申诉：`reason` |
 
 ### 4.4 收益与提现

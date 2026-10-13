@@ -44,6 +44,8 @@ type upstreamDetail struct {
 	// 能否使用重置卡、能否授权平台自动用卡
 	ResetCredits bool `json:"reset_credits_supported"`
 	AutoReset    bool `json:"auto_reset_supported"`
+	// 能否手动复测；检测正常时不允许，按钮置灰并说明原因
+	ManualRetest *quality.RetestEligibility `json:"manual_retest,omitempty"`
 }
 
 // upstreamStats 是上游近 24 小时的服务情况（只含已入账的用量，有几分钟延迟）。
@@ -76,6 +78,13 @@ func (s *Server) getUpstream(w http.ResponseWriter, r *http.Request) error {
 	}
 	if d.Quote, err = listing.CurrentQuote(r.Context(), s.DB, id); err != nil {
 		return err
+	}
+	if s.Quality != nil {
+		eligibility, err := s.Quality.ManualRetestEligibility(r.Context(), u)
+		if err != nil {
+			return err
+		}
+		d.ManualRetest = &eligibility
 	}
 	if err := s.DB.QueryRow(r.Context(), `SELECT count(*) FILTER (WHERE channel IN ('pool', 'direct')), count(*) FILTER (WHERE channel = 'probe'),
 			COALESCE(sum(payout) FILTER (WHERE channel IN ('pool', 'direct')), 0)::float8,

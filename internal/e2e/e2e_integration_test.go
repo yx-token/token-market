@@ -440,14 +440,17 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 	if email2 == nil || *email2 != "bob@example.test" {
 		t.Fatalf("account email not backfilled: %v", email2)
 	}
-	// 先入账上架检测的探测流量（卖家照常获得收益，记为平台探测成本），后面只看买家流量带来的变化
+	// 先入账上架检测的探测流量：上架检测由卖家承担，消耗卖家额度但不结算收益；后面只看买家流量带来的变化
 	e.ingestAll()
 	var base1 struct {
 		Pending float64 `json:"pending"`
 	}
 	seller1.must("GET", "/api/seller/earnings", nil, &base1)
-	if base1.Pending <= 0 {
-		t.Fatalf("seller should earn from onboarding probe usage: %+v", base1)
+	var onboardingProbes, onboardingPaid int
+	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE payout <> 0 OR NOT seller_borne)
+		FROM usage_records WHERE upstream_id = $1 AND channel = 'probe'`, up1.ID), &onboardingProbes, &onboardingPaid)
+	if onboardingProbes == 0 || onboardingPaid != 0 || base1.Pending != 0 {
+		t.Fatalf("onboarding probes must be seller-borne: probes=%d paid=%d earnings=%+v", onboardingProbes, onboardingPaid, base1)
 	}
 	var acc1, acc2, poolGroup int64
 	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT sub2api_account_id FROM upstreams WHERE id = $1", up1.ID), &acc1)

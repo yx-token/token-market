@@ -126,15 +126,26 @@ func attribute(ctx context.Context, tx pgx.Tx, fromID int64) error {
 		return err
 	}
 	// 探测流量
-	_, err := tx.Exec(ctx, `UPDATE usage_records ur SET channel = 'probe'
+	if _, err := tx.Exec(ctx, `UPDATE usage_records ur SET channel = 'probe'
 		FROM system_keys sk
 		WHERE sk.sub2api_key_id = ur.sub2api_api_key_id AND ur.channel = 'unknown' AND ur.ledger_txn_id IS NULL
-			AND ur.sub2api_usage_id > $1`, fromID)
+			AND ur.sub2api_usage_id > $1`, fromID); err != nil {
+		return err
+	}
+	// 上架检测（含上架失败后重新检测）与卖家手动复测由卖家自己承担：不结算收益，也不计平台探测成本，
+	// 否则卖家可以反复复测、用自己的额度换平台的钱。探测请求不带检测记录号，按同一上游的检测时间窗归属；
+	// 第三方检测在检测记录结束前完成，同样落在窗口内。窗口取排队到结束，不留尾差：检测可能紧挨着先后完成，
+	// 尾差会把随后平台发起的检测也算到卖家头上。卖家复测排队时不能有其他检测在跑，
+	// 只有管理员或申诉检测可能与之重叠，重叠部分同样由卖家承担。
+	_, err := tx.Exec(ctx, `UPDATE usage_records ur SET payout = 0, seller_borne = true
+		WHERE ur.channel = 'probe' AND ur.upstream_id IS NOT NULL AND ur.ledger_txn_id IS NULL AND ur.sub2api_usage_id > $1
+			AND EXISTS (SELECT 1 FROM probe_runs r WHERE r.upstream_id = ur.upstream_id AND r.trigger IN ('onboarding', 'seller_manual')
+				AND ur.created_at >= r.queued_at AND ur.created_at <= COALESCE(r.finished_at, 'infinity'::timestamptz))`, fromID)
 	return err
 }
 
 // postUsage 把尚未记账、已归属的用量记成一笔 usage 交易，并汇总到结算行。
-// 买家：买家余额减少 actual_cost；卖家：待结算增加 payout；差额记平台收入；探测流量记平台探测成本。
+// 买家：买家余额减少 actual_cost；卖家：待结算增加 payout；差额记平台收入；探测流量记平台探测成本（卖家承担的探测 payout 为 0，不入账）。
 func postUsage(ctx context.Context, tx pgx.Tx, fromID int64) (int64, error) {
 	var minID, maxID *int64
 	var n int64
