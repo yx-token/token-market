@@ -58,6 +58,12 @@ type Server struct {
 	gatewayAnswer     func(accountID int64, request GatewayRequest) GatewayResponse
 	registeredAnswers map[string]GatewayResponse
 	incorrectAnswers  map[int64]bool
+	accountModels     map[int64][]string
+	modelSyncFailures map[int64]int
+	modelGetFailures  map[int64]int
+	modelSyncRequests map[int64]int
+	modelGetRequests  map[int64]int
+	nextFailures      map[string][]int
 }
 
 type cached struct {
@@ -80,6 +86,9 @@ func NewUnstarted(db *pgxpool.Pool, adminKey string) *Server {
 		sessions: map[string]oauthSession{}, failing: map[int64]int{},
 		credits: map[int64]int{}, resets: map[int64]int{}, recovers: map[int64]int{},
 		active: map[int64]int{}, gatewayConfig: map[int64]GatewayConfig{},
+		accountModels: map[int64][]string{}, modelSyncFailures: map[int64]int{}, modelGetFailures: map[int64]int{},
+		modelSyncRequests: map[int64]int{}, modelGetRequests: map[int64]int{},
+		nextFailures: map[string][]int{},
 	}
 	s.handler = s.routes()
 	return s
@@ -155,6 +164,8 @@ func (s *Server) routes() http.Handler {
 	admin("GET /api/v1/admin/channels/model-pricing", s.modelPricing)
 	admin("GET /api/v1/admin/cn-providers/accounts/{id}/quota", s.cnQuota)
 	admin("GET /api/v1/admin/accounts/{id}/usage", s.accountUsage)
+	admin("POST /api/v1/admin/accounts/{id}/models/sync-upstream", s.syncAccountModels)
+	admin("GET /api/v1/admin/accounts/{id}/models", s.getAccountModels)
 	admin("GET /api/v1/admin/accounts/{id}", func(_ http.ResponseWriter, r *http.Request) (any, error) {
 		id, err := pathID(r)
 		if err != nil {
@@ -205,6 +216,10 @@ func badRequest(msg string) error { return &apiErr{400, "BAD_REQUEST", msg} }
 func notFound(msg string) error   { return &apiErr{404, "NOT_FOUND", msg} }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request, h func(w http.ResponseWriter, r *http.Request) (any, error)) {
+	if status := s.nextFailure(r.Method, r.URL.Path); status != 0 {
+		writeErr(w, &apiErr{status, "SIMULATED_FAILURE", "模拟接口暂时失败"})
+		return
+	}
 	data, err := h(w, r)
 	if err != nil {
 		writeErr(w, err)
@@ -609,14 +624,31 @@ func (s *Server) applyAccount(r *http.Request, id int64, in accountInput, mergeJ
 	}
 	var creds, extra []byte
 	if in.Credentials != nil {
-		creds, _ = json.Marshal(in.Credentials)
+		credentials := in.Credentials
+		if !mergeJSON {
+			// v0.2.14 的 PUT 保留未提交的敏感凭证，其他键由新对象决定。
+			if len(credentials) == 0 {
+				credentials = nil
+			} else {
+				existing, err := s.AccountCredentials(id)
+				if err != nil {
+					return err
+				}
+				credentials = mergeSensitiveAccountCredentials(existing, credentials)
+			}
+		}
+		if credentials != nil {
+			creds, _ = json.Marshal(credentials)
+		}
 	}
 	if in.Extra != nil {
 		extra, _ = json.Marshal(in.Extra)
 	}
 	op := "COALESCE($9::jsonb, extra)"
+	credentialsOp := "COALESCE($8::jsonb, credentials)"
 	if mergeJSON {
 		op = "COALESCE(extra, '{}'::jsonb) || COALESCE($9::jsonb, '{}'::jsonb)"
+		credentialsOp = "COALESCE(credentials, '{}'::jsonb) || COALESCE($8::jsonb, '{}'::jsonb)"
 	}
 	var status *string
 	if in.Status != "" {
@@ -626,7 +658,7 @@ func (s *Server) applyAccount(r *http.Request, id int64, in accountInput, mergeJ
 			concurrency = COALESCE($2, concurrency), priority = COALESCE($3, priority),
 			rate_multiplier = COALESCE($4, rate_multiplier), load_factor = COALESCE($5, load_factor),
 			schedulable = COALESCE($6, schedulable), status = COALESCE($7, status),
-			credentials = COALESCE(credentials, '{}'::jsonb) || COALESCE($8::jsonb, '{}'::jsonb),
+			credentials = `+credentialsOp+`,
 			extra = `+op+`, proxy_id = COALESCE($10, proxy_id), updated_at = now()
 		WHERE id = $1`, id, in.Concurrency, in.Priority, in.RateMultiplier, in.LoadFactor, in.Schedulable, status, creds, extra, in.ProxyID); err != nil {
 		return err
@@ -660,12 +692,21 @@ func (s *Server) bulkUpdate(_ http.ResponseWriter, r *http.Request) (any, error)
 	if err := decode(r, &in); err != nil {
 		return nil, err
 	}
+	if len(in.AccountIDs) == 0 {
+		return nil, badRequest("account_ids is required")
+	}
+	successIDs, failedIDs := []int64{}, []int64{}
+	results := make([]map[string]any, 0, len(in.AccountIDs))
 	for _, id := range in.AccountIDs {
 		if err := s.applyAccount(r, id, in.accountInput, true); err != nil {
-			return nil, err
+			failedIDs = append(failedIDs, id)
+			results = append(results, map[string]any{"account_id": id, "success": false, "error": err.Error()})
+			continue
 		}
+		successIDs = append(successIDs, id)
+		results = append(results, map[string]any{"account_id": id, "success": true})
 	}
-	return map[string]any{"success": len(in.AccountIDs), "failed": 0}, nil
+	return map[string]any{"success": len(successIDs), "failed": len(failedIDs), "success_ids": successIDs, "failed_ids": failedIDs, "results": results}, nil
 }
 
 func (s *Server) setSchedulable(_ http.ResponseWriter, r *http.Request) (any, error) {
@@ -1095,7 +1136,7 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 		gatewayError(w, 500, "api_error", err.Error())
 		return
 	}
-	rows, err := s.DB.Query(ctx, `SELECT a.id, a.rate_multiplier::float8, a.concurrency FROM accounts a JOIN account_groups ag ON ag.account_id = a.id
+	rows, err := s.DB.Query(ctx, `SELECT a.id, a.rate_multiplier::float8, a.concurrency, COALESCE(a.credentials, '{}') FROM accounts a JOIN account_groups ag ON ag.account_id = a.id
 		WHERE ag.group_id = $1 AND a.deleted_at IS NULL AND a.status = 'active' AND a.schedulable
 		ORDER BY a.priority, a.id`, *groupID)
 	if err != nil {
@@ -1106,11 +1147,12 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 		id          int64
 		rate        float64
 		concurrency int
+		credentials []byte
 	}
 	var cands []cand
 	for rows.Next() {
 		var c cand
-		if err := rows.Scan(&c.id, &c.rate, &c.concurrency); err != nil {
+		if err := rows.Scan(&c.id, &c.rate, &c.concurrency, &c.credentials); err != nil {
 			rows.Close()
 			gatewayError(w, 500, "api_error", err.Error())
 			return
@@ -1121,6 +1163,9 @@ func (s *Server) gateway(w http.ResponseWriter, r *http.Request) {
 	lastStatus := 503
 	concurrencyLimited := false
 	for _, c := range cands {
+		if !supportsAccountModel(c.credentials, request.Model) {
+			continue
+		}
 		s.mu.Lock()
 		failStatus := s.failing[c.id]
 		s.mu.Unlock()

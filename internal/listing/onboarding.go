@@ -20,7 +20,7 @@ import (
 )
 
 // QualityHook 由质量检测模块实现。首次配置的上游必须通过上架检测才能挂单、被调度（与厂商的检测开关无关，
-// 开关只控制之后的检测）：账号创建后排队上架检测，上游保持 verifying，检测完成后由质量模块推进状态。
+// 开关只控制之后的检测）：卖家选择挂售模型后排队上架检测，上游保持 verifying，检测完成后由质量模块推进状态。
 type QualityHook interface {
 	StartOnboardingCheck(ctx context.Context, upstreamID int64, platform, authType string) error
 }
@@ -380,6 +380,18 @@ func (s *Service) CompleteAuthorization(ctx context.Context, sellerID, upstreamI
 }
 
 func (s *Service) applyReauthorization(ctx context.Context, u *Upstream, spec oauthSpec, tok map[string]any) (*Upstream, error) {
+	release, err := s.lockAccountModels(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	u, err = GetUpstream(ctx, s.DB, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	if u.Sub2APIAccountID == nil || u.Status == StatusRemoving || u.Status == StatusRemoved {
+		return nil, ErrBadState
+	}
 	if id := spec.identity(tok); id != "" {
 		var current *string
 		if err := s.DB.QueryRow(ctx, "SELECT identity_hash FROM upstreams WHERE id = $1", u.ID).Scan(&current); err != nil {
@@ -394,8 +406,15 @@ func (s *Service) applyReauthorization(ctx context.Context, u *Upstream, spec oa
 	if SupportsSelfReserve(u.Platform) {
 		creds["account_scheduling_threshold"] = 100 - u.SelfReservePercent
 	}
+	// 映射是非敏感凭证键，PUT 不会自动保留；与新令牌一起带上，避免出现不限模型的窗口。
+	if u.ModelWhitelist != nil {
+		creds["model_mapping"] = modelMapping(u.ModelWhitelist)
+	}
 	if _, err := s.Admin.UpdateAccount(ctx, *u.Sub2APIAccountID, adminclient.UpdateAccountInput{Credentials: creds}); err != nil {
 		return nil, fmt.Errorf("update credentials: %w", err)
+	}
+	if err := s.Admin.SetAccountModelWhitelist(ctx, *u.Sub2APIAccountID, u.ModelWhitelist); err != nil {
+		return nil, fmt.Errorf("重新授权后同步挂售模型：%w", err)
 	}
 	if err := s.Admin.ClearError(ctx, *u.Sub2APIAccountID); err != nil {
 		s.Log.Warn("clear account error after reauthorization", "upstream_id", u.ID, "err", err)
@@ -546,6 +565,11 @@ func (s *Service) createAccount(ctx context.Context, u *Upstream, accountType st
 	if u.SelfReservePercent > 0 && SupportsSelfReserve(u.Platform) {
 		creds["account_scheduling_threshold"] = 100 - u.SelfReservePercent
 	}
+	// 授权与导入都只使用平台保存的白名单，不接收导出文件里的别名映射和透传配置。
+	delete(creds, "model_mapping")
+	if u.ModelWhitelist != nil {
+		creds["model_mapping"] = modelMapping(u.ModelWhitelist)
+	}
 	notes := fmt.Sprintf("tm:upstream:%d", u.ID)
 	rate := 1.0
 	accountID, err := s.Prov.EnsureAccount(ctx, adminclient.CreateAccountInput{
@@ -568,7 +592,7 @@ func (s *Service) createAccount(ctx context.Context, u *Upstream, accountType st
 	return err
 }
 
-// afterAccountCreated 完成隐私设置并决定是否需要上架检测。
+// afterAccountCreated 完成隐私设置，先缓存模型目录，再等待卖家选择挂售模型。
 func (s *Service) afterAccountCreated(ctx context.Context, upstreamID int64) (*Upstream, error) {
 	u, err := GetUpstream(ctx, s.DB, upstreamID)
 	if err != nil {
@@ -591,7 +615,29 @@ func (s *Service) afterAccountCreated(ctx context.Context, upstreamID int64) (*U
 			return GetUpstream(ctx, s.DB, u.ID)
 		}
 	}
-	return s.startVerification(ctx, u)
+	if !u.IsReference && u.ModelWhitelist == nil {
+		if err := setUpstreamStatus(ctx, s.DB, u.ID, StatusSelectingModels, nil); err != nil {
+			return nil, err
+		}
+	}
+	// 新账号必须在写入白名单前获取完整目录；获取失败时保留空目录，允许卖家手动填写。
+	if u.ModelCatalogAt == nil {
+		if err := s.fetchModelCatalog(ctx, u); err != nil {
+			var he *httpx.Error
+			if !errors.As(err, &he) || he.Code != "MODEL_CATALOG_UNAVAILABLE" {
+				return nil, err
+			}
+			s.Log.Warn("获取上游模型目录失败", "upstream_id", u.ID, "err", err)
+		}
+	}
+	// 基线账号由管理员管理，仍沿用原有检测入口；已选模型的上游重试检测无需重复选择。
+	if u.IsReference || u.ModelWhitelist != nil {
+		if err := s.Admin.SetAccountModelWhitelist(ctx, *u.Sub2APIAccountID, u.ModelWhitelist); err != nil {
+			return nil, fmt.Errorf("接入后同步挂售模型：%w", err)
+		}
+		return s.startVerification(ctx, u)
+	}
+	return GetUpstream(ctx, s.DB, u.ID)
 }
 
 func (s *Service) startVerification(ctx context.Context, u *Upstream) (*Upstream, error) {
@@ -604,6 +650,8 @@ func (s *Service) startVerification(ctx context.Context, u *Upstream) (*Upstream
 	if err := s.Quality.StartOnboardingCheck(ctx, u.ID, u.Platform, u.AuthType); err != nil {
 		var he *httpx.Error
 		if !errors.As(err, &he) {
+			// 白名单已经保存，入队失败后必须可从检测失败状态重试，避免永远停在检测中。
+			_ = MarkVerified(ctx, s.DB, u.ID, false, "上架检测暂时无法开始，请重试")
 			return nil, err
 		}
 		// 检测无法开始（例如策略没有配置模型）：记为检测失败，配置修正后可以重新检测
