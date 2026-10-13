@@ -242,7 +242,7 @@ async function retryProbe() {
   if (u) {
     upstream.value = u
     if (u.status === 'selecting_models') step.value = 2
-    else toast.success('已重新开始检测')
+    else if (u.status === 'verifying') toast.success('已重新开始检测')
   }
 }
 

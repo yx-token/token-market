@@ -22,7 +22,7 @@ watch(() => props.upstream, (u) => {
 
 async function save() {
   if (!valid.value) return
-  const updated = await run(() => seller.setUpstreamModels(props.upstream.id, [...models.value]), selecting.value ? '已选择挂售模型，开始上架检测' : '挂售模型已更新')
+  const updated = await run(() => seller.setUpstreamModels(props.upstream.id, [...models.value]), '挂售模型已保存')
   if (!updated) return
   whitelist.value = updated.model_whitelist ?? [...models.value]
   editing.value = false
