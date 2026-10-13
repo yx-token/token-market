@@ -14,13 +14,14 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
 import { authTypeText, label, options } from '@/utils/labels'
+import { probeSuiteOrder, probeSuiteText } from '@/utils/inspection'
 
 const toast = useToast()
 const tab = ref<'items' | 'refs'>('items')
 const pageTitle = computed(() => (tab.value === 'items' ? '题库' : '基线账号'))
 const pageDescription = computed(() =>
   tab.value === 'items'
-    ? '题库私有、定期轮换；试运行只记录新题，正式模式将新题接入判定。'
+    ? '测智与身份核验题库私有、定期轮换；按厂商、适用模型和检测模式选择题目。'
     : '平台自备的干净官方账号，与被测上游同批次答题作对照。',
 )
 const { queryParams, resetQuery, handleQuery } = useListQuery({
@@ -46,23 +47,19 @@ const editing = ref<ProbeItem | null>(null)
 const show = ref(false)
 function initialForm() {
   return {
-    suite: 'iq', category: '', prompt: '', grader: '{"type": "exact", "answer": ""}',
+    suite: 'inspection_capability', category: '', prompt: '', grader: '{"type": "exact", "answer": ""}',
     platforms: [] as string[], models: [] as string[], maxTokens: 1024, effort: '', checkKey: '',
     request: '{}', generator: '{}', modes: [] as ('full' | 'quick')[], weight: 1,
   }
 }
 const form = reactive(initialForm())
-const suiteOptions = [
-  { value: 'iq', text: '旧智力题' },
-  { value: 'reasoning', text: '旧推理题' },
-  { value: 'long_context', text: '旧长上下文题' },
-  { value: 'inspection_authenticity', text: '真伪核验' },
-  { value: 'inspection_capability', text: '能力质检' },
-  { value: 'inspection_context', text: '上下文质检' },
-  { value: 'inspection_function', text: '功能质检' },
-  { value: 'inspection_output', text: '输出质检' },
-  { value: 'inspection_performance', text: '性能与可用观测' },
-]
+const suiteOptions = probeSuiteOrder.map((value) => ({ value, text: probeSuiteText(value) }))
+const editableSuiteOptions = computed(() => {
+  const values = probeSuiteOrder.filter((suite) => suite.startsWith('inspection_'))
+  // 已存旧题保留当前套件，便于查看与下线；新题只使用现行套件。
+  if (editing.value && !values.includes(editing.value.suite)) values.push(editing.value.suite)
+  return values.map((value) => ({ value, text: probeSuiteText(value) }))
+})
 const templateOptions = computed(() => [...new Set((items.data.value ?? []).map((it) => it.generator?.template_id).filter((id): id is string => !!id))].sort())
 const versionOptions = computed(() => [...new Set((items.data.value ?? []).filter((it) => !queryParams.template || it.generator?.template_id === queryParams.template).map((it) => it.generator?.version).filter((version): version is string => !!version))].sort())
 const newRef = reactive({ platform: 'anthropic', authType: 'oauth' })
@@ -305,7 +302,7 @@ async function removeRef(u: Upstream) {
       row-key="id"
       empty="没有符合条件的题目"
     >
-      <template #cell-suite="{ row }">{{ suiteOptions.find((s) => s.value === row.suite)?.text ?? row.suite }}</template>
+      <template #cell-suite="{ row }">{{ probeSuiteText(row.suite) }}</template>
       <template #cell-check_key="{ row }">{{ row.check_key || '旧题' }}</template>
       <template #cell-template="{ row }">{{ row.generator?.template_id ? `${row.generator.template_id} / ${row.generator.version}` : '静态题' }}</template>
       <template #cell-modes="{ row }">{{ row.modes?.length ? row.modes.map((mode: string) => mode === 'full' ? '完整质检' : '快检').join(' / ') : '旧模式' }}</template>
@@ -368,7 +365,7 @@ async function removeRef(u: Upstream) {
       <div>
         <label class="label" for="isuite">套件</label>
         <select id="isuite" v-model="form.suite" class="input">
-          <option v-for="s in suiteOptions" :key="s.value" :value="s.value">{{ s.text }}</option>
+          <option v-for="s in editableSuiteOptions" :key="s.value" :value="s.value">{{ s.text }}</option>
         </select>
       </div>
       <div>

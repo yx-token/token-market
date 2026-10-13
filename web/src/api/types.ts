@@ -539,6 +539,11 @@ export interface Report {
 }
 
 export interface ReportSummary {
+  flows?: DetectionFlow[]
+  identity_source?: IdentitySource | null
+  models?: string[]
+  intelligence?: IntelligenceSummary
+  identity?: IdentitySummary
   verdict: string
   trigger: string
   model: string
@@ -764,6 +769,46 @@ export interface Pool {
   updated_at: string
 }
 
+export type DetectionFlow = 'intelligence' | 'identity'
+export type InspectionFlow = DetectionFlow | 'common'
+export type IdentitySource = 'third_party' | 'self'
+
+export interface DetectionFlowPolicy {
+  enabled: boolean
+  scheduled_enabled: boolean
+  interval_minutes: number
+  triggers: string[]
+  full_triggers: string[]
+}
+
+export interface IntelligenceModelPolicy {
+  model: string
+  expected_pass_rate: number | null
+}
+
+export interface DetectionFlows {
+  intelligence: DetectionFlowPolicy & { models: IntelligenceModelPolicy[] }
+  identity: DetectionFlowPolicy & { source: IdentitySource }
+}
+
+export interface IntelligenceSummary {
+  status: InspectionCheckResult['status']
+  inherited_at?: string | null
+  models: {
+    model: string
+    status: InspectionCheckResult['status']
+    target_pass_rate?: number | null
+    expected_pass_rate?: number | null
+    samples?: number
+  }[]
+}
+
+export interface IdentitySummary {
+  source: IdentitySource
+  status: InspectionCheckResult['status']
+  inherited_at?: string | null
+}
+
 export interface Thresholds {
   h0: number
   h1: number
@@ -791,6 +836,7 @@ export interface Policy {
   token_budgets?: Partial<Record<'full' | 'quick', InspectionTokenBudget>>
   version: number
   updated_at: string
+  flows?: DetectionFlows
 }
 
 export interface ThirdPartyCheck {
@@ -864,6 +910,9 @@ export interface ProbeRun {
   passed: number
   queued_at: string
   finished_at?: string
+  flows?: DetectionFlow[]
+  identity_source?: IdentitySource | null
+  models?: string[]
 }
 
 /** 一次检测中一道题的结果（含题目与回答片段，仅管理员可见） */
@@ -950,6 +999,9 @@ export interface InspectionCheckDefinition {
   advice: string
   calibration_note: string
   description?: string
+  flow?: InspectionFlow
+  pricing?: boolean
+  default_pricing?: boolean
 }
 
 export interface InspectionCheckOverride {
@@ -958,6 +1010,7 @@ export interface InspectionCheckOverride {
   calibration_note: string
   coefficients: Record<string, number>
   thresholds: Record<string, number>
+  pricing?: boolean | null
 }
 
 export interface InspectionTokenBudget {

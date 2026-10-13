@@ -147,27 +147,25 @@ describe('全部 SearchSelect 使用处的交互回归', () => {
   it('DetectionView：所有策略字段可用，模型来源去重合并，自定义模型能保存', async () => {
     const wrapper = await page(DetectionView)
     await button(wrapper, '编辑')
-    const modelSelect = selectComponent(wrapper, 'pm')
+    const modelSelect = selectComponent(wrapper, 'intelligence-model-0')
     expect(modelSelect.props('options').map((option) => option.value)).toEqual([
       'price-model', 'gpt-6-astra', 'third-party-model', 'other-policy-model', 'item-model',
     ])
-    expect(document.getElementById('pm')!.textContent).not.toContain('未注册')
+    expect(document.getElementById('intelligence-model-0')!.textContent).not.toContain('未注册')
     expect(admin.items).toHaveBeenCalledWith()
-    await choose(wrapper, 'pm', 'price-model')
-    await choose(wrapper, 'ps', 'availability')
-    await rejectUnknown(wrapper, 'ps')
-    await choose(wrapper, 'policy-full-triggers', 'onboarding')
-    await rejectUnknown(wrapper, 'policy-full-triggers')
+    await choose(wrapper, 'intelligence-model-0', 'price-model')
+    await choose(wrapper, 'intelligence-full-triggers', 'onboarding')
+    await rejectUnknown(wrapper, 'intelligence-full-triggers')
     await choose(wrapper, 'tp-model-test', 'price-model')
-    await enter('pm', 'new-policy-model')
-    expect(modelSelect.props('modelValue')).toContain('new-policy-model')
-    await outside('pm')
+    await enter('intelligence-model-0', 'new-policy-model')
+    expect(modelSelect.props('modelValue')).toBe('new-policy-model')
+    await outside('intelligence-model-0')
     await enter('tp-model-test', 'new-third-party-model')
     expect(selectComponent(wrapper, 'tp-model-test').props('modelValue')).toBe('new-third-party-model')
     document.querySelector<HTMLElement>('.yh-modal-foot .btn-primary')!.click()
     await flushPromises()
     expect(admin.upsertPolicy).toHaveBeenCalledWith('openai', 'apikey', expect.objectContaining({
-      models: ['gpt-6-astra', 'price-model', 'new-policy-model'],
+      flows: expect.objectContaining({ intelligence: expect.objectContaining({ models: [{ model: 'new-policy-model', expected_pass_rate: null }] }) }),
       third_party: [expect.objectContaining({ model: 'new-third-party-model' })],
     }))
   })
@@ -199,10 +197,10 @@ describe('全部 SearchSelect 使用处的交互回归', () => {
     vi.mocked(admin.settings).mockRejectedValue(new Error('加载失败'))
     const wrapper = await page(DetectionView)
     await button(wrapper, '编辑')
-    expect(selectComponent(wrapper, 'pm').props('options').map((option) => option.value)).toContain('gpt-6-astra')
-    expect(document.getElementById('pm')!.textContent).not.toContain('未注册')
-    await enter('pm', 'new-model')
-    expect(selectComponent(wrapper, 'pm').props('modelValue')).toContain('new-model')
+    expect(selectComponent(wrapper, 'intelligence-model-0').props('options').map((option) => option.value)).toContain('gpt-6-astra')
+    expect(document.getElementById('intelligence-model-0')!.textContent).not.toContain('未注册')
+    await enter('intelligence-model-0', 'new-model')
+    expect(selectComponent(wrapper, 'intelligence-model-0').props('modelValue')).toBe('new-model')
   })
 
   it('ProbeItemsView：厂商多选受约束，模型多选允许自定义，质检项仍用注册表', async () => {

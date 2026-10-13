@@ -1,9 +1,17 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
+import { defineComponent } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { admin } from '@/api'
 import MarkdownText from '@/components/MarkdownText.vue'
 import ProbeRunDetail from '@/components/ProbeRunDetail.vue'
+import ProbeRecordsView from '@/views/admin/ProbeRecordsView.vue'
 import { renderMarkdown } from '@/utils/markdown'
-import type { ProbeRunDetail as RunDetail, ProbeRunResult } from '@/api/types'
+import { detectionFlowText, identitySourceText, probeSuiteOrder, probeSuiteText } from '@/utils/inspection'
+import type { ProbeRunDetail as RunDetail, ProbeRunRecord, ProbeRunResult } from '@/api/types'
+
+vi.mock('@/api', () => ({ admin: { probeRecords: vi.fn(), probeItemStats: vi.fn(), probeRun: vi.fn(), probeItemResults: vi.fn() } }))
 
 const run = { id: 1, upstream_id: 2, batch_id: 'batch', trigger: 'admin', model: '模型', status: 'done', items: 2, passed: 1, queued_at: '2026-10-12T04:00:00Z' }
 const base: ProbeRunResult = { item_id: 7, suite: 'inspection_capability', category: 'logic', prompt: '题面', models: [], passed: true, ttft_ms: 12, duration_ms: 24, output_tokens: 3, reasoning_tokens: 4, expected_answer: '42' }
@@ -77,9 +85,9 @@ describe('检测明细：套件分组、答案列与失败行', () => {
     })
     const groups = wrapper.findAll('[data-testid="probe-run-results"] tbody tr.bg-slate-50')
     expect(groups).toHaveLength(2)
-    expect(wrapper.text()).toContain('能力质检')
+    expect(wrapper.text()).toContain('测智')
     expect(wrapper.text()).toContain('（2 题）')
-    expect(wrapper.text()).toContain('智力')
+    expect(wrapper.text()).toContain('旧智力题（已停用）')
   })
 
   it('showAnswer 默认关闭：不渲染标准答案；开启后管理员可见并与输出并排', () => {
@@ -206,7 +214,9 @@ describe('检测明细：截图反馈', () => {
     const wrapper = mount(ProbeRunDetail, {
       props: { detail: detail([{ ...base, suite: 'inspection_authenticity', flags: ['stop_normal', 'window_available', 'mystery_flag'] }]) },
     })
-    expect(wrapper.text()).toContain('真实性质检')
+    expect(wrapper.text()).toContain('身份核验')
+    expect(wrapper.find('[title="inspection_authenticity"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('inspection_authenticity')
     const flags = wrapper.get('[title="stop_normal, window_available, mystery_flag"]')
     expect(flags.text()).toBe('正常结束、额度窗口可用、mystery_flag')
   })
@@ -217,5 +227,114 @@ describe('检测明细：截图反馈', () => {
     expect(table.element.parentElement!.className).not.toMatch(/max-h-|overflow-/)
     expect(table.classes()).toContain('table-fixed')
     expect(table.classes().some((c) => c.startsWith('min-w-'))).toBe(false)
+  })
+})
+
+describe('检测名称与新套件排序', () => {
+  it.each([
+    ['inspection_capability', '测智'], ['inspection_context', '测智·上下文深度'],
+    ['inspection_authenticity', '身份核验'], ['inspection_function', '功能核验'],
+    ['inspection_output', '输出完整性'], ['inspection_performance', '性能'],
+    ['iq', '旧智力题（已停用）'], ['reasoning', '旧智力题（已停用）'],
+    ['long_context', '旧智力题（已停用）'], ['availability', '可用率'], ['latency', '延迟'],
+  ])('套件 %s 使用约定中文名', (suite, text) => {
+    expect(probeSuiteText(suite)).toBe(text)
+  })
+
+  it('流程、身份来源使用中文，未知代码保留原值', () => {
+    expect(detectionFlowText('intelligence')).toBe('测智')
+    expect(detectionFlowText('identity')).toBe('身份与功能核验')
+    expect(detectionFlowText('common')).toBe('通用')
+    expect(identitySourceText('third_party')).toBe('第三方检测')
+    expect(identitySourceText('self')).toBe('自有题库')
+    expect(probeSuiteText('new_suite')).toBe('new_suite')
+    expect(detectionFlowText('new_flow')).toBe('new_flow')
+    expect(identitySourceText('new_source')).toBe('new_source')
+  })
+
+  it('明细汇总与逐题结果按现行套件顺序排列，旧套件在末尾', () => {
+    const results = [...probeSuiteOrder].reverse().map((suite, index) => ({ ...base, item_id: index + 1, suite }))
+    const wrapper = mount(ProbeRunDetail, { props: { detail: detail(results) } })
+    const titles = wrapper.findAll('[data-testid="probe-run-results"] tbody tr.bg-slate-50 td').map((cell) => cell.attributes('title'))
+    expect(titles).toEqual(probeSuiteOrder)
+    const summary = wrapper.findAll('table')[0].findAll('tbody tr td:first-child').map((cell) => cell.attributes('title'))
+    expect(summary).toEqual(probeSuiteOrder)
+  })
+
+  it('管理员明细显示测智状态与通过率，旧智力指标继续兜底', () => {
+    const summary = {
+      intelligence: {
+        status: 'warning' as const, inherited_at: '2026-10-12T04:00:00Z',
+        models: [{ model: 'gpt-6-astra', status: 'warning' as const, target_pass_rate: .86, expected_pass_rate: .9 }],
+      },
+    }
+    const adminSide = mount(ProbeRunDetail, { props: { detail: detail([], { run: { ...run, summary } }), showAnswer: true } })
+    expect(adminSide.get('[aria-label="测智指标"]').text()).toContain('偏低（扣价）')
+    expect(adminSide.get('[aria-label="测智指标"]').text()).toContain('通过率 86.0% · 期望通过率 90.0%')
+    expect(adminSide.get('[aria-label="测智指标"]').text()).toContain('沿用')
+    const sellerSide = mount(ProbeRunDetail, { props: { detail: detail([], { run: { ...run, summary } }) } })
+    expect(sellerSide.text()).not.toContain('通过率')
+    const legacySide = mount(ProbeRunDetail, { props: { detail: detail([]) } })
+    expect(legacySide.find('[aria-label="智力与推理指标"]').exists()).toBe(true)
+  })
+})
+
+describe('检测记录流程字段', () => {
+  const record: ProbeRunRecord = {
+    ...run, platform: 'openai', auth_type: 'oauth', seller_id: 3, is_reference: false,
+    suites: {
+      iq: { items: 1, passed: 1 }, inspection_authenticity: { items: 2, passed: 2 },
+      inspection_capability: { items: 3, passed: 2 }, inspection_context: { items: 1, passed: 1 },
+    },
+    flows: ['intelligence', 'identity'], identity_source: 'third_party', models: ['gpt-6-astra', 'gpt-6.1-sol'],
+  }
+  const dialog = defineComponent({ props: ['open'], template: '<section v-if="open"><slot /><slot name="footer" /></section>' })
+  const listPage = defineComponent({ template: '<main><slot name="tabs" /><slot name="filters" /><slot /><slot name="footer" /></main>' })
+
+  async function page(records = [record]) {
+    vi.mocked(admin.probeRecords).mockResolvedValue(records)
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/console/probe-records', component: { template: '<div />' } }] })
+    await router.push('/console/probe-records')
+    await router.isReady()
+    const wrapper = mount(ProbeRecordsView, { global: { plugins: [createPinia(), router], stubs: { ModalDialog: dialog, ConsoleListPage: listPage, DateRangePicker: true } } })
+    await flushPromises()
+    return wrapper
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(admin.probeItemStats).mockResolvedValue([])
+  })
+
+  it('列表显示流程、身份来源、全部测试模型，套件汇总使用中文并排序', async () => {
+    const wrapper = await page()
+    const headers = wrapper.findAll('th').map((cell) => cell.text())
+    const cells = wrapper.get('tbody tr').findAll('td')
+    expect(cells[headers.indexOf('流程')].text()).toBe('测智 / 身份与功能核验')
+    expect(cells[headers.indexOf('身份来源')].text()).toBe('第三方检测')
+    expect(cells[headers.indexOf('测试模型')].text()).toBe('gpt-6-astra / gpt-6.1-sol')
+    const suites = cells[headers.indexOf('答题')].get('div').findAll('span').map((span) => span.text())
+    expect(suites).toEqual(['测智 2/3', '测智·上下文深度 1/1', '身份核验 2/2', '旧智力题（已停用） 1/1'])
+    expect(wrapper.get('tbody').text()).not.toContain('inspection_capability')
+    await wrapper.get('#pr-keyword').setValue('gpt-6.1-sol')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('旧记录缺少新字段时以主模型兜底，自有题库来源使用中文', async () => {
+    const wrapper = await page([
+      { ...record, id: 2, flows: undefined, identity_source: undefined, models: undefined },
+      { ...record, id: 3, flows: ['identity'], identity_source: 'self' },
+    ])
+    const headers = wrapper.findAll('th').map((cell) => cell.text())
+    const rows = wrapper.findAll('tbody tr')
+    const legacy = rows[0].findAll('td')
+    expect(legacy[headers.indexOf('流程')].text()).toBe('—')
+    expect(legacy[headers.indexOf('身份来源')].text()).toBe('—')
+    expect(legacy[headers.indexOf('测试模型')].text()).toBe('模型')
+    const self = rows[1].findAll('td')
+    expect(self[headers.indexOf('流程')].text()).toBe('身份与功能核验')
+    expect(self[headers.indexOf('身份来源')].text()).toBe('自有题库')
+    wrapper.unmount()
   })
 })
