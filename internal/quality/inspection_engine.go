@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/DueGin/token-market/internal/inspection"
@@ -14,58 +13,24 @@ import (
 
 var inspectionSuites = []string{"inspection_authenticity", "inspection_capability", "inspection_context", "inspection_function", "inspection_output", "inspection_performance"}
 
-// 限定型号的旧智力题在新流程中默认计入 D07，管理员显式归类优先。
-// 只派生运行时归类，不改题库数据或旧套件，保留试运行的原判定与执行语义。
-func inspectionItemKey(it Item) string {
-	if it.CheckKey == "" && len(it.Models) > 0 && (it.Suite == "iq" || it.Suite == "reasoning") {
-		return "D07"
-	}
-	return it.CheckKey
-}
-
-// 正式模式只跳过未限定型号且仍与原定义一致的旧内置题。
-func formalItems(items []Item) []Item {
-	result := make([]Item, 0, len(items))
-	for _, it := range items {
-		legacy := false
-		if len(it.Models) == 0 && !strings.HasPrefix(it.Suite, "inspection_") {
-			for _, old := range defaultItems() {
-				if it.Suite == old.Suite && it.Prompt == old.Prompt {
-					legacy = true
-					break
-				}
-			}
-		}
-		if !legacy {
-			result = append(result, it)
-		}
-	}
-	return result
-}
+func inspectionItemKey(it Item) string { return it.CheckKey }
 
 func (e *Engine) inspectionAssessment(ctx context.Context, run runRow, ref *runRow, u *upstreamRow, plan executionSnapshot, rows []Outcome, st InspectionSettings, a Assessment) (Assessment, error) {
 	if plan.Settings != nil {
 		st = *plan.Settings
 	}
-	if plan.InspectionMode == "formal" {
-		a = assessFormal(rows, plan.Thresholds, st)
-	}
+	a = assessFormal(rows, plan.Thresholds, st)
 	a.InspectionMode = plan.InspectionMode
 	a.InspectionSettings = &st
 	for i := range rows {
 		rows[i].PrimaryModel = rows[i].RequestedModel == run.model
 	}
 	capability := inspection.LookupCapability(u.platform, run.model, st)
-	opts := InspectOptions{Platform: u.platform, AuthType: u.authType, Capability: &capability}
-	checks, gates := Inspect(rows, st, e.now(), opts)
-	if plan.InspectionMode == "formal" && a.Verdict == "degraded" {
-		d, _ := inspection.Effective("D07", st)
-		reason := "有效配对的序贯检验支持能力下降。"
-		if ref == nil {
-			reason = "按题目判定的序贯检验支持能力低于期望；未与基线对照。"
-		}
-		gates = append(gates, inspection.Gate{CheckKey: "D07", Code: "sprt_degraded", Health: "degraded", Confirmed: d.Enabled && d.Calibrated, OccurredAt: e.now(), Reason: reason})
+	opts := InspectOptions{Platform: u.platform, AuthType: u.authType, Capability: &capability, Flows: run.flows, IdentitySource: run.identitySource, Models: run.models}
+	if plan.Policy != nil {
+		opts.IntelligenceModels = plan.Policy.Flows.Intelligence.Models
 	}
+	checks, gates := Inspect(rows, st, e.now(), opts)
 	// 正式可用率门槛由 Inspect 的目录样本阈值决定，不沿用旧流程的两请求捷径。
 	if err := e.inspectCache(ctx, run, ref, plan, st, checks, capability); err != nil {
 		return a, err
@@ -91,46 +56,19 @@ func (e *Engine) inspectionAssessment(ctx context.Context, run runRow, ref *runR
 			checks["D05"] = c
 		}
 	}
-	// 快检继承最近完整质检的未测项，并保留原 checked_at；不能把缺测当修复。
-	if run.mode == "quick" {
-		var previous []byte
-		err := e.DB.QueryRow(ctx, `SELECT v.checks FROM quality_verdicts v JOIN probe_runs r ON r.id=v.run_id WHERE v.upstream_id=$1 AND v.model=$2 AND r.mode='full' AND r.summary->>'inspection_mode'='formal' AND r.execution_snapshot->'inspection_settings'=$3::jsonb ORDER BY v.created_at DESC,v.id DESC LIMIT 1`, u.id, run.model, mustJSON(st)).Scan(&previous)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return a, err
-		}
-		if len(previous) > 0 {
-			old := map[string]inspection.Check{}
-			if err := json.Unmarshal(previous, &old); err != nil {
-				return a, err
-			}
-			for key, c := range checks {
-				if c.Status == "not_run" {
-					if prior, ok := old[key]; ok && e.now().Sub(prior.CheckedAt) <= 7*24*time.Hour && prior.Applied {
-						prior.Evidence.Source = "history"
-						checks[key] = prior
-					}
-				}
+	if containsAny(run.flows, "identity") && run.identitySource == "third_party" {
+		for key := range checks {
+			if d, ok := inspection.Lookup(key); ok && d.Flow == "identity" && key != "third_party" {
+				checks[key] = newInspectionCheck(mustEffective(key, st), e.now())
 			}
 		}
+	}
+	if err := e.inheritInspection(ctx, run, u, plan.Policy, st, checks, &gates); err != nil {
+		return a, err
 	}
 	aggregated := inspection.Aggregate(checks, gates, plan.InspectionMode, st)
 	a.Checks, a.Gates, a.QualityFactor, a.GroupFactors, a.Provisional = aggregated.Checks, aggregated.Gates, aggregated.QualityFactor, aggregated.GroupFactors, aggregated.Provisional
-	if plan.InspectionMode == "formal" {
-		// 非门槛扣价不会自动改变健康；未校准的候选门槛只展示。
-		a.Verdict = "normal"
-		if a.AvailableTotal == 0 || a.AvailableOK == 0 {
-			a.Verdict = "inconclusive"
-		}
-		for _, gate := range a.Gates {
-			if gate.Confirmed {
-				if gate.Health == "unavailable" {
-					a.Verdict = "unavailable"
-					break
-				}
-				a.Verdict = "degraded"
-			}
-		}
-	}
+	a.Verdict = decideVerdict(run, a, nil)
 	return a, nil
 }
 
@@ -194,7 +132,7 @@ func inspectCacheChecks(ctx context.Context, run runRow, ref *runRow, plan execu
 			c.Reason = "同账号第二步观察到缓存命中。"
 			if t[1] <= 0 {
 				c.Status = "fail"
-				c.Factor = numberPointer(d.Coefficients["failure"])
+				c.Factor = numberPointer(d.Coefficients["severe"])
 				c.Reason = "基线第二步有缓存命中，被测第二步未命中。"
 				c.Evidence.Code = "cache_not_observed"
 			}
@@ -306,7 +244,7 @@ func addThirdPartyInspection(a *Assessment, results []tpResult, now time.Time) {
 	}
 	a.Checks["third_party"] = c
 	if c.Status == "fail" {
-		a.Gates = append(a.Gates, inspection.Gate{CheckKey: "third_party", Code: "identity_mismatch", Health: "degraded", Confirmed: d.Enabled && d.Calibrated, OccurredAt: now, Reason: c.Reason})
+		a.Gates = append(a.Gates, inspection.Gate{CheckKey: "third_party", Code: "identity_mismatch", Health: "degraded", Confirmed: d.Enabled, OccurredAt: now, Reason: c.Reason})
 	}
 	aggregated := inspection.Aggregate(a.Checks, a.Gates, a.InspectionMode, st)
 	a.Checks, a.Gates, a.QualityFactor, a.GroupFactors, a.Provisional = aggregated.Checks, aggregated.Gates, aggregated.QualityFactor, aggregated.GroupFactors, aggregated.Provisional
@@ -374,7 +312,9 @@ func (e *Engine) finalizeInspection(ctx context.Context, run runRow, u *upstream
 	}
 	failed := []string{}
 	for key, c := range a.Checks {
-		if c.Applied && (c.Status == "fail" || c.Status == "warning" && (c.Factor != nil && *c.Factor < 1)) {
+		d, _ := inspection.Effective(key, st)
+		// 待复测项包括测智异常和扣价项，纯展示告警不扩大恢复流程。
+		if (c.Status == "fail" || c.Status == "warning") && (d.Flow == "intelligence" || key == "third_party" || d.Pricing) {
 			failed = append(failed, key)
 		}
 	}
@@ -396,13 +336,13 @@ func (e *Engine) finalizeInspection(ctx context.Context, run runRow, u *upstream
 		tier = *u.tier
 	}
 	at := e.now()
-	appraisal := inspection.Appraise(values, tier, a.QualityFactor, &at, a.InspectionMode != "formal", a.Provisional)
+	appraisal := inspection.Appraise(values, tier, a.QualityFactor, &at, !anyPricing(st), a.Provisional)
 	a.Appraisal = &appraisal
 	return decision, failed, nil
 }
 
 // 正式恢复必须重新覆盖旧失败项；没有覆盖或仍失败不能累计恢复次数。
-func (e *Engine) inspectionRecoveryComplete(ctx context.Context, u *upstreamRow, a Assessment) (bool, error) {
+func (e *Engine) inspectionRecoveryComplete(ctx context.Context, u *upstreamRow, a Assessment, flows ...string) (bool, error) {
 	var failed []string
 	err := e.DB.QueryRow(ctx, `SELECT last_failed_checks FROM upstream_quality_state WHERE upstream_id=$1`, u.id).Scan(&failed)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -412,8 +352,13 @@ func (e *Engine) inspectionRecoveryComplete(ctx context.Context, u *upstreamRow,
 		return false, err
 	}
 	for _, key := range failed {
+		if len(flows) > 0 {
+			if d, ok := inspection.Lookup(key); ok && !containsAny(flows, d.Flow) && !(d.Flow == "common" && containsAny(flows, "intelligence")) {
+				continue
+			}
+		}
 		c, ok := a.Checks[key]
-		if !ok || c.Status != "pass" || c.Evidence.Source == "history" {
+		if !ok || (c.Status != "pass" && c.Status != "not_applicable") || c.Evidence.Source == "history" {
 			return false, nil
 		}
 	}

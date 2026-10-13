@@ -83,11 +83,11 @@ func TestAstraMigrationKeepsIDHistoryAndMatchesFreshBank(t *testing.T) {
 	ctx := context.Background()
 	pool := preAstraMigrationDB(t)
 	for _, it := range defaultItems() {
-		if _, err := CreateItem(ctx, pool, it); err != nil {
+		if _, err := createLegacyFixtureItem(ctx, pool, it); err != nil {
 			t.Fatal(err)
 		}
 	}
-	old, err := CreateItem(ctx, pool, legacyCandyItem(t))
+	old, err := createLegacyFixtureItem(ctx, pool, legacyCandyItem(t))
 	if err != nil || old.ID != 22 {
 		t.Fatalf("旧库夹具须包含原 ID=22：%+v %v", old, err)
 	}
@@ -140,9 +140,9 @@ func TestAstraMigrationKeepsIDHistoryAndMatchesFreshBank(t *testing.T) {
 	if err != nil || len(stats) != 1 || stats[0].ItemID != 22 || stats[0].Suite != "inspection_capability" || stats[0].Asked != 1 || stats[0].Passed != 1 || stats[0].RefAsked != 1 || stats[0].RefPassed != 1 {
 		t.Fatalf("迁移丢失历史逐题统计关联：%+v %v", stats, err)
 	}
-	// 空库先跑全量迁移（匹配零行），再按启动入口写 21 道旧题及新内置题。
+	// 空库先跑全量迁移（匹配零行），再按启动入口只写新内置题。
 	_, fresh := testutil.NewMarketDatabase(t)
-	if n, err := SeedDefaultItems(ctx, fresh); err != nil || n != 21+len(inspectionBuiltinItems()) {
+	if n, err := SeedDefaultItems(ctx, fresh); err != nil || n != len(inspectionBuiltinItems()) {
 		t.Fatalf("空库启动写入错误：%d %v", n, err)
 	}
 	if n, err := SeedDefaultItems(ctx, fresh); err != nil || n != 0 {
@@ -160,9 +160,9 @@ func TestAstraMigrationKeepsIDHistoryAndMatchesFreshBank(t *testing.T) {
 	if !reflect.DeepEqual(moved, seeded) {
 		t.Fatalf("迁移后的老库与新库题目配置不一致：旧=%+v 新=%+v", moved, seeded)
 	}
-	for _, mode := range []string{"full", "quick", "legacy"} {
+	for _, mode := range []string{"full", "quick"} {
 		for _, model := range []string{"gpt-6-astra", "gpt-6-sol"} {
-			items, err := selectExecutionItems(ctx, fresh, "openai", model, append([]string{"iq", "reasoning", "long_context"}, inspectionSuites...), mode)
+			items, err := selectFlowExecutionItems(ctx, fresh, "openai", model, []string{model}, []string{"intelligence"}, "third_party", map[string]string{"intelligence": mode}, defaultInspectionSettings())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -173,7 +173,7 @@ func TestAstraMigrationKeepsIDHistoryAndMatchesFreshBank(t *testing.T) {
 				}
 			}
 			want := 0
-			if model == "gpt-6-astra" && mode != "legacy" {
+			if model == "gpt-6-astra" {
 				want = 1
 			}
 			if found != want {
@@ -190,7 +190,7 @@ func TestAstraMigrationPreservesAdminChanges(t *testing.T) {
 	it := legacyCandyItem(t)
 	it.Status, it.Platforms = "retired", []string{"openai"}
 	it.Grader = Grader{Type: "exact", Answer: "管理员判分"}
-	old, err := CreateItem(ctx, pool, it)
+	old, err := createLegacyFixtureItem(ctx, pool, it)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestAstraMigrationPreservesAdminChanges(t *testing.T) {
 	if !reflect.DeepEqual(moved, *old) {
 		t.Fatalf("迁移覆盖了管理员状态、平台、判分或其他字段：%+v，期望 %+v", moved, old)
 	}
-	items, err := selectExecutionItems(ctx, pool, "openai", "gpt-6-astra", inspectionSuites, "quick")
+	items, err := selectFlowExecutionItems(ctx, pool, "openai", "gpt-6-astra", []string{"gpt-6-astra"}, []string{"intelligence"}, "third_party", map[string]string{"intelligence": "quick"}, defaultInspectionSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestAstraMigrationDoesNotGuessAdminItemIdentity(t *testing.T) {
 			case "其他套件":
 				it.Suite = "iq"
 			}
-			old, err := CreateItem(ctx, pool, it)
+			old, err := createLegacyFixtureItem(ctx, pool, it)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -250,7 +250,7 @@ func TestAstraMigrationDoesNotGuessAdminItemIdentity(t *testing.T) {
 				if name == "目标键已占用" {
 					second = astraCandyItem()
 				}
-				if _, err := CreateItem(ctx, pool, second); err != nil {
+				if _, err := createLegacyFixtureItem(ctx, pool, second); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -269,4 +269,28 @@ func TestAstraMigrationDoesNotGuessAdminItemIdentity(t *testing.T) {
 			}
 		})
 	}
+}
+
+// 迁移测试直接构造旧库记录；现行管理接口已经拒绝创建旧套件。
+func createLegacyFixtureItem(ctx context.Context, pool *pgxpool.Pool, it Item) (*Item, error) {
+	if it.Platforms == nil {
+		it.Platforms = []string{}
+	}
+	if it.Models == nil {
+		it.Models = []string{}
+	}
+	if it.Modes == nil {
+		it.Modes = []string{}
+	}
+	if len(it.Generator) == 0 {
+		it.Generator = []byte(`{}`)
+	}
+	if it.Status == "" {
+		it.Status = "active"
+	}
+	if it.Weight == 0 {
+		it.Weight = 1
+	}
+	return scanItem(pool.QueryRow(ctx, `INSERT INTO probe_items(suite,category,prompt,grader,platforms,models,max_tokens,reasoning_effort,irt_difficulty,irt_discrimination,status,check_key,request,generator,modes,builtin_key,weight) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING `+itemColumns,
+		it.Suite, it.Category, it.Prompt, mustJSON(it.Grader), it.Platforms, it.Models, it.MaxTokens, it.ReasoningEffort, it.IRTDifficulty, it.IRTDiscrimination, it.Status, it.CheckKey, mustJSON(it.Request), it.Generator, it.Modes, it.BuiltinKey, it.Weight))
 }

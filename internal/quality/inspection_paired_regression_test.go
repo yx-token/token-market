@@ -3,7 +3,6 @@ package quality
 import (
 	"encoding/json"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -98,8 +97,8 @@ func pairedRegressionCases() []pairedRegressionCase {
 	return cases
 }
 
-func TestPairedInspectionMatches5834d16(t *testing.T) {
-	// 快照由5834d16的原始 Inspect 与 assessFormal 生成，防止新分支改变配对结论。
+func TestPairedInspectionPreservesExistingEvidenceRules(t *testing.T) {
+	// 旧快照保留样本剔除与功能结论；新的模型期望及流程结论单独验证。
 	raw, err := os.ReadFile("testdata/inspection_paired_5834d16.json")
 	if err != nil {
 		t.Fatal(err)
@@ -111,14 +110,19 @@ func TestPairedInspectionMatches5834d16(t *testing.T) {
 	for _, tc := range pairedRegressionCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			checks, gates := Inspect(tc.rows, tc.st, time.Time{}, InspectOptions{Capability: &inspection.ModelCapability{ContextWindow: 1, Tools: capabilityBoolPointer(false)}})
-			actual := pairedRegressionResult{checks, gates, assessFormal(tc.rows, th, tc.st)}
-			// JSON 往返消除可省略空字段的内存形状差异，仅比对持久化判定。
-			data, _ := json.Marshal(actual)
-			var persisted pairedRegressionResult
-			_ = json.Unmarshal(data, &persisted)
-			if !reflect.DeepEqual(persisted, expected[tc.name]) {
-				t.Fatalf("%s 的配对判定与5834d16不一致", tc.name)
+			for key, old := range expected[tc.name].Checks {
+				current := checks[key]
+				if current.Status != old.Status || current.Samples != old.Samples || current.Evidence.Source != old.Evidence.Source {
+					t.Fatalf("%s/%s 的样本与功能判定改变：%+v，旧=%+v", tc.name, key, current, old)
+				}
 			}
+			if len(gates) != len(expected[tc.name].Gates) {
+				t.Fatal("已有权限和可用门槛证据改变")
+			}
+			if a := assessFormal(tc.rows, th, tc.st); a.Samples != 0 || a.LLR != 0 {
+				t.Fatal("配对总结不应继续输出旧SPRT结论")
+			}
+
 		})
 	}
 	if len(expected) != len(pairedRegressionCases()) || !strings.Contains(string(raw), "paired_probe") {

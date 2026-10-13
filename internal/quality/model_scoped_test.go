@@ -8,39 +8,19 @@ import (
 	"github.com/DueGin/token-market/internal/inspection"
 )
 
-func TestFormalItemsRetainModelScopedLegacy(t *testing.T) {
-	items := defaultItems()
-	if got := formalItems(items); len(got) != 0 {
-		t.Fatalf("其余 21 道旧内置题仍应全部跳过：%+v", got)
+func TestFlowItemModelsHonorPerItemScope(t *testing.T) {
+	item := scopedIntelligenceItem()
+	if got := flowItemModels(item, "gpt-6-astra", []string{"gpt-6-astra", "gpt-6-sol"}); !reflect.DeepEqual(got, []string{"gpt-6-astra"}) {
+		t.Fatalf("型号专用题选错模型：%v", got)
 	}
-	if got := formalItems([]Item{modelScopedLegacyItem()}); len(got) != 1 || !reflect.DeepEqual(got[0], modelScopedLegacyItem()) {
-		t.Fatalf("正式模式应保留管理员限定型号旧题：%+v", got)
-	}
-	unscoped := modelScopedLegacyItem()
-	unscoped.Models = nil
-	if len(formalItems([]Item{unscoped})) != 0 {
-		t.Fatal("未限定型号的旧内置题仍须跳过")
-	}
-	scoped := items[0]
-	scoped.Models = []string{"gpt-6-astra"}
-	scoped.CheckKey = "D08"
-	rewritten := unscoped
-	rewritten.Prompt += " 管理员改写"
-	custom := Item{Suite: "iq", Prompt: "管理员新题"}
-	want := []Item{scoped, rewritten, custom}
-	if !reflect.DeepEqual(formalItems(want), want) {
-		t.Fatal("型号专用题、改写题或管理员新题被跳过")
+	item.Models = nil
+	if got := flowItemModels(item, "gpt-6-astra", []string{"gpt-6-astra", "gpt-6-sol"}); len(got) != 2 {
+		t.Fatal("未限定型号的测智题须测所有选中模型")
 	}
 }
 
-func modelScopedLegacyItem() Item {
-	for _, it := range defaultItems() {
-		if it.Suite == "reasoning" {
-			it.Models = []string{"gpt-6-astra"}
-			return it
-		}
-	}
-	panic("旧推理题缺失")
+func scopedIntelligenceItem() Item {
+	return Item{Suite: "inspection_capability", CheckKey: "D07", Prompt: "计算 5 + 7，只输出整数。", Grader: Grader{Type: "exact", Answer: "12"}, Models: []string{"gpt-6-astra"}, MaxTokens: 128, Status: "active", Modes: []string{"full", "quick"}, Generator: []byte(`{}`)}
 }
 
 func TestInspectionItemKeyDefaultsAndOverrides(t *testing.T) {
@@ -48,8 +28,8 @@ func TestInspectionItemKeyDefaultsAndOverrides(t *testing.T) {
 		name, suite, key, want string
 		models                 []string
 	}{
-		{"限定型号智力题", "iq", "", "D07", []string{"gpt-6-astra"}},
-		{"限定型号推理题", "reasoning", "", "D07", []string{"gpt-6-astra"}},
+		{"限定型号智力题", "iq", "", "", []string{"gpt-6-astra"}},
+		{"限定型号推理题", "reasoning", "", "", []string{"gpt-6-astra"}},
 		{"显式功能归类", "reasoning", "D08", "D08", []string{"gpt-6-astra"}},
 		{"显式诚实归类", "iq", "D07.honesty", "D07.honesty", []string{"gpt-6-astra"}},
 		{"不限型号", "reasoning", "", "", nil},
@@ -70,7 +50,7 @@ func TestInspectionItemKeyDefaultsAndOverrides(t *testing.T) {
 }
 
 func scopedStaticOutcome() Outcome {
-	it := modelScopedLegacyItem()
+	it := scopedIntelligenceItem()
 	o := pairedInspectionOutcome(inspectionItemKey(it), false, true)
 	o.Suite, o.ItemID, o.GeneratorVersion = it.Suite, 22, "static-1"
 	return o
@@ -97,34 +77,17 @@ func TestModelScopedIntelligenceUsesD07Pairs(t *testing.T) {
 	rows = append(rows, static)
 	checks, gates := Inspect(rows, st, time.Now())
 	c := checks["D07"]
-	if c.Samples.Observed != 20 || c.Samples.Paired != 20 || c.Samples.Excluded != 0 || c.Status != "fail" || c.Factor == nil || *c.Factor != .7 || *c.Metrics["relative_score"].Value != .45 {
+	if c.Samples.Observed != 20 || c.Samples.Paired != 20 || c.Samples.Excluded != 0 || c.Status != "fail" || c.Factor == nil || *c.Factor != .7 || *c.Metrics["relative_score"].Value != .5 {
 		t.Fatalf("静态题未与参数题一起计智力扣价：%+v", c)
 	}
 	aggregated := inspection.Aggregate(checks, gates, st.Mode, st)
 	if aggregated.QualityFactor == nil || *aggregated.QualityFactor != .7 || !aggregated.Checks["D07"].Applied {
 		t.Fatalf("静态题扣价未进入Q：%+v", aggregated)
 	}
-	want := append([]Outcome(nil), rows...)
-	for i := range want {
-		want[i].Suite, want[i].RefHistRate = "iq", nil
+	if got := assessFormal(rows, th, st); got.Samples != 0 || got.Verdict != "normal" || got.AvailableTotal != 20 {
+		t.Fatalf("测智结论不应再触发旧序贯门槛：%+v", got)
 	}
-	if got := assessFormal(rows, th, st); !reflect.DeepEqual(got, Assess(want, th, true)) || got.Samples != c.Samples.Paired || got.Verdict != "degraded" {
-		t.Fatalf("正式SPRT未使用同一组同期配对：%+v", got)
-	}
-	for _, key := range []string{"D08", "A11.thinking"} {
-		rows[19].CheckKey = key
-		if got := assessFormal(rows, th, st); got.Samples != 19 {
-			t.Fatalf("显式 %s 被旧suite错误计入智力：%+v", key, got)
-		}
-	}
-	rows[19].CheckKey = "D07"
-	for _, calibrated := range []bool{false, true} {
-		enabled := !calibrated
-		st.CheckOverrides["D07"] = inspection.CheckOverride{Enabled: &enabled, Calibrated: calibrated}
-		if got := assessFormal(rows, th, st); got.Samples != 0 {
-			t.Fatal("关闭或未校准的 D07 不应进入正式门槛")
-		}
-	}
+
 }
 
 func TestModelScopedIntelligenceExcludesBothSides(t *testing.T) {
@@ -150,9 +113,6 @@ func TestModelScopedIntelligenceExcludesBothSides(t *testing.T) {
 				c := checks["D07"]
 				if c.Samples.Paired != 19 || c.Samples.Excluded != 1 || c.Factor != nil || c.Status != "inconclusive" {
 					t.Fatalf("无效静态配对未整体剔除：%+v", c)
-				}
-				if a := assessFormal(rows, th, st); a.Samples != c.Samples.Paired {
-					t.Fatalf("SPRT 与 D07 剔除不同步：%+v", a)
 				}
 				if checks, _ := Inspect([]Outcome{o}, st, time.Now()); checks["D07"].Status != "inconclusive" || checks["D07"].Factor != nil {
 					t.Fatal("单独无效或无基线样本不能扣价")
@@ -204,15 +164,11 @@ func TestModelScopedStaticDoesNotEnterD06(t *testing.T) {
 	}
 }
 
-func TestModelScopedTrialLegacyAssessmentUnchanged(t *testing.T) {
-	rows := outcomes(20, 4, true)
-	o := scopedStaticOutcome()
-	o.CheckKey = ""
-	o.RefHistRate = numberPointer(.95)
-	rows = append(rows, o)
-	before := Assess(rows, th, true)
-	rows[len(rows)-1].CheckKey = "D07"
-	if after := Assess(rows, th, true); !reflect.DeepEqual(before, after) {
-		t.Fatalf("展示归类改变了旧判定：%+v → %+v", before, after)
+func TestInspectionItemMetadataDoesNotChangeAvailability(t *testing.T) {
+	rows := modelScopedD07Rows()
+	before := assessFormal(rows, th)
+	rows[0].CheckKey = "D08"
+	if after := assessFormal(rows, th); !reflect.DeepEqual(before, after) {
+		t.Fatalf("检测项归类改变了可用统计：%+v → %+v", before, after)
 	}
 }

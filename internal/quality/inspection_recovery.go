@@ -2,6 +2,7 @@ package quality
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/DueGin/token-market/internal/inspection"
 )
@@ -14,17 +15,16 @@ func (e *Engine) inspectRecoveryAvailability(ctx context.Context, run runRow, u 
 	rows, err := e.DB.Query(ctx, `WITH recent AS (
  SELECT r.id FROM probe_runs r WHERE r.upstream_id=$1 AND r.model=$2 AND r.id<=$3
  AND (r.id=$3 OR r.status IN ('done','failed')) AND r.mode='full'
- AND r.execution_snapshot->>'inspection_mode'='formal'
- AND r.execution_snapshot->'inspection_settings'=$4::jsonb
+
  AND EXISTS(SELECT 1 FROM probe_results pr WHERE pr.run_id=r.id AND pr.generator_version='availability_recovery/2')
  ORDER BY r.id DESC LIMIT 2
  ), gate_time AS (
  SELECT max(v.created_at) AS at FROM quality_verdicts v WHERE v.upstream_id=$1
- AND EXISTS(SELECT 1 FROM jsonb_array_elements(v.gates) g WHERE g->>'confirmed'='true')
- ) SELECT pr.run_id,COALESCE(pr.http_status,0),COALESCE(pr.error_class,''),pr.flags
- FROM probe_results pr JOIN recent ON recent.id=pr.run_id CROSS JOIN gate_time
- WHERE pr.generator_version='availability_recovery/2' AND pr.created_at>gate_time.at
- AND pr.created_at>now()-interval '7 days' AND pr.step_state->>'complete'='true'`, u.id, run.model, run.id, mustJSON(st))
+ AND (v.verdict IN ('unavailable','degraded') OR EXISTS(SELECT 1 FROM jsonb_array_elements(v.gates) g WHERE g->>'confirmed'='true'))
+ ) SELECT pr.run_id,COALESCE(pr.http_status,0),COALESCE(pr.error_class,''),pr.flags,r.execution_snapshot
+ FROM probe_results pr JOIN recent ON recent.id=pr.run_id JOIN probe_runs r ON r.id=pr.run_id CROSS JOIN gate_time
+ WHERE pr.generator_version='availability_recovery/2' AND pr.created_at>COALESCE(gate_time.at,'-infinity')
+ AND pr.created_at>now()-interval '7 days' AND pr.step_state->>'complete'='true'`, u.id, run.model, run.id)
 	if err != nil {
 		return err
 	}
@@ -35,8 +35,16 @@ func (e *Engine) inspectRecoveryAvailability(ctx context.Context, run runRow, u 
 		var status int
 		var class string
 		var flags []string
-		if err := rows.Scan(&runID, &status, &class, &flags); err != nil {
+		var raw []byte
+		if err := rows.Scan(&runID, &status, &class, &flags, &raw); err != nil {
 			return err
+		}
+		var snap executionSnapshot
+		if err := json.Unmarshal(raw, &snap); err != nil {
+			return err
+		}
+		if snap.Settings == nil || definitionHash("D13", *snap.Settings) != definitionHash("D13", st) || definitionHash("D04", *snap.Settings) != definitionHash("D04", st) {
+			continue
 		}
 		observed++
 		if class != "rate_limited" && class != "platform" && class != "configuration" && class != "expected_reject" {

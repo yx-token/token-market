@@ -116,6 +116,23 @@ func TestSettingsPricingIndependentAndReset(t *testing.T) {
 	}
 }
 
+func TestSettingsPricingEnabledIgnoresDisabledAndUnknownChecks(t *testing.T) {
+	s := Defaults()
+	if s.PricingEnabled() {
+		t.Fatal("默认设置存在用于扣价的项")
+	}
+	pricing, enabled := true, false
+	s.CheckOverrides["unknown"] = CheckOverride{Pricing: &pricing}
+	s.CheckOverrides["D07"] = CheckOverride{Enabled: &enabled, Pricing: &pricing}
+	if s.PricingEnabled() {
+		t.Fatal("未知或停用检测项影响估价试算状态")
+	}
+	enabled = true
+	if !s.PricingEnabled() {
+		t.Fatal("启用且开启扣价的项没有生效")
+	}
+}
+
 func TestSettingsValidation(t *testing.T) {
 	for _, patch := range []string{
 		`{"mode":"shadow"}`, `{"grade_thresholds":{"B":0.99}}`, `{"grade_hysteresis":0.5}`, `{"downgrade_confirmations":1}`,

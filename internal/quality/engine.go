@@ -98,26 +98,27 @@ func (e *Engine) StartOnboardingCheck(ctx context.Context, upstreamID int64, _, 
 }
 
 type upstreamRow struct {
-	accountID    *int64
-	id           int64
-	platform     string
-	authType     string
-	status       string
-	health       string
-	healthReason string
-	isReference  bool
-	probeGroupID *int64
-	proxyID      *int64
-	tier         *string
-	privacyOK    *bool
+	modelWhitelist []string
+	accountID      *int64
+	id             int64
+	platform       string
+	authType       string
+	status         string
+	health         string
+	healthReason   string
+	isReference    bool
+	probeGroupID   *int64
+	proxyID        *int64
+	tier           *string
+	privacyOK      *bool
 }
 
 func (e *Engine) loadUpstream(ctx context.Context, id int64) (*upstreamRow, error) {
 	var u upstreamRow
 	var reason *string
-	err := e.DB.QueryRow(ctx, `SELECT id, platform, auth_type, status, health, health_reason, is_reference, probe_group_id, proxy_id, tier, privacy_ok, sub2api_account_id
+	err := e.DB.QueryRow(ctx, `SELECT id, platform, auth_type, status, health, health_reason, is_reference, probe_group_id, proxy_id, tier, privacy_ok, sub2api_account_id, model_whitelist
 		FROM upstreams WHERE id = $1`, id).Scan(&u.id, &u.platform, &u.authType, &u.status, &u.health, &reason, &u.isReference,
-		&u.probeGroupID, &u.proxyID, &u.tier, &u.privacyOK, &u.accountID)
+		&u.probeGroupID, &u.proxyID, &u.tier, &u.privacyOK, &u.accountID, &u.modelWhitelist)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, listing.ErrUpstreamNotFound
 	}
@@ -128,7 +129,7 @@ func (e *Engine) loadUpstream(ctx context.Context, id int64) (*upstreamRow, erro
 }
 
 // QueueRun 为上游排队一次检测，并在同一批次中为同平台的基线账号排队一次对照检测。
-func (e *Engine) QueueRun(ctx context.Context, upstreamID int64, trigger string) (int64, error) {
+func (e *Engine) QueueRun(ctx context.Context, upstreamID int64, trigger string, requested ...string) (int64, error) {
 	u, err := e.loadUpstream(ctx, upstreamID)
 	if err != nil {
 		return 0, err
@@ -137,81 +138,96 @@ func (e *Engine) QueueRun(ctx context.Context, upstreamID int64, trigger string)
 	if err != nil {
 		return 0, err
 	}
-	if len(p.Models) == 0 {
-		return 0, httpx.BadRequest("NO_MODELS", "detection policy has no models configured")
-	}
-	var pending int
-	if err := e.DB.QueryRow(ctx, `SELECT count(*) FROM probe_runs WHERE upstream_id = $1 AND status IN ('queued', 'running', 'third_party')`, u.id).Scan(&pending); err != nil {
-		return 0, err
-	}
-	if pending > 0 && trigger != "appeal" && trigger != "admin" && trigger != "onboarding" {
-		return 0, httpx.Conflict("RUN_PENDING", "a check is already queued for this upstream")
-	}
-	// 多个模型时按检测次数轮换
-	var runs int
-	if err := e.DB.QueryRow(ctx, "SELECT count(*) FROM probe_runs WHERE upstream_id = $1", u.id).Scan(&runs); err != nil {
-		return 0, err
-	}
-	model := p.Models[runs%len(p.Models)]
-	inspectionConfig, err := loadInspectionSettings(ctx, e.DB)
+	flows, err := e.selectedFlows(ctx, u, p, trigger, requested)
 	if err != nil {
 		return 0, err
 	}
-	// 新题尚未同步或全部下线时仍走旧流程；有新题的试运行也计算完整/快检。
-	mode := "legacy"
-	var newItems bool
-	if err := e.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM probe_items WHERE status='active' AND suite LIKE 'inspection_%')`).Scan(&newItems); err != nil {
+	candidates := intelligenceModels(p, u.modelWhitelist)
+	models := []string{}
+	if containsAny(flows, "intelligence") {
+		models = candidates
+	}
+	model := ""
+	if len(candidates) > 0 {
+		model = candidates[0]
+	} else if len(u.modelWhitelist) > 0 {
+		model = u.modelWhitelist[0]
+	} else {
+		for _, site := range p.ThirdParty {
+			if site.Model != "" {
+				model = site.Model
+				break
+			}
+		}
+		if model == "" && len(p.Models) > 0 {
+			model = p.Models[0]
+		}
+	}
+	if model == "" && (containsAny(flows, "intelligence") && len(models) > 0 || p.Flows.Identity.Source == "self" && containsAny(flows, "identity")) {
+		return 0, httpx.BadRequest("NO_MODELS", "检测策略没有配置模型")
+	}
+	var failed []string
+	err = e.DB.QueryRow(ctx, `SELECT last_failed_checks FROM upstream_quality_state WHERE upstream_id=$1`, u.id).Scan(&failed)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, err
 	}
-	if newItems || inspectionConfig.Mode == "formal" {
-		mode = "quick"
+	mode, flowModes := modesForFlows(p, flows, trigger, failed)
+	source := ""
+	if containsAny(flows, "identity") {
+		source = p.Flows.Identity.Source
 	}
-	// 新套件启用后使用完整/快检；旧题继续按既有超时和取消行为运行。
-	for _, fullTrigger := range p.FullTriggers {
-		if mode != "legacy" && fullTrigger == trigger {
-			mode = "full"
-			break
-		}
-	}
-	if mode != "legacy" && (trigger == "onboarding" || trigger == "appeal" || trigger == "admin") {
-		mode = "full"
-	}
-	if mode != "legacy" && trigger == "recovery" {
-		var failed []string
-		if err := e.DB.QueryRow(ctx, `SELECT last_failed_checks FROM upstream_quality_state WHERE upstream_id=$1`, u.id).Scan(&failed); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return 0, err
-		}
-		if len(failed) > 0 {
-			mode = "full"
-		}
-	}
+	snapshot := executionSnapshot{Policy: p, FlowModes: flowModes, Models: models, ModelWhitelist: u.modelWhitelist}
 	batch := fmt.Sprintf("b%d-%d", u.id, e.now().UnixNano())
-	var id int64
-	if err := e.DB.QueryRow(ctx, `INSERT INTO probe_runs (upstream_id, batch_id, trigger, policy_version, model, mode) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-		u.id, batch, trigger, p.Version, model, mode).Scan(&id); err != nil {
+	tx, err := e.DB.Begin(ctx)
+	if err != nil {
 		return 0, err
 	}
-	if !u.isReference {
-		var refID int64
-		selectionMode := mode
-		if inspectionConfig.Mode == "trial" {
-			selectionMode = "legacy"
+	defer func() { _ = tx.Rollback(ctx) }()
+	// 串行排队检查，避免并发触发重复运行。
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, u.id); err != nil {
+		return 0, err
+	}
+	var pending int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM probe_runs WHERE upstream_id=$1 AND status IN ('queued','running','third_party')`, u.id).Scan(&pending); err != nil {
+		return 0, err
+	}
+	if pending > 0 && trigger != "appeal" && trigger != "admin" && trigger != "onboarding" {
+		return 0, httpx.Conflict("RUN_PENDING", "该上游已有待完成的检测")
+	}
+	var id int64
+	if err := tx.QueryRow(ctx, `INSERT INTO probe_runs(upstream_id,batch_id,trigger,policy_version,model,mode,flows,identity_source,models,execution_snapshot) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),$9,$10) RETURNING id`, u.id, batch, trigger, p.Version, model, mode, flows, source, models, mustJSON(snapshot)).Scan(&id); err != nil {
+		return 0, err
+	}
+	selfFlows := []string{}
+	for _, flow := range flows {
+		if flow == "intelligence" && len(models) > 0 || flow == "identity" && source == "self" {
+			selfFlows = append(selfFlows, flow)
 		}
-		err := e.DB.QueryRow(ctx, `SELECT u.id FROM upstreams u WHERE is_reference AND platform=$1 AND status IN ('ready','listed')
- AND health <> 'unavailable' AND sub2api_account_id IS NOT NULL
- AND ($2='legacy' OR (health='healthy' AND auth_type=$3 AND tier IS NOT DISTINCT FROM $4::text))
- ORDER BY (SELECT count(*) FROM probe_runs r WHERE r.upstream_id=u.id AND r.status IN ('queued','running')),
- (SELECT max(queued_at) FROM probe_runs r WHERE r.upstream_id=u.id) NULLS FIRST, u.id LIMIT 1`, u.platform, selectionMode, u.authType, u.tier).Scan(&refID)
+	}
+	if !u.isReference && len(selfFlows) > 0 && model != "" {
+		referenceModels := append([]string(nil), models...)
+		if containsAny(selfFlows, "identity") {
+			identityModels := u.modelWhitelist
+			if identityModels == nil {
+				identityModels = candidates
+			}
+			for _, identityModel := range append(identityModels, model) {
+				if !containsAny(referenceModels, identityModel) {
+					referenceModels = append(referenceModels, identityModel)
+				}
+			}
+		}
+		var refID int64
+		err := tx.QueryRow(ctx, `SELECT u.id FROM upstreams u WHERE is_reference AND platform=$1 AND status IN ('ready','listed') AND health='healthy' AND sub2api_account_id IS NOT NULL AND auth_type=$2 AND tier IS NOT DISTINCT FROM $3::text AND (model_whitelist IS NULL OR model_whitelist @> $4::text[]) ORDER BY (SELECT count(*) FROM probe_runs r WHERE r.upstream_id=u.id AND r.status IN ('queued','running','third_party')),u.id LIMIT 1`, u.platform, u.authType, u.tier, referenceModels).Scan(&refID)
 		if err == nil {
-			if _, err := e.DB.Exec(ctx, `INSERT INTO probe_runs (upstream_id, batch_id, trigger, policy_version, model, mode) VALUES ($1, $2, 'reference', $3, $4, $5)`,
-				refID, batch, p.Version, model, mode); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO probe_runs(upstream_id,batch_id,trigger,policy_version,model,mode,flows,identity_source,models,execution_snapshot) VALUES($1,$2,'reference',$3,$4,$5,$6,NULLIF($7,''),$8,$9)`, refID, batch, p.Version, model, mode, selfFlows, source, models, []byte(`{}`)); err != nil {
 				return 0, err
 			}
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return 0, err
 		}
 	}
-	return id, nil
+	return id, tx.Commit(ctx)
 }
 
 // Tick 是一轮质量调度：排队到期的检测、推进第三方检测、被动分析、回收续报价、补足探测余额。
@@ -236,29 +252,25 @@ func (e *Engine) Tick(ctx context.Context) error {
 }
 
 func (e *Engine) scheduleDue(ctx context.Context) error {
-	rows, err := e.DB.Query(ctx, `SELECT u.id, u.platform, u.auth_type, u.health, u.health_reason,
-			q.next_scheduled_at, q.next_recovery_at, q.last_run_at
-		FROM upstreams u LEFT JOIN upstream_quality_state q ON q.upstream_id = u.id
-		WHERE u.status IN ('ready', 'listed') AND u.sub2api_account_id IS NOT NULL AND NOT u.is_reference`)
+	rows, err := e.DB.Query(ctx, `SELECT u.id,u.platform,u.auth_type,u.health,u.health_reason,q.next_intelligence_at,q.next_identity_at,q.next_recovery_at,q.last_run_at,COALESCE(q.suspected_flows,'{}') FROM upstreams u LEFT JOIN upstream_quality_state q ON q.upstream_id=u.id WHERE u.status IN ('ready','listed') AND u.sub2api_account_id IS NOT NULL AND NOT u.is_reference`)
 	if err != nil {
 		return err
 	}
 	type item struct {
-		id                         int64
-		platform, authType, health string
-		reason                     *string
-		nextSched, nextRec, last   *time.Time
+		id                                     int64
+		platform, authType, health             string
+		reason                                 *string
+		intelligence, identity, recovery, last *time.Time
+		suspected                              []string
 	}
-	var items []item
-	for rows.Next() {
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (item, error) {
 		var it item
-		if err := rows.Scan(&it.id, &it.platform, &it.authType, &it.health, &it.reason, &it.nextSched, &it.nextRec, &it.last); err != nil {
-			rows.Close()
-			return err
-		}
-		items = append(items, it)
+		err := row.Scan(&it.id, &it.platform, &it.authType, &it.health, &it.reason, &it.intelligence, &it.identity, &it.recovery, &it.last, &it.suspected)
+		return it, err
+	})
+	if err != nil {
+		return err
 	}
-	rows.Close()
 	now := e.now()
 	for _, it := range items {
 		p, err := EffectivePolicy(ctx, e.DB, it.id, it.platform, it.authType)
@@ -268,37 +280,75 @@ func (e *Engine) scheduleDue(ctx context.Context) error {
 		if !p.Enabled {
 			continue
 		}
+		next := map[string]*time.Time{"intelligence": it.intelligence, "identity": it.identity}
 		trigger := ""
-		probeCaused := it.health == listing.HealthDegraded || (it.health == listing.HealthUnavailable && it.reason != nil && strings.HasPrefix(*it.reason, "probe:"))
-		switch {
-		case probeCaused && it.nextRec != nil && !now.Before(*it.nextRec):
+		flows := []string{}
+		probeCaused := it.health == listing.HealthDegraded || it.health == listing.HealthUnavailable && it.reason != nil && strings.HasPrefix(*it.reason, "probe:")
+		if probeCaused && it.recovery != nil && !now.Before(*it.recovery) {
 			trigger = "recovery"
-		case it.health == listing.HealthSuspected && (it.last == nil || now.Sub(*it.last) > 30*time.Minute):
-			trigger = "adaptive"
-		case p.ScheduledEnabled && (it.nextSched == nil || !now.Before(*it.nextSched)):
-			trigger = "scheduled"
+		}
+		if trigger == "" && it.health == listing.HealthSuspected {
+			for _, flow := range it.suspected {
+				if flowPolicy(p, flow).Enabled && flowPolicy(p, flow).Applies("adaptive") && (next[flow] == nil || !now.Before(*next[flow])) {
+					flows = append(flows, flow)
+				}
+			}
+			if len(flows) == 0 && len(it.suspected) == 0 && (it.last == nil || now.Sub(*it.last) >= 30*time.Minute) {
+				for _, flow := range detectionFlows {
+					if flowPolicy(p, flow).Enabled && flowPolicy(p, flow).Applies("adaptive") {
+						flows = append(flows, flow)
+					}
+				}
+			}
+			if len(flows) > 0 {
+				trigger = "adaptive"
+			}
+		}
+		if trigger == "" && p.ScheduledEnabled {
+			for _, flow := range detectionFlows {
+				f := flowPolicy(p, flow)
+				if f.Enabled && f.ScheduledEnabled && f.Applies("scheduled") && !containsAny(it.suspected, flow) && (next[flow] == nil || !now.Before(*next[flow])) {
+					flows = append(flows, flow)
+				}
+			}
+			if len(flows) > 0 {
+				trigger = "scheduled"
+			}
 		}
 		if trigger == "" {
 			continue
 		}
-		if _, err := e.QueueRun(ctx, it.id, trigger); err != nil {
+		id, err := e.QueueRun(ctx, it.id, trigger, flows...)
+		if err != nil {
 			var he *httpx.Error
 			if errors.As(err, &he) {
 				continue
 			}
 			return err
 		}
-		next := now.Add(time.Duration(p.IntervalMinutes) * time.Minute)
-		if p.JitterMinutes > 0 {
-			next = next.Add(time.Duration(rand.IntN(2*p.JitterMinutes+1)-p.JitterMinutes) * time.Minute) //nolint:gosec // 调度抖动
+		if trigger == "scheduled" {
+			for _, flow := range flows {
+				scheduled := now.Add(time.Duration(flowPolicy(p, flow).IntervalMinutes) * time.Minute)
+				// 旧全局抖动不能把较短流程的下次时间推进到当前时间之前。
+				jitter := min(p.JitterMinutes, flowPolicy(p, flow).IntervalMinutes/2)
+				if jitter > 0 {
+					scheduled = scheduled.Add(time.Duration(rand.IntN(2*jitter+1)-jitter) * time.Minute)
+				}
+				column := "next_intelligence_at"
+				if flow == "identity" {
+					column = "next_identity_at"
+				}
+				if _, err := e.DB.Exec(ctx, `INSERT INTO upstream_quality_state(upstream_id,`+column+`) VALUES($1,$2) ON CONFLICT(upstream_id) DO UPDATE SET `+column+`=EXCLUDED.`+column, it.id, scheduled); err != nil {
+					return err
+				}
+			}
 		}
-		if _, err := e.DB.Exec(ctx, `INSERT INTO upstream_quality_state (upstream_id, next_scheduled_at) VALUES ($1, $2)
-			ON CONFLICT (upstream_id) DO UPDATE SET next_scheduled_at = CASE WHEN $3 = 'scheduled' OR upstream_quality_state.next_scheduled_at IS NULL
-				THEN EXCLUDED.next_scheduled_at ELSE upstream_quality_state.next_scheduled_at END,
-				next_recovery_at = CASE WHEN $3 = 'recovery' THEN NULL ELSE upstream_quality_state.next_recovery_at END`,
-			it.id, next, trigger); err != nil {
-			return err
+		if trigger == "recovery" {
+			if _, err := e.DB.Exec(ctx, `UPDATE upstream_quality_state SET next_recovery_at=NULL WHERE upstream_id=$1`, it.id); err != nil {
+				return err
+			}
 		}
+		_ = id
 	}
 	return nil
 }
@@ -369,7 +419,7 @@ func (e *Engine) DispatchQueued(ctx context.Context) error {
 	if full {
 		return nil
 	}
-	rows, err := e.DB.Query(ctx, `SELECT batch_id FROM probe_runs WHERE status = 'queued' GROUP BY batch_id ORDER BY min(queued_at) LIMIT 50`)
+	rows, err := e.DB.Query(ctx, `SELECT r.batch_id FROM probe_runs r WHERE r.status='queued' AND NOT EXISTS(SELECT 1 FROM probe_runs older WHERE older.upstream_id=r.upstream_id AND older.batch_id<>r.batch_id AND (older.status IN ('running','third_party') OR older.status='queued' AND older.id<r.id)) GROUP BY r.batch_id ORDER BY min(r.queued_at) LIMIT 50`)
 	if err != nil {
 		return err
 	}
@@ -437,7 +487,7 @@ func (e *Engine) wakeup() chan struct{} {
 // 这类记录来自已经退出的进程（例如崩溃）；不处理会一直算作"检测中"，挡住该上游之后的检测。
 func (e *Engine) failOrphaned(ctx context.Context, lim probeLimits) error {
 	rows, err := e.DB.Query(ctx, `SELECT id, upstream_id, trigger, model, batch_id, mode, deadline_at FROM probe_runs
-		WHERE status = 'running' AND ((mode <> 'legacy' AND execution_snapshot <> '{}' AND started_at < now() - interval '5 minutes') OR (deadline_at IS NOT NULL AND deadline_at < now() - interval '5 minutes') OR (deadline_at IS NULL AND started_at < now() - make_interval(secs => $1)))`, (lim.batch + orphanGrace).Seconds())
+		WHERE status = 'running' AND ((mode <> 'legacy' AND COALESCE((execution_snapshot->>'schema_version')::int,0)=1 AND started_at < now() - interval '5 minutes') OR (deadline_at IS NOT NULL AND deadline_at < now() - interval '5 minutes') OR (deadline_at IS NULL AND started_at < now() - make_interval(secs => $1)))`, (lim.batch + orphanGrace).Seconds())
 	if err != nil {
 		return err
 	}
@@ -475,13 +525,16 @@ func (e *Engine) failOrphaned(ctx context.Context, lim probeLimits) error {
 }
 
 type runRow struct {
-	id         int64
-	upstreamID int64
-	trigger    string
-	model      string
-	mode       string
-	deadline   *time.Time
-	batch      string
+	flows          []string
+	identitySource string
+	models         []string
+	id             int64
+	upstreamID     int64
+	trigger        string
+	model          string
+	mode           string
+	deadline       *time.Time
+	batch          string
 }
 
 // ExecuteBatch 按当前系统设置的超时执行一个批次，见 executeBatch。
@@ -497,13 +550,13 @@ func (e *Engine) ExecuteBatch(ctx context.Context, batch string) error {
 // 整批不超过 lim.batch；超时或出错时记为检测失败。ctx 被取消时重新排队；legacy 保持旧重跑行为，full/quick 保留已完成单元。
 func (e *Engine) executeBatch(ctx context.Context, batch string, lim probeLimits) error {
 	rows, err := e.DB.Query(ctx, `UPDATE probe_runs SET status = 'running', started_at = COALESCE(started_at, now())
-		WHERE batch_id = $1 AND status = 'queued' RETURNING id, upstream_id, trigger, model, mode, deadline_at, batch_id`, batch)
+		WHERE batch_id = $1 AND status = 'queued' RETURNING id, upstream_id, trigger, model, mode, deadline_at, batch_id, flows, COALESCE(identity_source,''), models`, batch)
 	if err != nil {
 		return err
 	}
 	runs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (runRow, error) {
 		var r runRow
-		err := row.Scan(&r.id, &r.upstreamID, &r.trigger, &r.model, &r.mode, &r.deadline, &r.batch)
+		err := row.Scan(&r.id, &r.upstreamID, &r.trigger, &r.model, &r.mode, &r.deadline, &r.batch, &r.flows, &r.identitySource, &r.models)
 		return r, err
 	})
 	if err != nil || len(runs) == 0 {
@@ -621,6 +674,10 @@ func (e *Engine) failRunWithSummary(ctx context.Context, run runRow, msg string,
 		summary = map[string]any{}
 	}
 	summary["error"] = msg
+	summary["flows"], summary["identity_source"], summary["models"] = run.flows, run.identitySource, run.models
+	if err := e.cancelThirdParty(ctx, run.id); err != nil {
+		return err
+	}
 	tx, err := e.DB.Begin(ctx)
 	if err != nil {
 		return err
@@ -638,8 +695,17 @@ func (e *Engine) failRunWithSummary(ctx context.Context, run runRow, msg string,
 		}
 	}
 	switch run.trigger {
+	case "adaptive":
+		var attempts int
+		if err := tx.QueryRow(ctx, `SELECT adaptive_attempts FROM upstream_quality_state WHERE upstream_id=$1`, run.upstreamID).Scan(&attempts); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		next := e.now().Add(adaptiveBackoff[min(attempts, len(adaptiveBackoff)-1)])
+		if _, err := tx.Exec(ctx, `UPDATE upstream_quality_state SET adaptive_attempts=adaptive_attempts+1,next_intelligence_at=CASE WHEN 'intelligence'=ANY($2::text[]) THEN $3 ELSE next_intelligence_at END,next_identity_at=CASE WHEN 'identity'=ANY($2::text[]) THEN $3 ELSE next_identity_at END WHERE upstream_id=$1`, run.upstreamID, run.flows, next); err != nil {
+			return err
+		}
 	case "onboarding":
-		if err := listing.MarkVerified(ctx, tx, run.upstreamID, false, "onboarding check failed: "+msg); err != nil {
+		if err := listing.MarkVerified(ctx, tx, run.upstreamID, false, "上架检测未通过："+msg); err != nil {
 			return err
 		}
 	case "appeal":
@@ -708,59 +774,66 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, tim
 			return err
 		}
 	}
+	st, err := loadInspectionSettings(ctx, e.DB)
+	if err != nil {
+		return err
+	}
+	if frozen.Settings != nil {
+		st = *frozen.Settings
+	}
+	frozen.Settings = &st
+	frozen.Policy = p
+	frozen.InspectionMode = st.Mode
+	frozen.Flows = run.flows
+	if _, err := e.DB.Exec(ctx, `UPDATE probe_runs SET execution_snapshot=$2 WHERE id=$1`, run.id, mustJSON(frozen)); err != nil {
+		return err
+	}
+	if err := e.submitThirdParty(ctx, run, u, p); err != nil {
+		return err
+	}
+	items, err := selectFlowExecutionItems(ctx, e.DB, u.platform, run.model, run.models, run.flows, run.identitySource, frozen.FlowModes, st)
+	if err != nil {
+		return err
+	}
+	pure := len(items) == 0 && run.trigger != "recovery"
+	if pure {
+		frozen.SchemaVersion = 1
+		frozen.Mode = run.mode
+		if _, err := e.DB.Exec(ctx, `UPDATE probe_runs SET execution_snapshot=$2 WHERE id=$1`, run.id, mustJSON(frozen)); err != nil {
+			return err
+		}
+		a, err := e.inspectionAssessment(ctx, run, nil, u, frozen, nil, st, Assessment{})
+		if err != nil {
+			return err
+		}
+		if waiting, err := e.startThirdParty(ctx, run, u, p, a); err != nil || waiting {
+			return err
+		}
+		return e.conclude(ctx, run, u, p, a, nil)
+	}
 	targetKey, err := e.probeKey(ctx, u)
 	if err != nil {
-		return fmt.Errorf("probe key: %w", err)
+		return fmt.Errorf("检测密钥：%w", err)
 	}
 	var refKey string
 	var refUp *upstreamRow
 	if ref != nil {
 		if refUp, err = e.loadUpstream(ctx, ref.upstreamID); err == nil {
 			if refKey, err = e.probeKey(ctx, refUp); err != nil {
-				e.Log.Warn("reference probe key", "upstream_id", ref.upstreamID, "err", err)
+				e.Log.Warn("基线检测密钥", "upstream_id", ref.upstreamID, "err", err)
 				refKey = ""
 			}
 		}
 	}
-
-	st, err := loadInspectionSettings(ctx, e.DB)
-	if err != nil {
-		return err
-	}
-	if run.mode == "legacy" {
-		st.Mode = "trial"
-	}
-	suites := p.Suites
-	if run.mode != "legacy" {
-		suites = append(append([]string(nil), suites...), inspectionSuites...)
-	}
-	runtimePolicy := *p
-	runtimePolicy.Suites = suites
-	p = &runtimePolicy
-	items, err := selectExecutionItems(ctx, e.DB, u.platform, run.model, suites, run.mode)
-	if err != nil {
-		return err
-	}
-	enabledItems := make([]Item, 0, len(items))
-	for _, it := range items {
-		key := it.CheckKey
-		// 试运行仍执行原旧题；关闭展示项不能改变旧判定的题目集合。
-		if st.Mode == "formal" {
-			key = inspectionItemKey(it)
-		}
-		definition, known := inspection.Effective(key, st)
-		if known && !definition.Enabled {
-			continue
-		}
-		enabledItems = append(enabledItems, it)
-	}
-	items = enabledItems
-	if st.Mode == "formal" {
-		items = formalItems(items)
-	}
 	plan, err := e.executionPlan(ctx, run, p, items, st, timeout)
 	if err != nil {
 		return err
+	}
+	if plan.Policy == nil {
+		plan.Policy = p
+	}
+	if plan.Settings == nil {
+		plan.Settings = &st
 	}
 	if plan.RequestTimeoutSeconds > 0 {
 		timeout = time.Duration(plan.RequestTimeoutSeconds) * time.Second
@@ -771,23 +844,17 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, tim
 	}
 
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		// 影子阶段到期只停止新请求；给已完成的旧题留出数据库收尾时间。
+		// 到期后保留已完成请求的证据，并留出数据库收尾时间。
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 	}
-	assessment := Assess(outcomes, plan.Thresholds, plan.Scoring)
+	assessment := assessFormal(outcomes, plan.Thresholds, st)
 	assessment, err = e.inspectionAssessment(ctx, run, ref, u, plan, outcomes, st, assessment)
 	if err != nil {
 		return err
 	}
 	assessment.Warnings = warnings
-	if plan.InspectionMode != "formal" {
-		assessment.Shadow = summarizeShadow(outcomes)
-	}
-	if incomplete, err := e.failUnobservedRun(ctx, run, u, assessment); incomplete {
-		return err
-	}
 	if waiting, err := e.startThirdParty(ctx, run, u, p, assessment); err != nil || waiting {
 		return err
 	}
@@ -795,25 +862,24 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, tim
 }
 
 func (e *Engine) failUnobservedRun(ctx context.Context, run runRow, u *upstreamRow, a Assessment) (bool, error) {
-	confirmed := false
-	for _, gate := range a.Gates {
-		confirmed = confirmed || gate.Confirmed
-	}
-	noValidation := a.AvailableTotal == 0 || a.InspectionMode == "formal" && a.AvailableOK == 0 && !confirmed
-	if !noValidation || !containsAny([]string{"onboarding", "appeal", "recovery"}, run.trigger) {
+	if !containsAny([]string{"onboarding", "appeal", "recovery"}, run.trigger) || a.Verdict == "unavailable" || a.Verdict == "degraded" {
 		return false, nil
 	}
-	// 没有观测不能证明上架、申诉或恢复通过；检测失败只推进流程，不修改健康状态。
-	msg := "没有有效观测：限流/平台错误，可稍后重试"
-	if a.AvailableTotal > 0 {
-		msg = "没有成功观测：本次请求均未成功完成，证据不足，可稍后重试"
+	incomplete := []string{}
+	for _, flow := range run.flows {
+		if !checkConclusive(summarizeFlow(flow, run, a).Status) {
+			incomplete = append(incomplete, flow)
+		}
 	}
-	if a.ErrorCounts["configuration"] > 0 {
-		msg += "；存在题目配置错误，请管理员检查"
+	if len(run.flows) == 0 && a.AvailableTotal == 0 {
+		incomplete = append(incomplete, "intelligence")
+	}
+	if len(incomplete) == 0 {
+		return false, nil
 	}
 	summary := e.buildSummary(run, u, a, "")
 	summary["incomplete"] = true
-	return true, e.failRunWithSummary(ctx, run, msg, summary)
+	return true, e.failRunWithSummary(ctx, run, "目标流程没有有效结论，可稍后重试："+strings.Join(incomplete, "、"), summary)
 }
 
 func containsAny(list []string, want ...string) bool {
@@ -847,63 +913,12 @@ func (e *Engine) refHistory(ctx context.Context, platform string, itemID int64) 
 	return rate, true, nil
 }
 
-// attribute 判定降智的原因：官方全局（基线也下降）、代理（同代理其他上游近期也降智）、账号本身。
-func (e *Engine) attribute(ctx context.Context, u *upstreamRow, a Assessment) (string, error) {
-	var refNow, refHist *float64
-	if err := e.DB.QueryRow(ctx, `SELECT
-			(SELECT avg(CASE WHEN pr.passed THEN 1 ELSE 0 END)::float8 FROM probe_results pr JOIN probe_runs r ON r.id = pr.run_id
-				JOIN upstreams x ON x.id = r.upstream_id
-				WHERE x.is_reference AND x.platform = $1 AND pr.suite IN ('iq', 'reasoning', 'long_context') AND pr.error_class IS NULL
-					AND pr.created_at > now() - interval '3 hours'),
-			(SELECT avg(CASE WHEN pr.passed THEN 1 ELSE 0 END)::float8 FROM probe_results pr JOIN probe_runs r ON r.id = pr.run_id
-				JOIN upstreams x ON x.id = r.upstream_id
-				WHERE x.is_reference AND x.platform = $1 AND pr.suite IN ('iq', 'reasoning', 'long_context') AND pr.error_class IS NULL
-					AND pr.created_at BETWEEN now() - interval '7 days' AND now() - interval '3 hours')`, u.platform).Scan(&refNow, &refHist); err != nil {
-		return "", err
-	}
-	if refNow != nil && refHist != nil && *refHist > 0 && *refNow < 0.8**refHist {
-		return "vendor_wide", nil
-	}
-	if u.proxyID != nil {
-		var peers int
-		if err := e.DB.QueryRow(ctx, `SELECT count(DISTINCT v.upstream_id) FROM quality_verdicts v JOIN upstreams x ON x.id = v.upstream_id
-			WHERE x.proxy_id = $1 AND x.id <> $2 AND v.verdict = 'degraded' AND v.created_at > now() - interval '24 hours'`, *u.proxyID, u.id).Scan(&peers); err != nil {
-			return "", err
-		}
-		if peers > 0 {
-			return "proxy", nil
-		}
-	}
-	if !a.Baseline {
-		return "unknown", nil
-	}
-	return "account", nil
-}
-
 var recoveryBackoff = []time.Duration{30 * time.Minute, time.Hour, 2 * time.Hour, 4 * time.Hour, 8 * time.Hour, 12 * time.Hour}
 
 // conclude 记录判定、更新等级与健康状态、推进上架检测与申诉、生成卖家报告。
 // tp 是第三方检测的结果：折算后的结论比内部判定更严重时以其为准（身份不一致归因于账号本身）。
 func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Policy, a Assessment, tp []tpResult) error {
-	if incomplete, err := e.failUnobservedRun(ctx, run, u, a); incomplete {
-		return err
-	}
 	internalVerdict, tpCause := a.Verdict, ""
-	thirdPartyApplies := true
-	if a.InspectionMode == "formal" {
-		st := defaultInspectionSettings()
-		if a.InspectionSettings != nil {
-			st = *a.InspectionSettings
-		}
-		d, _ := inspection.Effective("third_party", st)
-		thirdPartyApplies = d.Enabled && d.Calibrated
-	}
-	for _, c := range tp {
-		// 只有检测站给出明确的问题结论才会加重判定；检测失败、证据不足不影响内部判定
-		if thirdPartyApplies && (c.Verdict == "suspected" || c.Verdict == "degraded") && verdictRank(c.Verdict) > verdictRank(a.Verdict) {
-			a.Verdict, tpCause = c.Verdict, c.Provider
-		}
-	}
 	if a.Checks == nil {
 		a.Checks = map[string]inspection.Check{}
 	}
@@ -911,12 +926,21 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 		a.Gates = []inspection.Gate{}
 	}
 	addThirdPartyInspection(&a, tp, e.now())
+	a.Verdict = decideVerdict(run, a, tp)
+	for _, c := range tp {
+		if c.Verdict == "degraded" || c.Verdict == "suspected" {
+			tpCause = c.Provider
+		}
+	}
+	if incomplete, err := e.failUnobservedRun(ctx, run, u, a); incomplete {
+		return err
+	}
 	decision, failedChecks, err := e.finalizeInspection(ctx, run, u, &a)
 	if err != nil {
 		return err
 	}
-	if a.InspectionMode == "formal" && (u.health == listing.HealthDegraded || u.health == listing.HealthUnavailable || run.trigger == "recovery") && a.Verdict == "normal" {
-		complete, err := e.inspectionRecoveryComplete(ctx, u, a)
+	if (u.health == listing.HealthDegraded || u.health == listing.HealthUnavailable || run.trigger == "recovery") && a.Verdict == "normal" {
+		complete, err := e.inspectionRecoveryComplete(ctx, u, a, run.flows...)
 		if err != nil {
 			return err
 		}
@@ -926,16 +950,12 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 		}
 	}
 	attribution := ""
-	if a.Verdict == "degraded" {
+	if a.Verdict == "degraded" || a.Verdict == "suspected" {
 		if tpCause != "" {
 			attribution = "account"
 		} else {
 			var err error
-			if a.InspectionMode == "formal" {
-				attribution, err = e.attributeInspection(ctx, run, u, a)
-			} else {
-				attribution, err = e.attribute(ctx, u, a)
-			}
+			attribution, err = e.attributeInspection(ctx, run, u, a)
 			if err != nil {
 				return err
 			}
@@ -944,11 +964,63 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 	healthBefore := u.health
 	newHealth, reason := u.health, u.healthReason
 	var st struct {
-		consecutive int
-		attempts    int
+		consecutive, attempts, adaptive int
+		suspected, previousFailed       []string
 	}
-	_ = e.DB.QueryRow(ctx, `SELECT consecutive_normal, recovery_attempts FROM upstream_quality_state WHERE upstream_id = $1`, u.id).
-		Scan(&st.consecutive, &st.attempts)
+	err = e.DB.QueryRow(ctx, `SELECT consecutive_normal,recovery_attempts,adaptive_attempts,suspected_flows,last_failed_checks FROM upstream_quality_state WHERE upstream_id=$1`, u.id).Scan(&st.consecutive, &st.attempts, &st.adaptive, &st.suspected, &st.previousFailed)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+
+	for _, key := range st.previousFailed {
+		d, ok := inspection.Lookup(key)
+		if !ok {
+			continue
+		}
+		if !containsAny(run.flows, d.Flow) && d.Flow != "common" && !containsAny(failedChecks, key) {
+			failedChecks = append(failedChecks, key)
+		}
+	}
+	nextAdaptive := map[string]time.Time{}
+	for _, flow := range run.flows {
+		summary := summarizeFlow(flow, run, a)
+		bad := (summary.Status == "fail" || summary.Status == "warning") && (flow == "intelligence" || run.identitySource == "third_party")
+		if bad && attribution != "vendor_wide" {
+			if !containsAny(st.suspected, flow) {
+				st.suspected = append(st.suspected, flow)
+			}
+			nextAdaptive[flow] = e.now().Add(adaptiveBackoff[min(st.adaptive, len(adaptiveBackoff)-1)])
+		} else if !checkConclusive(summary.Status) && containsAny(st.suspected, flow) {
+			nextAdaptive[flow] = e.now().Add(adaptiveBackoff[min(st.adaptive, len(adaptiveBackoff)-1)])
+		} else if summary.Status == "pass" || summary.Status == "not_applicable" {
+			repaired := true
+			for _, key := range st.previousFailed {
+				d, ok := inspection.Lookup(key)
+				if !ok || d.Flow != flow || flow == "intelligence" && summary.Status == "not_applicable" && len(run.models) == 0 {
+					continue
+				}
+				c := a.Checks[key]
+				if (c.Status != "pass" && c.Status != "not_applicable") || c.Evidence.Source == "history" {
+					repaired = false
+				}
+			}
+			if repaired {
+				remaining := []string{}
+				for _, suspected := range st.suspected {
+					if suspected != flow {
+						remaining = append(remaining, suspected)
+					}
+				}
+				st.suspected = remaining
+			}
+		}
+	}
+	if len(nextAdaptive) > 0 {
+		st.adaptive++
+	}
+	if len(st.suspected) == 0 {
+		st.adaptive = 0
+	}
 	var nextRecovery *time.Time
 	scheduleRecovery := func() {
 		d := recoveryBackoff[min(st.attempts, len(recoveryBackoff)-1)]
@@ -957,15 +1029,11 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 		st.attempts++
 		st.consecutive = 0
 	}
-	rel := 0.0
-	if a.RelativeScore != nil {
-		rel = *a.RelativeScore
-	}
-	degradedReason := fmt.Sprintf("degraded: relative score %.2f", rel)
-	suspectedReason := fmt.Sprintf("suspected: relative score %.2f", rel)
+	degradedReason := "检测门槛未通过"
+	suspectedReason := "测智未通过，等待复测"
 	if tpCause != "" {
-		degradedReason = "third-party check " + tpCause + ": model identity mismatch"
-		suspectedReason = "third-party check " + tpCause + ": model identity suspected"
+		degradedReason = "第三方身份核验不符：" + tpCause
+		suspectedReason = "第三方身份核验疑似异常：" + tpCause
 	}
 	switch a.Verdict {
 	case "unavailable":
@@ -977,7 +1045,7 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 			// 官方全局下降，不处罚单个上游
 		case attribution == "proxy":
 			newHealth, reason = listing.HealthSuspected, "proxy suspected; please rotate proxy"
-		case p.AutoPause || a.InspectionMode == "formal":
+		case tpCause != "" || p.AutoPause || a.InspectionMode == "formal":
 			newHealth, reason = listing.HealthDegraded, degradedReason
 			scheduleRecovery()
 		default:
@@ -990,7 +1058,7 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 		if (u.health == listing.HealthDegraded || u.health == listing.HealthUnavailable) && run.trigger != "onboarding" {
 			need = 2
 		}
-		if u.health != listing.HealthHealthy && st.consecutive >= need {
+		if u.health != listing.HealthHealthy && st.consecutive >= need && len(st.suspected) == 0 && (u.health != listing.HealthSuspected || strings.HasPrefix(u.healthReason, "flow:") || strings.HasPrefix(u.healthReason, "passive:")) {
 			newHealth, reason = listing.HealthHealthy, ""
 			st.attempts = 0
 		} else if u.health == listing.HealthDegraded || u.health == listing.HealthUnavailable {
@@ -999,17 +1067,16 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 			nextRecovery = &t
 		}
 	case "inconclusive":
-		if a.InspectionMode == "formal" && (run.trigger == "recovery" || u.health == listing.HealthDegraded || u.health == listing.HealthUnavailable) {
+		if run.trigger == "recovery" || u.health == listing.HealthDegraded || u.health == listing.HealthUnavailable {
 			scheduleRecovery()
 		}
 	case "suspected":
-		if u.health == listing.HealthHealthy || u.health == listing.HealthUnknown {
-			newHealth, reason = listing.HealthSuspected, suspectedReason
+		if attribution != "vendor_wide" && (u.health == listing.HealthHealthy || u.health == listing.HealthUnknown || u.health == listing.HealthSuspected) {
+			newHealth, reason = listing.HealthSuspected, "flow: "+strings.Join(st.suspected, "、")+"；"+suspectedReason
 		}
 	}
-	// 上架检测通过但结论不够明确（样本不足以判定）：按疑似处理，降低并发接流量并尽快追加检测
-	if run.trigger == "onboarding" && newHealth == listing.HealthUnknown && a.Verdict != "degraded" && a.Verdict != "unavailable" {
-		newHealth, reason = listing.HealthSuspected, "onboarding check inconclusive: "+a.Verdict
+	if attribution == "vendor_wide" && u.health == listing.HealthUnknown {
+		newHealth, reason = listing.HealthHealthy, ""
 	}
 	// 首次恢复通过仍处于暂停状态；不能仅凭本轮没有新门槛提前恢复估价。
 	if a.Appraisal != nil && (newHealth == listing.HealthDegraded || newHealth == listing.HealthUnavailable) {
@@ -1034,13 +1101,13 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,$10,$11,$12)`, u.id, run.id, run.model, a.Verdict, a.RelativeScore, a.ReasoningRatio, a.LLR, attr, grade, a.QualityFactor, mustJSON(a.Checks), mustJSON(a.Gates)); err != nil {
 			return err
 		}
-		if grade != nil && (a.Baseline || a.InspectionMode == "formal" && validInspectionQ(a.QualityFactor)) {
+		if grade != nil && a.InspectionMode == "formal" && validInspectionQ(a.QualityFactor) {
 			if _, err := tx.Exec(ctx, `UPDATE upstreams SET grade = $2, updated_at = now() WHERE id = $1`, u.id, *grade); err != nil {
 				return err
 			}
 		}
 		if len(a.Checks) > 0 {
-			if _, err := tx.Exec(ctx, `UPDATE upstreams SET appraised_at=$2,quality_factor=CASE WHEN $3 THEN COALESCE($4,quality_factor) ELSE quality_factor END WHERE id=$1`, u.id, e.now(), a.InspectionMode == "formal", a.QualityFactor); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE upstreams SET appraised_at=$2,quality_factor=CASE WHEN $3 THEN quality_factor ELSE COALESCE($4::float8,1.0) END WHERE id=$1`, u.id, e.now(), formalBlocked(a), a.QualityFactor); err != nil {
 				return err
 			}
 		}
@@ -1057,20 +1124,30 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 		u.id, st.consecutive, st.attempts, nextRecovery); err != nil {
 		return err
 	}
-	if a.InspectionMode == "formal" {
-		// 暂停恢复的第一次通过仍保留待复测项；第二次有效通过才清除。
-		if newHealth == listing.HealthDegraded || newHealth == listing.HealthUnavailable {
-			var previousFailed []string
-			if err := tx.QueryRow(ctx, `SELECT last_failed_checks FROM upstream_quality_state WHERE upstream_id=$1`, u.id).Scan(&previousFailed); err != nil {
-				return err
-			}
-			for _, key := range previousFailed {
-				if !containsAny(failedChecks, key) {
-					failedChecks = append(failedChecks, key)
-				}
+	// 暂停恢复的第一次通过仍保留待复测项；第二次有效通过才清除。
+	if newHealth == listing.HealthDegraded || newHealth == listing.HealthUnavailable {
+		for _, key := range st.previousFailed {
+			if !containsAny(failedChecks, key) {
+				failedChecks = append(failedChecks, key)
 			}
 		}
-		if _, err := tx.Exec(ctx, `UPDATE upstream_quality_state SET pending_grade=NULLIF($2,''),pending_grade_count=$3,last_failed_checks=$4 WHERE upstream_id=$1`, u.id, decision.PendingGrade, decision.PendingGradeCount, failedChecks); err != nil {
+	}
+	if st.suspected == nil {
+		st.suspected = []string{}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE upstream_quality_state SET pending_grade=NULLIF($2,''),pending_grade_count=$3,last_failed_checks=$4,suspected_flows=$5,adaptive_attempts=$6 WHERE upstream_id=$1`, u.id, decision.PendingGrade, decision.PendingGradeCount, failedChecks, st.suspected, st.adaptive); err != nil {
+		return err
+	}
+	for _, flow := range run.flows {
+		lastColumn, nextColumn := "last_intelligence_at", "next_intelligence_at"
+		if flow == "identity" {
+			lastColumn, nextColumn = "last_identity_at", "next_identity_at"
+		}
+		next := e.now().Add(time.Duration(flowPolicy(p, flow).IntervalMinutes) * time.Minute)
+		if adaptive, ok := nextAdaptive[flow]; ok {
+			next = adaptive
+		}
+		if _, err := tx.Exec(ctx, `UPDATE upstream_quality_state SET `+lastColumn+`=$2,`+nextColumn+`=$3 WHERE upstream_id=$1`, u.id, e.now(), next); err != nil {
 			return err
 		}
 	}
@@ -1105,10 +1182,10 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 	}
 	switch run.trigger {
 	case "onboarding":
-		passed := a.Verdict != "degraded" && a.Verdict != "unavailable"
+		passed := a.Verdict != "degraded" && a.Verdict != "unavailable" && a.Verdict != "inconclusive"
 		why := ""
 		if !passed {
-			why = "onboarding check failed: " + a.Verdict
+			why = "上架检测未通过：" + a.Verdict
 		}
 		if err := listing.MarkVerified(ctx, tx, u.id, passed, why); err != nil {
 			return err
@@ -1117,6 +1194,14 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 		status := "upheld"
 		if a.Verdict == "normal" && !hasAppliedDiscount(a.Checks) {
 			status = "overturned"
+			// 复测推翻只清除复测开始前的证据，保留本轮通过结果供估价与历史继承。
+			var resetAt time.Time
+			if err := tx.QueryRow(ctx, `SELECT COALESCE(started_at,queued_at) FROM probe_runs WHERE id=$1`, run.id).Scan(&resetAt); err != nil {
+				return err
+			}
+			if err := resetFlowDeductions(ctx, tx, u.id, run.flows, resetAt); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.Exec(ctx, `UPDATE appeals SET status = $2, resolved_at = now()
 			WHERE status = 'retesting' AND report_id IN (SELECT id FROM test_reports WHERE upstream_id = $1)`, u.id, status); err != nil {
@@ -1126,7 +1211,7 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-	if newHealth != healthBefore || a.InspectionMode == "formal" {
+	if newHealth != healthBefore || len(a.Checks) > 0 {
 		e.kick(ctx)
 	}
 	return nil
@@ -1180,13 +1265,12 @@ func (e *Engine) buildSummary(run runRow, u *upstreamRow, a Assessment, attribut
 		"suites":     suites,
 		"baseline":   a.Baseline,
 		"mode":       run.mode,
+		"flows":      run.flows, "identity_source": run.identitySource, "models": run.models,
+		"intelligence": summarizeFlow("intelligence", run, a), "identity": summarizeFlow("identity", run, a),
 	}
 	if len(a.Checks) > 0 {
 		out["inspection_mode"], out["checks"], out["quality_factor"], out["gates"] = a.InspectionMode, a.Checks, a.QualityFactor, a.Gates
 		out["group_factors"], out["appraisal"], out["proposed_grade"], out["repaired_grade"] = a.GroupFactors, a.Appraisal, a.ProposedGrade, a.RepairedGrade
-	}
-	if a.Shadow != nil {
-		out["shadow"] = a.Shadow
 	}
 	if len(a.Warnings) > 0 {
 		out["warnings"] = a.Warnings

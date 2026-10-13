@@ -15,7 +15,7 @@ func calibratedInspectionSettings() InspectionSettings {
 	st.Mode = "formal"
 	for _, d := range inspection.Known() {
 		enabled := true
-		st.CheckOverrides[d.Key] = inspection.CheckOverride{Enabled: &enabled, Calibrated: true, CalibrationNote: "离线替身校准记录；只验证程序口径，不代表真实运营校准"}
+		st.CheckOverrides[d.Key] = inspection.CheckOverride{Enabled: &enabled, Pricing: &enabled, Calibrated: true, CalibrationNote: "离线替身校准记录；只验证程序口径，不代表真实运营校准"}
 	}
 	return st
 }
@@ -45,21 +45,18 @@ func TestInspectIntelligenceAndCalibration(t *testing.T) {
 	st.CheckOverrides = map[string]inspection.CheckOverride{}
 	aggregated = inspection.Aggregate(checks, gates, st.Mode, st)
 	if aggregated.QualityFactor != nil || aggregated.Checks["D07"].Applied {
-		t.Fatal("未校准结果不能计价")
+		t.Fatal("未开启用于扣价的结果不能计价")
 	}
-	trial := defaultInspectionSettings()
-	before := Assess(nil, th, true)
-	after := Assess(rows, th, true)
-	if before.Verdict != after.Verdict || after.Samples != 0 || after.AvailableTotal != 0 || trial.Mode != "trial" {
-		t.Fatal("新增检查污染试运行旧判定")
-	}
-	if got := assessFormal(rows, th); got.Samples != 30 || got.Verdict != "degraded" {
-		t.Fatalf("正式新题未接入SPRT：%+v", got)
+	for _, st := range []InspectionSettings{defaultInspectionSettings(), st} {
+		if got := assessFormal(rows, th, st); got.Samples != 0 || got.Verdict != "normal" || got.AvailableTotal != 30 {
+			t.Fatalf("新题未进入可用统计或仍触发旧SPRT：%+v", got)
+		}
 	}
 	rows[0].Ref = nil
-	if got := assessFormal(rows[:1], th); got.Samples != 1 || got.Baseline {
-		t.Fatal("无同期基线应按题目期望计分，不能冒充配对")
+	if got := assessFormal(rows[:1], th); got.AvailableTotal != 1 || got.Samples != 0 {
+		t.Fatal("无同期基线仍应统计有效请求")
 	}
+
 }
 
 func TestInspectFunctionTruncationAndRefusal(t *testing.T) {
@@ -269,7 +266,7 @@ func TestInspectionThirdPartyCalibrationAndFreshRecovery(t *testing.T) {
 	st.CheckOverrides = nil
 	a.Gates = nil
 	addThirdPartyInspection(&a, []tpResult{{Verdict: "degraded"}}, time.Now())
-	if a.Gates[0].Confirmed || a.Checks["third_party"].Applied {
-		t.Fatal("启用第三方规则不能绕过独立校准")
+	if !a.Gates[0].Confirmed || a.Checks["third_party"].Applied {
+		t.Fatal("第三方正式门槛不要求校准；扣价仍必须显式开启")
 	}
 }

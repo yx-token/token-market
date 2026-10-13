@@ -60,7 +60,7 @@ func ListRunRecords(ctx context.Context, db DB, f RecordFilter, limit, offset in
 		var rec RunRecord
 		var summary, suites []byte
 		s := &rec.RunSummary
-		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt,
+		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models,
 			&rec.Platform, &rec.AuthType, &rec.SellerID, &rec.AccountEmail, &rec.IsReference, &suites)
 		if err != nil {
 			return rec, err

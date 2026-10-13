@@ -157,17 +157,39 @@ func setupWithDatabaseMode(t *testing.T, fromScratch bool, opts ...func(cfg *con
 
 	// 题库：每题要求回答固定口令，替身默认按口令作答。首次配置的上游必须通过上架检测才能挂单。
 	for i := 1; i <= 12; i++ {
-		if _, err := quality.CreateItem(ctx, a.DB, quality.Item{Suite: "iq", Category: "recall",
+		if _, err := quality.CreateItem(ctx, a.DB, quality.Item{Suite: "inspection_capability", CheckKey: "D07", Category: "recall",
 			Prompt: fmt.Sprintf("Q%d: reply with the code PONG%d and nothing else", i, i), MaxTokens: 32,
 			Grader: quality.Grader{Type: "contains", Answer: fmt.Sprintf("PONG%d", i)}}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// 共用夹具只测口令题，保留 12 题规模；生产题库的采样数在质检专项中验证。
+	if _, err := a.DB.Exec(ctx, `UPDATE detection_policies SET flows=jsonb_set(flows,'{intelligence,enabled}','true'::jsonb)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.DB.Exec(ctx, `INSERT INTO settings(key,value) VALUES('inspection','{"check_overrides":{"D07":{"thresholds":{"min_pairs":12}}}}')
+		ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`); err != nil {
+		t.Fatal(err)
 	}
 	fake.SetResponder(func(_ int64, prompt string) string { return "The code is " + pongRe.FindString(prompt) })
 	return &env{t: t, ctx: ctx, app: a, fake: fake, replica: replicaPool, api: api, sender: sender, guard: guard}
 }
 
 var pongRe = regexp.MustCompile(`PONG\d+`)
+
+func testDetectionFlows(models []string, source string, identity bool) quality.PolicyFlows {
+	triggers := []string{"onboarding", "scheduled", "recovery", "seller_manual", "admin", "adaptive", "appeal"}
+	configured := make([]quality.IntelligenceModel, 0, len(models))
+	for _, model := range models {
+		configured = append(configured, quality.IntelligenceModel{Model: model})
+	}
+	return quality.PolicyFlows{
+		Intelligence: quality.IntelligenceFlowPolicy{FlowPolicy: quality.FlowPolicy{Enabled: true, IntervalMinutes: 360,
+			Triggers: triggers, FullTriggers: []string{"onboarding", "appeal", "admin"}}, Models: configured},
+		Identity: quality.IdentityFlowPolicy{FlowPolicy: quality.FlowPolicy{Enabled: identity, IntervalMinutes: 1440,
+			Triggers: triggers, FullTriggers: []string{"onboarding", "appeal", "admin"}}, Source: source},
+	}
+}
 
 // tick 执行几轮质量调度（中间发送出站操作，例如给探测用户充值）。
 func (e *env) tick() {

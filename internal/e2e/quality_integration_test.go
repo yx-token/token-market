@@ -6,434 +6,113 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"regexp"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-	"unicode/utf8"
+
+	"github.com/DueGin/token-market/internal/inspection"
+	"github.com/DueGin/token-market/internal/quality"
 )
 
-// 质量检测：基线账号、上架检测、定级、降智后不调度、卖家看报告、恢复后重新调度。
+// 两条流程独立选题；测智偏低只标疑似，开启扣价后在试运行也写入 Q。
 func TestQualityDetectionLifecycle(t *testing.T) {
-	e := setup(t)
-	ctx := e.ctx
-	admin := e.login("admin@market.test", "admin-password-1")
-	admin.must("PUT", "/api/admin/vendors/anthropic", map[string]any{"enabled": true, "consignment_min": 0.1, "consignment_max": 2.0}, nil)
-	for i := 1; i <= 3; i++ {
-		admin.must("POST", "/api/admin/proxies", map[string]any{"name": fmt.Sprintf("p%d", i), "protocol": "socks5", "host": "10.0.0.2", "port": 2080 + i}, nil)
+	f := newInspectionPricingFixture(t, "inspection/model-permission/1")
+	f.admin.must("PUT", "/api/admin/inspection/settings", map[string]any{"mode": "trial"}, nil)
+	f.admin.must("PUT", "/api/admin/inspection/checks/D07", map[string]any{"pricing": false, "calibrated": false}, nil)
+	f.admin.must("PUT", "/api/admin/inspection/checks/D06", map[string]any{"enabled": false}, nil)
+	var onboardingFlows, models []string
+	var source string
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT flows,identity_source,models FROM probe_runs WHERE id=$1`, f.onboarding), &onboardingFlows, &source, &models)
+	if !reflect.DeepEqual(onboardingFlows, []string{"intelligence", "identity"}) || source != "self" || !reflect.DeepEqual(models, []string{"claude-sonnet-4-5"}) {
+		t.Fatalf("上架须冻结两条流程与模型：%v %s %v", onboardingFlows, source, models)
 	}
-	admin.must("POST", "/api/admin/pools", map[string]any{"name": "tm-pool-anthropic", "platform": "anthropic", "sell_multiplier": 0.8}, nil)
-
-	// 题库：每题要求回答固定的口令
-	for i := 1; i <= 12; i++ {
-		admin.must("POST", "/api/admin/probe-items", map[string]any{
-			"suite": "iq", "category": "recall", "prompt": fmt.Sprintf("Q%d: reply with the code PONG%d and nothing else", i, i),
-			"grader": map[string]any{"type": "contains", "answer": fmt.Sprintf("PONG%d", i)}, "max_tokens": 32, "status": "active",
-		}, nil)
+	f.transport.setBad("D07")
+	_, display := f.run(t, "admin")
+	if display.Verdict != "suspected" || display.QualityFactor == nil || !approx(*display.QualityFactor, 1) || display.Checks["D07"].Applied {
+		t.Fatalf("测智未通过只标疑似，未开扣价时Q为1：%+v", display)
 	}
-	// 限定模型的题：只考本次检测的模型（策略默认 claude-sonnet-4-5），其他模型的题不出
-	var sameModel, otherModel idOnly
-	admin.must("POST", "/api/admin/probe-items", map[string]any{
-		"suite": "iq", "category": "recall", "prompt": "Q13: reply with the code PONG13 and nothing else",
-		"grader": map[string]any{"type": "contains", "answer": "PONG13"}, "max_tokens": 32, "models": []string{"claude-sonnet-4-5"},
-	}, &sameModel)
-	admin.must("POST", "/api/admin/probe-items", map[string]any{
-		"suite": "iq", "category": "recall", "prompt": "Q99: reply with the code PONG99 and nothing else",
-		"grader": map[string]any{"type": "contains", "answer": "PONG99"}, "max_tokens": 32, "models": []string{"gpt-6-astra"},
-	}, &otherModel)
-	// 开启检测（含定时检测），未检测的上游不接买家流量
-	admin.must("PUT", "/api/admin/detection-policies/anthropic", map[string]any{
-		"enabled": true, "scheduled_enabled": true,
-	}, nil)
-
-	// 被测账号的回答由 degraded 控制：降智时答错
-	var mu sync.Mutex
-	degraded := map[int64]bool{}
-	setDegraded := func(acc int64, v bool) {
-		mu.Lock()
-		defer mu.Unlock()
-		degraded[acc] = v
+	f.assertHealth(t, "suspected")
+	var suspected []string
+	var attempts int
+	var due time.Time
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT suspected_flows,adaptive_attempts,next_intelligence_at FROM upstream_quality_state WHERE upstream_id=$1`, f.upstreamID), &suspected, &attempts, &due)
+	if !reflect.DeepEqual(suspected, []string{"intelligence"}) || attempts != 1 || time.Until(due) < 29*time.Minute || time.Until(due) > 31*time.Minute {
+		t.Fatalf("首次测智疑似应30分钟后复测：%v %d %s", suspected, attempts, due)
 	}
-	re := regexp.MustCompile(`PONG\d+`)
-	e.fake.SetResponder(func(accountID int64, prompt string) string {
-		mu.Lock()
-		defer mu.Unlock()
-		if degraded[accountID] {
-			return "I am not sure."
-		}
-		code := re.FindString(prompt)
-		if code == "PONG13" {
-			// 长中文回答：回答片段截断处落在多字节字符中间时也不能写库失败
-			return "The code is PONG13。" + strings.Repeat("这是一段很长的中文解释。", 80)
-		}
-		return "The code is " + code
-	})
-	tick := func() {
-		t.Helper()
-		for i := 0; i < 3; i++ {
-			if err := e.qualityRound(ctx); err != nil {
-				t.Fatalf("quality tick: %v", err)
-			}
-			e.drain() // 探测用户充值等出站操作
-		}
+	f.e.schedule()
+	var concurrency int
+	var buyerFacing bool
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT concurrency,buyer_facing FROM upstream_runtime_params WHERE upstream_id=$1`, f.upstreamID), &concurrency, &buyerFacing)
+	if concurrency != 1 || !buyerFacing || f.marketItem(t) == nil {
+		t.Fatalf("疑似应保留供给并发减半：%d %t", concurrency, buyerFacing)
 	}
-
-	// 平台基线账号
-	var ref struct {
-		Upstream idOnly `json:"upstream"`
+	f.admin.must("PUT", "/api/admin/inspection/checks/D07", map[string]any{"pricing": true}, nil)
+	failedID, failed := f.run(t, "admin")
+	if failed.QualityFactor == nil || !approx(*failed.QualityFactor, .7) || !failed.Checks["D07"].Applied {
+		t.Fatalf("试运行测智扣价未生效：%+v", failed)
 	}
-	admin.must("POST", "/api/admin/reference-accounts", map[string]string{"platform": "anthropic", "auth_type": "oauth"}, &ref)
-	admin.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/start", ref.Upstream.ID), nil, nil)
-	admin.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/complete", ref.Upstream.ID), map[string]string{"code": "reference"}, nil)
-	tick()
-	var refStatus string
-	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status FROM upstreams WHERE id = $1", ref.Upstream.ID), &refStatus)
-	if refStatus != "ready" {
-		t.Fatalf("reference account should pass its onboarding check: %s", refStatus)
+	var q float64
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT quality_factor FROM upstreams WHERE id=$1`, f.upstreamID), &q)
+	if !approx(q, .7) {
+		t.Fatalf("试运行须持久化Q，得到%g", q)
 	}
-
-	// 卖家上架：检测中 → 通过并定级 → 挂单
-	seller := e.newUser("seller@market.test")
-	var up struct {
-		ID     int64  `json:"id"`
-		Status string `json:"status"`
+	var reportID int64
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT id FROM test_reports WHERE run_id=$1`, failedID), &reportID)
+	var report quality.Report
+	status, raw := f.seller.call("GET", fmt.Sprintf("/api/seller/reports/%d", reportID), nil, &report)
+	if status != http.StatusOK || strings.Contains(raw, "prompt") || strings.Contains(raw, "target_pass_rate") || strings.Contains(raw, "expected_pass_rate") {
+		t.Fatalf("卖家报告泄露检测题面或模型通过率：%s", raw)
 	}
-	seller.must("POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"}, &up)
-	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/start", up.ID), nil, nil)
-	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/complete", up.ID), map[string]string{"code": "carol"}, &up)
-	if up.Status != "verifying" {
-		t.Fatalf("detection is on, upstream should be verifying: %+v", up)
+	var public struct {
+		Intelligence struct {
+			Status string           `json:"status"`
+			Models []map[string]any `json:"models"`
+		} `json:"intelligence"`
+		Checks map[string]inspection.Check `json:"checks"`
 	}
-	seller.expect(409, "POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}})
-	tick()
-	var status, health string
-	var grade *string
-	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status, health, grade FROM upstreams WHERE id = $1", up.ID), &status, &health, &grade)
-	if status != "ready" || health != "healthy" || grade == nil || *grade != "S" {
-		t.Fatalf("after passing onboarding: status=%s health=%s grade=%v", status, health, grade)
-	}
-	// 每次检测测全部适用题目，不抽样：公共准备与本测试各 12 道通用题 + 1 道限定本模型的题，不含其他模型的题
-	var asked int
-	var askedSame, askedOther bool
-	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT count(*), bool_or(r.item_id = $2), bool_or(r.item_id = $3) FROM probe_results r
-		JOIN probe_runs pr ON pr.id = r.run_id WHERE pr.upstream_id = $1 AND pr.trigger = 'onboarding'`, up.ID, sameModel.ID, otherModel.ID),
-		&asked, &askedSame, &askedOther)
-	if asked != 25 || !askedSame || askedOther {
-		t.Fatalf("onboarding should ask all 25 applicable items and skip other models: asked=%d same=%v other=%v", asked, askedSame, askedOther)
-	}
-	// 管理员查看检测明细：逐题结果含题目与回答片段，并附同批次基线账号的结果
-	var runs []struct {
-		ID      int64  `json:"id"`
-		Trigger string `json:"trigger"`
-		Items   int    `json:"items"`
-		Passed  int    `json:"passed"`
-	}
-	admin.must("GET", fmt.Sprintf("/api/admin/upstreams/%d/probe-runs", up.ID), nil, &runs)
-	onboarding := -1
-	for i, r := range runs {
-		if r.Trigger == "onboarding" {
-			onboarding = i
-		}
-	}
-	if onboarding < 0 || runs[onboarding].Items != 25 || runs[onboarding].Passed != 25 || runs[0].ID < runs[len(runs)-1].ID {
-		t.Fatalf("admin probe runs (newest first, without reference runs): %+v", runs)
-	}
-	var runDetail struct {
-		Results []struct {
-			ItemID  int64  `json:"item_id"`
-			Prompt  string `json:"prompt"`
-			Passed  *bool  `json:"passed"`
-			Excerpt string `json:"excerpt"`
-		} `json:"results"`
-		Reference *struct {
-			UpstreamID int64 `json:"upstream_id"`
-		} `json:"reference"`
-		RefResults []json.RawMessage `json:"reference_results"`
-	}
-	admin.must("GET", fmt.Sprintf("/api/admin/probe-runs/%d", runs[onboarding].ID), nil, &runDetail)
-	if len(runDetail.Results) != 25 || runDetail.Reference == nil || runDetail.Reference.UpstreamID != ref.Upstream.ID || len(runDetail.RefResults) != 25 {
-		t.Fatalf("probe run detail: results=%d reference=%+v refResults=%d", len(runDetail.Results), runDetail.Reference, len(runDetail.RefResults))
-	}
-	for _, r := range runDetail.Results {
-		if r.ItemID == sameModel.ID && (r.Passed == nil || !*r.Passed || !strings.Contains(r.Prompt, "PONG13") || !strings.Contains(r.Excerpt, "PONG13") ||
-			!utf8.ValidString(r.Excerpt) || utf8.RuneCountInString(r.Excerpt) != 500) {
-			t.Fatalf("model-specific item result: %+v", r)
-		}
-	}
-	seller.expect(403, "GET", fmt.Sprintf("/api/admin/probe-runs/%d", runs[onboarding].ID), nil)
-
-	// 全局检测记录：默认不含基线对照检测，带各套件的题数与通过数；可按结论、触发原因与日期筛选
-	type record struct {
-		ID          int64                                  `json:"id"`
-		UpstreamID  int64                                  `json:"upstream_id"`
-		Trigger     string                                 `json:"trigger"`
-		Platform    string                                 `json:"platform"`
-		IsReference bool                                   `json:"is_reference"`
-		Suites      map[string]struct{ Items, Passed int } `json:"suites"`
-	}
-	findRun := func(recs []record, id int64) *record {
-		for i := range recs {
-			if recs[i].ID == id {
-				return &recs[i]
-			}
-		}
-		return nil
-	}
-	var recs []record
-	admin.must("GET", "/api/admin/probe-runs?platform=anthropic&verdict=normal", nil, &recs)
-	if r := findRun(recs, runs[onboarding].ID); r == nil || r.UpstreamID != up.ID || r.Platform != "anthropic" || r.Suites["iq"].Items != 25 || r.Suites["iq"].Passed != 25 {
-		t.Fatalf("global probe records should include the onboarding run with suite counts: %+v", recs)
-	}
-	for _, r := range recs {
-		if r.Trigger == "reference" {
-			t.Fatalf("baseline comparison runs must be excluded by default: %+v", r)
-		}
-	}
-	admin.must("GET", "/api/admin/probe-runs?trigger=reference", nil, &recs)
-	if len(recs) == 0 || !recs[0].IsReference || recs[0].UpstreamID != ref.Upstream.ID {
-		t.Fatalf("trigger=reference should list baseline runs: %+v", recs)
-	}
-	admin.must("GET", "/api/admin/probe-runs?verdict=degraded", nil, &recs)
-	if len(recs) != 0 {
-		t.Fatalf("no degraded runs yet: %+v", recs)
-	}
-	today := time.Now().Format("2006-01-02")
-	admin.must("GET", "/api/admin/probe-runs?from="+today+"&to="+today, nil, &recs)
-	if findRun(recs, runs[onboarding].ID) == nil {
-		t.Fatalf("date range including today should list the onboarding run: %+v", recs)
-	}
-	admin.must("GET", "/api/admin/probe-runs?from="+time.Now().AddDate(0, 0, 1).Format("2006-01-02"), nil, &recs)
-	if len(recs) != 0 {
-		t.Fatalf("future date range should be empty: %+v", recs)
-	}
-	admin.expect(400, "GET", "/api/admin/probe-runs?from=2026/10/11", nil)
-	seller.expect(403, "GET", "/api/admin/probe-runs", nil)
-
-	// 按题统计：被测上游与基线账号分开统计，限定其他模型的题没有答题记录
-	var stats []struct {
-		ItemID    int64 `json:"item_id"`
-		Asked     int   `json:"asked"`
-		Passed    int   `json:"passed"`
-		RefAsked  int   `json:"ref_asked"`
-		RefPassed int   `json:"ref_passed"`
-	}
-	admin.must("GET", "/api/admin/probe-item-stats?platform=anthropic", nil, &stats)
-	var sameStat bool
-	for _, s := range stats {
-		if s.ItemID == otherModel.ID {
-			t.Fatalf("other-model item must have no results: %+v", s)
-		}
-		if s.ItemID == sameModel.ID {
-			sameStat = s.Asked >= 1 && s.Passed == s.Asked && s.RefAsked >= 1 && s.RefPassed == s.RefAsked
-		}
-	}
-	if !sameStat {
-		t.Fatalf("item stats for the model-specific item: %+v", stats)
-	}
-	var itemResults []struct {
-		UpstreamID int64  `json:"upstream_id"`
-		Trigger    string `json:"trigger"`
-		Excerpt    string `json:"excerpt"`
-	}
-	admin.must("GET", fmt.Sprintf("/api/admin/probe-items/%d/results", sameModel.ID), nil, &itemResults)
-	var targetSeen, refSeen bool
-	for _, r := range itemResults {
-		targetSeen = targetSeen || (r.UpstreamID == up.ID && strings.Contains(r.Excerpt, "PONG13"))
-		refSeen = refSeen || (r.Trigger == "reference" && r.UpstreamID == ref.Upstream.ID)
-	}
-	if !targetSeen || !refSeen {
-		t.Fatalf("item results should include the target and the baseline: %+v", itemResults)
-	}
-	var created struct {
-		Listing idOnly `json:"listing"`
-	}
-	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}}, &created)
-	e.schedule()
-	var acc, poolGroup int64
-	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT sub2api_account_id FROM upstreams WHERE id = $1", up.ID), &acc)
-	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT sub2api_group_id FROM pools WHERE name = 'tm-pool-anthropic'"), &poolGroup)
-	inPool := func() bool {
-		var in bool
-		mustScan(t, e.replica.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM account_groups WHERE account_id = $1 AND group_id = $2)", acc, poolGroup), &in)
-		return in
-	}
-	if !inPool() {
-		t.Fatal("verified upstream should serve the default pool")
-	}
-
-	// 降智：管理员触发检测 → 判定降智 → 不再调度（移出面向买家的分组，保留探测分组）
-	setDegraded(acc, true)
-	admin.must("POST", fmt.Sprintf("/api/admin/upstreams/%d/probe", up.ID), nil, nil)
-	tick()
-	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT health FROM upstreams WHERE id = $1", up.ID), &health)
-	if health != "degraded" {
-		t.Fatalf("health after degraded answers: %s", health)
-	}
-	e.schedule()
-	if inPool() {
-		t.Fatal("degraded upstream must be removed from the default pool")
-	}
-	var probeGroup int64
-	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT probe_group_id FROM upstreams WHERE id = $1", up.ID), &probeGroup)
-	var inProbe bool
-	mustScan(t, e.replica.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM account_groups WHERE account_id = $1 AND group_id = $2)", acc, probeGroup), &inProbe)
-	if !inProbe {
-		t.Fatal("degraded upstream must stay in its probe group for recovery checks")
-	}
-	var items []map[string]any
-	e.anon().must("GET", "/api/market/listings", nil, &items)
-	if len(items) != 0 {
-		t.Fatalf("degraded listing must not be shown in the market: %+v", items)
-	}
-
-	// 卖家查看报告：能看到降智结论与建议，看不到题目与答案
-	var reports []struct {
-		ID      int64          `json:"id"`
-		Verdict string         `json:"verdict"`
-		Trigger string         `json:"trigger"`
-		Summary map[string]any `json:"summary"`
-	}
-	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d/reports", up.ID), nil, &reports)
-	if len(reports) < 2 || reports[0].Verdict != "degraded" || reports[0].Summary["attribution"] != "account" {
-		t.Fatalf("seller reports: %+v", reports)
-	}
-	_, raw := seller.call("GET", fmt.Sprintf("/api/seller/reports/%d", reports[0].ID), nil, nil)
-	if strings.Contains(raw, "PONG") || strings.Contains(raw, "reply with") {
-		t.Fatalf("report leaks probe content: %s", raw)
-	}
-
-	// 申诉：管理员安排复测，仍然降智则维持原判
-	var ap idOnly
-	seller.must("POST", fmt.Sprintf("/api/seller/reports/%d/appeal", reports[0].ID), map[string]string{"reason": "my account works fine"}, &ap)
-	admin.must("POST", fmt.Sprintf("/api/admin/appeals/%d/resolve", ap.ID), map[string]string{"action": "retest", "note": "retest with more items"}, nil)
-	tick()
-	var appeals []struct {
-		ID     int64  `json:"id"`
-		Status string `json:"status"`
-	}
-	admin.must("GET", "/api/admin/appeals", nil, &appeals)
-	if len(appeals) != 1 || appeals[0].Status != "upheld" {
-		t.Fatalf("appeal retest on a still-degraded account should uphold: %+v", appeals)
-	}
-
-	// 降智时卖家可以手动复测自证修复；复测消耗卖家自己的额度，入账时不结算收益
-	var detail struct {
-		ManualRetest struct {
-			Allowed bool   `json:"allowed"`
-			Code    string `json:"code"`
-		} `json:"manual_retest"`
-	}
-	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d", up.ID), nil, &detail)
-	if !detail.ManualRetest.Allowed {
-		t.Fatalf("degraded upstream should allow manual retest: %+v", detail.ManualRetest)
-	}
-	var rt struct {
-		RunID int64 `json:"run_id"`
-	}
-	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/retest", up.ID), nil, &rt)
-	tick()
-	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d/reports", up.ID), nil, &reports)
-	if reports[0].Trigger != "seller_manual" || reports[0].Verdict != "degraded" {
-		t.Fatalf("manual retest report: %+v", reports[0])
-	}
-
-	// 恢复：到期复测两次正常后恢复调度
-	setDegraded(acc, false)
-	for i := 0; i < 2; i++ {
-		if _, err := e.app.DB.Exec(ctx, "UPDATE upstream_quality_state SET next_recovery_at = now() - interval '1 minute' WHERE upstream_id = $1", up.ID); err != nil {
-			t.Fatal(err)
-		}
-		tick()
-	}
-	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT health FROM upstreams WHERE id = $1", up.ID), &health)
-	if health != "healthy" {
-		t.Fatalf("health after recovery checks: %s", health)
-	}
-	e.schedule()
-	if !inPool() {
-		t.Fatal("recovered upstream should serve the default pool again")
-	}
-
-	// 检测正常后不允许卖家手动复测：页面拿到置灰原因，直接调接口也被拒绝
-	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d", up.ID), nil, &detail)
-	if detail.ManualRetest.Allowed || detail.ManualRetest.Code != "RETEST_NOT_NEEDED" {
-		t.Fatalf("healthy upstream must not allow manual retest: %+v", detail.ManualRetest)
-	}
-	if status, raw := seller.call("POST", fmt.Sprintf("/api/seller/upstreams/%d/retest", up.ID), nil, nil); status != http.StatusConflict || !strings.Contains(raw, "RETEST_NOT_NEEDED") {
-		t.Fatalf("manual retest on a healthy upstream: http %d: %s", status, raw)
-	}
-	var trend []struct {
-		Checks   int `json:"checks"`
-		Degraded int `json:"degraded"`
-	}
-	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d/quality-trend", up.ID), nil, &trend)
-	if len(trend) == 0 || trend[len(trend)-1].Degraded == 0 {
-		t.Fatalf("quality trend should show today's degraded checks: %+v", trend)
-	}
-
-	// 探测流量计入平台探测成本，不向买家收费
-	e.app.Ingester.Now = func() time.Time { return time.Now().Add(5 * time.Minute) }
-	if _, _, err := e.app.Ingester.RunOnce(ctx); err != nil {
+	if err := json.Unmarshal(report.Summary, &public); err != nil {
 		t.Fatal(err)
 	}
-	var probeCount, chargedBuyers int
-	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT count(*) FILTER (WHERE channel = 'probe'), count(*) FILTER (WHERE buyer_user_id IS NOT NULL) FROM usage_records"),
-		&probeCount, &chargedBuyers)
-	if probeCount == 0 || chargedBuyers != 0 {
-		t.Fatalf("probe usage: probe=%d buyer_charged=%d", probeCount, chargedBuyers)
+	if len(public.Intelligence.Models) != 1 || len(public.Intelligence.Models[0]) != 2 || public.Intelligence.Models[0]["model"] != "claude-sonnet-4-5" || public.Checks["D07"].Factor == nil || !public.Checks["D07"].Applied {
+		t.Fatalf("卖家测智应仅公开模型状态并保留生效系数：%s", report.Summary)
 	}
-	var ledger struct {
-		ProbeCost float64 `json:"probe_cost"`
+	// 只跑身份通过不能清除测智疑似；管理员可显式选择流程。
+	var identityRun struct {
+		RunID int64 `json:"run_id"`
 	}
-	admin.must("GET", "/api/admin/ledger", nil, &ledger)
-	if ledger.ProbeCost <= 0 {
-		t.Fatalf("probe cost should be recorded: %+v", ledger)
+	f.admin.must("POST", fmt.Sprintf("/api/admin/upstreams/%d/probe", f.upstreamID), map[string]any{"flows": []string{"identity"}}, &identityRun)
+	f.execute(t, identityRun.RunID)
+	f.assertHealth(t, "suspected")
+	// 卖家复测检测异常流程，费用由卖家承担；通过后解除测智疑似与扣价。
+	f.transport.setBad()
+	var retest struct {
+		RunID int64 `json:"run_id"`
 	}
-
-	// 上架检测与卖家手动复测由卖家承担：落在这两类检测时间窗内的探测用量不结算收益；
-	// 恢复、申诉等平台发起的检测照常结算，记平台探测成本。
-	var borne, borneUnmarked, platformPaid, platformMarked int
-	var bornePayout float64
-	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT
-			count(*) FILTER (WHERE seller_borne),
-			count(*) FILTER (WHERE NOT seller_borne AND EXISTS (SELECT 1 FROM probe_runs r WHERE r.upstream_id = ur.upstream_id
-				AND r.trigger IN ('onboarding', 'seller_manual') AND ur.created_at BETWEEN r.queued_at AND r.finished_at)),
-			count(*) FILTER (WHERE NOT seller_borne AND payout > 0),
-			count(*) FILTER (WHERE seller_borne AND EXISTS (SELECT 1 FROM probe_runs r WHERE r.upstream_id = ur.upstream_id
-				AND r.trigger IN ('recovery', 'appeal') AND ur.created_at BETWEEN r.queued_at AND r.finished_at)
-				AND NOT EXISTS (SELECT 1 FROM probe_runs r WHERE r.upstream_id = ur.upstream_id
-				AND r.trigger IN ('onboarding', 'seller_manual') AND ur.created_at BETWEEN r.queued_at AND r.finished_at)),
-			COALESCE(sum(payout) FILTER (WHERE seller_borne), 0)::float8
-		FROM usage_records ur WHERE channel = 'probe' AND upstream_id = $1`, up.ID), &borne, &borneUnmarked, &platformPaid, &platformMarked, &bornePayout)
-	if borne == 0 || borneUnmarked != 0 || bornePayout != 0 {
-		t.Fatalf("onboarding/manual retest probes must be seller-borne: borne=%d unmarked=%d payout=%v", borne, borneUnmarked, bornePayout)
+	f.seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/retest", f.upstreamID), nil, &retest)
+	restored := f.execute(t, retest.RunID)
+	if restored.QualityFactor == nil || !approx(*restored.QualityFactor, 1) || restored.Verdict != "normal" {
+		t.Fatalf("测智通过后应解除扣价：%+v", restored)
 	}
-	if platformPaid == 0 || platformMarked != 0 {
-		t.Fatalf("platform-initiated probes must stay paid: paid=%d wrongly_marked=%d", platformPaid, platformMarked)
+	f.assertHealth(t, "healthy")
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT suspected_flows FROM upstream_quality_state WHERE upstream_id=$1`, f.upstreamID), &suspected)
+	if len(suspected) != 0 {
+		t.Fatalf("已通过的测智流程应清除疑似：%v", suspected)
 	}
-	var records []struct {
-		Channel     string  `json:"channel"`
-		Payout      float64 `json:"payout"`
-		SellerBorne bool    `json:"seller_borne"`
+	f.e.app.Ingester.Now = func() time.Time { return time.Now().Add(5 * time.Minute) }
+	if _, _, err := f.e.app.Ingester.RunOnce(f.e.ctx); err != nil {
+		t.Fatal(err)
 	}
-	seller.must("GET", fmt.Sprintf("/api/seller/usage/records?channel=probe&upstream_id=%d&limit=500", up.ID), nil, &records)
-	marked := 0
-	for _, r := range records {
-		if r.SellerBorne {
-			marked++
-			if r.Payout != 0 {
-				t.Fatalf("seller-borne record must not pay out: %+v", r)
-			}
-		}
-	}
-	if marked != borne {
-		t.Fatalf("seller usage records should flag seller-borne probes: api=%d db=%d", marked, borne)
+	var borne, wrong int
+	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT count(*) FILTER(WHERE seller_borne),count(*) FILTER(WHERE seller_borne AND payout<>0) FROM usage_records WHERE upstream_id=$1 AND channel='probe'`, f.upstreamID), &borne, &wrong)
+	if borne == 0 || wrong != 0 {
+		t.Fatalf("上架与卖家复测须由卖家承担且不结算收益：%d %d", borne, wrong)
 	}
 }
 
-// 首次配置必须通过上架检测：厂商关闭检测时同样执行；不通过不能挂单，修复后可以重新检测。
 func TestOnboardingCheckIsMandatory(t *testing.T) {
 	e := setup(t)
 	ctx := e.ctx
@@ -443,6 +122,20 @@ func TestOnboardingCheckIsMandatory(t *testing.T) {
 		admin.must("POST", "/api/admin/proxies", map[string]any{"name": fmt.Sprintf("p%d", i), "protocol": "socks5", "host": "10.0.0.4", "port": 5080 + i}, nil)
 	}
 	var mu sync.Mutex
+	unavailable := false
+	base := http.DefaultTransport
+	if e.app.Quality.Prober.Client != nil && e.app.Quality.Prober.Client.Transport != nil {
+		base = e.app.Quality.Prober.Client.Transport
+	}
+	e.app.Quality.Prober.Client = &http.Client{Transport: qualityRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		mu.Lock()
+		down := unavailable
+		mu.Unlock()
+		if down {
+			return &http.Response{StatusCode: 503, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"离线模拟上游不可用"}}`)), Request: r}, nil
+		}
+		return base.RoundTrip(r)
+	})}
 	bad := map[int64]bool{}
 	e.fake.SetResponder(func(acc int64, prompt string) string {
 		mu.Lock()
@@ -462,6 +155,7 @@ func TestOnboardingCheckIsMandatory(t *testing.T) {
 	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT sub2api_account_id FROM upstreams WHERE id = $1", up.ID), &acc)
 	mu.Lock()
 	bad[acc] = true
+	unavailable = true
 	mu.Unlock()
 	e.tick()
 	var status string
@@ -475,12 +169,13 @@ func TestOnboardingCheckIsMandatory(t *testing.T) {
 		Trigger string `json:"trigger"`
 	}
 	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d/reports", up.ID), nil, &reports)
-	if len(reports) != 1 || reports[0].Trigger != "onboarding" || reports[0].Verdict != "degraded" {
+	if len(reports) != 1 || reports[0].Trigger != "onboarding" || reports[0].Verdict != "unavailable" {
 		t.Fatalf("seller should see the failed onboarding report: %+v", reports)
 	}
 	// 修复后重新检测
 	mu.Lock()
 	bad[acc] = false
+	unavailable = false
 	mu.Unlock()
 	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/retry-verification", up.ID), nil, nil)
 	e.passOnboarding(up.ID)
@@ -490,19 +185,9 @@ func TestOnboardingCheckIsMandatory(t *testing.T) {
 		t.Fatalf("passing the retried onboarding check should make the upstream schedulable: %s", health)
 	}
 
-	// 策略没有配置模型时检测无法开始：记为检测失败并说明原因，而不是直接放行
-	admin.must("PUT", "/api/admin/detection-policies/anthropic", map[string]any{"models": []string{}}, nil)
-	var up2 idOnly
-	seller.must("POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"}, &up2)
-	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/start", up2.ID), nil, nil)
-	var res struct {
-		Status        string  `json:"status"`
-		FailureReason *string `json:"failure_reason"`
-	}
-	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/complete", up2.ID), map[string]string{"code": "hank"}, &res)
-	if res.Status != "verify_failed" || res.FailureReason == nil || !strings.Contains(*res.FailureReason, "could not start") {
-		t.Fatalf("onboarding without models: %+v", res)
-	}
+	// 测智模型属于流程配置，启用时必须配置至少一个模型。
+	admin.expect(400, "PUT", "/api/admin/detection-policies/anthropic", map[string]any{"flows": testDetectionFlows([]string{}, "self", false)})
+
 }
 
 // 检测超时与中断：超过总时限记为检测失败（上架检测不通过，可以重新检测）；worker 停止时整批重新排队；
@@ -576,7 +261,7 @@ func TestProbeTimeouts(t *testing.T) {
 			t.Fatalf("run of batch %s should fail with %q: %s %s", batch, runErr, status, summary)
 		}
 		mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status, failure_reason FROM upstreams WHERE id = $1", upstreamID), &upStatus, &reason)
-		if upStatus != "verify_failed" || !strings.Contains(reason, "onboarding check failed: "+runErr) {
+		if upStatus != "verify_failed" || !strings.Contains(reason, "上架检测未通过："+runErr) {
 			t.Fatalf("upstream %d should fail its onboarding check so the seller can retry: %s %s", upstreamID, upStatus, reason)
 		}
 	}
@@ -597,7 +282,7 @@ func TestProbeTimeouts(t *testing.T) {
 	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/retry-verification", up1), nil, nil)
 	e.passOnboarding(up1)
 
-	// worker 停止（ctx 取消）：整批放回队列并丢弃部分结果，之后正常执行
+	// worker 停止时整批重新排队，已完成实例供续跑复用。
 	up2, acc2, batch2 := onboard("kate", 1)
 	cctx, cancel := context.WithCancel(ctx)
 	time.AfterFunc(time.Second, cancel)
@@ -609,15 +294,15 @@ func TestProbeTimeouts(t *testing.T) {
 	var results int
 	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT status, started_at IS NULL, (SELECT count(*) FROM probe_results WHERE run_id = r.id)
 		FROM probe_runs r WHERE batch_id = $1`, batch2), &status, &cleared, &results)
-	if status != "queued" || !cleared || results != 0 {
-		t.Fatalf("interrupted batch should be requeued from scratch: status=%s cleared=%v results=%d", status, cleared, results)
+	if status != "queued" || !cleared || results < 1 || results >= 12 {
+		t.Fatalf("中断批次应重新排队并保留已完成实例: status=%s cleared=%v results=%d", status, cleared, results)
 	}
 	setHang(acc2, -1)
 	e.passOnboarding(up2)
 
-	// 进程中断遗留的"执行中"记录：超过总时限与宽限后记为失败，卖家可以重新检测
+	// 冻结时限的宽限内不误判进程中断，超过宽限才失败。
 	up3, _, batch3 := onboard("liam", -1)
-	if _, err := e.app.DB.Exec(ctx, "UPDATE probe_runs SET status = 'running', started_at = now() - interval '24 minutes' WHERE batch_id = $1", batch3); err != nil {
+	if _, err := e.app.DB.Exec(ctx, "UPDATE probe_runs SET status = 'running', started_at = now() - interval '24 minutes', deadline_at=now()-interval '4 minutes' WHERE batch_id = $1", batch3); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.app.Quality.DispatchQueued(ctx); err != nil {
@@ -625,9 +310,9 @@ func TestProbeTimeouts(t *testing.T) {
 	}
 	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status FROM probe_runs WHERE batch_id = $1", batch3), &status)
 	if status != "running" {
-		t.Fatalf("a run still within its time limit must not be touched: %s", status)
+		t.Fatalf("冻结时限的宽限内不应误判中断：%s", status)
 	}
-	if _, err := e.app.DB.Exec(ctx, "UPDATE probe_runs SET started_at = now() - interval '26 minutes' WHERE batch_id = $1", batch3); err != nil {
+	if _, err := e.app.DB.Exec(ctx, "UPDATE probe_runs SET started_at = now() - interval '26 minutes', deadline_at=now()-interval '6 minutes' WHERE batch_id = $1", batch3); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.app.Quality.DispatchQueued(ctx); err != nil {
@@ -669,3 +354,7 @@ func TestProbeTimeouts(t *testing.T) {
 	setHang(accC, -1)
 	e.passOnboarding(upC)
 }
+
+type qualityRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f qualityRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

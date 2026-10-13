@@ -8,46 +8,18 @@ import (
 	"github.com/DueGin/token-market/internal/inspection"
 )
 
-// 正式判定复用原 SPRT；无基线时使用检测项登记的期望通过率。
-// 拒答、截断、限流和平台错误的剔除与扣价所用配对保持一致。
+// 总结只统计可用与性能，测智结论由各检测项和模型分别给出。
 func assessFormal(outcomes []Outcome, th Thresholds, configurations ...InspectionSettings) Assessment {
-	itemMode := !hasInspectionReference(outcomes)
 	rows := make([]Outcome, 0, len(outcomes))
 	for _, o := range outcomes {
 		if o.Target.HTTPStatus == 0 && o.Target.ErrorClass == "" {
 			continue
 		}
-		if o.CheckKey == "" && !strings.HasPrefix(o.Suite, "inspection_") {
-			o.RefHistRate = nil
-			if !eligiblePair(o) {
-				o.Suite = "availability"
-			}
-			rows = append(rows, o)
-			continue
-		}
 		o.Suite = "availability"
 		o.RefHistRate = nil
-		scoringEnabled := true
-		if len(configurations) > 0 {
-			rule, _ := inspection.Effective(o.CheckKey, configurations[0])
-			scoringEnabled = rule.Enabled && rule.Calibrated
-		}
-		if scoringEnabled && (o.CheckKey == "D07" || o.CheckKey == "D07.honesty" || o.CheckKey == "D09") && (eligiblePair(o) || itemMode && o.Ref == nil && o.Target.EligibleForIntelligence()) {
-			o.Suite = "iq"
-			if itemMode {
-				st := inspection.Defaults()
-				if len(configurations) > 0 {
-					st = configurations[0]
-				}
-				d, _ := inspection.Effective(o.CheckKey, st)
-				o.ExpectedPassRate = numberPointer(d.Thresholds["expected_pass_rate"])
-			}
-		} else {
-			o.RefHistRate = nil
-		}
 		rows = append(rows, o)
 	}
-	return Assess(rows, th, true)
+	return Assess(rows, th, false)
 }
 
 func eligiblePair(o Outcome) bool {
@@ -115,11 +87,24 @@ func Inspect(rows []Outcome, st InspectionSettings, now time.Time, options ...In
 		d, _ := inspection.Effective(definition.Key, st)
 		c := newInspectionCheck(d, now)
 		own := observedRows(rows, d.Key)
+		if opts.Flows != nil && (d.Flow == "intelligence" && !containsAny(opts.Flows, "intelligence") || d.Flow == "identity" && (!containsAny(opts.Flows, "identity") || opts.IdentitySource == "third_party")) {
+			checks[d.Key] = c
+			continue
+		}
+		if opts.Flows != nil && d.Flow == "intelligence" && containsAny(opts.Flows, "intelligence") && len(opts.Models) == 0 {
+			c.Status, c.Reason, c.Evidence.Code = "not_applicable", "挂售模型未配置测智。", "intelligence_models_unconfigured"
+			checks[d.Key] = c
+			continue
+		}
 		// A15 默认停用时仍说明对照要求，既不启用采样也不参与扣价。
 		if !d.Enabled && !(itemMode && d.Key == "A15") {
 			c.Status = "not_applicable"
 			c.Reason = "此项规则未启用。"
 			c.Evidence.Code = "disabled"
+			checks[d.Key] = c
+			continue
+		}
+		if inspectIntelligenceModels(&c, rows, own, d, st, opts, now) {
 			checks[d.Key] = c
 			continue
 		}
@@ -153,7 +138,7 @@ func Inspect(rows []Outcome, st InspectionSettings, now time.Time, options ...In
 						c.Evidence.Code = "reference_unsupported"
 					} else if failures > 0 {
 						c.Status = "fail"
-						c.Factor = numberPointer(d.Coefficients["failure"])
+						c.Factor = numberPointer(d.Coefficients["severe"])
 						c.Reason = "基线通过但被测未兑现功能。"
 						c.Evidence.Code = "paired_function_failed"
 					}
@@ -177,7 +162,7 @@ func Inspect(rows []Outcome, st InspectionSettings, now time.Time, options ...In
 						c.Evidence.Code = "reasoning_usage_unknown"
 					} else if failed > 0 {
 						c.Status = "fail"
-						c.Factor = numberPointer(d.Coefficients["failure"])
+						c.Factor = numberPointer(d.Coefficients["severe"])
 						c.Reason = "基线明确提供推理用量，被测明确返回零推理用量。"
 						c.Evidence.Code = "thinking_not_observed"
 					}
@@ -213,12 +198,9 @@ func Inspect(rows []Outcome, st InspectionSettings, now time.Time, options ...In
 				c.Reason = "缓存需要同账号两步的使用量证据。"
 			}
 		}
-		if !d.Calibrated && (c.Status == "fail" || c.Status == "warning") {
-			c.Impact = "待运营校准，当前不扣价。"
-		}
 		checks[d.Key] = c
 	}
-	if strength, ok := checks["D06"]; ok && len(strength.Metrics) > 0 {
+	if strength, ok := checks["D06"]; ok && (strength.Metrics["reasoning_ratio"].Value != nil || strength.Metrics["high_low_ratio"].Value != nil) && (opts.Flows == nil || containsAny(opts.Flows, "identity") && opts.IdentitySource == "self") {
 		c := checks["A06"]
 		c.Status = "pass"
 		c.Samples = strength.Samples
@@ -255,11 +237,17 @@ func inspectIntelligence(c *inspection.Check, rows []Outcome, d inspection.Effec
 		c.Reason = "同期基线全部未通过，无法确认被测能力。"
 		return
 	}
-	ratio := float64(target) / float64(ref)
+	rate := float64(target) / float64(len(rows))
+	expected := float64(ref) / float64(len(rows))
+	if configured := d.Thresholds["model_expected_pass_rate"]; configured > 0 {
+		expected = configured
+	}
+	ratio := rate / expected
 	p := mcnemarExact(bad, good)
 	c.Metrics["relative_score"] = metric(ratio, "ratio")
 	c.Metrics["mcnemar_p"] = metric(p, "fraction")
 	c.Metrics["target_pass_rate"] = metric(float64(target)/float64(len(rows)), "fraction")
+	c.Metrics["expected_pass_rate"] = metric(expected, "fraction")
 	if d.Key == "D09" {
 		if ratio < d.Thresholds["warning_relative"] && bad > good {
 			c.Status = "warning"
@@ -319,7 +307,7 @@ func inspectReasoning(c *inspection.Check, rows []Outcome, d inspection.Effectiv
 	}
 	for _, o := range rows {
 		// 静态 D07 题只比较答题能力，没有参数化 high/low 锚点；快检无 low 时也须排除。
-		if o.CheckKey != "D07" || o.InstanceIdx >= 1000 || o.GeneratorVersion == "static-1" || !strings.HasPrefix(o.Suite, "inspection_") {
+		if o.CheckKey != "D07" || o.InstanceIdx%10000 >= 1000 || o.GeneratorVersion == "static-1" || !strings.HasPrefix(o.Suite, "inspection_") {
 			continue
 		}
 		if len(anchors) > 0 && !anchors[fmtInspectionKey(o.ItemID, o.InstanceIdx)] {

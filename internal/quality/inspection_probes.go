@@ -2,6 +2,7 @@ package quality
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -70,15 +71,25 @@ func inspectionSafePDF() []byte {
 
 // 补充探针仍使用题库稳定键与冻结快照，旧批次不会重新生成。
 func addInspectionProbes(plan *executionSnapshot, p *Policy, st InspectionSettings) {
-	if plan.Mode != "full" {
-		return
-	}
 	var extra []plannedInstance
-	anchors := 0
+	appendExtra := func(instance plannedInstance) {
+		if len(plan.Instances)+len(extra) >= executionInstanceLimit(*plan) {
+			if !containsAny(plan.Warnings, "检测计划超过实例上限，已停止扩样") {
+				plan.Warnings = append(plan.Warnings, "检测计划超过实例上限，已停止扩样")
+			}
+			return
+		}
+		extra = append(extra, instance)
+	}
+	anchors := map[string]int{}
 	strengthRule, _ := inspection.Effective("D06", st)
 	for i := range plan.Instances {
 		instance := &plan.Instances[i]
-		if strengthRule.Enabled && (st.Mode == "formal" || containsAny(p.Suites, "inspection_function")) && instance.CheckKey == "D07" && len(instance.Steps) == 1 && strings.Contains(instance.GeneratorVersion, "/") && anchors < 10 {
+		model := instance.RequestedModel
+		if model == "" && len(instance.Steps) > 0 {
+			model = instance.Steps[0].Request.Model
+		}
+		if strengthRule.Enabled && containsAny(plan.Flows, "intelligence") && executionFlowMode("intelligence", plan.FlowModes, plan.Mode) == "full" && instance.CheckKey == "D07" && len(instance.Steps) == 1 && strings.Contains(instance.GeneratorVersion, "/") && anchors[model] < 10 {
 			low := *instance
 			low.InstanceIdx += 1000
 			low.CheckKey = "D06"
@@ -87,8 +98,8 @@ func addInspectionProbes(plan *executionSnapshot, p *Policy, st InspectionSettin
 			if strings.HasPrefix(low.Steps[0].Request.Model, "claude-") && !claudeAdaptive(low.Steps[0].Request.Model) {
 				low.Steps[0].Request.Extra = map[string]any{"thinking": map[string]any{"type": "enabled", "budget_tokens": 1024}}
 			}
-			extra = append(extra, low)
-			anchors++
+			appendExtra(low)
+			anchors[model]++
 		}
 		if instance.CheckKey == "A05" {
 			rule, _ := inspection.Effective("A05", st)
@@ -108,15 +119,20 @@ func addInspectionProbes(plan *executionSnapshot, p *Policy, st InspectionSettin
 			instance.Steps[0].Request.Expected = ProbeExpected{Outcome: "reject", HTTPStatus: []int{400, 413}, ErrorCodes: []string{"context_length_exceeded", "max_input_tokens", "input_too_long"}}
 		}
 		if instance.CheckKey == "A04" {
-			for n, model := range p.Models {
+			models := plan.ModelWhitelist
+			if models == nil {
+				models = plan.Models
+			}
+			for n, model := range models {
 				if model == instance.Steps[0].Request.Model {
 					continue
 				}
 				copyInstance := *instance
 				copyInstance.InstanceIdx = n + 1
+				copyInstance.RequestedModel = model
 				copyInstance.Steps = append([]plannedStep(nil), instance.Steps...)
 				copyInstance.Steps[0].Request.Model = model
-				extra = append(extra, copyInstance)
+				appendExtra(copyInstance)
 			}
 		}
 	}
@@ -129,11 +145,15 @@ func addInspectionProbes(plan *executionSnapshot, p *Policy, st InspectionSettin
 }
 
 // 恢复额外样本只发被测侧；生产统计与恢复样本下限分别配置。
-func (e *Engine) addAvailabilityRecoveryProbes(plan *executionSnapshot, batch string, count int) error {
-	if count < 1 || count+len(plan.Instances) > 200 {
+func (e *Engine) addAvailabilityRecoveryProbes(plan *executionSnapshot, batch string, count int, carriers ...plannedInstance) error {
+	if count < 1 || count+len(plan.Instances) > executionInstanceLimit(*plan) {
 		return fmt.Errorf("可用率恢复所需 %d 个样本超出本批次实例上限，请调整检测策略", count)
 	}
-	for _, it := range plan.Instances {
+	candidates := carriers
+	if len(candidates) == 0 {
+		candidates = plan.Instances
+	}
+	for _, it := range candidates {
 		if it.CheckKey != "A04" || len(it.Steps) != 1 {
 			continue
 		}
@@ -158,5 +178,19 @@ func (e *Engine) addAvailabilityRecoveryProbes(plan *executionSnapshot, batch st
 		}
 		return nil
 	}
-	return fmt.Errorf("可用率恢复缺少可用的型号权限探针，请启用 A04 或恢复其题库项")
+	return fmt.Errorf("可用率恢复缺少内置型号权限探针，请恢复其题库项")
+}
+
+// 恢复采样只借用内置题作为请求载体，不要求本次启用身份流程或 A04 检测项。
+func loadAvailabilityRecoveryProbe(ctx context.Context, db DB, model string) (plannedInstance, error) {
+	it, err := scanItem(db.QueryRow(ctx, "SELECT "+itemColumns+` FROM probe_items WHERE builtin_key='inspection/model-permission/1'`))
+	if err != nil {
+		return plannedInstance{}, fmt.Errorf("读取可用率恢复探针：%w", err)
+	}
+	req := it.Request
+	req.Model, req.MaxTokens = model, it.MaxTokens
+	if req.Prompt == "" && len(req.Messages) == 0 {
+		req.Prompt = it.Prompt
+	}
+	return plannedInstance{Item: Item{ID: it.ID, Suite: it.Suite, Category: it.Category, Version: it.Version}, ItemID: it.ID, CheckKey: "A04", RequestedModel: model, Steps: []plannedStep{{Request: req, Expected: it.Grader, Answer: staticAnswer(it.Grader)}}}, nil
 }

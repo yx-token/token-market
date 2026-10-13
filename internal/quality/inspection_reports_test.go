@@ -85,6 +85,8 @@ func TestPublicInspectionWarningsKeepSafeOperationalAdvice(t *testing.T) {
 func TestPublicItemReportDoesNotExposeCapabilitiesOrThresholds(t *testing.T) {
 	st := calibratedInspectionSettings()
 	checks, gates := Inspect(itemRows("D07", 100, 40), st, time.Time{})
+	aggregated := inspection.Aggregate(checks, gates, "trial", st)
+	checks = aggregated.Checks
 	raw := mustJSON(map[string]any{
 		"checks": checks, "gates": gates, "inspection_settings": st,
 		"model_capability_defaults": inspection.CapabilityDefaults(),

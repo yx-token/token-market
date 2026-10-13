@@ -9,8 +9,9 @@ func TestAssessKeepsExcludedErrorEvidence(t *testing.T) {
 	var rows []Outcome
 	for _, class := range []string{"platform", "platform", "rate_limited", "configuration", "expected_reject"} {
 		reference := ProbeResult{ErrorClass: "platform"}
-		rows = append(rows, Outcome{Suite: "iq", Target: ProbeResult{ErrorClass: class}, Ref: &reference})
+		rows = append(rows, Outcome{Suite: "inspection_capability", Target: ProbeResult{ErrorClass: class}, Ref: &reference})
 	}
+	rows = append(rows, Outcome{Suite: "inspection_capability"})
 	a := Assess(rows, th, true)
 	if a.AvailableTotal != 0 || a.Verdict != "inconclusive" || a.Samples != 0 {
 		t.Fatalf("无有效观测不能得到质量结论：%+v", a)

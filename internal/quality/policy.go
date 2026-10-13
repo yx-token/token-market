@@ -262,6 +262,9 @@ func (c ThirdPartyCheck) VerdictFor(outcome string) string {
 	if action == "degraded" || action == "suspected" {
 		return action
 	}
+	if action == "ignore" {
+		return "normal"
+	}
 	return "inconclusive"
 }
 
@@ -349,7 +352,7 @@ func EffectivePolicy(ctx context.Context, db DB, upstreamID int64, platform, aut
 	return p, nil
 }
 
-var validSuites = map[string]bool{"availability": true, "latency": true, "iq": true, "reasoning": true, "long_context": true, "inspection_authenticity": true, "inspection_capability": true, "inspection_context": true, "inspection_function": true, "inspection_output": true, "inspection_performance": true}
+var validSuites = map[string]bool{"availability": true, "latency": true, "inspection_authenticity": true, "inspection_capability": true, "inspection_context": true, "inspection_function": true, "inspection_output": true, "inspection_performance": true}
 
 type PolicyInput struct {
 	Flows            *PolicyFlows            `json:"flows"`
@@ -504,9 +507,11 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	default:
 		return nil, httpx.BadRequest("INVALID_GRADE", "default_grade must be S, A, B, C or D")
 	}
-	for _, s := range p.Suites {
-		if !validSuites[s] {
-			return nil, httpx.BadRequest("INVALID_SUITE", "unknown suite "+s)
+	if in.Suites != nil {
+		for _, suite := range p.Suites {
+			if !validSuites[suite] {
+				return nil, httpx.BadRequest("INVALID_SUITE", "未知套件："+suite)
+			}
 		}
 	}
 	if err := p.Thresholds.validate(); err != nil {
@@ -712,38 +717,6 @@ func UpdateItem(ctx context.Context, db DB, id int64, it Item) (*Item, error) {
 
 func ListItems(ctx context.Context, db DB, status string) ([]Item, error) {
 	rows, err := db.Query(ctx, "SELECT "+itemColumns+" FROM probe_items WHERE $1 = '' OR status = $1 ORDER BY id", status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Item
-	for rows.Next() {
-		it, err := scanItem(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *it)
-	}
-	return out, rows.Err()
-}
-
-// selectItems 返回一次检测要测的全部题目，不抽样：启用套件下所有使用中的题，
-// 且题目的适用平台、适用模型包含本次检测的平台和模型（为空表示不限）。
-func selectItems(ctx context.Context, db DB, platform, model string, suites []string) ([]Item, error) {
-	var wanted []string
-	for _, s := range suites {
-		if s == "iq" || s == "reasoning" || s == "long_context" {
-			wanted = append(wanted, s)
-		}
-	}
-	if len(wanted) == 0 {
-		// 只启用可用性 / 延迟套件时用 iq 题作为请求载体，但不计入智力评分
-		wanted = []string{"iq"}
-	}
-	rows, err := db.Query(ctx, "SELECT "+itemColumns+` FROM probe_items
-		WHERE status = 'active' AND suite = ANY($1) AND (cardinality(platforms) = 0 OR $2 = ANY(platforms))
-			AND (cardinality(models) = 0 OR $3 = ANY(models))
-		ORDER BY id`, wanted, platform, model)
 	if err != nil {
 		return nil, err
 	}
