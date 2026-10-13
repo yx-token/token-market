@@ -138,6 +138,8 @@ type UsageRecord struct {
 	DurationMs          *int      `json:"duration_ms,omitempty"`
 	TotalCost           float64   `json:"total_cost"`
 	Payout              float64   `json:"payout"`
+	// SellerBorne 表示上架检测或卖家手动复测的探测用量：消耗卖家自己的额度，不结算收益
+	SellerBorne bool `json:"seller_borne"`
 }
 
 type UsageRecordFilter struct {
@@ -157,7 +159,7 @@ func SellerUsageRecords(ctx context.Context, db DB, sellerID int64, f UsageRecor
 		to = &f.To
 	}
 	rows, err := db.Query(ctx, `SELECT sub2api_usage_id, created_at, upstream_id, listing_id, channel, model, input_tokens, output_tokens,
-			cache_creation_tokens, cache_read_tokens, first_token_ms, duration_ms, total_cost::float8, payout::float8
+			cache_creation_tokens, cache_read_tokens, first_token_ms, duration_ms, total_cost::float8, payout::float8, seller_borne
 		FROM usage_records
 		WHERE seller_id = $1 AND ($2 = 0 OR upstream_id = $2) AND ($3 = '' OR model = $3)
 			AND ($4 = '' OR ($4 = 'buyer' AND channel IN ('pool', 'direct')) OR channel = $4)
@@ -170,7 +172,7 @@ func SellerUsageRecords(ctx context.Context, db DB, sellerID int64, f UsageRecor
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (UsageRecord, error) {
 		var r UsageRecord
 		err := row.Scan(&r.ID, &r.CreatedAt, &r.UpstreamID, &r.ListingID, &r.Channel, &r.Model, &r.InputTokens, &r.OutputTokens,
-			&r.CacheCreationTokens, &r.CacheReadTokens, &r.FirstTokenMs, &r.DurationMs, &r.TotalCost, &r.Payout)
+			&r.CacheCreationTokens, &r.CacheReadTokens, &r.FirstTokenMs, &r.DurationMs, &r.TotalCost, &r.Payout, &r.SellerBorne)
 		return r, err
 	})
 }

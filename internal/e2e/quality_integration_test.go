@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -317,6 +318,27 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 		t.Fatalf("appeal retest on a still-degraded account should uphold: %+v", appeals)
 	}
 
+	// 降智时卖家可以手动复测自证修复；复测消耗卖家自己的额度，入账时不结算收益
+	var detail struct {
+		ManualRetest struct {
+			Allowed bool   `json:"allowed"`
+			Code    string `json:"code"`
+		} `json:"manual_retest"`
+	}
+	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d", up.ID), nil, &detail)
+	if !detail.ManualRetest.Allowed {
+		t.Fatalf("degraded upstream should allow manual retest: %+v", detail.ManualRetest)
+	}
+	var rt struct {
+		RunID int64 `json:"run_id"`
+	}
+	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/retest", up.ID), nil, &rt)
+	tick()
+	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d/reports", up.ID), nil, &reports)
+	if reports[0].Trigger != "seller_manual" || reports[0].Verdict != "degraded" {
+		t.Fatalf("manual retest report: %+v", reports[0])
+	}
+
 	// 恢复：到期复测两次正常后恢复调度
 	setDegraded(acc, false)
 	for i := 0; i < 2; i++ {
@@ -334,15 +356,13 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 		t.Fatal("recovered upstream should serve the default pool again")
 	}
 
-	// 卖家手动复测（每天限次）
-	var rt struct {
-		RunID int64 `json:"run_id"`
+	// 检测正常后不允许卖家手动复测：页面拿到置灰原因，直接调接口也被拒绝
+	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d", up.ID), nil, &detail)
+	if detail.ManualRetest.Allowed || detail.ManualRetest.Code != "RETEST_NOT_NEEDED" {
+		t.Fatalf("healthy upstream must not allow manual retest: %+v", detail.ManualRetest)
 	}
-	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/retest", up.ID), nil, &rt)
-	tick()
-	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d/reports", up.ID), nil, &reports)
-	if reports[0].Trigger != "seller_manual" || reports[0].Verdict != "normal" {
-		t.Fatalf("manual retest report: %+v", reports[0])
+	if status, raw := seller.call("POST", fmt.Sprintf("/api/seller/upstreams/%d/retest", up.ID), nil, nil); status != http.StatusConflict || !strings.Contains(raw, "RETEST_NOT_NEEDED") {
+		t.Fatalf("manual retest on a healthy upstream: http %d: %s", status, raw)
 	}
 	var trend []struct {
 		Checks   int `json:"checks"`
@@ -370,6 +390,46 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 	admin.must("GET", "/api/admin/ledger", nil, &ledger)
 	if ledger.ProbeCost <= 0 {
 		t.Fatalf("probe cost should be recorded: %+v", ledger)
+	}
+
+	// 上架检测与卖家手动复测由卖家承担：落在这两类检测时间窗内的探测用量不结算收益；
+	// 恢复、申诉等平台发起的检测照常结算，记平台探测成本。
+	var borne, borneUnmarked, platformPaid, platformMarked int
+	var bornePayout float64
+	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT
+			count(*) FILTER (WHERE seller_borne),
+			count(*) FILTER (WHERE NOT seller_borne AND EXISTS (SELECT 1 FROM probe_runs r WHERE r.upstream_id = ur.upstream_id
+				AND r.trigger IN ('onboarding', 'seller_manual') AND ur.created_at BETWEEN r.queued_at AND r.finished_at)),
+			count(*) FILTER (WHERE NOT seller_borne AND payout > 0),
+			count(*) FILTER (WHERE seller_borne AND EXISTS (SELECT 1 FROM probe_runs r WHERE r.upstream_id = ur.upstream_id
+				AND r.trigger IN ('recovery', 'appeal') AND ur.created_at BETWEEN r.queued_at AND r.finished_at)
+				AND NOT EXISTS (SELECT 1 FROM probe_runs r WHERE r.upstream_id = ur.upstream_id
+				AND r.trigger IN ('onboarding', 'seller_manual') AND ur.created_at BETWEEN r.queued_at AND r.finished_at)),
+			COALESCE(sum(payout) FILTER (WHERE seller_borne), 0)::float8
+		FROM usage_records ur WHERE channel = 'probe' AND upstream_id = $1`, up.ID), &borne, &borneUnmarked, &platformPaid, &platformMarked, &bornePayout)
+	if borne == 0 || borneUnmarked != 0 || bornePayout != 0 {
+		t.Fatalf("onboarding/manual retest probes must be seller-borne: borne=%d unmarked=%d payout=%v", borne, borneUnmarked, bornePayout)
+	}
+	if platformPaid == 0 || platformMarked != 0 {
+		t.Fatalf("platform-initiated probes must stay paid: paid=%d wrongly_marked=%d", platformPaid, platformMarked)
+	}
+	var records []struct {
+		Channel     string  `json:"channel"`
+		Payout      float64 `json:"payout"`
+		SellerBorne bool    `json:"seller_borne"`
+	}
+	seller.must("GET", fmt.Sprintf("/api/seller/usage/records?channel=probe&upstream_id=%d&limit=500", up.ID), nil, &records)
+	marked := 0
+	for _, r := range records {
+		if r.SellerBorne {
+			marked++
+			if r.Payout != 0 {
+				t.Fatalf("seller-borne record must not pay out: %+v", r)
+			}
+		}
+	}
+	if marked != borne {
+		t.Fatalf("seller usage records should flag seller-borne probes: api=%d db=%d", marked, borne)
 	}
 }
 

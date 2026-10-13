@@ -89,36 +89,91 @@ func QualityTrend(ctx context.Context, db DB, sellerID, upstreamID int64, days i
 	})
 }
 
-// ManualRetest 卖家手动复测：仅在该厂商开启检测时可用，每天限次。
+// RetestEligibility 说明卖家此刻能否手动复测；不能时 Code 与复测接口拒绝时的错误码一致，前端据此提示原因。
+type RetestEligibility struct {
+	Allowed bool   `json:"allowed"`
+	Code    string `json:"code,omitempty"`
+}
+
+// ManualRetestEligibility 只读判断卖家能否手动复测，不占用当天次数。
+func (e *Engine) ManualRetestEligibility(ctx context.Context, u *listing.Upstream) (RetestEligibility, error) {
+	blocked, err := e.manualRetestBlock(ctx, u)
+	if err != nil {
+		return RetestEligibility{}, err
+	}
+	if blocked != nil {
+		return RetestEligibility{Code: blocked.Code}, nil
+	}
+	return RetestEligibility{Allowed: true}, nil
+}
+
+// manualRetestBlock 返回卖家手动复测被拒绝的原因，nil 表示可以复测。
+// 检测正常时不允许复测：此时复测对卖家没有必要，却会反复消耗探测资源，探测按用量结算时还是套现入口。
+// 只有健康为疑似、降智、不可用，或最近一次检测失败、证据不足时，卖家才能发起复测自证修复。
+func (e *Engine) manualRetestBlock(ctx context.Context, u *listing.Upstream) (*httpx.Error, error) {
+	if u.Sub2APIAccountID == nil || (u.Status != listing.StatusReady && u.Status != listing.StatusListed) {
+		return httpx.Conflict("NOT_TESTABLE", "upstream is not ready for testing"), nil
+	}
+	p, err := EffectivePolicy(ctx, e.DB, u.ID, u.Platform, u.AuthType)
+	if err != nil {
+		return nil, err
+	}
+	if !p.Enabled {
+		return httpx.Forbidden("DETECTION_DISABLED", "detection is disabled for this vendor"), nil
+	}
+	abnormal := u.Health == listing.HealthSuspected || u.Health == listing.HealthDegraded || u.Health == listing.HealthUnavailable
+	if !abnormal {
+		var status, verdict string
+		err := e.DB.QueryRow(ctx, `SELECT status, COALESCE(summary->>'verdict', '') FROM probe_runs
+			WHERE upstream_id = $1 AND trigger <> 'reference' AND status IN ('done', 'failed')
+			ORDER BY finished_at DESC NULLS LAST, id DESC LIMIT 1`, u.ID).Scan(&status, &verdict)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			abnormal = true // 还没有完成过检测，不拦
+		case err != nil:
+			return nil, err
+		default:
+			abnormal = status == "failed" || (verdict != "" && verdict != "normal")
+		}
+	}
+	if !abnormal {
+		return httpx.Conflict("RETEST_NOT_NEEDED", "the latest check passed; manual retest is only available after an abnormal result"), nil
+	}
+	st, err := e.Settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var used int
+	if err := e.DB.QueryRow(ctx, `SELECT COALESCE((SELECT CASE WHEN manual_runs_date = current_date THEN manual_runs_today ELSE 0 END
+		FROM upstream_quality_state WHERE upstream_id = $1), 0)`, u.ID).Scan(&used); err != nil {
+		return nil, err
+	}
+	if used >= st.ManualRetestDailyLimit {
+		return httpx.TooMany("RETEST_LIMIT", "daily manual retest limit reached"), nil
+	}
+	return nil, nil
+}
+
+// ManualRetest 卖家手动复测：仅在该厂商开启检测、且最近结果异常时可用，每天限次。
+// 复测探测消耗卖家自己的额度，入账时不结算收益（见 billing.attribute）。
 func (e *Engine) ManualRetest(ctx context.Context, sellerID, upstreamID int64) (int64, error) {
 	u, err := listing.GetSellerUpstream(ctx, e.DB, sellerID, upstreamID)
 	if err != nil {
 		return 0, err
 	}
-	if u.Sub2APIAccountID == nil || (u.Status != listing.StatusReady && u.Status != listing.StatusListed) {
-		return 0, httpx.Conflict("NOT_TESTABLE", "upstream is not ready for testing")
-	}
-	p, err := EffectivePolicy(ctx, e.DB, u.ID, u.Platform, u.AuthType)
+	blocked, err := e.manualRetestBlock(ctx, u)
 	if err != nil {
 		return 0, err
 	}
-	if !p.Enabled {
-		return 0, httpx.Forbidden("DETECTION_DISABLED", "detection is disabled for this vendor")
+	if blocked != nil {
+		return 0, blocked
 	}
-	st, err := e.Settings(ctx)
-	if err != nil {
-		return 0, err
-	}
-	var used int
-	if err := e.DB.QueryRow(ctx, `INSERT INTO upstream_quality_state (upstream_id, manual_runs_today, manual_runs_date) VALUES ($1, 0, current_date)
+	// 重置跨天计数；限次已在上面判断，这里只确保状态行存在
+	if _, err := e.DB.Exec(ctx, `INSERT INTO upstream_quality_state (upstream_id, manual_runs_today, manual_runs_date) VALUES ($1, 0, current_date)
 		ON CONFLICT (upstream_id) DO UPDATE SET
 			manual_runs_today = CASE WHEN upstream_quality_state.manual_runs_date = current_date THEN upstream_quality_state.manual_runs_today ELSE 0 END,
-			manual_runs_date = current_date
-		RETURNING manual_runs_today`, u.ID).Scan(&used); err != nil {
+			manual_runs_date = current_date`, u.ID); err != nil {
 		return 0, err
-	}
-	if used >= st.ManualRetestDailyLimit {
-		return 0, httpx.TooMany("RETEST_LIMIT", "daily manual retest limit reached")
 	}
 	id, err := e.QueueRun(ctx, u.ID, "seller_manual")
 	if err != nil {

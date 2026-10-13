@@ -367,7 +367,8 @@ usage_records (                          -- 从 sub2api usage_logs 拉取的子�
   listing_id              bigint,
   buyer_user_id           bigint,        -- 探测流量为空
   buyer_key_id            bigint,
-  channel                 text not null  -- pool / direct / probe / reference / unknown
+  channel                 text not null, -- pool / direct / probe / reference / unknown
+  seller_borne            boolean not null default false  -- 上架检测或卖家手动复测的探测：payout 记 0，不结算收益
 );
 
 edge_attempts (                          -- Edge 每一跳一条，按天分区，保留 90 天
