@@ -50,11 +50,19 @@ const suiteOptions = [
   'inspection_output',
   'inspection_performance',
 ].map((value) => ({ value, text: value }))
-// 模型 / 厂商 / 上游选项来自注册表；已存值不在表中时由 SearchSelect 保留并标注
+// 模型是开放集合：合并价目、全部策略（含第三方检测）与题库限定的模型。
+// 厂商与上游仍按注册表选择，已存值不在表中时保留并标注。
 const priceModels = ref<string[]>([])
+const probeModels = ref<string[]>([])
 const vendors = ref<VendorConfig[]>([])
 const upstreams = ref<Upstream[]>([])
-const modelOptions = computed<SelectOption[]>(() => priceModels.value.map((m) => ({ value: m, text: m })))
+const modelOptions = computed<SelectOption[]>(() => {
+  const policyModels = (policies.data.value ?? []).flatMap((p) => [
+    ...p.models, ...(p.third_party ?? []).map((t) => t.model ?? ''),
+  ])
+  return [...new Set([...priceModels.value, ...policyModels, ...probeModels.value])]
+    .filter(Boolean).map((m) => ({ value: m, text: m }))
+})
 const vendorOptions = computed<SelectOption[]>(() =>
   vendors.value.map((v) => ({ value: v.platform, text: `${label('platform', v.platform).text}（${v.platform}）` })),
 )
@@ -94,10 +102,16 @@ onMounted(async () => {
   policies.load()
   providers.load()
   // 选项接口失败时降级为空列表，表单仍可保存（SearchSelect 支持手动录入）
-  vendors.value = (await admin.vendors().catch(() => null)) ?? []
-  const st = await admin.settings().catch(() => null)
+  const [vendorList, st, upstreamList, itemList] = await Promise.all([
+    admin.vendors().catch(() => null),
+    admin.settings().catch(() => null),
+    admin.upstreams().catch(() => null),
+    admin.items().catch(() => null),
+  ])
+  vendors.value = vendorList ?? []
   priceModels.value = st?.price_models ?? []
-  upstreams.value = (await admin.upstreams().catch(() => null)) ?? []
+  upstreams.value = upstreamList ?? []
+  probeModels.value = (itemList ?? []).flatMap((item) => item.models)
 })
 
 const filtered = computed(() => {
@@ -440,7 +454,7 @@ async function probe() {
     <div class="grid grid-cols-2 gap-3">
       <div>
         <label class="label" for="pm">模型（多个时轮换）</label>
-        <SearchSelect id="pm" v-model="form.models" :options="modelOptions" multiple placeholder="选择模型" />
+        <SearchSelect id="pm" v-model="form.models" :options="modelOptions" multiple creatable placeholder="选择模型" />
       </div>
       <div>
         <label class="label" for="ps">套件</label>
@@ -497,7 +511,7 @@ async function probe() {
             <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
               <div>
                 <label class="label" :for="`tp-model-${pr.name}`">检测模型</label>
-                <SearchSelect :id="`tp-model-${pr.name}`" v-model="thirdParty[pr.name].model" :options="modelOptions" placeholder="默认同平台探测" />
+                <SearchSelect :id="`tp-model-${pr.name}`" v-model="thirdParty[pr.name].model" :options="modelOptions" creatable placeholder="默认同平台探测" />
               </div>
               <div>
                 <label class="label" :for="`tp-format-${pr.name}`">协议</label>
