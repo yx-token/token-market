@@ -953,9 +953,31 @@ export interface InspectionTokenBudget {
   output_tokens_per_side: number
 }
 
+export interface ModelCapability {
+  platform: string
+  model: string
+  context_window: number
+  context_window_by_auth: Record<string, number> | null
+  max_output: number
+  max_output_unlimited: boolean | null
+  tools: boolean | null
+  json_schema: boolean | null
+  image: boolean | null
+  pdf: boolean | null
+  multiturn: boolean | null
+  thinking: boolean | null
+  prompt_cache: boolean | null
+  efforts: string[] | null
+  source: string
+}
+
+export type ModelCapabilityOverride = Pick<ModelCapability, 'platform' | 'model'> & Partial<ModelCapability>
+
 export interface InspectionSettings {
   mode: 'trial' | 'formal'
   check_overrides: Record<string, Partial<InspectionCheckOverride>>
+  model_capabilities?: ModelCapabilityOverride[]
+  model_capability_defaults?: ModelCapability[]
   grade_thresholds: Record<string, number>
   grade_hysteresis: number
   downgrade_confirmations: number

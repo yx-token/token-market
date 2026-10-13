@@ -159,7 +159,7 @@ func TestInspectionCacheRequiresBothCompleteStepsAndUsage(t *testing.T) {
 		{"基线缺第一步记录", [2]cacheStep{step(0), step(100)}, [2]cacheStep{{omit: true}, step(100)}, false, "inconclusive", 0},
 		{"被测第二步尚未完成", [2]cacheStep{step(0), {cache: value(100), status: 200}}, [2]cacheStep{step(0), step(100)}, false, "inconclusive", 0},
 		{"基线第二步请求失败", [2]cacheStep{step(0), step(100)}, [2]cacheStep{step(0), {cache: value(100), complete: true, status: 503}}, false, "inconclusive", 0},
-		{"没有同期基线", [2]cacheStep{step(0), step(100)}, [2]cacheStep{step(0), step(100)}, true, "inconclusive", 0},
+		{"没有同期基线也能按被测第二步命中判定", [2]cacheStep{step(0), step(100)}, [2]cacheStep{step(0), step(100)}, true, "pass", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := pool.Exec(ctx, `DELETE FROM probe_results WHERE item_id=$1`, item.ID); err != nil {

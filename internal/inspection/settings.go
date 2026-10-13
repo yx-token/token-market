@@ -22,10 +22,10 @@ type DB interface {
 
 func Defaults() Settings {
 	s := Settings{
-		Mode: ModeTrial, CheckOverrides: map[string]CheckOverride{},
+		Mode: ModeTrial, CheckOverrides: map[string]CheckOverride{}, ModelCapabilities: []ModelCapabilityOverride{},
 		GradeThresholds: map[string]float64{"S": 1.02, "A": 0.93, "B": 0.82, "C": 0.65},
 		GradeHysteresis: 0.02, DowngradeConfirmations: 2,
-		TokenBudgets: map[string]TokenBudget{"full": {Input: 1300000, Output: 640000}, "quick": {Input: 80000, Output: 160000}},
+		TokenBudgets: map[string]TokenBudget{"full": {Input: 2000000, Output: 640000}, "quick": {Input: 80000, Output: 160000}},
 	}
 	s.SRequirements.GateFreeDays, s.SRequirements.AvailabilityDays, s.SRequirements.MinAvailability = 30, 7, 0.995
 	s.Scheduling.MinimumGrade, s.Scheduling.Strategy = "B", "quality_adjusted"
@@ -36,6 +36,9 @@ func Defaults() Settings {
 }
 
 func (s Settings) Validate() error {
+	if err := validateCapabilityOverrides(s.ModelCapabilities); err != nil {
+		return err
+	}
 	if s.Mode != ModeTrial && s.Mode != ModeFormal {
 		return errors.New("质检模式须为 trial 或 formal")
 	}
@@ -91,10 +94,13 @@ func (s Settings) Validate() error {
 			if !finite(value) || value < 0 || value > 10000000 {
 				return fmt.Errorf("质检项 %s 阈值 %s 超出范围", key, parameter)
 			}
-			if strings.Contains(parameter, "rate") || strings.Contains(parameter, "relative") || parameter == "alpha" || parameter == "confidence" || parameter == "min_input_ratio" || (key == "D06" && (strings.Contains(parameter, "ratio") || parameter == "ci_upper")) {
+			if strings.Contains(parameter, "rate") || strings.Contains(parameter, "relative") || parameter == "alpha" || parameter == "confidence" || parameter == "min_input_ratio" || (key == "D06" && parameter != "absolute_high_low_ratio" && (strings.Contains(parameter, "ratio") || parameter == "ci_upper")) {
 				if value > 1 {
 					return fmt.Errorf("质检项 %s 比例阈值 %s 须处于 [0, 1]", key, parameter)
 				}
+			}
+			if parameter == "expected_pass_rate" && value <= 0 || parameter == "absolute_high_low_ratio" && value <= 0 {
+				return fmt.Errorf("质检项 %s 阈值 %s 须大于零", key, parameter)
 			}
 			if (strings.Contains(parameter, "samples") || strings.Contains(parameter, "pairs")) && (value < 1 || value != math.Trunc(value)) {
 				return fmt.Errorf("质检项 %s 样本下限须为正整数", key)
@@ -175,6 +181,13 @@ func Update(ctx context.Context, db DB, patch json.RawMessage) (Settings, error)
 	if len(bytes.TrimSpace(patch)) == 0 || bytes.TrimSpace(patch)[0] != '{' {
 		return Settings{}, errors.New("质检设置补丁须为对象")
 	}
+	// 内置能力是只读元数据，回传完整管理员响应时也不能把它存成设置。
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(patch, &fields); err != nil {
+		return Settings{}, err
+	}
+	delete(fields, "model_capability_defaults")
+	patch, _ = json.Marshal(fields)
 	raw, err := loadRaw(ctx, db)
 	if err != nil {
 		return Settings{}, err

@@ -596,6 +596,17 @@ func TestInspectionPricingDiscountAppealAndQuickHistory(t *testing.T) {
 	}
 	var reportID int64
 	mustScan(t, f.e.app.DB.QueryRow(f.e.ctx, `SELECT id FROM test_reports WHERE run_id=$1`, fullID), &reportID)
+	var publicReport quality.Report
+	f.seller.must("GET", fmt.Sprintf("/api/seller/reports/%d", reportID), nil, &publicReport)
+	var publicSummary inspectionPricingSummary
+	if err := json.Unmarshal(publicReport.Summary, &publicSummary); err != nil {
+		t.Fatal(err)
+	}
+	if publicSummary.Checks["D08"].Factor == nil || !publicSummary.Checks["D08"].Applied {
+		t.Fatalf("卖家摘要须保留实际扣价状态与生效系数，申诉入口依赖它们：%s", publicReport.Summary)
+	}
+	otherSeller := f.e.newUser("other-appeal-seller@market.test")
+	otherSeller.expect(http.StatusNotFound, "POST", fmt.Sprintf("/api/seller/reports/%d/appeal", reportID), map[string]string{"reason": "不能申诉其他卖家的报告"})
 	var appeal idOnly
 	f.seller.must("POST", fmt.Sprintf("/api/seller/reports/%d/appeal", reportID), map[string]string{"reason": "已修复完整输出和上下文，请复检正式扣价项。"}, &appeal)
 	f.admin.must("POST", fmt.Sprintf("/api/admin/appeals/%d/resolve", appeal.ID), map[string]string{"action": "retest", "note": "离线单项故障已关闭，安排完整复测。"}, nil)

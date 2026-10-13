@@ -52,13 +52,13 @@ func init() {
 	add("third_party", "第三方身份核验", "authenticity", "gate", "", "核对第三方核验结果；证据不足时重新核验。", nil, nil)
 	add("D05", "额度窗口", "display", "display", "", "关注账号窗口余量；未知余量不阻塞上架、申诉或管理员检测。", nil, nil)
 	add("D06", "推理强度兑现", "capability", "factor", "capability", "检查推理档位及用量观测，修复后与同期基线复检。",
-		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_samples": 10, "severe_ratio": 0.6, "warning_ratio": 0.8, "ci_upper": 0.8})
+		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_samples": 10, "severe_ratio": 0.6, "warning_ratio": 0.8, "ci_upper": 0.8, "absolute_high_low_ratio": 1.3})
 	add("D07", "智力配对", "capability", "factor", "capability", "检查模型路由与接入配置，修复后完成配对复检。",
-		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 20, "alpha": 0.05, "severe_relative": 0.7, "warning_relative": 0.85})
+		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 20, "alpha": 0.05, "severe_relative": 0.7, "warning_relative": 0.85, "expected_pass_rate": 0.9})
 	add("D07.honesty", "诚实与弃权", "capability", "factor", "capability", "在信息不足时准确说明无法确定，修复后复检。",
-		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 20, "alpha": 0.05, "severe_relative": 0.7, "warning_relative": 0.85})
+		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 20, "alpha": 0.05, "severe_relative": 0.7, "warning_relative": 0.85, "expected_pass_rate": 0.9})
 	add("D09", "上下文深度", "capability", "factor", "capability", "检查长上下文完整保留与检索能力，修复后完成完整复检。",
-		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 3, "warning_relative": 0.8})
+		map[string]float64{"severe": 0.70, "warning": 0.85}, map[string]float64{"min_pairs": 3, "warning_relative": 0.8, "severe_relative": 0.7, "expected_pass_rate": 0.9})
 	add("D08", "输出完整性", "capability", "factor", "capability", "检查输出上限及内容完整性，避免占位或省略后完成复检。",
 		map[string]float64{"failure": 0.95}, map[string]float64{"min_pairs": 1})
 	for _, feature := range []struct{ key, name string }{{"thinking", "推理功能"}, {"tools", "工具调用"}, {"image_pdf", "图片与 PDF"}, {"json_schema", "结构化输出"}, {"multiturn", "多轮保持"}} {
