@@ -518,7 +518,7 @@ function intelligenceText(run: SellerProbeRun) {
         :columns="[
           { key: 'queued_at', label: '时间' },
           { key: 'trigger', label: '类型' },
-          { key: 'status', label: '状态 / 结论' },
+          { key: 'status', label: '结论' },
           { key: 'flows', label: '流程' },
           { key: 'models', label: '测试模型' },
           { key: 'progress', label: '进度' },
@@ -531,8 +531,7 @@ function intelligenceText(run: SellerProbeRun) {
         row-key="id"
       >
         <template #cell-queued_at="{ row }">
-          <span class="num">{{ dateTime(row.queued_at) }}</span>
-          <div v-if="row.started_at" class="text-xs text-slate-500">开始时间 {{ dateTime(row.started_at) }}</div>
+          <span class="num" :title="row.started_at ? `开始时间 ${dateTime(row.started_at)}` : ''">{{ dateTime(row.queued_at) }}</span>
         </template>
         <template #cell-trigger="{ row }"><StatusBadge kind="trigger" :value="row.trigger" /></template>
         <template #cell-status="{ row }">

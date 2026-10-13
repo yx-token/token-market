@@ -12,6 +12,7 @@ import ModalDialog from '@/components/ModalDialog.vue'
 import ProbeErrorBody from '@/components/ProbeErrorBody.vue'
 import ProbeExcerpt from '@/components/ProbeExcerpt.vue'
 import ProbeRunDetail from '@/components/ProbeRunDetail.vue'
+import { intelligenceStatusText } from '@/utils/inspection'
 import StatusBadge from '@/components/StatusBadge.vue'
 import TabBar from '@/components/TabBar.vue'
 import { authTypeText, label, options } from '@/utils/labels'
@@ -78,6 +79,14 @@ function suiteText(r: ProbeRunRecord) {
     .sort(([a], [b]) => compareProbeSuites(a, b))
     .map(([s, c]) => ({ suite: s, text: `${probeSuiteText(s)} ${c.passed}/${c.items}`, bad: c.passed < c.items }))
 }
+// 测智结论：进行中的运行还没有报告，显示「检测中」，避免与「无结论」混淆
+function intelligenceText(row: ProbeRunRecord) {
+  if (row.status === 'queued' || row.status === 'running' || row.status === 'third_party') return '检测中'
+  const status = row.summary?.intelligence?.status
+  if (status) return intelligenceStatusText(status)
+  return row.summary?.suites?.iq ? percent(row.summary.suites.iq.relative_score, 0) : '—'
+}
+
 function rate(passed: number, asked: number) {
   return asked ? passed / asked : null
 }
@@ -191,7 +200,7 @@ async function openItem(s: ProbeItemStat) {
         { key: 'trigger', label: '触发' },
         { key: 'verdict', label: '结论' },
         { key: 'answers', label: '答题' },
-        { key: 'iq', label: '智力相对分', align: 'right' },
+        { key: 'intelligence', label: '测智', align: 'right' },
         { key: 'latency', label: '首字延迟 / 输出速度', align: 'right' },
         { key: 'actions', label: '操作' },
       ]"
@@ -227,10 +236,7 @@ async function openItem(s: ProbeItemStat) {
           <span v-for="s in suiteText(row)" :key="s.suite" class="mr-2" :class="s.bad ? 'text-red-600' : 'text-ink-500'">{{ s.text }}</span>
         </div>
       </template>
-      <template #cell-iq="{ row }">
-        <span class="num">{{ row.summary?.suites?.iq ? percent(row.summary.suites.iq.relative_score, 0) : '—' }}</span>
-        <div v-if="row.summary?.suites?.reasoning" class="num text-xs text-ink-500">推理 {{ percent(row.summary.suites.reasoning.ratio_to_baseline, 0) }}</div>
-      </template>
+      <template #cell-intelligence="{ row }">{{ intelligenceText(row) }}</template>
       <template #cell-latency="{ row }">
         <span class="num">{{ ms(row.summary?.suites?.latency?.ttft_p50_ms) }}</span>
         <div class="num text-xs text-ink-500">
