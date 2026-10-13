@@ -1,6 +1,6 @@
 # 05 质量检测
 
-检测分为「测智」和「身份与功能核验」两条独立流程。一次触发生成一条运行记录，由 `flows` 标记本次检测范围；可用与性能跟随每次运行计算。测智使用自有题库，身份核验可按厂商选择第三方或自有题库。每个检测项独立配置「用于扣价」，默认全部关闭；开启后在试运行和正式模式下都计入质量系数 Q，影响估价与调度排序。校准只决定自有健康门槛能否确认，等级与保障池最低等级仍只在正式模式下生效。
+检测分为「测智」「降智检测」和「身份与功能核验」三条独立流程；测智与降智都是测智类流程（按模型展开、逐模型取最差），只是题目与模型列表各自独立配置。一次触发生成一条运行记录，由 `flows` 标记本次检测范围；可用与性能跟随每次运行计算。测智使用自有题库，身份核验可按厂商选择第三方或自有题库。每个检测项独立配置「用于扣价」，默认全部关闭；开启后在试运行和正式模式下都计入质量系数 Q，影响估价与调度排序。校准只决定自有健康门槛能否确认，等级与保障池最低等级仍只在正式模式下生效。
 
 ## 1. 目标
 
@@ -37,6 +37,7 @@
 | `enabled` | 检测总开关；上架与管理员检测保留例外 |
 | `scheduled_enabled` | 定时总开关，依赖检测总开关 |
 | `flows.intelligence` | 测智开关、定时、周期、触发类型、完整检测触发类型、模型及可选期望通过率 |
+| `flows.degradation` | 降智检测；字段与测智一致，模型列表与测智**互相独立**（迁移时先继承测智） |
 | `flows.identity` | 身份流程开关、来源 `third_party` / `self`、定时、周期与触发类型 |
 | `third_party` | 检测站、模型、协议与身份不符处置；旧 `triggers` 不再控制执行 |
 | `daily_budget_usd` | 每上游每日探测预算；上架、管理员、申诉豁免美元预算 |
@@ -79,6 +80,7 @@
 | 流程 | 套件与中文名 | 检测项 |
 |---|---|---|
 | 测智 | `inspection_capability` 测智；`inspection_context` 测智·上下文深度 | D07、D07.honesty、D09、D06 |
+| 降智检测 | `inspection_degradation` 降智检测（限定厂商或型号的型号不一致题） | D14 |
 | 身份与功能核验（自有） | `inspection_authenticity` 身份核验；`inspection_function` 功能核验；`inspection_output` 输出完整性 | A02、A03、A12、A15、A04、A05、A11.*、D08、D12 |
 | 身份与功能核验（第三方） | 第三方身份核验 | third_party；本次不跑上述自有身份题 |
 | 可用与性能 | `inspection_performance` 性能；请求与生产汇总 | D13、D04、D10、D05，归属 `common` |
@@ -87,11 +89,13 @@
 
 题目仅在 active、平台适用、模型适用且模式匹配时执行，空的平台或模型集合表示不限。每次测全部适用题，不轮换模型或抽题。D06 的 low 副本只在本次包含测智且该流程为完整检测时生成，静态 D07 题不作为 D06 high 锚点。A04 权限副本按挂售白名单展开；白名单为 NULL 时覆盖策略测智模型，单独跑身份流程也保留这一范围。可用率恢复使用单独载入的内置短请求，不依赖本次是否选中了 A04。
 
-### 4.1 按模型测智
+### 4.1 按模型测智与降智检测
 
-本次模型集合为 `flows.intelligence.models ∩ upstreams.model_whitelist`；白名单为 NULL 时取全部已配置测智模型。每次检测交集中的全部模型，执行实例记录 `RequestedModel`，运行的 `models` 保存全集，旧 `model` 保留主模型。交集为空时测智记 `not_applicable`，说明「挂售模型未配置测智」。
+两个测智类流程各自冻结自己的模型集合：`flows.intelligence.models ∩ upstreams.model_whitelist` 存入 `probe_runs.models`，`flows.degradation.models ∩ upstreams.model_whitelist` 存入 `probe_runs.degradation_models`；白名单为 NULL 时取全部已配置模型。每次检测交集中的全部模型，执行实例记录 `RequestedModel`，旧 `model` 保留主模型。本次入队的流程交集为空时该项记 `not_applicable`，说明「挂售模型未配置测智」或「挂售模型未配置降智检测」。
 
-D07、D09、D06 先按模型分别判定，使用该模型配置的期望通过率，未配置时沿用检测项阈值；总项取最差模型，并在管理员指标中保留各模型结果。任一模型未通过会触发测智疑似。基线按模型匹配，不能用另一型号结果替代。
+选题按流程各取各的套件：测智用 `inspection_capability` / `inspection_context`，降智检测用 `inspection_degradation`。限定厂商或型号的题（`platforms` 或 `models` 非空）只对适用的模型展开，未限定型号的题对本次交集的全部模型展开。
+
+D07、D09、D06（测智）与 D14（降智检测）先按模型分别判定，使用该流程该模型配置的期望通过率，未配置时沿用检测项阈值；总项取最差模型，并在管理员指标中保留各模型结果。任一模型未通过会触发对应流程疑似。基线按模型匹配，不能用另一型号结果替代。
 
 ### 4.2 参数化题与协议
 
@@ -109,7 +113,7 @@ D07、D09、D06 先按模型分别判定，使用该模型配置的期望通过�
 
 | 检测项 | 主要口径 |
 |---|---|
-| D07 / D07.honesty / D09 | 配对差异或自身通过率与期望通过率比较；样本不足为 inconclusive |
+| D07 / D07.honesty / D09 / D14 | 配对差异或自身通过率与期望通过率比较；样本不足为 inconclusive |
 | D06 | 有基线比较 high 锚定题推理量；完整检测加测 low；无基线使用自身 high/low 比，无法区分厂商默认行为时不确认下降 |
 | A04 / A05 | 权限与上下文边界；自有正式门槛必须已校准 |
 | A11.* / D08 / D12 | 官方能力支持与功能题观测；不支持为 not_applicable，未登记为 inconclusive |
@@ -124,7 +128,7 @@ D07、D09、D06 先按模型分别判定，使用该模型配置的期望通过�
 | 条件 | 结论与处置 |
 |---|---|
 | 本次目标流程有效且通过，未触发健康门槛 | normal；仅清除实际通过流程的疑似 |
-| 测智存在 warning / fail | suspected；记录 intelligence，继续调度、并发减半并退避复测，不产生 D07 暂停门槛 |
+| 测智或降智检测存在 warning / fail | suspected；记录 intelligence / degradation，继续调度、并发减半并退避复测，不产生暂停门槛 |
 | 身份不符且策略选择疑似 | suspected；记录 identity 并复测 |
 | 身份不符且策略选择暂停，或自有正式已校准门槛成立 | degraded / unavailable，暂停并安排恢复 |
 | 第三方身份不符且策略选择 ignore | 身份按通过处理；没有其他异常时为 normal |
@@ -143,7 +147,7 @@ D07、D09、D06 先按模型分别判定，使用该模型配置的期望通过�
 | 组 | 合成方式 | 默认系数或下限 |
 |---|---|---|
 | identity | 身份项取最小值 | A02/A03/A12/A15/third_party：warning 0.85、severe 0.70；组下限 0.6 |
-| capability | D06、D07、D07.honesty、D09 取最小值 | warning 0.85、severe 0.70 |
+| capability | D06、D07、D07.honesty、D09、D14 取最小值 | warning 0.85、severe 0.70 |
 | function | 每个功能桶相乘；tools/JSON Schema/多轮合并为一桶 | A04/A05 各自成桶，默认 0.70；D08 独立桶；组下限 0.7 |
 | availability | 可用率与异常限流等相乘 | 组下限 0.6 |
 | performance | 取最差有效性能系数 | 范围 [0.85,1.05] |
@@ -186,9 +190,9 @@ D07、D09、D06 先按模型分别判定，使用该模型配置的期望通过�
 
 默认入队按流程 triggers 过滤。一次触发只建一条 run，同上游始终串行；queued / running / third_party 都属于 pending。排期优先级为 recovery > adaptive > scheduled，只推进本次实际入队流程的 next 时间。
 
-各流程分别决定 full / quick；任一流程要求完整检测时 run.mode=full，快照仍保存每条流程自己的模式，选题按对应流程模式过滤。定时默认快检。测智疑似复测按 30 分钟、1 小时、2 小时、4 小时、6 小时封顶；失败项含 D09 / D06 时用完整检测。
+各流程分别决定 full / quick；任一流程要求完整检测时 run.mode=full，快照仍保存每条流程自己的模式，选题按对应流程模式过滤。定时默认快检。测智与降智疑似复测按 30 分钟、1 小时、2 小时、4 小时、6 小时封顶；失败项含 D09 / D06（测智）或 D14（降智）时用完整检测。
 
-`suspected_flows` 分别保存测智与身份疑似。只有该流程取得有效通过才移除；测智模型交集为空、不再适用时也清除测智疑似。集合清空且疑似原因来自流程或被动信号时才恢复健康。另一流程的 normal 不会清掉仍未解决的疑似。所有模式写 `last_failed_checks`，暂停恢复要求失败项本次重测通过；沿用连续两次正常恢复的规则，上架检测一次正常即可。
+`suspected_flows` 分别保存测智、降智与身份疑似。只有该流程取得有效通过才移除；测智类流程的模型交集为空、不再适用时也清除对应疑似。集合清空且疑似原因来自流程或被动信号时才恢复健康。另一流程的 normal 不会清掉仍未解决的疑似。所有模式写 `last_failed_checks`，暂停恢复要求失败项本次重测通过；沿用连续两次正常恢复的规则，上架检测一次正常即可。
 
 手动复测要求厂商检测已开启且最近存在健康异常、失败/证据不足或已生效扣价；无复测必要返回 `RETEST_NOT_NEEDED`，详情 `manual_retest` 给出原因。每日限次，上架与卖家手动复测由卖家承担额度和费用归属，见 §10。
 
@@ -212,11 +216,18 @@ D07、D09、D06 先按模型分别判定，使用该模型配置的期望通过�
     "inherited_at": null,
     "models": [{"model": "gpt-6-astra", "status": "pass", "target_pass_rate": 0.96, "expected_pass_rate": 0.9, "samples": 57}]
   },
+  "degradation": {
+    "status": "pass",
+    "inherited_at": null,
+    "models": [{"model": "gpt-6-astra", "status": "pass", "target_pass_rate": 0.96, "expected_pass_rate": 0.9, "samples": 57}]
+  },
   "identity": {"source": "third_party", "status": "pass", "inherited_at": null}
 }
 ```
 
-流程状态为 pass / warning / fail / inconclusive / not_run，测智额外可为 not_applicable。管理员查看完整模型指标；卖家 `intelligence.models[]` 只保留 model、status，不返回通过率、期望通过率或样本指标。卖家 checks 中 applied=true 的项保留 factor，显示生效系数；未生效项不公开候选系数。
+流程状态为 pass / warning / fail / inconclusive / not_run，测智类流程额外可为 not_applicable。管理员查看完整模型指标；卖家 `intelligence.models[]` 与 `degradation.models[]` 都只保留 model、status，不返回通过率、期望通过率或样本指标。
+
+卖家报告另外下发 `verification`：第三方核验的折算结论 `status`（normal / suspected / degraded / inconclusive）、`verdict_text`（检测站逐项判定状态的中文文案）、各大类计数 `categories`（key / name / total / passed / warning / failed / error，未知分组保留原始 key）与风险项 `risks`（只含 failed 与 warning，failed 在前，reason 截断 160 字符，上限 20 条，error 属于平台或网络问题不下发），以及 `checked_at`。卖家看不到渠道名、站点报告地址、external_id 与逐题明细，`checks` 中也不出现第三方项。卖家 checks 中 applied=true 的项保留 factor，显示生效系数；未生效项不公开候选系数。
 
 卖家不看到题面、答案、响应片段、基线身份、代理 IP、精确阈值、内部证据码或生成器版本。报告保留安全建议、Q、组系数、门槛、归因与影响；市场只展示摘要。旧 summary.suites 与原 impact 字段保留，缺少新增字段时不伪造数据。
 
@@ -235,7 +246,7 @@ worker 生成 `tm-tp-` 临时 Edge 令牌，只路由到目标上游探测分组
 
 第三方按策略处置，不要求检测项已校准；ignore 折算为 normal，身份项按 pass 处理，不产生疑似或扣价。正式身份门槛仍优先于扣价。第三方来源下不跑自有身份项，也不从测智附带证据推出 A02/A12；这些项为 not_run，身份结论只看 third_party。
 
-检测站原始回答、响应头和提交者 IP 不保存，摘要只保留核验结论、允许的统计、警告及报告链接。第三方历史准确率不等于本次「未换模」概率。首个提供方为 BazaarLink，接入其他提供方实现 `internal/quality/thirdparty.Provider`。
+检测站原始回答、响应头和提交者 IP 不保存，摘要只保留核验结论、允许的统计、各大类计数、风险项、警告及报告链接（报告链接只给管理员）。第三方历史准确率不等于本次「未换模」概率。首个提供方为 BazaarLink，接入其他提供方实现 `internal/quality/thirdparty.Provider`。
 
 ## 10. 探测成本与预算
 
@@ -263,6 +274,8 @@ worker 生成 `tm-tp-` 临时 Edge 令牌，只路由到目标上游探测分组
 D13 使用可归因分母；D04 仅统计已确认窗口未耗尽的异常 429；D10 使用同模型同行分位数，同行不足时改用同期配对基线，基线不授予同行奖励。成功用量与主动样本不是随机实验，报告保留证据局限。
 
 ## 12. 迁移与校准
+
+`0033_degradation_flow.sql` 为存量策略补 `flows.degradation`（启用、继承测智模型列表与周期、`scheduled_enabled` 保持关闭），新增 `probe_runs.degradation_models` 与 `upstream_quality_state.next_degradation_at` / `last_degradation_at`，并把限定厂商或型号的旧测智题（`platforms` 或 `models` 非空）原地迁到 `inspection_degradation` / `D14`；通用测智题保持不动。迁移可重复执行。
 
 `0030_detection_flows.sql` 增加策略 flows、运行 flows / identity_source / models、按流程 next / last 时间、suspected_flows、adaptive_attempts、deductions_reset_at、第三方运行唯一索引及只读的挂售白名单列。测智流程一律启用（厂商「是否检测」总开关仍只管上架以外的检测，上架始终测智），定时、周期、完整触发和 models 由旧配置复制；身份来源默认 third_party，触发取原检测站配置，但流程开关与定时**一律先关闭**：第三方检测站要求 Edge 对外地址为公网 https，未就绪时上架会因身份核验没有结论而失败，管理员确认可用后在检测策略中开启。next 时间由旧 next_scheduled_at 回填。旧运行流程保持空数组，不推断历史执行范围。
 

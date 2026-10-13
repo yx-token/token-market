@@ -182,7 +182,7 @@ OAuth 授权、Coding Key 和账号导入成功后进入 `selecting_models`（�
 | 厂商 | `GET /api/admin/vendors`、`PUT /api/admin/vendors/:platform`：是否开放接入、开放的接入方式（`auth_types`，只能从 `supported_auth_types` 中选）、寄售倍率区间、回收基础倍率表（按档位）、默认并发、限流参数 |
 | 代理库存 | `GET/POST /api/admin/proxies`、`POST /api/admin/proxies/:id/sync`（同步到 sub2api）、`/test`、`/quality-check`、`/disable`、`/enable`；检测响应与卖家接口相同。列表包含平台代理和卖家代理，`seller_id` 区分来源，后台新增代理归平台 |
 | 默认分组 | `GET/POST /api/admin/pools`、`PUT /api/admin/pools/:id`（售价 D、最低毛利、安全缓冲、启用）、`POST /api/admin/pools/:id/sync` |
-| 检测策略 | `GET /api/admin/detection-policies`、`PUT /api/admin/detection-policies/:platform[?auth_type=]`：总开关 enabled / scheduled_enabled、flows 的两条独立流程、预算、default_grade、third_party；旧 suites / models / interval_minutes / full_triggers 保留返回但已废弃，见 [05](05-quality.md) 第 3、9 节 |
+| 检测策略 | `GET /api/admin/detection-policies`、`PUT /api/admin/detection-policies/:platform[?auth_type=]`：总开关 enabled / scheduled_enabled、flows 的三条独立流程（intelligence / degradation / identity）、预算、default_grade、third_party；旧 suites / models / interval_minutes / full_triggers 保留返回但已废弃，见 [05](05-quality.md) 第 3、9 节 |
 | 质检设置 | `GET/PUT /api/admin/inspection/settings`：mode、预算、并发、恢复、等级、调度、模型能力等，部分更新 |
 | 检测项 | `GET /api/admin/inspection/checks` 返回 flow、pricing、default_pricing=false、warning/severe 系数与校准；`PUT /api/admin/inspection/checks/:key` 覆盖 enabled、pricing（true/false/null）、calibrated、calibration_note、coefficients、thresholds |
 | 第三方检测 | `GET /api/admin/detection-providers`（可接入的检测站、配置、最近 1 小时提交次数）、`PUT /api/admin/detection-providers/:name`（`enabled`、`base_url`、`api_key`、`settings`、`max_runs_per_hour`、`timeout_minutes`）、`GET /api/admin/third-party-checks[?upstream_id=]` |
