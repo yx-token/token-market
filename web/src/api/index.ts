@@ -166,6 +166,8 @@ export const admin = {
   setOverride: (upstreamId: number, body: Record<string, unknown>) => http.put<Ok>(`/api/admin/upstreams/${upstreamId}/detection-override`, body),
   deleteOverride: (upstreamId: number) => http.del<Ok>(`/api/admin/upstreams/${upstreamId}/detection-override`),
   probe: (upstreamId: number) => http.post<{ run_id: number }>(`/api/admin/upstreams/${upstreamId}/probe`),
+  probeFlows: (upstreamId: number, flows: T.DetectionFlow[]) =>
+    http.post<{ run_id: number }>(`/api/admin/upstreams/${upstreamId}/probe`, { flows }),
   probeRuns: (upstreamId: number) => http.get<T.ProbeRun[] | null>(`/api/admin/upstreams/${upstreamId}/probe-runs`),
   probeRun: (runId: number) => http.get<T.ProbeRunDetail>(`/api/admin/probe-runs/${runId}`),
   probeRecords: (q?: Query) => http.get<T.ProbeRunRecord[] | null>('/api/admin/probe-runs', q),
