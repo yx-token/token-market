@@ -143,6 +143,8 @@ seed_thirdparty() {
     \"flows\":{
       \"intelligence\":{\"enabled\":true,\"scheduled_enabled\":false,\"interval_minutes\":360,\"triggers\":$all,
         \"full_triggers\":[\"onboarding\",\"appeal\",\"admin\"],\"models\":[{\"model\":\"claude-sonnet-4-5\",\"expected_pass_rate\":null}]},
+      \"degradation\":{\"enabled\":true,\"scheduled_enabled\":false,\"interval_minutes\":360,\"triggers\":$all,
+        \"full_triggers\":[\"onboarding\",\"appeal\",\"admin\"],\"models\":[{\"model\":\"claude-sonnet-4-5\",\"expected_pass_rate\":null}]},
       \"identity\":{\"enabled\":true,\"source\":\"third_party\",\"scheduled_enabled\":false,\"interval_minutes\":1440,
         \"triggers\":[\"onboarding\",\"admin\",\"seller_manual\",\"appeal\"],\"full_triggers\":$all}
     }}" >/dev/null

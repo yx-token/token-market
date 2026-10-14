@@ -156,3 +156,30 @@ func TestPublicReportSummaryDegradationModels(t *testing.T) {
 		}
 	}
 }
+
+// 卖家只看结果：身份流程不带来源（第三方 / 自有题库），不适用的测智类流程整块不下发。
+func TestPublicReportSummaryHidesIdentitySourceAndNotApplicableFlows(t *testing.T) {
+	raw := mustJSON(map[string]any{
+		"verdict":      "normal",
+		"identity":     map[string]any{"source": "third_party", "status": "pass", "inherited_at": nil},
+		"degradation":  map[string]any{"status": "not_applicable", "models": []map[string]any{{"model": "模型甲", "status": "not_applicable"}}},
+		"intelligence": map[string]any{"status": "pass", "models": []map[string]any{{"model": "模型甲", "status": "pass"}}},
+	})
+	safe := string(publicReportSummary(raw))
+	if strings.Contains(safe, "third_party") || strings.Contains(safe, `"source"`) {
+		t.Fatalf("卖家摘要不应透露身份核验来源：%s", safe)
+	}
+	var public map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(safe), &public); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := public["degradation"]; ok {
+		t.Fatalf("不适用的降智流程不应下发：%s", safe)
+	}
+	if _, ok := public["intelligence"]; !ok {
+		t.Fatalf("有结论的测智流程应保留：%s", safe)
+	}
+	if !strings.Contains(string(public["identity"]), `"status":"pass"`) {
+		t.Fatalf("身份流程应保留结论：%s", public["identity"])
+	}
+}

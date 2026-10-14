@@ -146,6 +146,24 @@ func legacyPolicyFlows(p *Policy) PolicyFlows {
 	}
 }
 
+// backfillDegradation 给没有降智配置的旧调用方补一份继承自测智的配置，口径与 0033 迁移一致：
+// 迁移时同样复制模型、周期与触发类型，避免线上已有的限定型号降智题因新流程没有模型而静默停跑。
+func (f *PolicyFlows) backfillDegradation() {
+	if f.Degradation.IntervalMinutes != 0 {
+		return
+	}
+	f.Degradation = IntelligenceFlowPolicy{
+		FlowPolicy: FlowPolicy{
+			Enabled:          true,
+			ScheduledEnabled: false,
+			IntervalMinutes:  f.Intelligence.IntervalMinutes,
+			Triggers:         f.Intelligence.Triggers,
+			FullTriggers:     f.Intelligence.FullTriggers,
+		},
+		Models: append([]IntelligenceModel{}, f.Intelligence.Models...),
+	}
+}
+
 func (f *PolicyFlows) normalize(thirdParty []ThirdPartyCheck) error {
 	for _, flow := range []*FlowPolicy{&f.Intelligence.FlowPolicy, &f.Degradation.FlowPolicy, &f.Identity.FlowPolicy} {
 		if flow.IntervalMinutes < 10 {
@@ -310,6 +328,8 @@ func scanPolicy(row pgx.Row) (*Policy, error) {
 	// 兼容尚未填流程的旧调用方；迁移已为存量策略写入完整配置。
 	if p.Flows.Intelligence.IntervalMinutes == 0 && p.Flows.Degradation.IntervalMinutes == 0 && p.Flows.Identity.IntervalMinutes == 0 {
 		p.Flows = legacyPolicyFlows(&p)
+	} else {
+		p.Flows.backfillDegradation()
 	}
 	return &p, nil
 }
@@ -464,6 +484,8 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	}
 	if in.Flows != nil {
 		p.Flows = *in.Flows
+		// 只带两条流程的旧调用方保存时补一份继承自测智的降智配置，与迁移口径一致。
+		p.Flows.backfillDegradation()
 	}
 	if p.ItemParallelism < 1 || p.ItemParallelism > 8 {
 		return nil, httpx.BadRequest("INVALID_PARALLELISM", "题目并发上限须为 1–8")

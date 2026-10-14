@@ -65,7 +65,10 @@ describe('质检报告与估价', () => {
       verification: { status: 'pass', verdict_text: '家族与具体型号都与声明一致', categories: [{ key: 'identity', name: '身份识别', total: 29, passed: 29, warning: 0, failed: 0, error: 0 }], risks: [] },
     })
     const wrapper = mount(ReportDetail, { props: { report: value } })
-    expect(wrapper.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['common', 'intelligence', 'identity'])
+    expect(wrapper.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['identity', 'common', 'intelligence'])
+    // 质量等级紧跟身份与功能核验，排在其他检测区块之前
+    const blocks = wrapper.findAll('[data-flow], [data-testid="quality-grade"]').map((node) => node.attributes('data-flow') ?? 'quality-grade')
+    expect(blocks.slice(0, 3)).toEqual(['identity', 'quality-grade', 'common'])
     const common = wrapper.get('[data-flow="common"]')
     expect(common.text()).toContain('可用与性能')
     expect(common.findAll('[data-check-key]').map((row) => row.attributes('data-check-key'))).toEqual(['D13', 'D04', 'D10', 'D05'])
@@ -77,7 +80,9 @@ describe('质检报告与估价', () => {
     const identity = wrapper.get('[data-flow="identity"]')
     expect(identity.findAll('[data-check-key]')).toHaveLength(11)
     expect(identity.find('[data-testid="idle-checks"]').exists()).toBe(false)
-    expect(identity.text()).toContain('来源：第三方检测')
+    // 卖家不需要知道这次怎么检测的：不显示来源，也不出现「第三方」字样
+    expect(identity.text()).not.toContain('来源')
+    expect(identity.text()).not.toContain('第三方')
     expect(identity.text()).toContain('家族与具体型号都与声明一致')
     expect(identity.text()).toContain('沿用 2026-10-11')
     expect(wrapper.findAllComponents({ name: 'ThirdPartyResult' })).toHaveLength(0)
@@ -142,7 +147,7 @@ describe('质检报告与估价', () => {
     expect(clean.get('[data-testid="verification-risks"]').text()).toContain('未发现风险项')
     clean.unmount()
     const missing = mount(ReportDetail, { props: { report: report({ ...base }) } })
-    expect(missing.get('[data-testid="identity-verification"]').text()).toContain('暂无核验结果')
+    expect(missing.find('[data-testid="identity-verification"]').exists()).toBe(false)
     expect(missing.find('[data-testid="verification-result"]').exists()).toBe(false)
     missing.unmount()
   })
@@ -158,7 +163,7 @@ describe('质检报告与估价', () => {
         }),
       },
     })
-    expect(withFlow.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['common', 'intelligence', 'degradation', 'identity'])
+    expect(withFlow.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['identity', 'common', 'intelligence', 'degradation'])
     const degradation = withFlow.get('[data-flow="degradation"]')
     expect(degradation.text()).toContain('降智检测')
     expect(degradation.text()).toContain('偏低（扣价）')
@@ -167,11 +172,11 @@ describe('质检报告与估价', () => {
     withFlow.unmount()
     // 旧报告没有降智结论时不多出整块「未测」
     const legacy = mount(ReportDetail, { props: { report: report({ intelligence: { status: 'pass', models: [] }, identity: { source: 'self', status: 'not_run' } }) } })
-    expect(legacy.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['common', 'intelligence', 'identity'])
+    expect(legacy.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['identity', 'common', 'intelligence'])
     legacy.unmount()
   })
 
-  it('身份来源为第三方时，未执行的自有检测项收起，只保留核验结论', () => {
+  it('未执行的检测项只给管理员看，卖家只看到核验结论', () => {
     const idle = (key: string, name: string): InspectionCheckResult => ({ ...check, key, name, status: 'not_run', role: 'display', factor: null, impact: '' })
     const value = report({
       flows: ['intelligence', 'identity'], identity_source: 'third_party', models: ['gpt-6-astra'],
@@ -185,7 +190,13 @@ describe('质检报告与估价', () => {
       },
       verification: { status: 'pass', verdict_text: '家族与具体型号都与声明一致', categories: [], risks: [] },
     })
-    const identity = mount(ReportDetail, { props: { report: value } }).get('[data-flow="identity"]')
+    const seller = mount(ReportDetail, { props: { report: value } })
+    const sellerIdentity = seller.get('[data-flow="identity"]')
+    expect(sellerIdentity.find('[data-testid="idle-checks"]').exists()).toBe(false)
+    expect(sellerIdentity.text()).not.toContain('未执行')
+    expect(sellerIdentity.get('[data-testid="verification-result"]').text()).toContain('家族与具体型号都与声明一致')
+    seller.unmount()
+    const identity = mount(ReportDetail, { props: { report: value, admin: true } }).get('[data-flow="identity"]')
     expect(identity.findAll('[data-check-key]').map((row) => row.attributes('data-check-key'))).toEqual(['third_party'])
     const folded = identity.get('[data-testid="idle-checks"]')
     expect(folded.element.hasAttribute('open')).toBe(false)
@@ -207,7 +218,7 @@ describe('质检报告与估价', () => {
     const wrapper = mount(ReportDetail, { props: { report: value } })
     expect(wrapper.get('[data-flow="intelligence"]').text()).toContain('显著偏低（疑似）')
     const identity = wrapper.get('[data-flow="identity"]')
-    expect(identity.text()).toContain('来源：自有题库')
+    expect(identity.text()).not.toContain('来源')
     expect(identity.text()).toContain('型号权限')
     expect(identity.text()).toContain('工具调用')
     expect(wrapper.get('[data-check-key="D06"]').text()).toContain('生效系数 0.850')
@@ -255,7 +266,7 @@ describe('质检报告与估价', () => {
   ])('只有$name新字段时仍采用新版报告', ({ extra }) => {
     const value = report({ checks: undefined, suites: { iq: { relative_score: 0.95, samples: 8 } }, ...extra })
     const wrapper = mount(ReportDetail, { props: { report: value } })
-    expect(wrapper.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['common', 'intelligence', 'identity'])
+    expect(wrapper.findAll('[data-flow]').map((section) => section.attributes('data-flow'))).toEqual(['identity', 'common', 'intelligence'])
     expect(wrapper.text()).not.toContain('智力相对分')
   })
 

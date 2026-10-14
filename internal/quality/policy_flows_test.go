@@ -49,6 +49,29 @@ func TestPolicyFlowsJSONContract(t *testing.T) {
 	}
 }
 
+// 加第三条流程前保存的旧调用方只带测智与身份，降智必须继承测智而不是被校验拒绝。
+func TestPolicyFlowsLegacyClientInheritsDegradation(t *testing.T) {
+	legacy := []byte(`{"intelligence":{"enabled":true,"scheduled_enabled":true,"interval_minutes":360,
+		"triggers":["onboarding","scheduled"],"full_triggers":["onboarding"],
+		"models":[{"model":"gpt-6-astra","expected_pass_rate":0.8}]},
+		"identity":{"enabled":true,"source":"third_party","scheduled_enabled":false,"interval_minutes":1440,
+		"triggers":["onboarding"],"full_triggers":["onboarding"]}}`)
+	var flows PolicyFlows
+	if err := json.Unmarshal(legacy, &flows); err != nil {
+		t.Fatal(err)
+	}
+	flows.backfillDegradation()
+	if err := flows.normalize([]ThirdPartyCheck{{Provider: "bazaarlink"}}); err != nil {
+		t.Fatalf("旧调用方保存策略不应被拒绝：%v", err)
+	}
+	if !flows.Degradation.Enabled || flows.Degradation.ScheduledEnabled || flows.Degradation.IntervalMinutes != 360 ||
+		!reflect.DeepEqual(flows.Degradation.Triggers, []string{"onboarding", "scheduled"}) ||
+		!reflect.DeepEqual(flows.Degradation.FullTriggers, []string{"onboarding"}) || len(flows.Degradation.Models) != 1 ||
+		flows.Degradation.Models[0].Model != "gpt-6-astra" || flows.Degradation.Models[0].ExpectedPassRate == nil {
+		t.Fatalf("降智应继承测智模型与周期：%+v", flows.Degradation)
+	}
+}
+
 func TestPolicyFlowsValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

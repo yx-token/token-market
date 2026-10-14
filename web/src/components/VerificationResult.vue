@@ -6,17 +6,29 @@ import { verificationVerdictText } from '@/utils/inspection'
 
 const props = defineProps<{ verification: VerificationResult }>()
 
+// 后端下发的是平台折算结论（normal / suspected / degraded / inconclusive），按严重程度映射到三档配色。
 const statusTone: Record<string, string> = {
-  pass: 'bg-emerald-50 text-emerald-700',
-  warning: 'bg-amber-50 text-amber-800',
-  fail: 'bg-red-50 text-red-700',
+  normal: 'bg-emerald-50 text-emerald-700',
+  suspected: 'bg-amber-50 text-amber-800',
+  degraded: 'bg-red-50 text-red-700',
+  unavailable: 'bg-red-50 text-red-700',
+  inconclusive: 'bg-slate-100 text-slate-600',
 }
 const severityTone: Record<string, string> = { fail: 'text-red-600', warning: 'text-amber-600' }
 const severityText: Record<string, string> = { fail: '未通过', warning: '警告' }
 
-/** 结论文案：优先用后端给定文案，其次由身份判定码映射 */
+// 平台折算结论的中文文案；后端给的 verdict_text 是检测站判定码的文案，缺失时才退回这里。
+const statusText: Record<string, string> = {
+  normal: '核验通过',
+  suspected: '疑似不符',
+  degraded: '核验不符',
+  unavailable: '核验不可用',
+  inconclusive: '无法判定',
+}
+
+/** 结论文案：优先用后端给定文案，其次由折算结论映射 */
 function verdictText(v: VerificationResult): string {
-  return v.verdict_text || verificationVerdictText(v.status)
+  return v.verdict_text || statusText[v.status] || verificationVerdictText(v.status)
 }
 
 function resultSummary(category: NonNullable<VerificationResult['categories']>[number]): string {

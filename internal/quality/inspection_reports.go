@@ -30,10 +30,18 @@ func publicReportSummary(raw json.RawMessage) json.RawMessage {
 			}
 		}
 	}
-	// 测智与降智检测的流程摘要结构相同，都只给型号与状态。
+	// 测智与降智检测的流程摘要结构相同，都只给型号与状态；不适用的流程不下发，避免卖家报告里
+	// 出现一整块「不适用」的空区块（例如白名单里没有配置降智题）。
 	for _, flow := range []string{"intelligence", inspection.FlowDegradation} {
 		value, ok := summary[flow]
 		if !ok {
+			continue
+		}
+		var header struct {
+			Status string `json:"status"`
+		}
+		if json.Unmarshal(value, &header) == nil && header.Status == "not_applicable" {
+			delete(public, flow)
 			continue
 		}
 		delete(public, flow)
@@ -51,6 +59,15 @@ func publicReportSummary(raw json.RawMessage) json.RawMessage {
 			delete(detail, "models")
 		}
 		public[flow] = mustJSON(detail)
+	}
+	// 身份流程只给卖家结论与沿用时间：来源（第三方 / 自有题库）属于平台内部实现，卖家不需要知道这次怎么检测的。
+	if value, ok := summary["identity"]; ok {
+		delete(public, "identity")
+		var detail map[string]json.RawMessage
+		if json.Unmarshal(value, &detail) == nil {
+			delete(detail, "source")
+			public["identity"] = mustJSON(detail)
+		}
 	}
 	if value, ok := summary["checks"]; ok {
 		var checks map[string]inspection.Check

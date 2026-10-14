@@ -347,7 +347,7 @@ func categoriesAndRisks(items []bazaarItem) ([]categoryCount, []risk) {
 			}
 			count.Warning++
 			if len(warnings) < riskLimit {
-				warnings = append(warnings, risk{Category: key, CategoryName: count.Name, Label: it.Label, Severity: "warn", Reason: passReasonOf(it)})
+				warnings = append(warnings, risk{Category: key, CategoryName: count.Name, Label: it.Label, Severity: "warning", Reason: passReasonOf(it)})
 			}
 		}
 	}

@@ -210,7 +210,7 @@ func TestBazaarLinkItemCategoriesAndRisks(t *testing.T) {
 	if runes := []rune(gotRisks[0].Reason); len(runes) != 160 {
 		t.Fatalf("原因应按字符截断到 160：%d", len(runes))
 	}
-	if gotRisks[2].Severity != "warn" || gotRisks[2].Reason != "回答包含轻微越界" {
+	if gotRisks[2].Severity != "warning" || gotRisks[2].Reason != "回答包含轻微越界" {
 		t.Fatalf("警告项缺失或原因错误：%+v", gotRisks[2])
 	}
 	raw, _ := json.Marshal(res.Summary)
