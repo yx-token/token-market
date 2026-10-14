@@ -104,10 +104,14 @@ describe('质检题库编辑', () => {
     const { wrapper } = await page()
     await wrapper.findAll('button').find((button) => button.text() === '添加题目')!.trigger('click')
     expect(wrapper.get<HTMLSelectElement>('#isuite').element.value).toBe('inspection_capability')
-    expect(wrapper.get('#isuite').findAll('option').map((option) => option.element.getAttribute('value'))).toEqual([
-      'inspection_capability', 'inspection_context', 'inspection_authenticity',
+    const options = wrapper.get('#isuite').findAll('option')
+    expect(options.map((option) => option.element.getAttribute('value'))).toEqual([
+      'inspection_capability', 'inspection_context', 'inspection_degradation', 'inspection_authenticity',
       'inspection_function', 'inspection_output', 'inspection_performance',
     ])
+    // 每个套件选项都显示中文名，不能把套件代码直接露给管理员
+    for (const option of options) expect(option.text()).not.toMatch(/inspection_/)
+    expect(wrapper.get('#isuite').text()).toContain('降智检测')
     expect(wrapper.get('#isuite').text()).not.toContain('已停用')
     await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
     await flushPromises()

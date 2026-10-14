@@ -40,6 +40,7 @@ export function probeResultKey(result: Pick<ProbeRunResult, 'item_id' | 'instanc
 export const probeSuiteNames: Record<string, string> = {
   inspection_capability: '测智',
   inspection_context: '测智·上下文深度',
+  inspection_degradation: '降智检测',
   inspection_authenticity: '身份核验',
   inspection_function: '功能核验',
   inspection_output: '输出完整性',
@@ -52,7 +53,7 @@ export const probeSuiteNames: Record<string, string> = {
 }
 
 export const probeSuiteOrder = [
-  'inspection_capability', 'inspection_context', 'inspection_authenticity',
+  'inspection_capability', 'inspection_context', 'inspection_degradation', 'inspection_authenticity',
   'inspection_function', 'inspection_output', 'inspection_performance',
   'availability', 'latency', 'iq', 'reasoning', 'long_context',
 ]
