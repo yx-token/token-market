@@ -14,24 +14,49 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var detectionFlows = []string{inspection.FlowIntelligence, inspection.FlowIdentity}
+var detectionFlows = []string{inspection.FlowIntelligence, inspection.FlowDegradation, inspection.FlowIdentity}
 var adaptiveBackoff = []time.Duration{30 * time.Minute, time.Hour, 2 * time.Hour, 4 * time.Hour, 6 * time.Hour}
 
+// probeFlowFamily 把流程归到选题家族：降智检测与测智共用「按模型展开 + 逐模型判分取最差」的那套逻辑。
+func probeFlowFamily(flow string) string {
+	if flow == inspection.FlowDegradation {
+		return inspection.FlowIntelligence
+	}
+	return flow
+}
+
 func flowPolicy(p *Policy, flow string) FlowPolicy {
-	if flow == inspection.FlowIdentity {
+	switch flow {
+	case inspection.FlowIdentity:
 		return p.Flows.Identity.FlowPolicy
+	case inspection.FlowDegradation:
+		return p.Flows.Degradation.FlowPolicy
 	}
 	return p.Flows.Intelligence.FlowPolicy
 }
 
-func intelligenceModels(p *Policy, whitelist []string) []string {
+// flowModels 返回某个测智类流程在给定白名单下应检测的模型列表。
+func flowModels(p *Policy, flow string, whitelist []string) []string {
+	configured := p.Flows.Intelligence.Models
+	if flow == inspection.FlowDegradation {
+		configured = p.Flows.Degradation.Models
+	}
 	out := []string{}
-	for _, m := range p.Flows.Intelligence.Models {
+	for _, m := range configured {
 		if whitelist == nil || slices.Contains(whitelist, m.Model) {
 			out = append(out, m.Model)
 		}
 	}
 	return out
+}
+
+func intelligenceModels(p *Policy, whitelist []string) []string {
+	return flowModels(p, inspection.FlowIntelligence, whitelist)
+}
+
+// degradationModels 是降智流程的模型列表；与测智各自独立配置，迁移时先继承。
+func degradationModels(p *Policy, whitelist []string) []string {
+	return flowModels(p, inspection.FlowDegradation, whitelist)
 }
 
 // 单次运行只冻结目标流程；异常流程复检不能顺带清除另一流程的疑似。
@@ -96,7 +121,7 @@ func modesForFlows(p *Policy, flows []string, trigger string, failed []string) (
 			m = "full"
 		}
 		// 复测必须重新观察失败项，不能用快检沿用的旧扣价代替修复证据。
-		if ((trigger == "recovery" || trigger == "seller_manual") && len(failed) > 0) || (trigger == "adaptive" && flow == "intelligence" && (slices.Contains(failed, "D09") || slices.Contains(failed, "D06"))) {
+		if ((trigger == "recovery" || trigger == "seller_manual") && len(failed) > 0) || (trigger == "adaptive" && flow == "intelligence" && (slices.Contains(failed, "D09") || slices.Contains(failed, "D06"))) || (trigger == "adaptive" && flow == "degradation" && slices.Contains(failed, "D14")) {
 			m = "full"
 		}
 		modes[flow] = m
@@ -161,13 +186,21 @@ func summarizeFlow(flow string, run runRow, a Assessment) flowSummary {
 		}
 	}
 	summary.InheritedAt = inherited
-	if flow == inspection.FlowIntelligence {
-		if selected && len(run.models) == 0 {
+	// 测智与降智检测共用一套按模型汇总的逻辑，只是检测项与冻结的模型列表不同。
+	if family := probeFlowFamily(flow); family == inspection.FlowIntelligence {
+		keys := flowModelCheckKeys(flow)
+		models := []string{}
+		if flow == inspection.FlowDegradation {
+			models = append(models, run.degradationModels...)
+		} else {
+			models = append(models, run.models...)
+		}
+		if selected && (len(models) == 0 || summary.Status == "not_run") {
+			// 模型集合为空，或本次没有任何适用题目：都记「不适用」，不能当作证据不足。
 			summary.Status = "not_applicable"
 		}
-		models := append([]string(nil), run.models...)
 		if !selected && len(models) == 0 {
-			for _, key := range []string{"D07", "D07.honesty", "D09", "D06"} {
+			for _, key := range keys {
 				c := a.Checks[key]
 				if c.Evidence.Source != "history" {
 					continue
@@ -181,7 +214,8 @@ func summarizeFlow(flow string, run runRow, a Assessment) flowSummary {
 		}
 		for _, model := range models {
 			result := inspection.ModelCheckResult{Model: model, Status: "not_run"}
-			for _, key := range []string{"D07", "D07.honesty", "D09", "D06"} {
+			applicable := false
+			for _, key := range keys {
 				c := a.Checks[key]
 				if !selected && c.Evidence.Source != "history" {
 					continue
@@ -194,10 +228,19 @@ func summarizeFlow(flow string, run runRow, a Assessment) flowSummary {
 					if key == "D07" {
 						result.TargetPassRate, result.ExpectedPassRate, result.Samples = m.TargetPassRate, m.ExpectedPassRate, m.Samples
 					}
+					// 判分结论为「不适用」说明本次没有该模型的适用题目，按同规则记不适用，
+					// 不能因为模型在冻结列表里就把没有题目当成证据不足。
+					applicable = applicable || m.Status == "not_applicable"
 				}
 			}
 			if result.Status == "not_run" && len(models) == 1 {
 				result.Status = summary.Status
+			}
+			if applicable {
+				result.Status = "not_applicable"
+				if selected {
+					summary.Status = worstStatus(summary.Status, "not_applicable")
+				}
 			}
 			if selected && !checkConclusive(result.Status) {
 				summary.Status = "inconclusive"
@@ -206,6 +249,14 @@ func summarizeFlow(flow string, run runRow, a Assessment) flowSummary {
 		}
 	}
 	return summary
+}
+
+// flowModelCheckKeys 是按模型分别判分的检测项；降智检测只有 D14。
+func flowModelCheckKeys(flow string) []string {
+	if flow == inspection.FlowDegradation {
+		return []string{"D14"}
+	}
+	return []string{"D07", "D07.honesty", "D09", "D06"}
 }
 
 // 测智只触发疑似；暂停由可用率或身份门槛决定，旧 SPRT 不参与结论。
@@ -239,7 +290,8 @@ func decideVerdict(run runRow, a Assessment, tp []tpResult) string {
 	}
 	for _, flow := range run.flows {
 		s := summarizeFlow(flow, run, a)
-		if flow == inspection.FlowIntelligence && (s.Status == "warning" || s.Status == "fail") {
+		// 测智类流程（测智与降智检测）异常只标疑似，暂停门槛由可用率或身份结论决定。
+		if probeFlowFamily(flow) == inspection.FlowIntelligence && (s.Status == "warning" || s.Status == "fail") {
 			return "suspected"
 		}
 	}
@@ -259,9 +311,17 @@ func definitionHash(key string, st InspectionSettings) string {
 
 // 按项定义与流程查历史，不要求整份设置相同；申诉前的扣价证据不再继承。
 func (e *Engine) inheritInspection(ctx context.Context, run runRow, u *upstreamRow, p *Policy, st InspectionSettings, checks map[string]inspection.Check, gateLists ...*[]inspection.Gate) error {
-	modelsToInherit := run.models
-	if !slices.Contains(run.flows, inspection.FlowIntelligence) && len(modelsToInherit) == 0 {
-		modelsToInherit = intelligenceModels(p, u.modelWhitelist)
+	// 每个测智类流程只继承自己冻结的模型集合上取得的结论；未跑该流程时退回策略配置的模型集合。
+	modelsByFlow := map[string][]string{}
+	for _, flow := range detectionFlows {
+		if probeFlowFamily(flow) != inspection.FlowIntelligence {
+			continue
+		}
+		if slices.Contains(run.flows, flow) {
+			modelsByFlow[flow] = flowModelsOf(run, flow)
+			continue
+		}
+		modelsByFlow[flow] = flowModels(p, flow, u.modelWhitelist)
 	}
 	var currentRaw []byte
 	if err := e.DB.QueryRow(ctx, `SELECT execution_snapshot FROM probe_runs WHERE id=$1`, run.id).Scan(&currentRaw); err != nil {
@@ -325,8 +385,9 @@ func (e *Engine) inheritInspection(ctx context.Context, run runRow, u *upstreamR
 			if !ok || (reset != nil && !prior.CheckedAt.After(*reset)) || e.now().Sub(prior.CheckedAt) > ttl || definitionHash(key, st) != definitionHash(key, *snap.Settings) {
 				continue
 			}
-			if d.Flow == inspection.FlowIntelligence {
-				if !ratesModelsMatch(snap.Policy, p, modelsToInherit) {
+			if probeFlowFamily(d.Flow) == inspection.FlowIntelligence {
+				modelsToInherit := modelsByFlow[d.Flow]
+				if !ratesModelsMatch(snap.Policy, p, d.Flow, modelsToInherit) {
 					continue
 				}
 				prior, ok = inheritedModelsCheck(prior, modelsToInherit)

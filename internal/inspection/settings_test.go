@@ -161,7 +161,7 @@ func TestRegistryCopiesAndDefaultDisabledFingerprint(t *testing.T) {
 			t.Fatal("目录说明缺失或顺序不稳定")
 		}
 		effective, _ := Effective(definition.Key, Defaults())
-		if definition.DefaultPricing || effective.Pricing || definition.Flow != FlowIntelligence && definition.Flow != FlowIdentity && definition.Flow != FlowCommon {
+		if definition.DefaultPricing || effective.Pricing || definition.Flow != FlowIntelligence && definition.Flow != FlowDegradation && definition.Flow != FlowIdentity && definition.Flow != FlowCommon {
 			t.Fatalf("流程归属缺失或默认开启扣价：%+v", definition)
 		}
 		for _, coefficient := range []string{"warning", "severe"} {

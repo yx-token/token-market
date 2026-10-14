@@ -24,7 +24,7 @@ func TestInspectionModelScopedSelectionAndSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, model := range []string{"gpt-6-astra", "gpt-6-sol"} {
-		items, err := selectFlowExecutionItems(ctx, pool, "openai", model, []string{model}, []string{"intelligence"}, "third_party", map[string]string{"intelligence": "full"}, defaultInspectionSettings())
+		items, err := selectFlowExecutionItems(ctx, pool, "openai", model, []string{model}, nil, []string{"intelligence"}, "third_party", map[string]string{"intelligence": "full"}, defaultInspectionSettings())
 		want := 1
 		if model == "gpt-6-astra" {
 			want = 2
@@ -36,7 +36,7 @@ func TestInspectionModelScopedSelectionAndSnapshot(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE probe_items SET status='retired' WHERE id=$1`, scoped.ID); err != nil {
 		t.Fatal(err)
 	}
-	items, err := selectFlowExecutionItems(ctx, pool, "openai", "gpt-6-astra", []string{"gpt-6-astra"}, []string{"intelligence"}, "third_party", map[string]string{"intelligence": "full"}, defaultInspectionSettings())
+	items, err := selectFlowExecutionItems(ctx, pool, "openai", "gpt-6-astra", []string{"gpt-6-astra"}, nil, []string{"intelligence"}, "third_party", map[string]string{"intelligence": "full"}, defaultInspectionSettings())
 	if err != nil || len(items) != 1 {
 		t.Fatal("下线题不应执行", err)
 	}
@@ -89,7 +89,7 @@ func TestFlowSelectionAllowsPureThirdPartyAndIndependentRecovery(t *testing.T) {
 	if _, err := SyncInspectionItems(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
-	items, err := selectFlowExecutionItems(ctx, pool, "anthropic", run.model, run.models, []string{"identity"}, "third_party", map[string]string{"identity": "full"}, defaultInspectionSettings())
+	items, err := selectFlowExecutionItems(ctx, pool, "anthropic", run.model, run.models, nil, []string{"identity"}, "third_party", map[string]string{"identity": "full"}, defaultInspectionSettings())
 	if err != nil || len(items) != 0 {
 		t.Fatalf("纯第三方仍选中了内部题：%d %v", len(items), err)
 	}

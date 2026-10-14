@@ -117,12 +117,65 @@ func TestThirdPartyDetection(t *testing.T) {
 	wait(good)
 	wait(bad)
 
+	// 卖家报告不下发第三方渠道：只有脱敏的核验结论、大类计数与风险项。
 	type report struct {
 		Verdict string `json:"verdict"`
 		Summary struct {
 			InternalVerdict string   `json:"internal_verdict"`
 			Suggestions     []string `json:"suggestions"`
-			ThirdParty      []struct {
+			Verification    struct {
+				Status      string `json:"status"`
+				VerdictText string `json:"verdict_text"`
+				TrueModel   string `json:"true_model"`
+			} `json:"verification"`
+		} `json:"summary"`
+	}
+	reportOf := func(id int64) (report, map[string]json.RawMessage) {
+		var rs []struct {
+			Verdict string                     `json:"verdict"`
+			Summary map[string]json.RawMessage `json:"summary"`
+		}
+		seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d/reports", id), nil, &rs)
+		if len(rs) != 1 {
+			t.Fatalf("reports of %d: %+v", id, rs)
+		}
+		raw := rs[0].Summary
+		var r report
+		// 直接把脱敏后的摘要解进断言结构；Raw 仅用于检查键是否存在。
+		encoded, _ := json.Marshal(map[string]any{"verdict": rs[0].Verdict, "summary": raw})
+		if err := json.Unmarshal(encoded, &r); err != nil {
+			t.Fatal(err)
+		}
+		return r, raw
+	}
+	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status, health FROM upstreams WHERE id = $1", good), &status, &health)
+	r, raw := reportOf(good)
+	// 渠道名、站点报告地址与 external_id 都不能出现在卖家响应里。
+	encoded, _ := json.Marshal(raw)
+	for _, secret := range []string{"provider", "report_url", "external_id", "bazaarlink", "BazaarLink"} {
+		if strings.Contains(string(encoded), secret) {
+			t.Fatalf("卖家报告泄露第三方渠道信息 %q：%s", secret, encoded)
+		}
+	}
+	if status != "ready" || health != "healthy" || r.Verdict != "normal" || r.Summary.Verification.Status != "normal" ||
+		r.Summary.Verification.VerdictText != "家族与具体型号都与声明一致" {
+		t.Fatalf("matching identity should pass: %s %s %+v raw=%s", status, health, r, encoded)
+	}
+	if _, ok := raw["third_party"]; ok {
+		t.Fatalf("卖家报告不应携带第三方逐条结果：%s", encoded)
+	}
+
+	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status FROM upstreams WHERE id = $1", bad), &status)
+	r, _ = reportOf(bad)
+	if status != "verify_failed" || r.Verdict != "degraded" || r.Summary.Verification.Status != "degraded" ||
+		r.Summary.Verification.TrueModel != "gpt-4o" || r.Summary.Verification.VerdictText != "证据指向其他模型家族" {
+		t.Fatalf("identity mismatch should fail onboarding: %s %+v", status, r)
+	}
+	// 管理端仍保留渠道名与站点报告地址。
+	var adminRuns []struct {
+		Status  string `json:"status"`
+		Summary struct {
+			ThirdParty []struct {
 				Provider  string         `json:"provider"`
 				Outcome   string         `json:"outcome"`
 				Verdict   string         `json:"verdict"`
@@ -131,28 +184,19 @@ func TestThirdPartyDetection(t *testing.T) {
 			} `json:"third_party"`
 		} `json:"summary"`
 	}
-	reportOf := func(id int64) report {
-		var rs []report
-		seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d/reports", id), nil, &rs)
-		if len(rs) != 1 || len(rs[0].Summary.ThirdParty) != 1 {
-			t.Fatalf("reports of %d: %+v", id, rs)
+	admin.must("GET", fmt.Sprintf("/api/admin/upstreams/%d/probe-runs", good), nil, &adminRuns)
+	found := false
+	for _, run := range adminRuns {
+		if len(run.Summary.ThirdParty) != 1 {
+			continue
 		}
-		return rs[0]
+		entry := run.Summary.ThirdParty[0]
+		if entry.Outcome == "pass" && entry.Verdict == "normal" && strings.HasPrefix(entry.ReportURL, bl.URL()) && entry.Summary["verdict_status"] == "clean_match" {
+			found = true
+		}
 	}
-	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status, health FROM upstreams WHERE id = $1", good), &status, &health)
-	r := reportOf(good)
-	tp := r.Summary.ThirdParty[0]
-	if status != "ready" || health != "healthy" || r.Verdict != "normal" || tp.Outcome != "pass" || tp.Verdict != "normal" ||
-		!strings.HasPrefix(tp.ReportURL, bl.URL()) || tp.Summary["verdict_status"] != "clean_match" {
-		t.Fatalf("matching identity should pass: %s %s %+v", status, health, r)
-	}
-
-	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status FROM upstreams WHERE id = $1", bad), &status)
-	r = reportOf(bad)
-	tp = r.Summary.ThirdParty[0]
-	if status != "verify_failed" || r.Verdict != "degraded" || tp.Outcome != "mismatch" ||
-		tp.Summary["true_model"] != "gpt-4o" {
-		t.Fatalf("identity mismatch should fail onboarding: %s %+v", status, r)
+	if !found {
+		t.Fatalf("管理端应保留第三方渠道详情：%+v", adminRuns)
 	}
 
 	mu.Lock()

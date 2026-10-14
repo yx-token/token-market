@@ -70,7 +70,7 @@ export function compareProbeSuites(a: string, b: string): number {
 }
 
 export const detectionFlowNames: Record<string, string> = {
-  intelligence: '测智', identity: '身份与功能核验', common: '通用',
+  intelligence: '测智', degradation: '降智检测', identity: '身份与功能核验', common: '通用',
 }
 
 export function detectionFlowText(flow: string): string {
@@ -79,6 +79,23 @@ export function detectionFlowText(flow: string): string {
 
 export const identitySourceNames: Record<string, string> = {
   third_party: '第三方检测', self: '自有题库',
+}
+
+// 核验结论文案；未知代码保留原值
+export const verificationVerdictNames: Record<string, string> = {
+  clean_match: '家族与具体型号都与声明一致',
+  clean_match_family_only: '家族一致，具体型号无法确定',
+  clean_match_submodel_mismatch: '家族一致，但不是声明的具体型号',
+  plain_mismatch: '证据指向其他模型家族',
+  spoof_behavior_induced: '行为被诱导成声明的模型，指纹指向其他模型',
+  spoof_selfclaim_forged: '自称是声明的模型，但行为指向其他模型',
+  ambiguous: '证据相互矛盾，无法判定',
+  insufficient_data: '有效证据不足',
+}
+
+export function verificationVerdictText(code?: string): string {
+  if (!code) return ''
+  return verificationVerdictNames[code] ?? code
 }
 
 export function identitySourceText(source: string): string {

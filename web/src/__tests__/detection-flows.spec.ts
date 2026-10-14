@@ -4,7 +4,7 @@ import { defineComponent } from 'vue'
 import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { admin } from '@/api'
-import type { DetectionProvider, Policy, Upstream } from '@/api/types'
+import type { DetectionFlows, DetectionProvider, Policy, Upstream } from '@/api/types'
 import SearchSelect from '@/components/common/SearchSelect.vue'
 import DetectionView from '@/views/admin/DetectionView.vue'
 
@@ -19,6 +19,7 @@ const policy: Policy = {
   third_party: [{ provider: 'test', triggers: ['appeal'], model: '身份模型', format: 'openai', on_mismatch: 'degraded', on_submodel_mismatch: 'suspected' }], version: 1, updated_at: '',
   flows: {
     intelligence: { enabled: true, scheduled_enabled: true, interval_minutes: 360, triggers: ['scheduled', 'admin'], full_triggers: ['admin'], models: [{ model: 'gpt-6-astra', expected_pass_rate: null }, { model: 'gpt-6.1-sol', expected_pass_rate: 0.9 }] },
+    degradation: { enabled: true, scheduled_enabled: false, interval_minutes: 720, triggers: ['scheduled'], full_triggers: ['onboarding'], models: [{ model: 'degrade-model', expected_pass_rate: 0.5 }] },
     identity: { enabled: true, source: 'third_party', scheduled_enabled: false, interval_minutes: 1440, triggers: ['onboarding', 'admin'], full_triggers: ['onboarding', 'admin'] },
   },
 }
@@ -63,6 +64,50 @@ describe('独立检测流程策略', () => {
     expect(wrapper.get<HTMLInputElement>('#intelligence-rate-1').element.value).toBe('0.9')
     for (const id of ['ps', 'pm', 'policy-full-triggers']) expect(wrapper.find(`#${id}`).exists()).toBe(false)
   })
+  it('降智区块在测智之后、身份核验之前，回填独立模型列表', async () => {
+    const wrapper = await edit()
+    const titles = wrapper.findAll('h3').map((h) => h.text())
+    expect(titles).toEqual(['测智', '降智检测', '身份与功能核验'])
+    expect(wrapper.text()).toContain('开 · 定时关（720 分钟）')
+    expect(wrapper.get<HTMLInputElement>('#degradation-enabled').element.checked).toBe(true)
+    expect(wrapper.get<HTMLInputElement>('#degradation-scheduled').element.checked).toBe(false)
+    expect(wrapper.get<HTMLInputElement>('#degradation-interval').element.value).toBe('720')
+    expect(wrapper.findAllComponents(SearchSelect).find((c) => c.props('id') === 'degradation-model-0')!.props('modelValue')).toBe('degrade-model')
+    expect(wrapper.get<HTMLInputElement>('#degradation-rate-0').element.value).toBe('0.5')
+    // 模型列表独立：降智只回填自己的模型，测智仍是自己的两个
+    expect(wrapper.findAllComponents(SearchSelect).filter((c) => c.props('id') === 'degradation-model-1')).toHaveLength(0)
+  })
+  it('降智区块可开关、加减模型并提交 flows.degradation', async () => {
+    const wrapper = await edit()
+    await wrapper.get('#degradation-enabled').setValue(false)
+    await wrapper.get('#degradation-interval').setValue(1440)
+    await wrapper.get('#degradation-rate-0').setValue(0.8)
+    await select(wrapper, 'degradation-triggers', ['admin'])
+    await select(wrapper, 'degradation-full-triggers', ['onboarding', 'appeal'])
+    await click(wrapper, '添加降智检测模型')
+    await select(wrapper, 'degradation-model-1', 'gpt-6.1-sol')
+    await wrapper.get('#degradation-rate-1').setValue('')
+    await click(wrapper, '保存')
+    const body = vi.mocked(admin.upsertPolicy).mock.calls[0]![2]
+    const flows = body.flows! as DetectionFlows
+    expect(flows.degradation).toEqual({
+      ...policy.flows!.degradation, enabled: false, interval_minutes: 1440, triggers: ['admin'],
+      full_triggers: ['onboarding', 'appeal'],
+      models: [{ model: 'degrade-model', expected_pass_rate: 0.8 }, { model: 'gpt-6.1-sol', expected_pass_rate: null }],
+    })
+    // 测智模型不受降智编辑影响
+    expect(flows.intelligence).toEqual(policy.flows!.intelligence)
+  })
+  it('降智模型为空或通过率越界时不提交', async () => {
+    const wrapper = await edit()
+    await select(wrapper, 'degradation-model-0', '')
+    await click(wrapper, '保存')
+    expect(admin.upsertPolicy).not.toHaveBeenCalled()
+    await select(wrapper, 'degradation-model-0', 'degrade-model')
+    await wrapper.get('#degradation-rate-0').setValue(1.2)
+    await click(wrapper, '保存')
+    expect(admin.upsertPolicy).not.toHaveBeenCalled()
+  })
   it('来源切换收起检测站，再切回保留配置', async () => {
     const wrapper = await edit()
     expect(wrapper.find('[data-testid="third-party-config"]').exists()).toBe(true)
@@ -87,6 +132,7 @@ describe('独立检测流程策略', () => {
     const body = vi.mocked(admin.upsertPolicy).mock.calls[0]![2]
     expect(body.flows).toEqual({
       intelligence: { ...policy.flows!.intelligence, interval_minutes: 720, triggers: ['admin', 'appeal'], models: [{ model: 'gpt-6-astra', expected_pass_rate: 0.95 }, { model: 'gpt-6.1-sol', expected_pass_rate: null }] },
+      degradation: policy.flows!.degradation,
       identity: { ...policy.flows!.identity, scheduled_enabled: true, full_triggers: ['admin'] },
     })
     for (const field of ['suites', 'models', 'interval_minutes', 'full_triggers']) expect(body).not.toHaveProperty(field)
@@ -120,7 +166,7 @@ describe('独立检测流程策略', () => {
   })
   it('立即检测默认全部流程，也能只选择身份流程，拒绝空选择', async () => {
     const wrapper = await page(); await click(wrapper, '单个上游'); await select(wrapper, 'ou', '42'); await click(wrapper, '立即检测')
-    expect(admin.probeFlows).toHaveBeenLastCalledWith(42, ['intelligence', 'identity'])
+    expect(admin.probeFlows).toHaveBeenLastCalledWith(42, ['intelligence', 'degradation', 'identity'])
     await select(wrapper, 'probe-flows', ['identity']); await click(wrapper, '立即检测')
     expect(admin.probeFlows).toHaveBeenLastCalledWith(42, ['identity'])
     await select(wrapper, 'probe-flows', []); await click(wrapper, '立即检测'); expect(admin.probeFlows).toHaveBeenCalledTimes(2)

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // BazaarLink 的 Probe API：向被测端点发送约 80 道探针题，给出模型身份判定（是否为声明的模型、是否伪装）与行为警告。
@@ -128,25 +129,17 @@ func errorText(body []byte) string {
 
 // bazaarRun 只解析需要的字段；响应中的被测端点原始回答、响应头、提交者 IP 等不保存。
 type bazaarRun struct {
-	RunID             string   `json:"runId"`
-	Status            string   `json:"status"`
-	ModelID           string   `json:"modelId"`
-	ClaimedModel      string   `json:"claimedModel"`
-	ProtocolPath      string   `json:"protocolPath"`
-	ReportURL         string   `json:"reportUrl"`
-	WallClockMs       *float64 `json:"wallClockMs"`
-	TotalInputTokens  *float64 `json:"totalInputTokens"`
-	TotalOutputTokens *float64 `json:"totalOutputTokens"`
-	Items             []struct {
-		ProbeID    string `json:"probeId"`
-		Label      string `json:"label"`
-		Group      string `json:"group"`
-		Status     string `json:"status"`
-		Passed     any    `json:"passed"` // true / false / "warning" / null
-		PassReason string `json:"passReason"`
-		Error      string `json:"error"`
-	} `json:"items"`
-	Warnings []struct {
+	RunID             string       `json:"runId"`
+	Status            string       `json:"status"`
+	ModelID           string       `json:"modelId"`
+	ClaimedModel      string       `json:"claimedModel"`
+	ProtocolPath      string       `json:"protocolPath"`
+	ReportURL         string       `json:"reportUrl"`
+	WallClockMs       *float64     `json:"wallClockMs"`
+	TotalInputTokens  *float64     `json:"totalInputTokens"`
+	TotalOutputTokens *float64     `json:"totalOutputTokens"`
+	Items             []bazaarItem `json:"items"`
+	Warnings          []struct {
 		ID       string `json:"id"`
 		Label    string `json:"label"`
 		Severity string `json:"severity"`
@@ -245,6 +238,131 @@ func (run bazaarRun) outcome() string {
 	return OutcomeInconclusive
 }
 
+// categoryNames 是检测站分组到中文大类名的映射；未登记的分组保留原始 key 作 name，不丢项。
+var categoryNames = map[string]string{
+	"identity":  "身份识别",
+	"submodel":  "子模型识别",
+	"quality":   "品质测试",
+	"safety":    "安全探针",
+	"integrity": "完整性检查",
+}
+
+const (
+	// riskReasonLimit 是单条风险原因的字符上限，避免把检测站的原始长文本整段透出。
+	riskReasonLimit = 160
+	// riskLimit 是风险项条数上限。
+	riskLimit = 20
+)
+
+func categoryName(key string) string {
+	if name, ok := categoryNames[key]; ok {
+		return name
+	}
+	return key
+}
+
+// truncateRunes 按字符截断并去掉 text 列不接受的无效 UTF-8 与 NUL。
+func truncateRunes(s string, n int) string {
+	s = strings.ReplaceAll(strings.ToValidUTF8(s, ""), "\x00", "")
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
+}
+
+type bazaarItem struct {
+	ProbeID    string `json:"probeId"`
+	Label      string `json:"label"`
+	Group      string `json:"group"`
+	Status     string `json:"status"`
+	Passed     any    `json:"passed"` // true / false / "warning" / null
+	PassReason string `json:"passReason"`
+	Error      string `json:"error"`
+}
+
+// categoryCount 是一大类的逐项统计，passed/warning/failed/error 之外的项（pending、skipped 等）
+// 只计入 total，避免把未完成的项算成通过。
+type categoryCount struct {
+	Key     string `json:"key"`
+	Name    string `json:"name"`
+	Total   int    `json:"total"`
+	Passed  int    `json:"passed"`
+	Warning int    `json:"warning"`
+	Failed  int    `json:"failed"`
+	Error   int    `json:"error"`
+}
+
+// risk 是卖家可见的风险项：只收 failed 与 warning，error 属于我们侧或网络问题，不作为卖家风险展示。
+type risk struct {
+	Category     string `json:"category"`
+	CategoryName string `json:"category_name"`
+	Label        string `json:"label"`
+	Severity     string `json:"severity"` // fail / warn
+	Reason       string `json:"reason"`
+}
+
+func passReasonOf(it bazaarItem) string {
+	if reason := strings.TrimSpace(it.PassReason); reason != "" {
+		return truncateRunes(reason, riskReasonLimit)
+	}
+	if detail := strings.TrimSpace(it.Error); detail != "" {
+		return truncateRunes(detail, riskReasonLimit)
+	}
+	return ""
+}
+
+// categoriesAndRisks 按分组汇总逐项明细，并按分组首次出现的顺序输出。
+func categoriesAndRisks(items []bazaarItem) ([]categoryCount, []risk) {
+	order := []string{}
+	counts := map[string]*categoryCount{}
+	var failed, warnings []risk
+	for _, it := range items {
+		key := it.Group
+		count, ok := counts[key]
+		if !ok {
+			count = &categoryCount{Key: key, Name: categoryName(key)}
+			counts[key] = count
+			order = append(order, key)
+		}
+		count.Total++
+		switch {
+		case it.Status == "error" || it.Status == "failed" || strings.TrimSpace(it.Error) != "":
+			count.Error++
+			continue
+		}
+		switch passed := it.Passed.(type) {
+		case bool:
+			if passed {
+				count.Passed++
+				continue
+			}
+			count.Failed++
+			if len(failed) < riskLimit {
+				failed = append(failed, risk{Category: key, CategoryName: count.Name, Label: it.Label, Severity: "fail", Reason: passReasonOf(it)})
+			}
+		case string:
+			if passed != "warning" {
+				// 其他字符串取值（pending、skipped 等）只计入 total。
+				continue
+			}
+			count.Warning++
+			if len(warnings) < riskLimit {
+				warnings = append(warnings, risk{Category: key, CategoryName: count.Name, Label: it.Label, Severity: "warning", Reason: passReasonOf(it)})
+			}
+		}
+	}
+	out := make([]categoryCount, 0, len(order))
+	for _, key := range order {
+		out = append(out, *counts[key])
+	}
+	// 先失败后警告，再按上限截断，保证 warning 不会把 failed 挤出风险列表。
+	risks := append(failed, warnings...)
+	if len(risks) > riskLimit {
+		risks = risks[:riskLimit]
+	}
+	return out, risks
+}
+
 func (run bazaarRun) summary() map[string]any {
 	s := map[string]any{"run_status": run.Status, "model": run.ModelID}
 	if run.ProtocolPath != "" {
@@ -269,6 +387,10 @@ func (run bazaarRun) summary() map[string]any {
 		}
 	}
 	s["items"] = items
+	if categories, risks := categoriesAndRisks(run.Items); len(categories) > 0 {
+		s["categories"] = categories
+		s["risks"] = risks
+	}
 	if len(failed) > 0 {
 		s["failed_probes"] = failed
 	}

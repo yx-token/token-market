@@ -87,12 +87,13 @@ func Inspect(rows []Outcome, st InspectionSettings, now time.Time, options ...In
 		d, _ := inspection.Effective(definition.Key, st)
 		c := newInspectionCheck(d, now)
 		own := observedRows(rows, d.Key)
-		if opts.Flows != nil && (d.Flow == "intelligence" && !containsAny(opts.Flows, "intelligence") || d.Flow == "identity" && (!containsAny(opts.Flows, "identity") || opts.IdentitySource == "third_party")) {
+		if opts.Flows != nil && (probeFlowFamily(d.Flow) == inspection.FlowIntelligence && !containsAny(opts.Flows, d.Flow) || d.Flow == "identity" && (!containsAny(opts.Flows, "identity") || opts.IdentitySource == "third_party")) {
 			checks[d.Key] = c
 			continue
 		}
-		if opts.Flows != nil && d.Flow == "intelligence" && containsAny(opts.Flows, "intelligence") && len(opts.Models) == 0 {
-			c.Status, c.Reason, c.Evidence.Code = "not_applicable", "挂售模型未配置测智。", "intelligence_models_unconfigured"
+		// 测智类流程冻结的模型为空表示本次没有适用模型，不能伪造通过；其他流程的模型集合与此无关。
+		if opts.Flows != nil && probeFlowFamily(d.Flow) == inspection.FlowIntelligence && containsAny(opts.Flows, d.Flow) && len(flowFrozenModels(d.Flow, opts)) == 0 {
+			c.Status, c.Reason, c.Evidence.Code = "not_applicable", flowModelsUnconfiguredReason(d.Flow), flowModelsUnconfiguredCode(d.Flow)
 			checks[d.Key] = c
 			continue
 		}

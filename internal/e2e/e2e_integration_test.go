@@ -177,17 +177,23 @@ func setupWithDatabaseMode(t *testing.T, fromScratch bool, opts ...func(cfg *con
 
 var pongRe = regexp.MustCompile(`PONG\d+`)
 
+// testDetectionFlows 为测智与降智检测配同一批模型；降智检测的模型列表与测智各自独立。
 func testDetectionFlows(models []string, source string, identity bool) quality.PolicyFlows {
 	triggers := []string{"onboarding", "scheduled", "recovery", "seller_manual", "admin", "adaptive", "appeal"}
+	full := []string{"onboarding", "appeal", "admin"}
 	configured := make([]quality.IntelligenceModel, 0, len(models))
 	for _, model := range models {
 		configured = append(configured, quality.IntelligenceModel{Model: model})
 	}
+	degradationModels := make([]quality.IntelligenceModel, 0, len(models))
+	degradationModels = append(degradationModels, configured...)
 	return quality.PolicyFlows{
 		Intelligence: quality.IntelligenceFlowPolicy{FlowPolicy: quality.FlowPolicy{Enabled: true, IntervalMinutes: 360,
-			Triggers: triggers, FullTriggers: []string{"onboarding", "appeal", "admin"}}, Models: configured},
+			Triggers: triggers, FullTriggers: full}, Models: configured},
+		Degradation: quality.IntelligenceFlowPolicy{FlowPolicy: quality.FlowPolicy{Enabled: true, IntervalMinutes: 360,
+			Triggers: triggers, FullTriggers: full}, Models: degradationModels},
 		Identity: quality.IdentityFlowPolicy{FlowPolicy: quality.FlowPolicy{Enabled: identity, IntervalMinutes: 1440,
-			Triggers: triggers, FullTriggers: []string{"onboarding", "appeal", "admin"}}, Source: source},
+			Triggers: triggers, FullTriggers: full}, Source: source},
 	}
 }
 

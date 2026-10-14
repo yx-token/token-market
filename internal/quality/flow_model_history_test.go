@@ -139,7 +139,7 @@ func TestRatesModelsMatchOnlyCurrentModels(t *testing.T) {
 		{"撤下模型变化不影响", policy(IntelligenceModel{Model: "甲"}, IntelligenceModel{Model: "乙", ExpectedPassRate: numberPointer(.5)}), policy(IntelligenceModel{Model: "甲"}, IntelligenceModel{Model: "乙", ExpectedPassRate: numberPointer(.9)}), []string{"甲"}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := ratesModelsMatch(tc.old, tc.next, tc.models); got != tc.want {
+			if got := ratesModelsMatch(tc.old, tc.next, inspection.FlowIntelligence, tc.models); got != tc.want {
 				t.Fatalf("模型期望匹配=%v，期望=%v", got, tc.want)
 			}
 		})

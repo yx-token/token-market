@@ -543,6 +543,7 @@ export interface ReportSummary {
   identity_source?: IdentitySource | null
   models?: string[]
   intelligence?: IntelligenceSummary
+  degradation?: IntelligenceSummary
   identity?: IdentitySummary
   verdict: string
   trigger: string
@@ -555,6 +556,8 @@ export interface ReportSummary {
   suggestions?: string[]
   internal_verdict?: string
   third_party?: ThirdPartyResult[]
+  /** 卖家报告里的核验结果（脱敏，无渠道与站点链接） */
+  verification?: VerificationResult
   inspection_mode?: 'trial' | 'formal'
   mode?: 'legacy' | 'full' | 'quick'
   checks?: Record<string, InspectionCheckResult>
@@ -761,7 +764,7 @@ export interface Pool {
   updated_at: string
 }
 
-export type DetectionFlow = 'intelligence' | 'identity'
+export type DetectionFlow = 'intelligence' | 'degradation' | 'identity'
 export type InspectionFlow = DetectionFlow | 'common'
 export type IdentitySource = 'third_party' | 'self'
 
@@ -780,6 +783,8 @@ export interface IntelligenceModelPolicy {
 
 export interface DetectionFlows {
   intelligence: DetectionFlowPolicy & { models: IntelligenceModelPolicy[] }
+  // 降智检测与测智同构，但模型列表独立配置
+  degradation: DetectionFlowPolicy & { models: IntelligenceModelPolicy[] }
   identity: DetectionFlowPolicy & { source: IdentitySource }
 }
 
@@ -793,6 +798,36 @@ export interface IntelligenceSummary {
     expected_pass_rate?: number | null
     samples?: number
   }[]
+}
+
+/** 卖家报告里的一项核验大类（渠道信息已脱敏） */
+export interface VerificationCategory {
+  key: string
+  name: string
+  total: number
+  passed: number
+  warning: number
+  failed: number
+  error: number
+}
+
+/** 卖家报告里的一条风险项 */
+export interface VerificationRisk {
+  category_name: string
+  label: string
+  severity: string
+  reason: string
+}
+
+/** 卖家报告里的第三方核验结论；不含渠道名与站点链接 */
+export interface VerificationResult {
+  status: string
+  categories?: VerificationCategory[]
+  risks?: VerificationRisk[]
+  verdict_text?: string
+  true_model?: string
+  true_family?: string
+  checked_at?: string
 }
 
 export interface IdentitySummary {
@@ -1064,19 +1099,14 @@ export interface ProbeRunRecord extends ProbeRun {
   suites: Record<string, { items: number; passed: number }>
 }
 
-/** 卖家查看的检测记录，只含进度和脱敏后的状态。 */
+/** 卖家查看的检测记录，只含状态与结论（不含进度、模型、流程与第三方渠道）。 */
 export interface SellerProbeRun {
   id: number
   trigger: string
   status: string
-  flows?: DetectionFlow[]
-  identity_source?: IdentitySource | null
-  models?: string[]
   queued_at: string
   started_at?: string | null
   finished_at?: string | null
-  progress: { answered: number; total: number | null }
-  third_party: { provider: string; status: string }[]
   report_id: number | null
   verdict: string | null
 }

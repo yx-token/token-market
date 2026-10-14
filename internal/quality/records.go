@@ -36,31 +36,16 @@ type SuiteCount struct {
 	Passed int `json:"passed"`
 }
 
-// SellerProbeRun 是卖家查看检测进度时使用的脱敏记录，不包含题面、回答或内部判定证据。
+// SellerProbeRun 是卖家查看检测状态的脱敏记录：只说明「有没有在跑 / 跑完了 / 结果是什么」，
+// 不含进度、模型、流程、身份来源与第三方核验渠道。
 type SellerProbeRun struct {
-	ID             int64                   `json:"id"`
-	Trigger        string                  `json:"trigger"`
-	Status         string                  `json:"status"`
-	Flows          []string                `json:"flows"`
-	IdentitySource *string                 `json:"identity_source"`
-	Models         []string                `json:"models"`
-	QueuedAt       time.Time               `json:"queued_at"`
-	StartedAt      *time.Time              `json:"started_at"`
-	FinishedAt     *time.Time              `json:"finished_at"`
-	Progress       SellerProbeProgress     `json:"progress"`
-	ThirdParty     []SellerThirdPartyState `json:"third_party"`
-	ReportID       *int64                  `json:"report_id"`
-	Verdict        *string                 `json:"verdict"`
-}
-
-type SellerProbeProgress struct {
-	Answered int  `json:"answered"`
-	Total    *int `json:"total"`
-}
-
-type SellerThirdPartyState struct {
-	Provider string `json:"provider"`
-	Status   string `json:"status"`
+	ID         int64      `json:"id"`
+	Trigger    string     `json:"trigger"`
+	Status     string     `json:"status"`
+	QueuedAt   time.Time  `json:"queued_at"`
+	FinishedAt *time.Time `json:"finished_at"`
+	ReportID   *int64     `json:"report_id"`
+	Verdict    *string    `json:"verdict"`
 }
 
 // SellerProbeRuns 返回卖家某个上游的检测记录，进行中的记录优先且不包含基线运行。
@@ -68,12 +53,7 @@ func SellerProbeRuns(ctx context.Context, db DB, sellerID, upstreamID int64, lim
 	if _, err := listing.GetSellerUpstream(ctx, db, sellerID, upstreamID); err != nil {
 		return nil, err
 	}
-	rows, err := db.Query(ctx, `SELECT r.id, r.trigger, r.status, r.flows, r.identity_source, r.models,
-			r.queued_at, r.started_at, r.finished_at,
-			(SELECT count(*) FROM probe_results x WHERE x.run_id = r.id), `+plannedRunColumn+`,
-			(SELECT COALESCE(jsonb_agg(jsonb_build_object('provider', c.provider, 'status', c.status) ORDER BY c.id), '[]'::jsonb)
-				FROM third_party_checks c WHERE c.run_id = r.id),
-			t.id, t.verdict
+	rows, err := db.Query(ctx, `SELECT r.id, r.trigger, r.status, r.queued_at, r.finished_at, t.id, t.verdict
 		FROM probe_runs r LEFT JOIN test_reports t ON t.run_id = r.id
 		WHERE r.upstream_id = $1 AND r.trigger <> 'reference'
 		ORDER BY CASE WHEN r.status IN ('queued', 'running', 'third_party') THEN 0 ELSE 1 END,
@@ -83,17 +63,8 @@ func SellerProbeRuns(ctx context.Context, db DB, sellerID, upstreamID int64, lim
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (SellerProbeRun, error) {
 		var run SellerProbeRun
-		var total *int
-		var thirdParty []byte
-		if err := row.Scan(&run.ID, &run.Trigger, &run.Status, &run.Flows, &run.IdentitySource, &run.Models,
-			&run.QueuedAt, &run.StartedAt, &run.FinishedAt, &run.Progress.Answered, &total, &thirdParty, &run.ReportID, &run.Verdict); err != nil {
-			return run, err
-		}
-		run.Progress.Total = total
-		if err := json.Unmarshal(thirdParty, &run.ThirdParty); err != nil {
-			return run, err
-		}
-		return run, nil
+		err := row.Scan(&run.ID, &run.Trigger, &run.Status, &run.QueuedAt, &run.FinishedAt, &run.ReportID, &run.Verdict)
+		return run, err
 	})
 }
 

@@ -20,7 +20,7 @@ import UpstreamModelWhitelist from '@/components/UpstreamModelWhitelist.vue'
 import { authTypeText, isKeyAuthType, label, upstreamName } from '@/utils/labels'
 import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
-import { appealableReport, detectionFlowText, intelligenceStatusText } from '@/utils/inspection'
+import { appealableReport } from '@/utils/inspection'
 import { errorText } from '@/api/errors'
 
 const props = defineProps<{ id: string }>()
@@ -287,34 +287,12 @@ async function submitAppeal() {
 }
 const appealable = appealableReport
 
-function thirdPartyStatusText(status: string) {
-  const names: Record<string, string> = { pending: '排队中', running: '检测中', completed: '已完成', failed: '失败', timeout: '超时', skipped: '已跳过' }
-  return names[status] ?? status
-}
-
-function providerText(provider: string) {
-  return provider === 'bazaarlink' ? 'BazaarLink' : provider
-}
-
 function runStatusText(status: string) {
   const names: Record<string, string> = {
     queued: '排队中', running: '检测中', third_party: '第三方核验中', done: '已完成',
     failed: '未完成', skipped_budget: '预算跳过', skipped_disabled: '已停用跳过',
   }
   return names[status] ?? status
-}
-
-function reportFor(run: SellerProbeRun) {
-  return run.report_id ? reports.data.value?.find((report) => report.id === run.report_id) : undefined
-}
-
-function intelligenceText(run: SellerProbeRun) {
-  const report = reportFor(run)
-  return report?.summary?.intelligence?.status
-    ? intelligenceStatusText(report.summary.intelligence.status)
-    : report?.summary?.suites?.iq
-      ? percent(report.summary.suites.iq.relative_score, 0)
-      : '—'
 }
 </script>
 
@@ -518,13 +496,9 @@ function intelligenceText(run: SellerProbeRun) {
         :columns="[
           { key: 'queued_at', label: '时间' },
           { key: 'trigger', label: '类型' },
-          { key: 'status', label: '结论' },
-          { key: 'flows', label: '流程' },
-          { key: 'models', label: '测试模型' },
-          { key: 'progress', label: '进度' },
-          { key: 'score', label: '测智', align: 'right' },
-          { key: 'third_party', label: '第三方检测' },
-          { key: 'actions', label: '' },
+          { key: 'status', label: '状态' },
+          { key: 'verdict', label: '结论' },
+          { key: 'actions', label: '操作' },
         ]"
         :rows="probeRuns.data.value"
         :loading="probeRuns.loading.value"
@@ -535,20 +509,11 @@ function intelligenceText(run: SellerProbeRun) {
         </template>
         <template #cell-trigger="{ row }"><StatusBadge kind="trigger" :value="row.trigger" /></template>
         <template #cell-status="{ row }">
+          <span>{{ runStatusText(row.status) }}</span>
+        </template>
+        <template #cell-verdict="{ row }">
           <StatusBadge v-if="row.verdict" kind="verdict" :value="row.verdict" />
           <span v-else>{{ runStatusText(row.status) }}</span>
-        </template>
-        <template #cell-flows="{ row }">{{ row.flows?.length ? row.flows.map(detectionFlowText).join(' / ') : '—' }}</template>
-        <template #cell-models="{ row }">{{ row.models?.length ? row.models.join(' / ') : '—' }}</template>
-        <template #cell-progress="{ row }">
-          已答 <span class="num">{{ row.progress.answered }}</span>
-          <template v-if="row.progress.total !== null"> / 共 <span class="num">{{ row.progress.total }}</span> 题</template>
-          <template v-else> 题</template>
-        </template>
-        <template #cell-score="{ row }">{{ intelligenceText(row) }}</template>
-        <template #cell-third_party="{ row }">
-          <span v-if="!row.third_party?.length">—</span>
-          <span v-for="site in row.third_party" :key="site.provider" class="mr-2 text-xs">{{ providerText(site.provider) }}：{{ thirdPartyStatusText(site.status) }}</span>
         </template>
         <template #cell-actions="{ row }">
           <button v-if="row.report_id" class="btn-ghost btn-sm" :disabled="reportLoading" @click="openReportDetail(row.report_id)">查看报告</button>
