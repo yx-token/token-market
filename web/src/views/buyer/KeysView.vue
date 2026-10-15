@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { buyer, market } from '@/api'
+import { merchants } from '@/api/merchants'
 import type { BuyerKey, Limits, MarketItem, PoolItem, QuotaPack } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { useConfig } from '@/stores/config'
@@ -21,6 +22,8 @@ const cfg = useConfig()
 const keys = useLoader(() => buyer.keys(), [] as BuyerKey[] | null)
 const packs = useLoader(() => buyer.packs(), [] as QuotaPack[] | null)
 const listings = ref<MarketItem[]>([])
+const listingsLoading = ref(false)
+const listingsError = ref(false)
 const pools = ref<PoolItem[]>([])
 const { busy, run } = useAction()
 
@@ -63,18 +66,35 @@ onMounted(async () => {
   keys.load()
   packs.load()
   await cfg.ensure()
-  const [ls, ps] = await Promise.all([market.listings({ limit: 500 }).catch(() => null), market.pools().catch(() => null)])
-  listings.value = ls ?? []
+  const [, ps] = await Promise.all([loadMerchantListings(), market.pools().catch(() => null)])
   pools.value = ps ?? []
   const pre = Number(route.query.listing)
   if (pre) {
     const l = listings.value.find((x) => x.listing_id === pre)
+    if (!l) {
+      toast.info('该挂单不在商家清单中或暂不可用，请先去市场加入商家。')
+      return
+    }
     openCreate()
     form.type = 'chain'
-    form.hops = [{ listingId: pre, platform: l?.platform ?? '' }]
-    form.name = `指定卖家 #${pre}`
+    form.hops = [{ listingId: pre, platform: l.platform }]
+    form.name = `商家 #${l.seller_id} · 挂单 #${pre}`
   }
 })
+
+async function loadMerchantListings() {
+  listingsLoading.value = true
+  listingsError.value = false
+  try {
+    listings.value = await merchants.listings() ?? []
+  } catch (e) {
+    listings.value = []
+    listingsError.value = true
+    toast.error(e)
+  } finally {
+    listingsLoading.value = false
+  }
+}
 
 function resetForm() {
   Object.assign(form, { name: '', type: 'default', pool: pools.value[0]?.name ?? '', hops: [], quota: '', h5: '', d1: '', d7: '', ips: '', expires: '' })
@@ -130,6 +150,10 @@ async function save() {
   const err = form.type === 'chain' ? validateChain(form.hops, cfg.config.max_hops) : form.pool ? null : '请选择默认分组'
   if (err) {
     toast.error(err)
+    return
+  }
+  if (form.type === 'chain' && form.hops.some((h) => !h.pool && !listings.value.some((l) => l.listing_id === h.listingId))) {
+    toast.error('所选挂单已移出商家清单或暂不可用，请重新选择。')
     return
   }
   const routeInput = toRoute(form.type, form.pool, form.hops)
@@ -215,7 +239,8 @@ const createdSample = computed(() =>
 
 <template>
   <div>
-    <PageHeader title="API Key" description="点市场选用通道或购买额度包后，Key 会出现在这里。按量超额扣钱包；额度包从包内扣，未用完可退货。">
+    <PageHeader title="API Key" description="先在市场把商家加入清单，再选择清单内的挂单创建 Key。挂单按排列顺序优先调用，也可添加平台默认分组兜底。">
+      <RouterLink to="/buyer/merchants" class="xm-btn xm-btn-ghost">商家清单</RouterLink>
       <button type="button" class="xm-btn xm-btn-primary" @click="openCreate">创建 Key</button>
     </PageHeader>
 
@@ -246,7 +271,7 @@ const createdSample = computed(() =>
     </div>
 
     <div class="xm-yellow-callout">
-      额度包购买会账面预付面额（需余额充足）；调用从影子余额实时扣并抵包内剩余。未用完可退货，退回账面并释放卖家库存。
+      店铺活动包自动抵扣已有 Key 的适用调用，额度不足的部分扣平台余额。整包购买的固定额度商品使用独立 Key，可在上方查看和退货。
     </div>
 
     <div v-if="keys.loading.value && !keys.data.value?.length" class="py-10 text-center text-[#888]">加载中…</div>
@@ -277,6 +302,8 @@ const createdSample = computed(() =>
             <span class="xm-hop">
               <span class="pos">{{ String(h.position).padStart(2, '0') }}</span>
               <span class="txt">{{ hopText(h) }}<template v-if="packForKey(k.id) && i === 0"> · 剩余 ¥{{ packForKey(k.id)!.remaining.toFixed(2) }}</template></span>
+              <span v-if="h.state === 'skipped'" class="xm-tag warn" title="已移出商家清单或挂单暂不可用，不参与当前调用">已跳过</span>
+              <span v-else-if="h.state === 'provisioning'" class="xm-tag warn">开通中</span>
             </span>
           </template>
         </div>
@@ -312,6 +339,10 @@ const createdSample = computed(() =>
       </div>
       <div>
         <div class="label">路由</div>
+        <p class="hint mb-3">只可选择商家清单内当前可用的挂单。<RouterLink to="/buyer/merchants" class="underline">管理商家清单</RouterLink> · <RouterLink to="/" class="underline">去市场挑商家</RouterLink></p>
+        <p v-if="listingsLoading" role="status" class="hint mb-2">正在加载商家挂单…</p>
+        <p v-else-if="listingsError" role="alert" class="mb-2 text-sm text-red-700">商家挂单加载失败。<button type="button" class="underline" @click="loadMerchantListings">重试</button></p>
+        <p v-else-if="!listings.length" class="hint mb-2">清单里暂无可用挂单，可先加入商家或使用平台默认分组。</p>
         <RouteEditor v-model:type="form.type" v-model:pool="form.pool" v-model:hops="form.hops" :listings="listings" :pools="pools" :max-hops="cfg.config.max_hops" />
       </div>
       <details class="border border-ink-200 bg-paper/60 p-3">
@@ -346,7 +377,7 @@ const createdSample = computed(() =>
       </details>
       <template #footer>
         <button class="btn-secondary" @click="showForm = false">取消</button>
-        <button class="btn-primary" :disabled="busy" @click="save">{{ editing ? '保存' : '创建' }}</button>
+        <button class="btn-primary" :disabled="busy || (form.type === 'chain' && listingsLoading)" @click="save">{{ editing ? '保存' : '创建' }}</button>
       </template>
     </ModalDialog>
 

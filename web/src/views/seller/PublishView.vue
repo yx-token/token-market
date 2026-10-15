@@ -14,7 +14,10 @@ import { authGuides, takesProjectID, takesTeam } from '@/utils/authGuides'
 import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
 import { multiplier, percent } from '@/utils/format'
 import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
+import MarketDetectionSummary from '@/components/MarketDetectionSummary.vue'
 import ModelWhitelistSelector from '@/components/ModelWhitelistSelector.vue'
+import { privacyBlocksListing, sellerUntested } from '@/components/seller/listingGate'
+import '@/styles/seller-center.css'
 
 const route = useRoute()
 const cfg = useConfig()
@@ -136,7 +139,7 @@ async function nextFromProxy() {
     const u = await run(() => seller.upstream(Number(resumeUpstreamID.value)))
     if (!u) return
     if (u.status !== 'ready') {
-      toast.error('该上游尚未通过检测，请走完整接入流程')
+      toast.error('该上游尚未就绪，请先完成授权、模型选择与隐私检查')
       return
     }
     upstream.value = u
@@ -147,7 +150,7 @@ async function nextFromProxy() {
   }
   if (requireSellerProxy.value && !proxyID.value) {
     if (occupiedProxies.value.length && !availableProxies.value.length) {
-      toast.error('现有代理都已绑定账号。新接入请再添加空闲代理；若给已有上游挂单，请选上方「已通过检测的上游」')
+      toast.error('现有代理都已绑定账号。新接入请再添加空闲代理；若给已有上游挂单，请选上方「已就绪的上游」')
     } else {
       toast.error('请选择空闲代理，或先去「代理 IP」登记')
     }
@@ -203,11 +206,35 @@ async function createAndAuthorize() {
   step.value = u.status === 'selecting_models' ? 2 : 3
 }
 
-async function submitModels() {
+async function submitModels(detect = false) {
   if (!upstream.value || !modelsValid.value) return
   const updated = await run(() => seller.setUpstreamModels(upstream.value!.id, [...selectedModels.value]))
   if (!updated) return
   upstream.value = updated
+  if (privacyBlocksListing(updated)) {
+    toast.error('隐私检查未通过，不能挂单')
+    return
+  }
+  if (detect || updated.status === 'verifying') {
+    if (detect && (updated.status === 'ready' || updated.status === 'listed')) {
+      const started = await run(() => seller.retryVerification(updated.id), '已开始质量检测')
+      if (started) upstream.value = started
+    }
+    step.value = 3
+    return
+  }
+  if (updated.status === 'ready' || updated.status === 'listed') {
+    step.value = 4
+    return
+  }
+  step.value = updated.status === 'selecting_models' ? 2 : 3
+}
+
+async function startDetection() {
+  if (!upstream.value) return
+  const started = await run(() => seller.retryVerification(upstream.value!.id), '已开始质量检测')
+  if (!started) return
+  upstream.value = started
   step.value = 3
 }
 
@@ -260,6 +287,14 @@ function toggleCategory(id: string) {
 
 async function publish() {
   if (!upstream.value) return
+  if (privacyBlocked.value) {
+    toast.error('隐私检查未通过，不能挂单')
+    return
+  }
+  if (sku.value === 'buyback' && untested.value) {
+    toast.error('平台回收必须先有有效检测')
+    return
+  }
   if (sku.value === 'consignment' || sku.value === 'pack') {
     if (!(Number(mult.value) > 0)) {
       toast.error('请填写倍率')
@@ -285,7 +320,7 @@ async function publish() {
       ? {
           mode: 'consignment',
           multiplier: Number(mult.value),
-          join_default_pool: joinPool.value,
+          join_default_pool: untested.value ? false : joinPool.value,
           min_amount: Number(minAmount.value) || 0,
           title: title.value.trim() || undefined,
           description: description.value.trim() || undefined,
@@ -343,10 +378,12 @@ function resetWizard() {
 
 const probeOk = computed(() => upstream.value?.status === 'ready')
 const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.value?.status ?? ''))
+const untested = computed(() => sellerUntested(upstream.value))
+const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
 </script>
 
 <template>
-  <div class="xm-publish">
+  <div class="xm-publish seller-page">
     <RouterLink
       :to="(resumeUpstreamID || upstream?.id) ? `/seller/upstreams/${resumeUpstreamID || upstream?.id}?from=publish` : '/seller/upstreams'"
       class="xm-page-back"
@@ -356,7 +393,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
     </RouterLink>
     <h1 class="text-[28px] font-extrabold tracking-tight text-[#1f1f1f]">发布闲置TOKEN</h1>
     <p class="mt-2 mb-6 max-w-3xl text-[15px] leading-relaxed text-[#666]">
-      授权订阅账号 → 选择挂售模型 → 上架检测 → 挂「按量通道」或「额度包」。不是上架实物，是开放可调度额度。
+      授权订阅账号 → 选择挂售模型 → 可直接挂「按量通道」或「额度包」。质量检测可选；未检测会标给买家，不能进保障池，也不能做平台回收。隐私检查不能跳过。
     </p>
 
     <ol class="xm-stepper" aria-label="发布步骤">
@@ -386,7 +423,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
       <p class="sub">授权与调用走同一固定代理；每个代理同时只能绑一个账号。</p>
 
       <div v-if="readyUpstreams.length" class="mb-4">
-        <label class="xm-field-label">或从已通过检测的上游继续挂单</label>
+        <label class="xm-field-label">或从已就绪的上游继续挂单</label>
         <select v-model="resumeUpstreamID" class="xm-input">
           <option value="">— 新接入账号 —</option>
           <option v-for="u in readyUpstreams" :key="u.id" :value="u.id">
@@ -416,7 +453,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
           </template>
           。每个代理同时只能绑一个号——新接入请
           <RouterLink to="/seller/proxies" class="font-bold underline underline-offset-2">再添加空闲代理</RouterLink>
-          ；若要给已有上游挂单，用上方「已通过检测的上游」。
+          ；若要给已有上游挂单，用上方「已就绪的上游」。
         </p>
         <p v-else class="xm-hint">
           暂无代理？
@@ -507,18 +544,19 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
     <!-- 2 选择挂售模型 -->
     <section v-else-if="step === 2" class="xm-pub-panel">
       <h2>选择挂售模型</h2>
-      <p class="sub">账号接入已完成。选择可供买家调用的模型，确认后开始上架检测。</p>
+      <p class="sub">账号接入已完成。选择可供买家调用的模型，可直接挂单，也可先做质量检测。</p>
       <ModelWhitelistSelector v-if="upstream" v-model="selectedModels" :upstream-id="upstream.id" :disabled="busy" @valid="modelsValid = $event" />
       <div class="xm-pub-actions">
         <RouterLink :to="`/seller/upstreams/${upstream?.id}`" class="xm-btn xm-btn-ghost">稍后继续</RouterLink>
-        <button type="button" class="xm-btn xm-btn-primary" :disabled="busy || !modelsValid" @click="submitModels">确认模型并开始检测</button>
+        <button type="button" class="xm-btn xm-btn-ghost" :disabled="busy || !modelsValid" @click="submitModels(true)">确认模型并开始检测</button>
+        <button type="button" class="xm-btn xm-btn-primary" data-testid="confirm-models-list" :disabled="busy || !modelsValid" @click="submitModels(false)">确认模型，直接挂单</button>
       </div>
     </section>
 
     <!-- 3 检测 -->
     <section v-else-if="step === 3" class="xm-pub-panel">
       <h2>上架检测</h2>
-      <p class="sub">首次接入必做。通过前不能挂单。上游 #{{ upstream?.id }}{{ upstream?.account_email ? ` · ${upstream.account_email}` : '' }}</p>
+      <p class="sub">质量检测可选。未检测也可以挂寄售或额度包，买家会看到「未检测」。平台回收仍须有效检测。上游 #{{ upstream?.id }}{{ upstream?.account_email ? ` · ${upstream.account_email}` : '' }}</p>
 
       <div class="xm-probe" :class="{ ok: probeOk, fail: probeFail }">
         <div class="font-bold text-[13px]">
@@ -547,7 +585,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
       <div class="xm-pub-actions">
         <button type="button" class="xm-btn xm-btn-ghost" @click="step = 2">上一步</button>
         <button v-if="probeFail" type="button" class="xm-btn xm-btn-ghost" :disabled="busy" @click="retryProbe">重试检测</button>
-        <button type="button" class="xm-btn xm-btn-primary" :disabled="!probeOk" @click="step = 4">检测通过，继续</button>
+        <button type="button" class="xm-btn xm-btn-primary" :disabled="!probeOk || privacyBlocked" @click="step = 4">{{ untested ? '未检测，继续挂单' : '检测完成，继续挂单' }}</button>
       </div>
     </section>
 
@@ -555,12 +593,15 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
     <section v-else-if="step === 4" class="xm-pub-panel">
       <h2>选择商品形态</h2>
       <p class="sub">同一上游同时只能有一条有效挂单；形态决定买家怎么下单。</p>
+      <div v-if="privacyBlocked" class="seller-callout seller-callout-bad mb-3">隐私检查未通过，不能挂单。</div>
+      <div v-else-if="untested" class="seller-callout seller-callout-warn mb-3" data-testid="untested-notice">尚未质量检测。寄售和额度包可以直接挂，买家会看到「未检测」。不能加入保障池，也不能选平台回收。</div>
+      <MarketDetectionSummary v-if="upstream" :status="upstream.detection_status" :models="upstream.model_whitelist ?? []" :checks="upstream.model_checks" :last-checked-at="upstream.last_checked_at" />
       <div class="flex flex-col gap-2.5">
         <label class="xm-choice" :class="{ on: sku === 'consignment' }">
           <input v-model="sku" type="radio" value="consignment" />
           <div>
             <strong>A. 按量通道（寄售）</strong>
-            <span>买家付最低额度 M（可为 0），调用按官方价 × 你的倍率扣余额。可进市场，也可进保障池。</span>
+            <span>买家付最低额度 M（可为 0），之后按量扣余额。可在市场出售，检测合格后还可申请保障池。</span>
           </div>
         </label>
         <label class="xm-choice" :class="{ on: sku === 'pack' }">
@@ -570,8 +611,8 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
             <span>固定面额商品（如 ¥100），买家整包购买；未用完可退货释放库存。有可售份数。</span>
           </div>
         </label>
-        <label class="xm-choice" :class="{ on: sku === 'buyback' }">
-          <input v-model="sku" type="radio" value="buyback" />
+        <label class="xm-choice" :class="{ on: sku === 'buyback', 'seller-choice': untested }" :aria-disabled="untested">
+          <input v-model="sku" type="radio" value="buyback" :disabled="untested" />
           <div>
             <strong>C. 平台回收（按量）</strong>
             <span>接受平台报价，不进市场目录，只进保障池。倍率由平台定。</span>
@@ -579,8 +620,9 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
         </label>
       </div>
       <div class="xm-pub-actions">
+        <button v-if="untested && upstream" type="button" class="xm-btn xm-btn-ghost" :disabled="busy" @click="startDetection">先做质量检测</button>
         <button type="button" class="xm-btn xm-btn-ghost" @click="step = upstream?.status === 'ready' && resumeUpstreamID ? 0 : 3">上一步</button>
-        <button type="button" class="xm-btn xm-btn-primary" @click="step = 5">下一步</button>
+        <button type="button" class="xm-btn xm-btn-primary" :disabled="privacyBlocked" @click="step = 5">下一步</button>
       </div>
     </section>
 
@@ -588,7 +630,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
     <section v-else-if="step === 5" class="xm-pub-panel">
       <h2>定价与上架内容</h2>
       <p class="sub">设置买家看到的价格与标题。</p>
-      <InspectionAppraisal v-if="upstream" class="mb-4" :appraisal="upstream.appraisal" :grade="upstream.grade" :quality-factor="upstream.quality_factor" :inspection-mode="upstream.inspection_mode" :price="sku === 'buyback' ? undefined : Number(mult)" />
+      <InspectionAppraisal v-if="upstream && !untested" class="mb-4" :appraisal="upstream.appraisal" :grade="upstream.grade" :quality-factor="upstream.quality_factor" :inspection-mode="upstream.inspection_mode" :price="sku === 'buyback' ? undefined : Number(mult)" />
 
       <template v-if="sku === 'consignment'">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -607,7 +649,7 @@ const probeFail = computed(() => ['verify_failed', 'failed'].includes(upstream.v
           </div>
         </div>
         <label class="mt-3 flex items-center gap-2 text-[13px] font-semibold">
-          <input v-model="joinPool" type="checkbox" /> 同时加入保障池（倍率需足够低）
+          <input v-model="joinPool" type="checkbox" :disabled="untested" /> 同时加入保障池（倍率需足够低）<span v-if="untested">未检测不可加入</span>
         </label>
       </template>
 

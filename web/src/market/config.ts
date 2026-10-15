@@ -1,5 +1,6 @@
 /** 市场发现配置（对齐 docs/prototypes/market-config.js） */
 import type { InspectionCheckResult } from '@/api/types'
+import type { DetectionStatus, ModelCheck } from '@/api/market-detection'
 
 export type MarketAction = {
   plat?: string
@@ -312,6 +313,9 @@ export type FeedSku = {
   models?: string[]
   id: string
   listingId?: number
+  sellerId?: number
+  detectionStatus?: DetectionStatus
+  modelChecks?: ModelCheck[]
   /** 平台保障池分组名（route.pool） */
   poolName?: string
   /** 上游平台标识，用于调用示例 */

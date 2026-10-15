@@ -227,7 +227,7 @@ func newInspectionPricingModelFixture(t *testing.T, model string, builtinKeys ..
 	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/start", upstream.ID), nil, nil)
 	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/complete", upstream.ID), map[string]string{"code": "pricing-target"}, &upstream)
 	if upstream.Status != "verifying" {
-		t.Fatalf("正式上架应等待检测，得到 %s", upstream.Status)
+		t.Fatalf("本场景主动发起的正式检测应等待完成，得到 %s", upstream.Status)
 	}
 	var groupID, onboarding int64
 	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT probe_group_id FROM upstreams WHERE id=$1`, upstream.ID), &groupID)

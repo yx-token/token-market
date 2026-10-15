@@ -2,42 +2,29 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { buyer, market } from '@/api'
+import { merchants } from '@/api/merchants'
+import { isTested } from '@/api/market-detection'
 import type { MarketItem, RechargeOrder } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
 import { useAuth } from '@/stores/auth'
-import { useConfig } from '@/stores/config'
 import { useLoginModal } from '@/stores/loginModal'
 import { useToast } from '@/stores/toast'
-import ModalDialog from '@/components/ModalDialog.vue'
 import QrCode from '@/components/QrCode.vue'
+import MarketDetectionSummary from '@/components/MarketDetectionSummary.vue'
 import { apiToPlat, coverFor } from '@/market/config'
-import { copyText } from '@/utils/clipboard'
-import { sampleRequest } from '@/utils/keySample'
 import { authTypeText, label } from '@/utils/labels'
-import { dateTime, percent } from '@/utils/format'
-import { inspectionSummary } from '@/utils/inspection'
+import { percent } from '@/utils/format'
 
 const props = defineProps<{ id: string }>()
 const auth = useAuth()
 const loginModal = useLoginModal()
 const router = useRouter()
 const toast = useToast()
-const appCfg = useConfig()
 const item = useLoader(() => market.listing(Number(props.id)), null as MarketItem | null)
 const busy = ref(false)
 const issuedKey = ref('')
-const created = ref<{ key: string; platform: string; title: string } | null>(null)
 const payWay = ref<'balance' | 'alipay' | 'wechat'>('balance')
 const payOrder = ref<RechargeOrder | null>(null)
-const edgeBase = computed(() => appCfg.config.edge_url || window.location.origin)
-const createdSample = computed(() =>
-  created.value ? sampleRequest(created.value.platform, edgeBase.value, created.value.key, appCfg.config.price_models ?? []) : null,
-)
-
-async function copy(text: string) {
-  if (await copyText(text)) toast.success('已复制')
-  else toast.error('复制失败，请手动选择后按 Ctrl/⌘+C')
-}
 
 const isPack = computed(() => {
   const it = item.data.value
@@ -83,8 +70,7 @@ const desc = computed(() => {
   if (isPack.value) {
     return `预购 ¥${it.face_value} 调用额度，独占本包；包内按 ${it.price.toFixed(2)}× 计费。未用完可退货（退未用量并释放库存）。`
   }
-  const m = it.min_amount ?? 0
-  return `按量通道，倍率 ${it.price.toFixed(2)}×，起步金 M=${m === 0 ? '0（免费开通）' : '¥' + m}。用完 M 后继续扣平台余额；余额不足提示充值。`
+  return `按量通道，按官方价 × ${it.price.toFixed(2)} 计费。先加入商家清单，再在 API Key 页面选择挂单并调整调用顺序。`
 })
 
 const channelMap = {
@@ -116,9 +102,16 @@ async function watchPackPay(order: RechargeOrder) {
     try {
       const o = await buyer.getRecharge(order.id)
       payOrder.value = o
+      if (o.pack_checkout_status === 'failed' || o.pack_checkout_status === 'cancelled') {
+        stopPoll()
+        toast.info('额度包未能开通，已支付金额保留在平台余额，可在钱包使用或申请退款。')
+        await item.load()
+        router.push('/buyer/wallet')
+        return
+      }
       if (o.status === 'credited' || o.status === 'crediting') {
         const packs = await buyer.packs()
-        const got = (packs ?? []).find((p) => p.listing_id === item.data.value?.listing_id && p.status === 'active')
+        const got = (packs ?? []).find((p) => p.recharge_id === order.id && p.status === 'active')
         if (got?.buyer_key_id) {
           stopPoll()
           toast.success('支付成功，额度包已到账')
@@ -139,6 +132,7 @@ async function watchPackPay(order: RechargeOrder) {
 async function checkout() {
   const it = item.data.value
   if (!it) return
+  if (busy.value) return
   if (!auth.loggedIn) {
     loginModal.show({ redirect: `/market/listings/${it.listing_id}` })
     return
@@ -147,6 +141,8 @@ async function checkout() {
     const channel = channelMap[payWay.value]
     busy.value = true
     try {
+      if (!it.seller_id) throw new Error('商家信息暂不可用，请刷新后重试')
+      await merchants.add(it.seller_id)
       const out = await buyer.purchasePack(it.listing_id, channel)
       if (out.key) {
         issuedKey.value = out.key
@@ -169,19 +165,12 @@ async function checkout() {
   }
   busy.value = true
   try {
-    const name = (it.title || title.value || `卖家挂单 #${it.listing_id}`).slice(0, 64)
-    const res = await buyer.createKey({
-      name,
-      route: { type: 'chain', hops: [{ listing_id: it.listing_id }] },
-      limits: {},
-    })
-    created.value = {
-      key: res.key,
-      platform: res.detail.platform || it.platform,
-      title: name,
-    }
+    if (!it.seller_id) throw new Error('商家信息暂不可用，请刷新后重试')
+    await merchants.add(it.seller_id)
+    toast.success('已加入商家清单，请选择挂单并设置调用顺序')
+    await router.push({ path: '/buyer/keys', query: { listing: it.listing_id } })
   } catch (e) {
-    toast.error(e instanceof Error ? e.message : '开通失败')
+    toast.error(e)
   } finally {
     busy.value = false
   }
@@ -216,10 +205,8 @@ async function cancelPay() {
         <h1>{{ title }}</h1>
         <p class="lead">{{ desc }}</p>
         <div class="mb-4 rounded-lg border border-slate-200 p-3 text-sm">
-          <p v-for="line in inspectionSummary(item.data.value.quality_checks)" :key="line">{{ line }}</p>
-          <p>上次检测：{{ item.data.value.last_checked_at ? dateTime(item.data.value.last_checked_at) : '未提供' }}</p>
-          <p v-if="item.data.value.inspection_mode === 'trial'">试运行，不影响价格</p>
-          <p class="text-slate-500">检测是抽样，不能保证没有偷换</p>
+          <MarketDetectionSummary :status="item.data.value.detection_status" :models="item.data.value.models" :checks="item.data.value.model_checks" :last-checked-at="item.data.value.last_checked_at" />
+          <p v-if="isTested(item.data.value.detection_status)" class="text-slate-500">检测为抽样结果</p>
         </div>
         <div class="cover">
           <img :src="cover" :alt="title" />
@@ -227,7 +214,7 @@ async function cancelPay() {
         <div class="specs">
           <div class="spec">
             <b>挂售模型</b>
-            <span class="break-all">{{ item.data.value.models?.length ? item.data.value.models.join('、') : '卖家未声明，目前不限制模型请求' }}</span>
+            <span class="break-all">{{ item.data.value.models?.length ? item.data.value.models.join('、') : '卖家未声明' }}</span>
           </div>
           <div class="spec">
             <b>厂商 / 档位</b>
@@ -235,7 +222,7 @@ async function cancelPay() {
           </div>
           <div class="spec">
             <b>质量等级</b>
-            <span>{{ item.data.value.grade || '—' }} 级</span>
+            <span>{{ isTested(item.data.value.detection_status) ? (item.data.value.grade ? `${item.data.value.grade} 级` : '暂无等级') : '未检测' }}</span>
           </div>
           <div class="spec">
             <b>计费倍率</b>
@@ -243,7 +230,7 @@ async function cancelPay() {
           </div>
           <div class="spec">
             <b>24h 成功率</b>
-            <span>{{ percent(item.data.value.success_rate_24h, 0) }} · {{ Math.round(item.data.value.ttft_p50_ms ?? 0) }}ms</span>
+            <span>{{ percent(item.data.value.success_rate_24h, 0) }} · {{ item.data.value.ttft_p50_ms == null ? '暂无延迟数据' : `${Math.round(item.data.value.ttft_p50_ms)}ms` }}</span>
           </div>
           <template v-if="isPack">
             <div class="spec"><b>包面额</b><span>¥{{ Number(item.data.value.face_value ?? 0).toFixed(0) }}</span></div>
@@ -254,7 +241,7 @@ async function cancelPay() {
               <b>最低额度 M</b>
               <span>{{ (item.data.value.min_amount ?? 0) === 0 ? '¥0（免费开通）' : `¥${Number(item.data.value.min_amount).toFixed(0)}` }}</span>
             </div>
-            <div class="spec"><b>超额计费</b><span>只扣平台余额</span></div>
+            <div class="spec"><b>扣费顺序</b><span>先扣适用的店铺活动额度，再扣平台余额</span></div>
           </template>
           <div class="spec">
             <b>接入方式</b>
@@ -262,18 +249,17 @@ async function cancelPay() {
           </div>
           <div class="spec">
             <b>健康状态</b>
-            <span>{{ label('health', item.data.value.health).text }}</span>
+            <span>{{ isTested(item.data.value.detection_status) ? label('health', item.data.value.health).text : '未检测' }}</span>
           </div>
         </div>
       </div>
 
       <aside class="panel">
-        <div class="pay-label">本单应付</div>
-        <div class="pay-price">{{ payAmount === 0 ? '¥0' : `¥${payAmount.toFixed(0)}` }}</div>
+        <div class="pay-label">{{ isPack ? '本单应付' : '调用倍率' }}</div>
+        <div class="pay-price">{{ isPack ? `¥${payAmount.toFixed(0)}` : `${item.data.value.price.toFixed(2)}×` }}</div>
         <div class="pay-sub">
           <template v-if="isPack">支付整包价后获得 Key + 包内额度。未用完可退货。</template>
-          <template v-else-if="payAmount === 0">0 元开通通道，签发 Key。之后调用从平台余额扣费。</template>
-          <template v-else>支付起步金开通通道。用完起步额度后继续扣平台余额。</template>
+          <template v-else>先保存商家，再选择挂单和调用顺序。加入清单不收费。</template>
         </div>
 
         <template v-if="payOrder && isPack">
@@ -292,7 +278,7 @@ async function cancelPay() {
           </div>
         </template>
         <template v-else>
-          <div class="pay-ways">
+          <div v-if="isPack" class="pay-ways">
             <label class="pay-way" :class="{ on: payWay === 'balance' }">
               <input v-model="payWay" type="radio" value="balance" /> 平台余额
             </label>
@@ -309,13 +295,15 @@ async function cancelPay() {
             :disabled="busy || (isPack && stockLeft === 0)"
             @click="checkout"
           >
-            {{ busy ? '处理中…' : isPack ? (stockLeft === 0 ? '已售罄' : '支付并购买额度包') : '选用并开通' }}
+            {{ busy ? '处理中…' : isPack ? (stockLeft === 0 ? '已售罄' : '支付并购买额度包') : '加入商家并配置 Key' }}
           </button>
         </template>
+        <RouterLink :to="{ path: '/buyer/store-credits', query: { seller_id: item.data.value.seller_id } }" class="mt-4 block text-center text-sm font-semibold underline underline-offset-4">店铺活动额度包</RouterLink>
+        <RouterLink to="/buyer/merchants" class="mt-3 block text-center text-sm underline underline-offset-4">查看商家清单</RouterLink>
         <div class="rules">
-          · 下单可用余额或支付宝/微信<br />
-          · 调用阶段只扣平台余额，扣完提示充值<br />
-          · 失败请求不计费 · 交付物为 API Key（非账号）
+          · 挂单按 Key 中的排列顺序优先调用<br />
+          · 可选择平台默认分组作为最后兜底<br />
+          · 失败请求不计费 · 通过 API Key 调用
           <template v-if="isPack"><br />· 额度包支持按未用量退货</template>
         </div>
         <div v-if="issuedKey" class="done is-on">
@@ -329,23 +317,5 @@ async function cancelPay() {
     <p v-else-if="item.loading.value" class="sku-empty">加载中…</p>
     <p v-else class="sku-empty">挂单不存在或已下架 · <RouterLink to="/">回市场</RouterLink></p>
 
-    <ModalDialog :open="!!created" title="Key 已创建" @update:open="(v: boolean) => !v && (created = null)">
-      <p class="text-sm text-emerald-700">「{{ created?.title }}」已开通，可立即调用。</p>
-      <p class="text-sm text-amber-700">稍后也可以在买家中心再次查看和复制这个 Key。</p>
-      <div class="flex items-center gap-2">
-        <code class="flex-1 break-all rounded-xl border border-black/10 !bg-[#fafafa] !px-3 !py-2 text-sm">{{ created?.key }}</code>
-        <button type="button" class="btn-secondary btn-sm" @click="copy(created!.key)">复制</button>
-      </div>
-      <div v-if="createdSample">
-        <div class="label">调用示例 · {{ createdSample.label }}</div>
-        <pre class="codeblock">{{ createdSample.code }}</pre>
-        <button type="button" class="btn-secondary btn-sm" @click="copy(createdSample.code)">复制示例</button>
-        <p class="hint">{{ createdSample.note }}</p>
-      </div>
-      <template #footer>
-        <RouterLink class="btn-secondary" to="/buyer/keys" @click="created = null">去买家中心</RouterLink>
-        <button type="button" class="btn-primary" @click="created = null">知道了</button>
-      </template>
-    </ModalDialog>
   </div>
 </template>

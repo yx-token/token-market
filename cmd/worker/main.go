@@ -109,6 +109,8 @@ func run(configPath string, log *slog.Logger) error {
 		{"funds.sync_payments", 15 * time.Second, a.Funds.SyncPayments},
 		{"funds.refund_payouts", 15 * time.Second, a.Funds.AdvanceRefundPayouts},
 		{"packs.fulfill_checkouts", 10 * time.Second, a.Keys.FulfillPackCheckouts},
+		{"credits.provision", 5 * time.Second, writes(a.Keys.ProvisionCreditPacks)},
+		{"credits.refunds", 10 * time.Second, writes(a.Funds.AdvanceCreditPacks)},
 		{"keys.provision_pending", 15 * time.Second, writes(a.Keys.ProvisionPending)},
 		{"keys.publish_skip_list", 15 * time.Second, a.Keys.PublishSkipList},
 		{"keys.publish_all", 10 * time.Minute, a.Keys.PublishAll},
@@ -118,12 +120,12 @@ func run(configPath string, log *slog.Logger) error {
 		})},
 		{"keys.limits", time.Minute, a.Limits.RunOnce},
 		{"quality.tick", cfg.Worker.QualityInterval, writes(a.Quality.Tick)},
-		{"billing.unfreeze", 30 * time.Minute, func(ctx context.Context) error {
+		{"billing.unfreeze", time.Minute, func(ctx context.Context) error {
 			st, err := a.Settings(ctx)
 			if err != nil {
 				return err
 			}
-			n, err := billing.Unfreeze(ctx, a.DB, st.FreezeDays, time.Now())
+			n, err := billing.UnfreezeHours(ctx, a.DB, st.FreezeHours, time.Now())
 			if n > 0 {
 				log.Info("seller earnings unfrozen", "sellers", n)
 			}

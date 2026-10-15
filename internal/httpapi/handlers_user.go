@@ -13,6 +13,7 @@ import (
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/market"
 	"github.com/DueGin/token-market/internal/platform/httpx"
+	"github.com/jackc/pgx/v5"
 )
 
 // ---- 账号 ----
@@ -140,6 +141,7 @@ func (s *Server) marketConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 	return ok(w, map[string]any{
 		"edge_url": s.EdgeURL, "commission_rate": st.CommissionRate, "freeze_days": st.FreezeDays,
+		"freeze_hours": st.FreezeHours, "credit_usd_to_balance_rate": st.CreditUSDToBalanceRate,
 		"withdraw_min": st.WithdrawMin, "max_hops": 5,
 		"require_seller_proxy": st.RequireSellerProxy,
 		"payment_channels":     channels, "recharge_min": st.RechargeMin, "recharge_max": st.RechargeMax,
@@ -212,11 +214,20 @@ func (s *Server) getRecharge(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	o, err := s.Funds.RefreshRecharge(r.Context(), httpx.MustUser(r).UserID, id)
+	uid := httpx.MustUser(r).UserID
+	o, err := s.Funds.RefreshRecharge(r.Context(), uid, id)
 	if err != nil {
 		return err
 	}
-	return ok(w, o)
+	var checkoutStatus string
+	err = s.DB.QueryRow(r.Context(), `SELECT status FROM pack_checkouts WHERE recharge_id = $1 AND buyer_id = $2`, id, uid).Scan(&checkoutStatus)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	return ok(w, struct {
+		*billing.RechargeOrder
+		PackCheckoutStatus string `json:"pack_checkout_status,omitempty"`
+	}{RechargeOrder: o, PackCheckoutStatus: checkoutStatus})
 }
 
 func (s *Server) cancelRecharge(w http.ResponseWriter, r *http.Request) error {

@@ -122,7 +122,7 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 	}
 }
 
-func TestOnboardingCheckIsMandatory(t *testing.T) {
+func TestExplicitOnboardingCheckFailureBlocksListing(t *testing.T) {
 	e := setup(t)
 	ctx := e.ctx
 	admin := e.login("admin@market.test", "admin-password-1")
@@ -170,7 +170,7 @@ func TestOnboardingCheckIsMandatory(t *testing.T) {
 	var status string
 	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT status FROM upstreams WHERE id = $1", up.ID), &status)
 	if status != "verify_failed" {
-		t.Fatalf("failing the onboarding check must block listing even with detection off: %s", status)
+		t.Fatalf("failing an explicitly requested onboarding check must block listing: %s", status)
 	}
 	seller.expect(409, "POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", up.ID), map[string]any{"mode": "consignment", "multiplier": 0.5, "categories": []string{"coding"}})
 	var reports []struct {

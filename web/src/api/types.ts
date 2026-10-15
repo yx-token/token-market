@@ -1,4 +1,5 @@
 // 与 market-api 的 JSON 字段一一对应（见 internal/*/ 中带 json tag 的结构体）。
+import type { DetectionStatus, ModelCheck } from './market-detection'
 
 export interface User {
   id: number
@@ -21,6 +22,10 @@ export interface MarketConfig {
   edge_url: string
   commission_rate: number
   freeze_days: number
+  /** 卖家收益冻结小时数。公开配置已下发；缺省时前端才退回 freeze_days。 */
+  freeze_hours?: number
+  /** 1 美元活动额度可抵的平台余额单位。购买时快照，不追改已购包。 */
+  credit_usd_to_balance_rate?: number
   withdraw_min: number
   max_hops: number
   payment_channels: string[]
@@ -31,6 +36,9 @@ export interface MarketConfig {
 }
 
 export interface MarketItem {
+  seller_id: number
+  detection_status?: DetectionStatus
+  model_checks?: ModelCheck[]
   models?: string[]
   listing_id: number
   platform: string
@@ -109,6 +117,7 @@ export interface RechargeOrder {
   paid_at?: string
   credited_at?: string
   payment?: PaymentInfo
+  pack_checkout_status?: 'pending' | 'fulfilled' | 'cancelled' | 'failed'
 }
 
 export interface RefundPayout {
@@ -257,7 +266,15 @@ export interface CreatedKey {
   detail: BuyerKey
 }
 
-export interface UsageItem {
+export interface BuyerCostAllocation {
+  cash_cost?: number
+  credit_prepaid_cny?: number
+  credit_covered_usd?: number
+  credit_covered_units?: number
+  credit_pack_id?: number
+}
+
+export interface UsageItem extends BuyerCostAllocation {
   usage_id: number
   request_id?: string
   created_at: string
@@ -273,7 +290,7 @@ export interface UsageItem {
   duration_ms?: number
 }
 
-export interface AttemptView {
+export interface AttemptView extends BuyerCostAllocation {
   hop: number
   listing_id?: number
   pool_id?: number
@@ -287,7 +304,7 @@ export interface AttemptView {
   started_at: string
 }
 
-export interface BillDay {
+export interface BillDay extends BuyerCostAllocation {
   day: string
   requests: number
   cost: number
@@ -324,6 +341,8 @@ export interface Upstream {
   appraisal?: InspectionAppraisal
   quality_checks?: Record<string, InspectionCheckResult>
   last_checked_at?: string | null
+  detection_status?: DetectionStatus
+  model_checks?: ModelCheck[]
   failure_reason?: string
   created_at: string
   updated_at: string
@@ -353,6 +372,7 @@ export interface Listing {
   title?: string
   description?: string
   categories?: string[]
+  detection_status?: DetectionStatus
   created_at: string
   updated_at: string
   closed_at?: string
@@ -469,6 +489,7 @@ export interface QuotaPack {
   status: string
   paid_amount: number
   pay_channel?: string
+  recharge_id?: number
 }
 
 export interface Quote {
@@ -653,6 +674,8 @@ export interface Settings {
   require_seller_proxy: boolean
   commission_rate: number
   freeze_days: number
+  freeze_hours: number
+  credit_usd_to_balance_rate: number
   withdraw_min: number
   withdraw_auto_approve_max: number
   manual_retest_daily_limit: number
@@ -1248,6 +1271,7 @@ export interface PlatformLedger {
   probe_cost: number
   adjustment: number
   buyer_balances: number
+  buyer_store_credit?: number
   seller_payable: number
 }
 

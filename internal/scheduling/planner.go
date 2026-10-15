@@ -50,9 +50,11 @@ type UpstreamInput struct {
 	DefaultGrade  string  // 检测没有给出等级时使用的默认等级（厂商策略的 default_grade）
 	QualityFactor float64 // 已生效扣价的 Q；未检测或无有效值时排序按 1
 	ConfirmedGate bool
+	Untested bool // 按可追溯有效检测证据计算，远端授权恢复不能把未检测账号放入平台池
 }
 
 type VendorInput struct {
+	Disabled bool
 	DefaultConcurrency int
 	ExtraLimits        map[string]any
 }
@@ -144,10 +146,10 @@ func (QualityAdjustedStrategy) ConsignmentPriority(u UpstreamInput, m float64) i
 	return (DefaultStrategy{}).ConsignmentPriority(u, m/q)
 }
 
-// eligibleHealth 判断健康状态是否允许面向买家。unknown（尚未通过检测）一律不调度。
+// eligibleHealth 判断健康状态是否允许面向买家；unknown 可作为未检测寄售，不能推断质量通过。
 func eligibleHealth(health string) bool {
 	switch health {
-	case listing.HealthHealthy, listing.HealthLimited, listing.HealthSuspected:
+	case listing.HealthUnknown, listing.HealthHealthy, listing.HealthLimited, listing.HealthSuspected:
 		return true
 	default:
 		return false
@@ -190,12 +192,18 @@ func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 
 		var reasons []string
 		switch {
+		case v.Disabled:
+			reasons = append(reasons, "vendor disabled")
 		case u.IsReference:
 			reasons = append(reasons, "reference account")
+		case u.AccountID <= 0:
+			reasons = append(reasons, "no authorized account")
 		case u.Status != listing.StatusListed:
 			reasons = append(reasons, "upstream status "+u.Status)
 		case l == nil || l.Status != listing.ListingActive || l.Multiplier == nil:
 			reasons = append(reasons, "no active listing")
+		case u.Health == listing.HealthUnknown && l.Mode == listing.ModeBuyback:
+			reasons = append(reasons, "untested buyback")
 		case !eligibleHealth(u.Health):
 			reasons = append(reasons, "health "+u.Health)
 		default:
@@ -213,6 +221,10 @@ func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 					continue
 				}
 				if l.Mode == listing.ModePack || (l.Mode == listing.ModeConsignment && !l.JoinDefaultPool) {
+					continue
+				}
+				if u.Health == listing.HealthUnknown || u.Untested {
+					reasons = append(reasons, "未检测账号仅供指定商家调用")
 					continue
 				}
 				if qualityScheduling {
@@ -314,7 +326,7 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 	}
 	pc.Pools = pools
 
-	rows, err := db.Query(ctx, `SELECT platform, default_concurrency, extra_limits FROM vendor_configs`)
+	rows, err := db.Query(ctx, `SELECT platform, default_concurrency, extra_limits, NOT enabled FROM vendor_configs`)
 	if err != nil {
 		return pc, nil, err
 	}
@@ -322,7 +334,7 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 		var p string
 		var v VendorInput
 		var extra []byte
-		if err := rows.Scan(&p, &v.DefaultConcurrency, &extra); err != nil {
+		if err := rows.Scan(&p, &v.DefaultConcurrency, &extra, &v.Disabled); err != nil {
 			rows.Close()
 			return pc, nil, err
 		}
@@ -375,7 +387,14 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 		}
 		ups = append(ups, u)
 	}
-	return pc, ups, rows.Err()
+	if err := rows.Err(); err != nil { return pc, nil, err }
+	rows.Close()
+	ids := make([]int64, len(ups))
+	for i := range ups { ids[i] = ups[i].ID }
+	views, err := listing.LoadInspectionViews(ctx, db, ids)
+	if err != nil { return pc, nil, err }
+	for i := range ups { ups[i].Untested = views[ups[i].ID].DetectionStatus != "tested" }
+	return pc, ups, nil
 }
 
 // SaveDesired 把期望状态写入 upstream_runtime_params，供管理后台查看与执行器比对。

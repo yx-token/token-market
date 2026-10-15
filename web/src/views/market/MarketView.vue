@@ -2,6 +2,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { buyer, market } from '@/api'
+import { merchants } from '@/api/merchants'
+import { isTested } from '@/api/market-detection'
 import type { MarketCategory, MarketItem, PoolItem, RecommendResult } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
 import MarketListingCard from '@/components/MarketListingCard.vue'
@@ -65,6 +67,13 @@ async function quickOpen(sku: FeedSku) {
   if (openingId.value) return
   openingId.value = sku.id
   try {
+    if (!sku.pool) {
+      if (!sku.sellerId || !sku.listingId) throw new Error('商家信息暂不可用，请刷新后重试')
+      await merchants.add(sku.sellerId)
+      toast.success('已加入商家清单，请选择挂单并设置调用顺序')
+      await router.push({ path: '/buyer/keys', query: { listing: sku.listingId } })
+      return
+    }
     const name = sku.title.slice(0, 64) || (sku.pool ? '平台保障池' : `卖家挂单 #${sku.listingId}`)
     const body = sku.poolName
       ? { name, route: { type: 'default' as const, pool: sku.poolName }, limits: {} }
@@ -190,6 +199,9 @@ function toSku(it: MarketItem): FeedSku {
   return {
     id: `l-${it.listing_id}`,
     listingId: it.listing_id,
+    sellerId: it.seller_id,
+    detectionStatus: it.detection_status,
+    modelChecks: it.model_checks,
     models: it.models ?? [],
     apiPlatform: it.platform,
     kind: isPack ? 'pack' : 'channel',
@@ -201,9 +213,9 @@ function toSku(it: MarketItem): FeedSku {
     min: it.min_amount ?? 0,
     face: it.face_value,
     stock: stockLeft,
-    grade: it.grade || 'B',
-    success: it.success_rate_24h ?? 0.95,
-    ttft: Math.round(it.ttft_p50_ms ?? 450),
+    grade: isTested(it.detection_status) ? it.grade || '' : '',
+    success: it.success_rate_24h ?? 0,
+    ttft: Math.round(it.ttft_p50_ms ?? 0),
     badge: isPack ? '可退货' : cats.includes('low_rate') || it.price <= 0.55 ? '低倍率' : undefined,
     categories: cats,
     inspectionMode: it.inspection_mode,
@@ -554,7 +566,7 @@ watch(
 
     <p class="note-wrap">
       <span class="note">
-        货架只展示真实挂单。卖家完成检测并上架后会出现在这里。
+        卖家完成授权后可直接上架。未检测挂单会明确标注，挑好商家后加入清单配置 Key。
         <RouterLink to="/seller/publish">发布闲置TOKEN</RouterLink>
       </span>
     </p>

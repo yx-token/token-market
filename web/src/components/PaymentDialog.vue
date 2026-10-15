@@ -54,7 +54,8 @@ watch(open, async (v) => {
 })
 
 // 到账中（已支付、正在给余额入账）继续轮询，直到已到账后刷新钱包
-const terminal = (s: string) => ['credited', 'cancelled', 'expired', 'failed'].includes(s)
+const terminal = (o: RechargeOrder) => ['cancelled', 'expired', 'failed'].includes(o.status)
+  || (o.status === 'credited' && o.pack_checkout_status !== 'pending')
 
 function watchOrder() {
   stop()
@@ -68,12 +69,13 @@ async function refresh() {
   try {
     const o = await buyer.getRecharge(current.value.id)
     const before = current.value.status
+    const beforeCheckout = current.value.pack_checkout_status
     current.value = o
-    if (before !== o.status) {
+    if (before !== o.status || beforeCheckout !== o.pack_checkout_status) {
       emit('changed')
       if (before === 'pending' && (o.status === 'crediting' || o.status === 'credited')) toast.success('支付成功，余额正在到账')
     }
-    if (terminal(o.status)) stop()
+    if (terminal(o)) stop()
   } catch {
     // 网络抖动时下次再查
   }
@@ -182,6 +184,11 @@ const title = computed(() => (current.value ? `充值订单 #${current.value.id}
       <p v-else class="callout callout-warn">
         {{ current.payment?.instructions || '请按平台公布的收款方式付款并备注订单号，管理员确认到账后自动入账。' }}订单号 #{{ current.id }}。
       </p>
+      <p v-if="current.pack_checkout_status === 'failed' || current.pack_checkout_status === 'cancelled'" class="callout callout-warn" role="status">
+        额度包未能开通，已支付金额保留在平台余额，可继续使用，或在钱包的充值记录中申请退款。
+      </p>
+      <p v-else-if="current.pack_checkout_status === 'pending' && current.status === 'credited'" class="hint" role="status">正在开通额度包，请稍候…</p>
+      <p v-else-if="current.pack_checkout_status === 'fulfilled'" class="callout callout-ok" role="status">额度包已开通，可在 API Key 页面查看。</p>
     </template>
 
     <template #footer>

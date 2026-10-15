@@ -110,6 +110,9 @@ func (r *Reconciler) RunAttempts(ctx context.Context) (*ReconcileResult, error) 
 	if err != nil {
 		return nil, err
 	}
+	creditFrozen, err := r.freezeOrphanCreditKeys(ctx, since)
+	if err != nil { return nil, err }
+	frozen += creditFrozen
 	res.FrozenKeys = frozen
 	if res.R1+res.R2+res.R3+res.R4 > 0 {
 		r.Log.Warn("billing anomalies found", "R1", res.R1, "R2", res.R2, "R3", res.R3, "R4", res.R4, "frozen_keys", frozen)
@@ -191,7 +194,7 @@ func (r *Reconciler) RunBalances(ctx context.Context) (int64, error) {
 	}
 	rows.Close()
 	if len(items) == 0 {
-		return 0, nil
+		return r.runStoreCreditBalances(ctx, st.BalanceMismatchTolerance)
 	}
 	ids := make([]int64, len(items))
 	for i, it := range items {
@@ -242,7 +245,8 @@ func (r *Reconciler) RunBalances(ctx context.Context) (int64, error) {
 		}
 		found += tag.RowsAffected()
 	}
-	return found, nil
+	creditFound, err := r.runStoreCreditBalances(ctx, st.BalanceMismatchTolerance)
+	return found + creditFound, err
 }
 
 type Anomaly struct {

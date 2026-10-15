@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { seller } from '@/api'
-import type { Listing, ListingCategoryOption, PriceVersion } from '@/api/types'
+import type { Listing, ListingCategoryOption, PriceVersion, Upstream } from '@/api/types'
+import { detectionText } from '@/api/market-detection'
+import { sellerUntested } from '@/components/seller/listingGate'
+import '@/styles/seller-center.css'
 import { useAction, useLoader } from '@/composables/useAsync'
 import { useConfig } from '@/stores/config'
 import PageHeader from '@/components/PageHeader.vue'
@@ -12,7 +15,28 @@ import ModalDialog from '@/components/ModalDialog.vue'
 import { dateTime, multiplier } from '@/utils/format'
 
 const cfg = useConfig()
-const listings = useLoader(() => seller.listings(), [] as Listing[] | null)
+const listingsError = ref('')
+const listings = useLoader(async () => {
+  try {
+    const rows = (await seller.listings()) ?? []
+    listingsError.value = ''
+    return rows
+  } catch (error) {
+    listingsError.value = '挂单没有载入'
+    throw error
+  }
+}, [] as Listing[])
+const upstreams = ref<Upstream[]>([])
+type StatusFilter = 'open' | 'active' | 'paused' | 'closed' | 'all'
+const statusFilter = ref<StatusFilter>('open')
+const modeFilter = ref('')
+const statusChoices: { id: StatusFilter; label: string }[] = [
+  { id: 'open', label: '在售' },
+  { id: 'active', label: '生效中' },
+  { id: 'paused', label: '已暂停' },
+  { id: 'closed', label: '已下架' },
+  { id: 'all', label: '全部' },
+]
 const history = ref<PriceVersion[] | null>(null)
 const historyFor = ref(0)
 const { busy, run } = useAction()
@@ -28,14 +52,29 @@ const metaDesc = ref('')
 const metaCats = ref<string[]>([])
 const categoryOpts = ref<ListingCategoryOption[]>([])
 
+const visible = computed(() =>
+  (listings.data.value ?? []).filter((row) => {
+    if (modeFilter.value && row.mode !== modeFilter.value) return false
+    if (statusFilter.value === 'open') return row.status !== 'closed'
+    if (statusFilter.value === 'all') return true
+    return row.status === statusFilter.value
+  }),
+)
+function upstreamOf(id: number) {
+  return upstreams.value.find((u) => u.id === id)
+}
+
 onMounted(async () => {
   listings.load()
   cfg.ensure()
-  categoryOpts.value = (await seller.listingCategories().catch(() => null)) ?? []
+  const [cats, ups] = await Promise.all([seller.listingCategories().catch(() => null), seller.upstreams().catch(() => null)])
+  categoryOpts.value = cats ?? []
+  upstreams.value = ups ?? []
 })
 
 async function reload() {
   await listings.load()
+  upstreams.value = (await seller.upstreams().catch(() => null)) ?? []
 }
 
 async function showHistory(id: number) {
@@ -107,13 +146,27 @@ async function closeListing(row: Listing) {
 </script>
 
 <template>
-  <div>
-    <PageHeader title="我的闲置TOKEN" description="管理已上架的闲置TOKEN：改价、改分类、暂停或下架。可挂「按量通道」或「额度包」。">
+  <div class="seller-page">
+    <PageHeader title="我的闲置TOKEN" description="改价、改分类、暂停或下架。未检测的寄售和额度包可以挂，买家会看到未检测；它们不能进保障池。">
       <RefreshButton :loading="listings.loading.value" @click="reload()" />
       <RouterLink to="/seller/publish" class="xm-btn xm-btn-primary">＋ 发布闲置TOKEN</RouterLink>
       <RouterLink to="/seller/upstreams" class="xm-btn xm-btn-ghost">我的上游 →</RouterLink>
     </PageHeader>
-    <div class="card">
+    <div class="seller-filters" role="group" aria-label="按状态筛选">
+      <button v-for="item in statusChoices" :key="item.id" type="button" class="seller-chip" :class="{ 'is-on': statusFilter === item.id }" @click="statusFilter = item.id">{{ item.label }}</button>
+      <button v-for="item in [
+        ['', '全部形态'],
+        ['consignment', '按量'],
+        ['pack', '额度包'],
+        ['buyback', '回收'],
+      ]" :key="item[0] || 'all-mode'" type="button" class="seller-chip" :class="{ 'is-on': modeFilter === item[0] }" @click="modeFilter = item[0]">{{ item[1] }}</button>
+    </div>
+    <div v-if="listingsError && !listings.loading.value" class="seller-empty">
+      <strong>挂单没有载入</strong>
+      <p>请重试。空列表不是失败。</p>
+      <button type="button" class="xm-btn xm-btn-primary" @click="reload">重试</button>
+    </div>
+    <div v-else class="card">
       <DataTable
         :columns="[
           { key: 'id', label: '商品' },
@@ -124,10 +177,10 @@ async function closeListing(row: Listing) {
           { key: 'created_at', label: '创建时间' },
           { key: 'actions', label: '操作' },
         ]"
-        :rows="listings.data.value"
+        :rows="visible"
         :loading="listings.loading.value"
         row-key="id"
-        empty="还没有商品，去「发布闲置TOKEN」或「我的上游」"
+        :empty="listings.data.value.length ? '这个筛选下没有商品' : '还没有商品，去发布闲置TOKEN'"
       >
         <template #cell-id="{ row }">
           <span class="font-bold">#{{ row.id }}</span>
@@ -140,6 +193,7 @@ async function closeListing(row: Listing) {
           <span class="xm-tag" :class="row.mode === 'pack' ? 'pack' : ''">
             {{ row.mode === 'pack' ? '额度包' : row.mode === 'buyback' ? '回收' : '按量' }}
           </span>
+          <span v-if="sellerUntested(upstreamOf(row.upstream_id) ?? row)" class="xm-tag warn">{{ detectionText(row.detection_status) }}</span>
         </template>
         <template #cell-price="{ row }">
           <template v-if="row.mode === 'pack'">

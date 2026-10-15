@@ -2,11 +2,13 @@ package buyer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/DueGin/token-market/internal/listing"
 	"github.com/DueGin/token-market/internal/payment"
 	"github.com/DueGin/token-market/internal/platform/httpx"
+	"github.com/jackc/pgx/v5"
 )
 
 type PurchasePackInput struct {
@@ -154,61 +156,119 @@ func (s *KeyService) FulfillPackCheckouts(ctx context.Context) error {
 		return err
 	}
 	for _, j := range jobs {
-		if err := s.fulfillOne(ctx, j.id, j.rechargeID, j.listingID, j.buyerID, j.name); err != nil {
+		if keyID, err := s.fulfillOne(ctx, j.id, j.rechargeID, j.listingID, j.buyerID, j.name); err != nil {
 			if s.Log != nil {
 				s.Log.Error("fulfill pack checkout", "checkout_id", j.id, "err", err)
 			}
-			_, _ = s.DB.Exec(ctx, `UPDATE pack_checkouts SET status = 'failed', error_reason = $2 WHERE id = $1 AND status = 'pending'`,
-				j.id, truncateErr(err, 200))
+			if cleanupErr := s.failPendingPackCheckout(ctx, j.id, keyID, err); cleanupErr != nil {
+				return fmt.Errorf("fail pack checkout %d: %w", j.id, cleanupErr)
+			}
 		}
 	}
 	return nil
 }
 
-func (s *KeyService) fulfillOne(ctx context.Context, checkoutID, rechargeID, listingID, buyerID int64, name string) error {
-	l, err := listing.GetListing(ctx, s.DB, listingID)
+// failPendingPackCheckout 只释放尚未签包的预留库存；到账的钱已在普通余额中，不再入账或退款。
+func (s *KeyService) failPendingPackCheckout(ctx context.Context, checkoutID, keyID int64, cause error) error {
+	tx, err := s.DB.Begin(ctx)
 	if err != nil {
 		return err
 	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var listingID, buyerID int64
+	if err := tx.QueryRow(ctx, `SELECT listing_id, buyer_id FROM pack_checkouts WHERE id = $1 FOR UPDATE`, checkoutID).Scan(&listingID, &buyerID); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE pack_checkouts c SET status = 'failed', error_reason = $2, fulfilled_at = NULL
+		WHERE c.id = $1 AND c.status = 'pending' AND c.pack_id IS NULL
+		AND NOT EXISTS (SELECT 1 FROM quota_packs p WHERE p.recharge_id = c.recharge_id)`, checkoutID, truncateErr(cause, 200))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() > 0 {
+		if err := listing.ReleasePackStock(ctx, tx, listingID); err != nil {
+			return err
+		}
+	}
+	deletedKey := false
+	if keyID != 0 {
+		// Create 自行提交 Key；即使另一 worker 已完成订单收尾，仍需删除本次未关联包的 Key。
+		// checkout 行锁确保并发签包已结束，既有任务继续清理内部凭证。
+		tag, err := tx.Exec(ctx, `UPDATE buyer_keys k SET status = 'deleted', deleted_at = now(), updated_at = now()
+			WHERE k.id = $1 AND k.user_id = $2
+			AND NOT EXISTS (SELECT 1 FROM quota_packs p WHERE p.buyer_key_id = k.id)`, keyID, buyerID)
+		if err != nil {
+			return err
+		}
+		deletedKey = tag.RowsAffected() > 0
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if deletedKey {
+		return s.Publish(ctx, keyID)
+	}
+	return nil
+}
+
+// 返回的 keyID 仅供失败收尾清理；已提交的包由 failPendingPackCheckout 的条件更新保护。
+func (s *KeyService) fulfillOne(ctx context.Context, checkoutID, rechargeID, listingID, buyerID int64, name string) (keyID int64, err error) {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// 保持 pending 直到包与 checkout 一起提交，避免把认领中的订单提前暴露为已履约。
+	var claimedID int64
+	err = tx.QueryRow(ctx, `SELECT id FROM pack_checkouts
+		WHERE id = $1 AND status = 'pending' AND pack_id IS NULL FOR UPDATE SKIP LOCKED`, checkoutID).Scan(&claimedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	l, err := listing.GetListing(ctx, tx, listingID)
+	if err != nil {
+		return 0, err
+	}
 	if l.FaceValue == nil {
-		return httpx.BadRequest("INVALID_PACK", "pack face value is missing")
+		return 0, httpx.BadRequest("INVALID_PACK", "pack face value is missing")
 	}
 	face := *l.FaceValue
 	if name == "" {
 		name = fmt.Sprintf("额度包 #%d", listingID)
 	}
-	tag, err := s.DB.Exec(ctx, `UPDATE pack_checkouts SET status = 'fulfilled', fulfilled_at = now()
-		WHERE id = $1 AND status = 'pending'`, checkoutID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return nil
-	}
 	var channel string
-	_ = s.DB.QueryRow(ctx, `SELECT channel FROM recharge_orders WHERE id = $1`, rechargeID).Scan(&channel)
+	if err := tx.QueryRow(ctx, `SELECT channel FROM recharge_orders WHERE id = $1`, rechargeID).Scan(&channel); err != nil {
+		return 0, err
+	}
 	_, key, err := s.Create(ctx, buyerID, KeyInput{
 		Name:   name,
 		Route:  RouteInput{Type: "chain", Hops: []HopInput{{ListingID: listingID}}},
 		Limits: Limits{QuotaUSD: l.FaceValue},
 	})
 	if err != nil {
-		_, _ = s.DB.Exec(ctx, `UPDATE pack_checkouts SET status = 'pending', fulfilled_at = NULL WHERE id = $1`, checkoutID)
-		return err
+		return 0, err
 	}
 	rid := rechargeID
-	p, err := listing.InsertQuotaPack(ctx, s.DB, listingID, buyerID, face, face, channel, &rid, &key.ID)
+	p, err := listing.InsertQuotaPack(ctx, tx, listingID, buyerID, face, face, channel, &rid, &key.ID)
 	if err != nil {
-		_, _ = s.DB.Exec(ctx, `UPDATE pack_checkouts SET status = 'pending', fulfilled_at = NULL WHERE id = $1`, checkoutID)
-		return err
+		return key.ID, err
 	}
-	_, _ = s.DB.Exec(ctx, `UPDATE pack_checkouts SET pack_id = $2 WHERE id = $1`, checkoutID, p.ID)
+	if _, err := tx.Exec(ctx, `UPDATE pack_checkouts SET status = 'fulfilled', fulfilled_at = now(), pack_id = $2
+		WHERE id = $1 AND status = 'pending' AND pack_id IS NULL`, checkoutID, p.ID); err != nil {
+		return key.ID, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return key.ID, err
+	}
 	if s.PackFunds != nil {
 		if err := s.PackFunds.PostPackPurchase(ctx, buyerID, p.ID, face); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return 0, nil
 }
 
 func (s *KeyService) RefundPack(ctx context.Context, userID, packID int64, dest string) (*listing.QuotaPack, error) {

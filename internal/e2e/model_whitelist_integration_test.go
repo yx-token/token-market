@@ -77,7 +77,7 @@ func assertModelWhitelistMapping(e *env, accountID int64, models []string) {
 	}
 }
 
-// 三种卖家接入方式均先缓存完整目录，卖家选择之前不能创建上架检测。
+// 三种卖家接入方式先缓存完整目录；选模型后可直接挂售，检测由卖家主动发起。
 func TestModelWhitelistOnboardingPaths(t *testing.T) {
 	e := setup(t)
 	seller := prepareModelWhitelistSeller(e, "whitelist-paths", 3)
@@ -133,8 +133,8 @@ func TestModelWhitelistOnboardingPaths(t *testing.T) {
 				t.Fatalf("目录接口与上游详情字段不一致：%+v", catalog)
 			}
 			seller.must(http.MethodPut, base+"/models", map[string]any{"models": []string{whitelistSonnet}}, &upstream)
-			if upstream.Status != "verifying" || !slices.Equal(upstream.ModelWhitelist, []string{whitelistSonnet}) {
-				t.Fatalf("选择模型后应开始上架检测：%+v", upstream)
+			if upstream.Status != "ready" || !slices.Equal(upstream.ModelWhitelist, []string{whitelistSonnet}) {
+				t.Fatalf("选择模型后应进入未检测的可挂售状态：%+v", upstream)
 			}
 			assertModelWhitelistMapping(e, accountID, []string{whitelistSonnet})
 			creds, err = e.fake.AccountCredentials(accountID)
@@ -142,13 +142,21 @@ func TestModelWhitelistOnboardingPaths(t *testing.T) {
 				t.Fatalf("写入模型映射应保留登录凭证：%v %v", creds, err)
 			}
 			mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT count(*) FROM probe_runs WHERE upstream_id = $1 AND trigger = 'onboarding'", upstream.ID), &runs)
-			if runs != 1 {
-				t.Fatalf("白名单提交应只入队一次上架检测：runs=%d", runs)
+			if runs != 0 {
+				t.Fatalf("白名单提交不应自动入队检测：runs=%d", runs)
 			}
 			seller.must(http.MethodPut, base+"/models", map[string]any{"models": []string{whitelistSonnet}}, &upstream)
 			mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT count(*) FROM probe_runs WHERE upstream_id = $1 AND trigger = 'onboarding'", upstream.ID), &runs)
+			if runs != 0 {
+				t.Fatalf("重复提交白名单也不应自动入队检测：runs=%d", runs)
+			}
+			seller.must(http.MethodPost, base+"/retry-verification", nil, &upstream)
+			if upstream.Status != "verifying" {
+				t.Fatalf("卖家主动检测才应进入检测状态：%+v", upstream)
+			}
+			mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT count(*) FROM probe_runs WHERE upstream_id = $1 AND trigger = 'onboarding'", upstream.ID), &runs)
 			if runs != 1 {
-				t.Fatalf("重复提交白名单不应重复入队：runs=%d", runs)
+				t.Fatalf("主动检测应入队一次：runs=%d", runs)
 			}
 		})
 	}
@@ -200,6 +208,7 @@ func TestModelWhitelistValidationRefreshAndMarket(t *testing.T) {
 		t.Fatalf("写入失败不得入队检测：runs=%d", runs)
 	}
 	seller.must(http.MethodPut, base+"/models", map[string]any{"models": []string{whitelistSonnet}}, &upstream)
+	seller.must(http.MethodPost, base+"/retry-verification", nil, &upstream)
 	e.passOnboarding(upstream.ID)
 	var created struct {
 		Listing idOnly `json:"listing"`
@@ -310,7 +319,7 @@ func TestModelWhitelistEmptyCatalogAndImportedSelection(t *testing.T) {
 	}
 	seller.expect(http.StatusBadRequest, http.MethodPut, base+"/models", map[string]any{"models": []string{}})
 	seller.must(http.MethodPut, base+"/models", map[string]any{"models": []string{"custom-model-2026"}}, &upstream)
-	if upstream.Status != "verifying" || !slices.Equal(upstream.ModelWhitelist, []string{"custom-model-2026"}) {
+	if upstream.Status != "ready" || !slices.Equal(upstream.ModelWhitelist, []string{"custom-model-2026"}) {
 		t.Fatalf("目录为空时应允许任意非空模型 ID：%+v", upstream)
 	}
 	assertModelWhitelistMapping(e, modelWhitelistAccountID(e, upstream.ID), []string{"custom-model-2026"})
@@ -646,12 +655,15 @@ func TestModelWhitelistCanceledVerificationRecovery(t *testing.T) {
 	ctx, cancel := context.WithCancel(e.ctx)
 	defer cancel()
 	service := newModelWhitelistListingService(e)
+	if _, err := service.SetModels(e.ctx, sellerInfo.ID, upstream.ID, []string{whitelistSonnet}); err != nil {
+		t.Fatalf("未检测挂售前保存模型选择：%v", err)
+	}
 	service.Quality = modelWhitelistQualityFunc(func(context.Context, int64, string, string) error {
 		cancel()
 		return context.Canceled
 	})
-	if _, err := service.SetModels(ctx, sellerInfo.ID, upstream.ID, []string{whitelistSonnet}); !errors.Is(err, context.Canceled) {
-		t.Fatalf("入队取消应返回取消错误：%v", err)
+	if _, err := service.RetryVerification(ctx, sellerInfo.ID, upstream.ID); !errors.Is(err, context.Canceled) {
+		t.Fatalf("主动检测入队取消应返回取消错误：%v", err)
 	}
 	u, err := listing.GetSellerUpstream(e.ctx, e.app.DB, sellerInfo.ID, upstream.ID)
 	if err != nil {
@@ -812,14 +824,14 @@ func TestModelWhitelistSmallPoolOperationSlots(t *testing.T) {
 	release()
 	select {
 	case first := <-done:
-		if first.err != nil || first.upstream.Status != listing.StatusVerifying {
+		if first.err != nil || first.upstream.Status != listing.StatusReady {
 			t.Fatalf("放行后首个操作应完成：upstream=%+v err=%v", first.upstream, first.err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("小连接池首个白名单操作未完成")
 	}
 	second, err := service.SetModels(e.ctx, sellerInfo.ID, upstreams[1].ID, []string{whitelistOpus})
-	if err != nil || second.Status != listing.StatusVerifying || !slices.Equal(second.ModelWhitelist, []string{whitelistOpus}) {
+	if err != nil || second.Status != listing.StatusReady || !slices.Equal(second.ModelWhitelist, []string{whitelistOpus}) {
 		t.Fatalf("操作槽释放后第二上游应可继续：upstream=%+v err=%v", second, err)
 	}
 	assertModelWhitelistMapping(e, modelWhitelistAccountID(e, upstreams[0].ID), []string{whitelistSonnet})

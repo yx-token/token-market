@@ -138,6 +138,14 @@ func (f *Funds) refundableFen(ctx context.Context, userID int64, balance float64
 		userID).Scan(&packs); err != nil {
 		return 0, err
 	}
+	// 现金欠款/尚未送达的购包扣款已经减少账面现金，不能趁远端尚未扣到时把它退走。
+	// 正常用量入账滞后时账面现金更高，此上界不会扩大可退余额。
+	var cash float64
+	if err := f.DB.QueryRow(ctx, `SELECT COALESCE(-sum(e.amount),0)::float8
+		FROM ledger_accounts a JOIN ledger_entries e ON e.account_id=a.id
+		WHERE a.owner_type='buyer' AND a.owner_id=$1 AND a.kind='buyer_cash'`, userID).Scan(&cash); err != nil {
+		return 0, err
+	}
 	// 退到分；加微小量避免浮点误差少退一分
-	return max(0, int64(math.Floor((balance-packs)*100+1e-6))), nil
+	return max(0, int64(math.Floor(min(balance-packs, cash)*100+1e-6))), nil
 }

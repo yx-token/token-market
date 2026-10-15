@@ -33,7 +33,7 @@ const (
 
 func ownerTypeOf(kind string) string {
 	switch kind {
-	case KindBuyerCash, "buyer_bonus":
+	case KindBuyerCash, KindBuyerStoreCredit, "buyer_bonus":
 		return "buyer"
 	case KindSellerPending, KindSellerAvailable, KindSellerWithdrawing:
 		return "seller"

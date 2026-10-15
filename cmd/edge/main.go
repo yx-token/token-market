@@ -71,12 +71,14 @@ func run(configPath string, log *slog.Logger) error {
 
 	// 尝试日志只在后台写库，数据库不可用时写本地暂存文件，不影响转发
 	var attempts *edge.AttemptLogger
+	var credits edge.CreditSelector
 	if cfg.Database.DSN != "" {
-		pool, err := db.Open(ctx, cfg.Database.DSN, 4, cfg.Database.TimeZone)
+		pool, err := db.Open(ctx, cfg.Database.DSN, cfg.Database.MaxConns, cfg.Database.TimeZone)
 		if err != nil {
 			log.Warn("edge database unavailable, attempts will be spooled", "err", err)
 		}
 		attempts = edge.NewAttemptLogger(pool, cfg.Edge.SpoolDir, log)
+		credits = &edge.DBCreditSelector{DB: pool, Keyring: kr}
 		if pool != nil {
 			defer pool.Close()
 		}
@@ -96,6 +98,7 @@ func run(configPath string, log *slog.Logger) error {
 		TrustedProxies:   cfg.Edge.TrustedProxies,
 		InvalidKeyLimit:  cfg.Edge.InvalidKeyLimit,
 	}, cache, kr, attempts, log)
+	srv.SetCreditSelector(credits)
 
 	public := &http.Server{Addr: cfg.Edge.Addr, Handler: srv, ReadHeaderTimeout: 10 * time.Second}
 	adminMux := http.NewServeMux()

@@ -1,4 +1,4 @@
-// Package settings 管理平台级可调参数（抽佣率、冻结天数等），存放在 settings 表，
+// Package settings 管理平台级可调参数（抽佣率、冻结时长等），存放在 settings 表，
 // 未设置的项使用默认值。管理员通过后台修改。
 package settings
 
@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -16,9 +19,14 @@ import (
 
 const key = "platform"
 
+// MaxFreezeHours 保证小时数转换为 time.Duration 并加上一个结算小时后不溢出。
+const MaxFreezeHours = int((1<<63-1)/int64(time.Hour)) - 1
+
 type Settings struct {
 	CommissionRate             float64            `json:"commission_rate"`               // 寄售抽佣率 c：买家价 = m_s × (1 + c)
-	FreezeDays                 int                `json:"freeze_days"`                   // 卖家收益冻结天数
+	FreezeHours                int                `json:"freeze_hours"`                  // 卖家收益冻结小时数；0 为无额外冻结
+	FreezeDays                 int                `json:"freeze_days"`                   // 兼容旧客户端，向上取整的冻结天数
+	CreditUSDToBalanceRate     float64            `json:"credit_usd_to_balance_rate"`    // 店铺活动包 1 USD 额度对应的平台记账单位
 	WithdrawMin                float64            `json:"withdraw_min"`                  // 最低提现金额
 	WithdrawAutoApproveMax     float64            `json:"withdraw_auto_approve_max"`     // 低于该金额且无风险时自动审核通过
 	ManualRetestDailyLimit     int                `json:"manual_retest_daily_limit"`     // 卖家每天手动复测次数
@@ -50,7 +58,9 @@ type Settings struct {
 func Defaults() Settings {
 	return Settings{
 		CommissionRate:             0.20,
-		FreezeDays:                 7,
+		FreezeHours:                24,
+		FreezeDays:                 1,
+		CreditUSDToBalanceRate:     1,
 		WithdrawMin:                10,
 		WithdrawAutoApproveMax:     100,
 		ManualRetestDailyLimit:     3,
@@ -83,6 +93,10 @@ func (s Settings) Validate() error {
 		return errors.New("commission_rate must be in [0, 5]")
 	case s.FreezeDays < 0:
 		return errors.New("freeze_days must be >= 0")
+	case s.FreezeHours < 0 || s.FreezeHours > MaxFreezeHours:
+		return fmt.Errorf("freeze_hours must be between 0 and %d", MaxFreezeHours)
+	case !validCreditUSDToBalanceRate(s.CreditUSDToBalanceRate):
+		return errors.New("credit_usd_to_balance_rate must be between 0.00000001 and 1000000 with at most 8 decimal places")
 	case s.WithdrawMin < 0 || s.WithdrawAutoApproveMax < 0:
 		return errors.New("withdraw limits must be >= 0")
 	case s.ManualRetestDailyLimit < 0:
@@ -127,6 +141,15 @@ func (s Settings) Validate() error {
 	return nil
 }
 
+func validCreditUSDToBalanceRate(rate float64) bool {
+	if rate < 0.00000001 || rate > 1000000 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return false
+	}
+	decimal := strconv.FormatFloat(rate, 'f', -1, 64)
+	point := strings.IndexByte(decimal, '.')
+	return point < 0 || len(decimal)-point-1 <= 8
+}
+
 // GradeCoefficient 返回等级系数，未配置的等级视为 0（不报价）。
 func (s Settings) GradeCoefficient(grade string) float64 {
 	return s.GradeCoefficients[grade]
@@ -148,7 +171,7 @@ func Load(ctx context.Context, db DB) (Settings, error) {
 	if err != nil {
 		return s, err
 	}
-	if err := json.Unmarshal(raw, &s); err != nil {
+	if err := applyPatch(&s, raw); err != nil {
 		return s, fmt.Errorf("decode settings: %w", err)
 	}
 	return s, nil
@@ -160,7 +183,7 @@ func Update(ctx context.Context, db DB, patch json.RawMessage) (Settings, error)
 	if err != nil {
 		return s, err
 	}
-	if err := json.Unmarshal(patch, &s); err != nil {
+	if err := applyPatch(&s, patch); err != nil {
 		return s, fmt.Errorf("decode patch: %w", err)
 	}
 	s.PaymentPublicURL = strings.TrimRight(strings.TrimSpace(s.PaymentPublicURL), "/")
@@ -174,4 +197,33 @@ func Update(ctx context.Context, db DB, patch json.RawMessage) (Settings, error)
 	_, err = db.Exec(ctx, `INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, now())
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, key, raw)
 	return s, err
+}
+
+// applyPatch 同时服务于旧数据读取和 API 部分更新，明确区分“未提供”和显式 0。
+func applyPatch(s *Settings, raw json.RawMessage) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	if fields == nil {
+		return errors.New("settings must be an object")
+	}
+	if err := json.Unmarshal(raw, s); err != nil {
+		return err
+	}
+	if hours, ok := fields["freeze_hours"]; ok {
+		if string(hours) == "null" {
+			return errors.New("freeze_hours must be an integer")
+		}
+	} else if days, ok := fields["freeze_days"]; ok {
+		if string(days) == "null" || s.FreezeDays < 0 || s.FreezeDays > MaxFreezeHours/24 {
+			return errors.New("freeze_days is outside the supported range")
+		}
+		s.FreezeHours = s.FreezeDays * 24
+	}
+	if s.FreezeHours < 0 || s.FreezeHours > MaxFreezeHours {
+		return fmt.Errorf("freeze_hours must be between 0 and %d", MaxFreezeHours)
+	}
+	s.FreezeDays = (s.FreezeHours + 23) / 24
+	return nil
 }

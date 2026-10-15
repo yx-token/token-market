@@ -53,7 +53,7 @@ const ledgerCards = computed(() => {
     { label: '平台收入', value: money(l.revenue), hint: '买家支付 − 卖家收益', tone: 'success' as const, icon: 'trending-up' as ConsoleIconName },
     { label: '探测成本', value: money(l.probe_cost), tone: 'warning' as const, icon: 'activity' as ConsoleIconName },
     { label: '人工调整', value: money(l.adjustment), tone: 'primary' as const, icon: 'sliders-horizontal' as ConsoleIconName },
-    { label: '买家余额合计', value: money(l.buyer_balances), tone: 'primary' as const, icon: 'users' as ConsoleIconName },
+    { label: '买家余额合计', value: money(l.buyer_balances), hint: `含店铺活动预付款 ${money(l.buyer_store_credit ?? 0)}`, tone: 'primary' as const, icon: 'users' as ConsoleIconName },
     { label: '应付卖家合计', value: money(l.seller_payable), tone: 'warning' as const, icon: 'hand-coins' as ConsoleIconName },
   ]
 })

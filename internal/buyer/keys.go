@@ -114,7 +114,7 @@ type resolvedHop struct {
 }
 
 // validateRoute 校验路由：最多 5 跳、默认分组只能在最后、同一挂单不重复、各跳同一平台。
-func (s *KeyService) validateRoute(ctx context.Context, r RouteInput) (string, []resolvedHop, error) {
+func (s *KeyService) validateRoute(ctx context.Context, userID int64, r RouteInput) (string, []resolvedHop, error) {
 	switch r.Type {
 	case "default":
 		if r.Pool == "" || len(r.Hops) > 0 {
@@ -149,7 +149,18 @@ func (s *KeyService) validateRoute(ctx context.Context, r RouteInput) (string, [
 			if err != nil {
 				return "", nil, err
 			}
-			if (l.Mode != listing.ModeConsignment && l.Mode != listing.ModePack) || l.Status != listing.ListingActive {
+			var selected bool
+			if err := s.DB.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM buyer_merchants WHERE user_id = $1 AND seller_id = $2)", userID, l.SellerID).Scan(&selected); err != nil {
+				return "", nil, err
+			}
+			if !selected {
+				return "", nil, httpx.BadRequest("MERCHANT_NOT_SELECTED", "add this seller to your merchant list before selecting a listing")
+			}
+			available, err := listing.MarketAvailable(ctx, s.DB, l.ID)
+			if err != nil {
+				return "", nil, err
+			}
+			if !available {
 				return "", nil, httpx.BadRequest("LISTING_UNAVAILABLE", fmt.Sprintf("listing %d is not an active market listing", l.ID))
 			}
 			u, err := listing.GetUpstream(ctx, s.DB, l.UpstreamID)
@@ -192,7 +203,7 @@ func (s *KeyService) Create(ctx context.Context, userID int64, in KeyInput) (str
 	if err := in.Limits.validate(); err != nil {
 		return "", nil, err
 	}
-	routeType, hops, err := s.validateRoute(ctx, in.Route)
+	routeType, hops, err := s.validateRoute(ctx, userID, in.Route)
 	if err != nil {
 		return "", nil, err
 	}
@@ -215,6 +226,9 @@ func (s *KeyService) Create(ctx context.Context, userID int64, in KeyInput) (str
 		return "", nil, err
 	}
 	if _, err := tx.Exec(ctx, "UPDATE buyer_keys SET key_enc = $2 WHERE id = $1", id, enc); err != nil {
+		return "", nil, err
+	}
+	if err := lockRouteMerchants(ctx, tx, userID, hops); err != nil {
 		return "", nil, err
 	}
 	if err := insertHops(ctx, tx, id, hops); err != nil {
@@ -269,6 +283,17 @@ func (s *KeyService) Provision(ctx context.Context, keyID int64) error {
 		return err
 	}
 	for _, h := range hops {
+		if h.listingID != nil {
+			var allowed bool
+			if err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM listings l JOIN upstreams u ON u.id = l.upstream_id
+				JOIN buyer_merchants bm ON bm.seller_id = l.seller_id AND bm.user_id = $2
+				WHERE l.id = $1 AND `+listing.MarketAvailableSQL+`)`, *h.listingID, userID).Scan(&allowed); err != nil {
+				return err
+			}
+			if !allowed {
+				continue
+			}
+		}
 		groupID, err := s.hopGroup(ctx, h)
 		if err != nil {
 			return err
@@ -413,6 +438,11 @@ func (s *KeyService) ensureInternalKey(ctx context.Context, it *Identity, keyID,
 
 // Publish 生成 Key 的路由配置并写入 Redis。
 func (s *KeyService) Publish(ctx context.Context, keyID int64) error {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 	var (
 		userID       int64
 		keyHash      []byte
@@ -423,8 +453,8 @@ func (s *KeyService) Publish(ctx context.Context, keyID int64) error {
 		blockReason  *string
 		version      int64
 	)
-	err := s.DB.QueryRow(ctx, `SELECT user_id, key_hash, status, disabled_reason, limits, limit_blocked_until, limit_block_reason, config_version
-		FROM buyer_keys WHERE id = $1`, keyID).Scan(&userID, &keyHash, &status, &reason, &limitsRaw, &blockedUntil, &blockReason, &version)
+	err = tx.QueryRow(ctx, `SELECT user_id, key_hash, status, disabled_reason, limits, limit_blocked_until, limit_block_reason, config_version
+		FROM buyer_keys WHERE id = $1 FOR UPDATE`, keyID).Scan(&userID, &keyHash, &status, &reason, &limitsRaw, &blockedUntil, &blockReason, &version)
 	if err != nil {
 		return err
 	}
@@ -451,20 +481,31 @@ func (s *KeyService) Publish(ctx context.Context, keyID int64) error {
 		}
 	}
 	var locked bool
-	if err := s.DB.QueryRow(ctx, "SELECT COALESCE((SELECT keys_locked FROM shadow_identities WHERE kind = 'buyer' AND owner_id = $1), false)", userID).Scan(&locked); err != nil {
+	if err := tx.QueryRow(ctx, "SELECT COALESCE((SELECT keys_locked FROM shadow_identities WHERE kind = 'buyer' AND owner_id = $1), false)", userID).Scan(&locked); err != nil {
 		return err
 	}
 	if locked {
 		cfg.Status = "disabled"
 		cfg.Reason = "refund in progress"
 	}
-	rows, err := s.DB.Query(ctx, `SELECT h.position, h.listing_id, h.pool_id, p.name, ik.id, ik.key_enc
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM store_credit_packs cp
+		JOIN buyer_key_hops ch ON ch.key_id = $1 JOIN listings cl ON cl.id = ch.listing_id AND cl.seller_id = cp.seller_id
+		WHERE cp.buyer_id = $2 AND cp.status IN ('provisioning','active') AND cp.remaining_balance_units > 0
+		AND NOT EXISTS (SELECT 1 FROM quota_packs qp WHERE qp.buyer_key_id = $1))`, keyID, userID).Scan(&cfg.CreditCandidate); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT h.position, h.listing_id, h.pool_id, p.name, ik.id, ik.key_enc
 		FROM buyer_key_hops h
 		LEFT JOIN pools p ON p.id = h.pool_id
 		LEFT JOIN listings l ON l.id = h.listing_id
+		LEFT JOIN upstreams u ON u.id = l.upstream_id
 		JOIN internal_keys ik ON ik.buyer_key_id = h.key_id AND ik.status = 'active'
 			AND ik.sub2api_group_id = COALESCE(p.sub2api_group_id, l.listing_group_id)
-		WHERE h.key_id = $1 ORDER BY h.position`, keyID)
+		WHERE h.key_id = $1 AND (
+			(h.pool_id IS NOT NULL AND p.enabled AND p.sub2api_group_id IS NOT NULL)
+			OR (h.listing_id IS NOT NULL AND `+listing.MarketAvailableSQL+`
+			AND EXISTS (SELECT 1 FROM buyer_merchants bm WHERE bm.user_id = $2 AND bm.seller_id = l.seller_id)))
+		ORDER BY h.position`, keyID, userID)
 	if err != nil {
 		return err
 	}
@@ -493,7 +534,10 @@ func (s *KeyService) Publish(ctx context.Context, keyID int64) error {
 		cfg.Status = "disabled"
 		cfg.Reason = "provisioning"
 	}
-	return s.Edge.Put(ctx, hashHex, cfg)
+	if err := s.Edge.Put(ctx, hashHex, cfg); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 const keyColumns = `id, name, key_prefix, route_type, status, disabled_reason, limits, limit_blocked_until, limit_block_reason,
@@ -512,7 +556,9 @@ func (s *KeyService) scanKey(ctx context.Context, row pgx.Row) (*BuyerKey, error
 	skip, _ := s.Edge.SkipList(ctx)
 	rows, err := s.DB.Query(ctx, `SELECT h.position, h.listing_id, p.name, COALESCE(p.platform, u.platform),
 			EXISTS (SELECT 1 FROM internal_keys ik WHERE ik.buyer_key_id = h.key_id AND ik.status = 'active'
-				AND ik.sub2api_group_id = COALESCE(p.sub2api_group_id, l.listing_group_id))
+				AND ik.sub2api_group_id = COALESCE(p.sub2api_group_id, l.listing_group_id)),
+		((h.pool_id IS NOT NULL AND p.enabled) OR (h.listing_id IS NOT NULL AND `+listing.MarketAvailableSQL+`
+		AND EXISTS (SELECT 1 FROM buyer_merchants bm JOIN buyer_keys bk ON bk.user_id = bm.user_id WHERE bk.id = h.key_id AND bm.seller_id = l.seller_id)))
 		FROM buyer_key_hops h LEFT JOIN pools p ON p.id = h.pool_id LEFT JOIN listings l ON l.id = h.listing_id
 		LEFT JOIN upstreams u ON u.id = l.upstream_id
 		WHERE h.key_id = $1 ORDER BY h.position`, k.ID)
@@ -524,8 +570,8 @@ func (s *KeyService) scanKey(ctx context.Context, row pgx.Row) (*BuyerKey, error
 		var hv HopView
 		var lid *int64
 		var pname, platform *string
-		var ready bool
-		if err := rows.Scan(&hv.Position, &lid, &pname, &platform, &ready); err != nil {
+		var ready, available bool
+		if err := rows.Scan(&hv.Position, &lid, &pname, &platform, &ready, &available); err != nil {
 			return nil, err
 		}
 		if k.Platform == "" && platform != nil {
@@ -538,6 +584,8 @@ func (s *KeyService) scanKey(ctx context.Context, row pgx.Row) (*BuyerKey, error
 			hv.Pool = *pname
 		}
 		switch {
+		case !available:
+			hv.State = "skipped"
 		case !ready:
 			hv.State = "provisioning"
 		case lid != nil && skip[*lid]:
@@ -634,11 +682,14 @@ func (s *KeyService) Update(ctx context.Context, userID, keyID int64, in UpdateK
 		}
 	}
 	if in.Route != nil {
-		routeType, hops, err := s.validateRoute(ctx, *in.Route)
+		routeType, hops, err := s.validateRoute(ctx, userID, *in.Route)
 		if err != nil {
 			return nil, err
 		}
 		if _, err := tx.Exec(ctx, "UPDATE buyer_keys SET route_type = $2 WHERE id = $1", keyID, routeType); err != nil {
+			return nil, err
+		}
+		if err := lockRouteMerchants(ctx, tx, userID, hops); err != nil {
 			return nil, err
 		}
 		if err := insertHops(ctx, tx, keyID, hops); err != nil {
@@ -793,8 +844,7 @@ func (s *KeyService) PublishUserKeys(ctx context.Context, userID int64) error {
 // 或调度器判定不面向买家（例如开启检测的厂商下尚未检测的上游）。
 func (s *KeyService) PublishSkipList(ctx context.Context) error {
 	rows, err := s.DB.Query(ctx, `SELECT l.id FROM listings l JOIN upstreams u ON u.id = l.upstream_id
-		WHERE l.mode IN ('consignment', 'pack') AND (l.status <> 'active' OR u.status <> 'listed' OR u.health IN ('degraded', 'unavailable')
-			OR EXISTS (SELECT 1 FROM upstream_runtime_params rp WHERE rp.upstream_id = u.id AND NOT rp.buyer_facing))`)
+		WHERE l.mode IN ('consignment', 'pack') AND NOT (`+listing.MarketAvailableSQL+`)`)
 	if err != nil {
 		return err
 	}

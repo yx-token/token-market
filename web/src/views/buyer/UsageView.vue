@@ -8,7 +8,8 @@ import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
-import { dateTime, money, ms, tokens } from '@/utils/format'
+import BuyerCostBreakdown from '@/components/BuyerCostBreakdown.vue'
+import { dateTime, ms, tokens } from '@/utils/format'
 
 const filter = reactive({ key_id: '', model: '', from: '', to: '', offset: 0 })
 const pageSize = 50
@@ -62,7 +63,7 @@ async function openDetail(requestID?: string) {
 
 <template>
   <div>
-    <PageHeader title="用量明细" description="来自已入账的 sub2api 用量（有几分钟延迟）。只有 sub2api 实际产生费用的请求才会出现在这里。" />
+    <PageHeader title="用量明细" description="已入账的实际消费，通常有几分钟延迟。使用活动包时，费用为消耗的人民币预付款与平台余额扣款之和。" />
     <div class="card mb-4 flex flex-wrap items-end gap-3">
       <div>
         <label class="label" for="key">Key</label>
@@ -92,7 +93,7 @@ async function openDetail(requestID?: string) {
           { key: 'output_tokens', label: '输出', align: 'right' },
           { key: 'cache_tokens', label: '缓存', align: 'right' },
           { key: 'first_token_ms', label: '首字', align: 'right' },
-          { key: 'cost', label: '费用', align: 'right' },
+          { key: 'cost', label: '实际消费', align: 'right' },
           { key: 'actions', label: '' },
         ]"
         :rows="usage.data.value"
@@ -106,7 +107,7 @@ async function openDetail(requestID?: string) {
         <template #cell-output_tokens="{ row }">{{ tokens(row.output_tokens) }}</template>
         <template #cell-cache_tokens="{ row }">{{ tokens(row.cache_tokens) }}</template>
         <template #cell-first_token_ms="{ row }">{{ ms(row.first_token_ms) }}</template>
-        <template #cell-cost="{ row }">{{ money(row.cost, 4) }}</template>
+        <template #cell-cost="{ row }"><BuyerCostBreakdown :value="row" /></template>
         <template #cell-actions="{ row }">
           <button v-if="row.request_id" class="btn-ghost btn-sm" @click="openDetail(row.request_id)">详情</button>
         </template>
@@ -125,7 +126,7 @@ async function openDetail(requestID?: string) {
           { key: 'target', label: '目标' },
           { key: 'http_status', label: '状态码' },
           { key: 'end_reason', label: '结果' },
-          { key: 'charged', label: '费用', align: 'right' },
+          { key: 'charged', label: '实际消费', align: 'right' },
           { key: 'note', label: '说明' },
         ]"
         :rows="detail"
@@ -134,7 +135,7 @@ async function openDetail(requestID?: string) {
       >
         <template #cell-target="{ row }">{{ row.listing_id ? `挂单 #${row.listing_id}` : row.pool_id ? '默认分组' : '—' }}</template>
         <template #cell-end_reason="{ row }"><StatusBadge kind="endReason" :value="row.end_reason" /></template>
-        <template #cell-charged="{ row }">{{ row.charged ? money(row.cost, 4) : '—' }}</template>
+        <template #cell-charged="{ row }"><BuyerCostBreakdown v-if="row.charged" :value="row" /><span v-else>—</span></template>
         <template #cell-note="{ row }">{{ notes[row.note] ?? row.note }}</template>
       </DataTable>
     </ModalDialog>

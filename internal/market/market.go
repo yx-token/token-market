@@ -16,6 +16,7 @@ import (
 type Item struct {
 	listing.InspectionView
 	UpstreamID       int64     `json:"-"`
+	SellerID         int64     `json:"seller_id"`
 	ListingID        int64     `json:"listing_id"`
 	Platform         string    `json:"platform"`
 	AuthType         string    `json:"auth_type"`
@@ -41,6 +42,10 @@ type Item struct {
 }
 
 type Filter struct {
+	SellerID  int64
+	BuyerID   int64 // 非零时只返回该买家商家清单内的挂单
+	ListingID int64
+
 	Platform string
 	Grade    string
 	MaxPrice float64
@@ -98,7 +103,7 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 	}
 	var q string
 	if withMetrics {
-		q = `SELECT l.id, u.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
+		q = `SELECT l.id, l.seller_id, u.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
 			att.success_rate, COALESCE(att.requests, 0), usage.ttft_p50,
 			l.mode, l.sku_kind, l.face_value, l.stock, l.stock_sold, l.min_amount::float8, l.title, l.description,
 			COALESCE(l.categories, '{}'), COALESCE(u.model_whitelist, '{}')
@@ -112,35 +117,39 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 		LEFT JOIN LATERAL (
 			SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY first_token_ms) AS ttft_p50
 			FROM usage_records WHERE upstream_id = u.id AND created_at > now() - interval '24 hours' AND first_token_ms IS NOT NULL) usage ON true
-		WHERE l.mode IN ('consignment', 'pack') AND l.status = 'active' AND u.status = 'listed' AND u.health NOT IN ('degraded', 'unavailable')
-			AND NOT EXISTS (SELECT 1 FROM upstream_runtime_params rp WHERE rp.upstream_id = u.id AND NOT rp.buyer_facing)
+		WHERE ` + listing.MarketAvailableSQL + `
 			AND ($1 = '' OR u.platform = $1) AND ($2 = '' OR u.grade = $2) AND l.multiplier <= $3
 			AND ($6 = '' OR l.sku_kind = $6)
 			AND ($7 = '' OR $7 = ANY (COALESCE(l.categories, '{}')))
 			AND ($8 = '' OR u.model_whitelist IS NULL OR $8 = ANY(u.model_whitelist))
+			AND ($9::bigint = 0 OR l.seller_id = $9)
+			AND ($10::bigint = 0 OR EXISTS (SELECT 1 FROM buyer_merchants bm WHERE bm.user_id = $10 AND bm.seller_id = l.seller_id))
+			AND ($11::bigint = 0 OR l.id = $11)
 		ORDER BY ` + order + ` LIMIT $4 OFFSET $5`
 	} else {
-		q = `SELECT l.id, u.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
+		q = `SELECT l.id, l.seller_id, u.id, u.platform, u.auth_type, u.tier, u.grade, u.health, l.multiplier::float8, l.created_at,
 			NULL::float8, 0, NULL::float8,
 			l.mode, l.sku_kind, l.face_value, l.stock, l.stock_sold, l.min_amount::float8, l.title, l.description,
 			COALESCE(l.categories, '{}'), COALESCE(u.model_whitelist, '{}')
 		FROM listings l
 		JOIN upstreams u ON u.id = l.upstream_id
-		WHERE l.mode IN ('consignment', 'pack') AND l.status = 'active' AND u.status = 'listed' AND u.health NOT IN ('degraded', 'unavailable')
-			AND NOT EXISTS (SELECT 1 FROM upstream_runtime_params rp WHERE rp.upstream_id = u.id AND NOT rp.buyer_facing)
+		WHERE ` + listing.MarketAvailableSQL + `
 			AND ($1 = '' OR u.platform = $1) AND ($2 = '' OR u.grade = $2) AND l.multiplier <= $3
 			AND ($6 = '' OR l.sku_kind = $6)
 			AND ($7 = '' OR $7 = ANY (COALESCE(l.categories, '{}')))
 			AND ($8 = '' OR u.model_whitelist IS NULL OR $8 = ANY(u.model_whitelist))
+			AND ($9::bigint = 0 OR l.seller_id = $9)
+			AND ($10::bigint = 0 OR EXISTS (SELECT 1 FROM buyer_merchants bm WHERE bm.user_id = $10 AND bm.seller_id = l.seller_id))
+			AND ($11::bigint = 0 OR l.id = $11)
 		ORDER BY ` + order + ` LIMIT $4 OFFSET $5`
 	}
-	rows, err := s.DB.Query(ctx, q, f.Platform, f.Grade, maxSeller, limit, offset, kind, f.Category, f.Model)
+	rows, err := s.DB.Query(ctx, q, f.Platform, f.Grade, maxSeller, limit, offset, kind, f.Category, f.Model, f.SellerID, f.BuyerID, f.ListingID)
 	if err != nil {
 		return nil, err
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Item, error) {
 		var it Item
-		err := row.Scan(&it.ListingID, &it.UpstreamID, &it.Platform, &it.AuthType, &it.Tier, &it.Grade, &it.Health, &it.SellerMultiplier, &it.ListedSince,
+		err := row.Scan(&it.ListingID, &it.SellerID, &it.UpstreamID, &it.Platform, &it.AuthType, &it.Tier, &it.Grade, &it.Health, &it.SellerMultiplier, &it.ListedSince,
 			&it.SuccessRate24h, &it.Requests24h, &it.TTFTp50Ms,
 			&it.Mode, &it.SKUKind, &it.FaceValue, &it.Stock, &it.StockSold, &it.MinAmount, &it.Title, &it.Description, &it.Categories, &it.Models)
 		if it.Categories == nil {
@@ -179,16 +188,7 @@ func (s *Service) Get(ctx context.Context, listingID int64) (*Item, error) {
 }
 
 func (s *Service) listOne(ctx context.Context, listingID int64) ([]Item, error) {
-	all, err := s.List(ctx, Filter{}, 1000, 0)
-	if err != nil {
-		return nil, err
-	}
-	for _, it := range all {
-		if it.ListingID == listingID {
-			return []Item{it}, nil
-		}
-	}
-	return nil, nil
+	return s.List(ctx, Filter{ListingID: listingID}, 1, 0)
 }
 
 type PoolItem struct {

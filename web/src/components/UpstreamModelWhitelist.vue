@@ -36,12 +36,12 @@ async function save() {
       <h2 class="card-title !mb-0">挂售模型</h2>
       <button v-if="editable && !editing" type="button" class="xm-btn xm-btn-ghost xm-btn-sm" @click="editing = true">{{ whitelist === null ? '补填挂售模型' : '修改白名单' }}</button>
     </div>
-    <p v-if="selecting" class="callout callout-info mb-3">待选择挂售模型。保存白名单后开始上架检测，检测通过后可发布商品。</p>
+    <p v-if="selecting" class="callout callout-info mb-3">待选择挂售模型。保存非空白名单后即可发布商品，无需先运行质量检测；尚无有效检测结果时向买家标注“未检测”。</p>
     <p v-else-if="whitelist === null && editable" class="callout callout-warn mb-3">尚未声明挂售模型，目前不限制模型请求。请补填白名单，明确可供买家调用的模型。</p>
     <template v-if="editing && editable">
       <ModelWhitelistSelector v-model="models" :upstream-id="upstream.id" :disabled="busy" @valid="valid = $event" />
       <div class="mt-3 flex flex-wrap gap-2">
-        <button type="button" class="xm-btn xm-btn-primary" :disabled="busy || !valid" @click="save">{{ selecting ? '确认模型并开始检测' : '保存白名单' }}</button>
+        <button type="button" class="xm-btn xm-btn-primary" :disabled="busy || !valid" @click="save">保存白名单</button>
         <button v-if="!selecting" type="button" class="xm-btn xm-btn-ghost" :disabled="busy" @click="editing = false">取消</button>
       </div>
     </template>

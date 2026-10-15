@@ -21,6 +21,8 @@ const sections: Record<string, { title: string; items: NavItem[] }> = {
     title: '买家中心',
     items: [
       { to: '/buyer/keys', text: 'API Key' },
+      { to: '/buyer/merchants', text: '商家清单' },
+      { to: '/buyer/store-credits', text: '店铺活动包' },
       { to: '/buyer/wallet', text: '钱包' },
       { to: '/buyer/usage', text: '用量明细' },
       { to: '/buyer/bills', text: '账单' },
@@ -31,6 +33,7 @@ const sections: Record<string, { title: string; items: NavItem[] }> = {
     items: [
       { to: '/seller/publish', text: '发布闲置TOKEN' },
       { to: '/seller/listings', text: '我的闲置TOKEN' },
+      { to: '/seller/credits', text: '店铺活动额度' },
       { to: '/seller/upstreams', text: '我的上游' },
       { to: '/seller/proxies', text: '代理 IP' },
       { to: '/seller/usage', text: '用量' },

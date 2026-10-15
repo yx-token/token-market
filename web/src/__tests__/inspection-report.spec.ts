@@ -322,15 +322,28 @@ describe('质检报告与估价', () => {
     expect(wrapper.text()).toContain('等级与回收报价沿用现有判定')
   })
 
-  it('市场卡片显示关键项、检测时间与抽样局限', async () => {
+  it('已检测市场卡片显示等级、模型检测结果、检测时间与抽样说明', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
     await router.push('/')
-    const wrapper = mount(MarketListingCard, { props: { sku: { id: 'l-1', listingId: 1, kind: 'channel', plat: 'Claude', tier: 'Max', title: '测试通道', img: 'card1.jpg', mult: 0.8, grade: 'B', success: 0.97, ttft: 400, qualityChecks: { D06: check }, inspectionMode: 'trial', lastCheckedAt: appraisal.checked_at! } }, global: { plugins: [router], stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
+    const wrapper = mount(MarketListingCard, { props: { sku: { id: 'l-1', listingId: 1, kind: 'channel', plat: 'ChatGPT', tier: 'Plus', title: '测试通道', img: 'card1.jpg', mult: 0.8, grade: 'B', success: 0.97, ttft: 400, detectionStatus: 'tested', models: ['gpt-6-astra'], modelChecks: [{ model: 'gpt-6-astra', detection_status: 'tested', degradation_status: 'inconclusive' }], qualityChecks: { D06: check }, inspectionMode: 'trial', lastCheckedAt: appraisal.checked_at! } }, global: { plugins: [router], stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
     expect(wrapper.text()).toContain('B 级')
-    expect(wrapper.text()).toContain('推理强度兑现：需关注')
+    expect(wrapper.text()).toContain('质量检测：已检测')
+    expect(wrapper.text()).toContain('gpt-6-astra · 已检测 · 降智检测：无法判定')
     expect(wrapper.text()).toContain('上次检测')
-    expect(wrapper.text()).toContain('试运行，不影响价格')
-    expect(wrapper.text()).toContain('检测是抽样，不能保证没有偷换')
+    expect(wrapper.text()).toContain('检测为抽样结果')
+    wrapper.unmount()
+  })
+
+  it.each([undefined, 'untested'] as const)('市场卡片检测状态 %s 不因残留等级或时间推断已检测', async (status) => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+    await router.push('/')
+    const wrapper = mount(MarketListingCard, { props: { sku: { id: 'l-1', listingId: 1, kind: 'channel', plat: 'ChatGPT', tier: 'Plus', title: '测试通道', img: 'card1.jpg', mult: 0.8, grade: 'B', success: 0.97, ttft: 400, detectionStatus: status, models: ['gpt-6-astra'], modelChecks: [{ model: 'gpt-6-astra', detection_status: 'untested', degradation_status: 'passed' }], qualityChecks: { D06: check }, lastCheckedAt: appraisal.checked_at! } }, global: { plugins: [router] } })
+    expect(wrapper.text()).toContain('质量检测：未检测')
+    expect(wrapper.text()).toContain('gpt-6-astra · 未检测 · 降智检测：未检测')
+    expect(wrapper.text()).not.toContain('B 级')
+    expect(wrapper.text()).not.toContain('上次检测')
+    expect(wrapper.text()).not.toContain('通过')
+    wrapper.unmount()
   })
 })
 

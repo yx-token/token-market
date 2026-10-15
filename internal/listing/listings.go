@@ -89,6 +89,9 @@ type CreateListingInput struct {
 
 // CreateListing 创建挂单。寄售直接生效；回收先生成报价，卖家接受后生效。
 func (s *Service) CreateListing(ctx context.Context, sellerID, upstreamID int64, in CreateListingInput) (*Listing, *Quote, error) {
+	release, err := s.lockAccountModels(ctx, upstreamID)
+	if err != nil { return nil, nil, err }
+	defer release()
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
 		return nil, nil, err
@@ -96,12 +99,26 @@ func (s *Service) CreateListing(ctx context.Context, sellerID, upstreamID int64,
 	if u.IsReference {
 		return nil, nil, httpx.BadRequest("REFERENCE_ACCOUNT", "reference accounts cannot be listed")
 	}
-	if u.Status != StatusReady {
-		return nil, nil, httpx.Conflict("UPSTREAM_NOT_READY", "upstream must pass verification before listing")
+	if u.Status != StatusReady || u.Sub2APIAccountID == nil {
+		return nil, nil, httpx.Conflict("UPSTREAM_NOT_READY", "upstream must have valid authorization and be ready before listing")
 	}
 	if privacyPlatforms[u.Platform] && u.AuthType == "oauth" && (u.PrivacyOK == nil || !*u.PrivacyOK) {
 		return nil, nil, httpx.Conflict("PRIVACY_REQUIRED", "training data usage must be disabled before listing")
 	}
+	v, err := GetVendor(ctx, s.DB, u.Platform)
+	if err != nil { return nil, nil, err }
+	if !v.Enabled { return nil, nil, ErrVendorDisabled }
+	if u.Health == HealthDegraded || u.Health == HealthUnavailable {
+		return nil, nil, httpx.Conflict("UPSTREAM_UNHEALTHY", "unhealthy upstreams cannot be listed")
+	}
+	if u.Health == HealthUnknown && len(u.ModelWhitelist) == 0 {
+		return nil, nil, httpx.Conflict("MODELS_REQUIRED", "select sale models before listing")
+	}
+	// 回收报价依赖检测证据，不把未检测默认等级当作通过。
+	if in.Mode == ModeBuyback && u.LastCheckedAt == nil {
+		return nil, nil, httpx.Conflict("INSPECTION_REQUIRED", "platform buyback requires inspection evidence")
+	}
+	if err := s.requireAuthorizedAccount(ctx, u); err != nil { return nil, nil, err }
 	join := true
 	if in.JoinDefaultPool != nil {
 		join = *in.JoinDefaultPool

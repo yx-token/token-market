@@ -22,6 +22,9 @@ import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
 import { appealableReport } from '@/utils/inspection'
 import { errorText } from '@/api/errors'
+import MarketDetectionSummary from '@/components/MarketDetectionSummary.vue'
+import { privacyBlocksListing, sellerUntested } from '@/components/seller/listingGate'
+import '@/styles/seller-center.css'
 
 const props = defineProps<{ id: string }>()
 const upstreamId = computed(() => Number(props.id))
@@ -43,7 +46,8 @@ const hasAccount = computed(() => !!u.value && !['draft', 'authorizing', 'failed
 /** 接入未完成：不能挂单/改价，只能继续授权或删除 */
 const needsAuth = computed(() => !!u.value && ['draft', 'authorizing', 'failed'].includes(u.value.status))
 const showWizard = ref(false)
-const canCreateListing = computed(() => u.value?.status === 'ready' && (!u.value.listing || u.value.listing.status === 'closed'))
+const canCreateListing = computed(() => u.value?.status === 'ready' && !privacyBlocksListing(u.value) && (!u.value.listing || u.value.listing.status === 'closed'))
+const untested = computed(() => sellerUntested(u.value))
 
 /** 按来源返回上一级，避免钻进去出不来 */
 const backNav = computed(() => {
@@ -165,6 +169,14 @@ async function createListing() {
     toast.error('请填写倍率')
     return
   }
+  if (privacyBlocksListing(u.value)) {
+    toast.error('隐私检查未通过，不能挂单')
+    return
+  }
+  if (mode.value === 'buyback' && untested.value) {
+    toast.error('平台回收必须先有有效检测，未检测不能申请回收')
+    return
+  }
   if ((mode.value === 'consignment' || mode.value === 'pack') && !categories.value.length) {
     toast.error('请至少选择一个市场分类')
     return
@@ -186,7 +198,7 @@ async function createListing() {
   }
   const body =
     mode.value === 'consignment'
-      ? { mode: mode.value, multiplier: Number(mult.value), join_default_pool: joinPool.value, min_amount: Number(minAmount.value) || 0, ...meta }
+      ? { mode: mode.value, multiplier: Number(mult.value), join_default_pool: untested.value ? false : joinPool.value, min_amount: Number(minAmount.value) || 0, ...meta }
       : mode.value === 'pack'
         ? { mode: mode.value, multiplier: Number(mult.value), face_value: Number(faceValue.value), stock: Number(stock.value), ...meta }
         : { mode: mode.value, ...meta }
@@ -297,7 +309,7 @@ function runStatusText(status: string) {
 </script>
 
 <template>
-  <div v-if="u">
+  <div v-if="u" class="seller-page">
     <PageHeader
       :title="u.account_email ? upstreamName(u) : `上游 #${u.id}`"
       :description="`${u.account_email ? `上游 #${u.id} · ` : ''}${label('platform', u.platform).text} · ${authTypeText(u.platform, u.auth_type)}`"
@@ -307,8 +319,8 @@ function runStatusText(status: string) {
       <RefreshButton :loading="detail.loading.value || reports.loading.value || probeRuns.loading.value" @click="reload" />
       <RouterLink v-if="hasAccount" :to="`/seller/usage?upstream=${u.id}`" class="xm-btn xm-btn-ghost xm-btn-sm">用量明细 →</RouterLink>
       <button v-if="needsAuth" type="button" class="xm-btn xm-btn-primary xm-btn-sm" @click="showWizard = true">继续授权</button>
-      <button v-if="u.status === 'verify_failed'" class="btn-secondary" :disabled="busy" @click="listingAction(() => seller.retryVerification(u!.id), '已重新开始检测')">
-        重新检测
+      <button v-if="u.status === 'ready' || u.status === 'verify_failed'" class="btn-secondary" :disabled="busy" @click="listingAction(() => seller.retryVerification(u!.id), '已开始质量检测')">
+        {{ u.status === 'ready' ? '发起质量检测' : '重新检测' }}
       </button>
       <button
         v-if="['ready', 'listed'].includes(u.status)"
@@ -334,7 +346,9 @@ function runStatusText(status: string) {
         <button type="button" class="xm-btn xm-btn-primary xm-btn-sm" @click="showWizard = true">继续完成授权 →</button>
       </div>
     </div>
-    <div v-if="u.status === 'verifying'" class="mb-4 callout callout-info">正在进行上架检测（平台探测之后可能还有第三方身份检测，通常几分钟），完成后页面会自动刷新。检测通过前不能挂单。</div>
+    <div v-if="privacyBlocksListing(u)" class="seller-callout seller-callout-bad">隐私检查未通过，不能挂单。请先处理隐私设置后再保存模型。</div>
+    <div v-else-if="untested && ['ready', 'listed'].includes(u.status)" class="seller-callout seller-callout-warn">尚未质量检测，不能当成通过。寄售和额度包可以直接挂，买家会看到「未检测」。未检测不能加入保障池，也不能申请平台回收。</div>
+    <div v-if="u.status === 'verifying'" class="mb-4 callout callout-info">质量检测进行中，完成后页面会自动刷新。检测不是挂单前置条件；若你已是待挂单，也可以先去发布。</div>
     <div v-if="u.failure_reason && ['verify_failed', 'suspended', 'failed'].includes(u.status)" class="mb-4 callout callout-err">
       {{ u.failure_reason }}
     </div>
@@ -345,7 +359,7 @@ function runStatusText(status: string) {
     <div class="xm-stats" style="grid-template-columns: repeat(5, 1fr)">
       <div class="xm-stat"><b>状态</b><div class="mt-1"><StatusBadge kind="upstreamStatus" :value="u.status" /></div></div>
       <div class="xm-stat"><b>健康</b><div class="mt-1"><StatusBadge kind="health" :value="u.health" /></div></div>
-      <div class="xm-stat"><b>质量等级</b><strong>{{ u.grade ?? '—' }}</strong><em v-if="u.tier">档位 {{ u.tier }}</em></div>
+      <div class="xm-stat"><b>质量等级</b><strong>{{ untested ? '未检测' : (u.grade ?? '—') }}</strong><em v-if="u.tier && !untested">档位 {{ u.tier }}</em><em v-else-if="untested">没有有效检测证据</em></div>
       <div class="xm-stat">
         <b>24h 买家请求</b><strong>{{ u.stats_24h.requests }}</strong>
         <em>成功率 {{ percent(u.stats_24h.success_rate) }} · {{ ms(u.stats_24h.ttft_p50_ms) }}</em>
@@ -356,7 +370,8 @@ function runStatusText(status: string) {
       </div>
     </div>
 
-    <InspectionAppraisal class="mt-5" :appraisal="u.appraisal" :grade="u.grade" :quality-factor="u.quality_factor" :inspection-mode="u.inspection_mode" :price="u.listing?.multiplier" />
+    <MarketDetectionSummary :status="u.detection_status" :models="u.model_whitelist ?? []" :checks="u.model_checks" :last-checked-at="u.last_checked_at" />
+    <InspectionAppraisal v-if="!untested" class="mt-5" :appraisal="u.appraisal" :grade="u.grade" :quality-factor="u.quality_factor" :inspection-mode="u.inspection_mode" :price="u.listing?.multiplier" />
     <UpstreamModelWhitelist :upstream="u" class="mt-5" @changed="reload" />
     <QuotaPanel v-if="hasAccount" :key="quotaKey" :upstream-id="u.id" class="mt-5" />
     <ResetCreditsPanel v-if="hasAccount && u.reset_credits_supported" :upstream-id="u.id" class="mt-5" @changed="quotaKey++" />
@@ -416,13 +431,15 @@ function runStatusText(status: string) {
         </div>
       </template>
       <template v-else-if="needsAuth">
-        <p class="text-sm text-slate-600">完成授权并通过检测后，才能在这里挂单。请点上方「继续授权」。</p>
+        <p class="text-sm text-slate-600">完成授权、模型选择与隐私检查后即可挂单。请点上方「继续授权」。</p>
       </template>
       <template v-else-if="canCreateListing">
         <div class="flex flex-wrap gap-4 text-sm">
           <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="consignment" /> 按量通道（寄售）</label>
           <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="pack" /> 额度包</label>
-          <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="buyback" /> 平台回收</label>
+          <label class="flex items-center gap-1" :class="{ 'seller-choice': untested }" :aria-disabled="untested">
+            <input v-model="mode" type="radio" value="buyback" :disabled="untested" /> 平台回收
+          </label>
         </div>
         <div v-if="mode === 'consignment'" class="mt-3 grid max-w-xl grid-cols-2 gap-3">
           <div>
@@ -435,7 +452,9 @@ function runStatusText(status: string) {
             <input id="min-m" v-model="minAmount" class="input" inputmode="decimal" />
             <p class="hint">0 = 免费开通，之后按量扣余额</p>
           </div>
-          <label class="col-span-2 flex items-center gap-2 text-sm"><input v-model="joinPool" type="checkbox" /> 加入平台默认分组 / 保障池（推荐）</label>
+          <label class="col-span-2 flex items-center gap-2 text-sm">
+            <input v-model="joinPool" type="checkbox" :disabled="untested" /> 加入平台默认分组 / 保障池<span v-if="untested">（未检测不可加入）</span>
+          </label>
         </div>
         <div v-else-if="mode === 'pack'" class="mt-3 grid max-w-xl grid-cols-2 gap-3">
           <div>

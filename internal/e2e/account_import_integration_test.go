@@ -42,7 +42,7 @@ func TestAccountImportOnboarding(t *testing.T) {
 	}
 	seller.must("GET", fmt.Sprintf("/api/seller/upstreams/%d", u.ID), nil, &u)
 	if u.Status != listing.StatusVerifying {
-		t.Fatalf("import bypassed verification: %s", u.Status)
+		t.Fatalf("fixture should explicitly start verification after import: %s", u.Status)
 	}
 	if u.AccountEmail == nil || *u.AccountEmail != "exported@example.test" {
 		t.Fatalf("imported account email not recognized: %v", u.AccountEmail)
@@ -75,7 +75,7 @@ func TestAccountImportOnboarding(t *testing.T) {
 	setupToken := create("anthropic", "setup-token", 3)
 	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/import", setupToken.ID), map[string]any{"data": map[string]any{"access_token": "setup-import-token"}}, &setupToken)
 	if setupToken.Status != listing.StatusVerifying {
-		t.Fatal("setup-token should be verified")
+		t.Fatal("fixture should explicitly start setup-token verification")
 	}
 	g := create("gemini", "google_one", 4)
 	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/import", g.ID), map[string]any{"data": []any{map[string]any{"platform": "gemini", "type": "oauth", "credentials": map[string]any{"access_token": "g-access", "refresh_token": "g-refresh", "expires_at": 1900000000, "oauth_type": "google_one"}}}}, &g)
@@ -95,7 +95,7 @@ func TestAccountImportOnboarding(t *testing.T) {
 	k := create("kimi", "coding", 6)
 	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/import", k.ID), map[string]any{"data": json.RawMessage(`{"type":"apikey","platform":"kimi","credentials":{"api_key":"sk-import-coding-0123456789","base_url":"http://untrusted.test"}}`)}, &k)
 	if k.Status != listing.StatusVerifying {
-		t.Fatal("Coding Plan import should be verified")
+		t.Fatal("fixture should explicitly start Coding Plan verification")
 	}
 	bad := create("kimi", "coding", 7)
 	seller.expect(400, "POST", fmt.Sprintf("/api/seller/upstreams/%d/import", bad.ID), map[string]any{"data": map[string]any{"api_key": "invalid-key-0123456789"}})
@@ -202,7 +202,7 @@ func TestAccountImportWithExportedProxy(t *testing.T) {
 
 	seller.must("POST", importPath(u), file("proxy-token", "203.0.113.50", exported("203.0.113.50")), &u)
 	if u.Status != listing.StatusVerifying || u.ProxyID == nil {
-		t.Fatalf("import with a reachable proxy must bind it and start verification: %+v", u)
+		t.Fatalf("import with a reachable proxy must bind it before fixture requests verification: %+v", u)
 	}
 	proxy, err := e.app.Proxies.Get(e.ctx, *u.ProxyID)
 	if err != nil {

@@ -6,7 +6,7 @@ import OnboardingWizard from '@/components/OnboardingWizard.vue'
 import { market, seller } from '@/api'
 import type { MarketConfig, Proxy, Upstream } from '@/api/types'
 
-vi.mock('@/api', () => ({ market: { config: vi.fn() }, seller: { proxies: vi.fn(), createUpstream: vi.fn(), importAccount: vi.fn(), upstream: vi.fn(), completeOAuth: vi.fn(), submitCodingKey: vi.fn(), upstreamModels: vi.fn(), refreshUpstreamModels: vi.fn(), setUpstreamModels: vi.fn() } }))
+vi.mock('@/api', () => ({ market: { config: vi.fn() }, seller: { proxies: vi.fn(), createUpstream: vi.fn(), importAccount: vi.fn(), upstream: vi.fn(), completeOAuth: vi.fn(), submitCodingKey: vi.fn(), upstreamModels: vi.fn(), refreshUpstreamModels: vi.fn(), setUpstreamModels: vi.fn(), retryVerification: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 const connected = { success: true, message: 'ok', latency_ms: 120 }
@@ -28,7 +28,7 @@ describe('onboarding proxy selection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(seller.upstreamModels).mockResolvedValue({ catalog: ['claude-sonnet-4-5', 'claude-opus-4-1'], whitelist: null, fetched_at: null })
-    vi.mocked(seller.setUpstreamModels).mockResolvedValue({ id: 10, status: 'verifying', platform: 'anthropic', auth_type: 'oauth' } as Upstream)
+    vi.mocked(seller.setUpstreamModels).mockResolvedValue({ id: 10, status: 'ready', platform: 'anthropic', auth_type: 'oauth' } as Upstream)
     vi.mocked(seller.proxies).mockResolvedValue([proxy(1), proxy(2, { status: 'assigned', assigned_upstream_id: 7 }), proxy(3, { status: 'disabled' }), proxy(4, { sub2api_proxy_id: undefined })])
     vi.mocked(seller.createUpstream).mockResolvedValue({ id: 10, platform: 'anthropic', auth_type: 'oauth', proxy_id: 1 } as Awaited<ReturnType<typeof seller.createUpstream>>)
   })
@@ -110,10 +110,11 @@ describe('onboarding proxy selection', () => {
     await flushPromises()
     expect(seller.importAccount).toHaveBeenCalledWith(10, data, 1)
     expect(wrapper.text()).toContain('选择挂售模型')
-    await wrapper.findAll('button').find((b) => b.text() === '确认模型并开始检测')!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text() === '保存挂售模型')!.trigger('click')
     await flushPromises()
     expect(seller.setUpstreamModels).toHaveBeenCalledWith(10, ['claude-sonnet-4-5', 'claude-opus-4-1'])
-    expect(wrapper.text()).toContain('正在进行上架检测')
+    expect(wrapper.text()).toContain('可以直接发布挂单')
+    expect(wrapper.text()).toContain('未检测')
     wrapper.unmount()
   })
 
@@ -150,14 +151,15 @@ describe('onboarding proxy selection', () => {
     await flushPromises()
     expect(seller.importAccount).toHaveBeenCalledWith(11, data, 1)
     expect(wrapper.text()).toContain('选择挂售模型')
-    await wrapper.findAll('button').find((b) => b.text() === '确认模型并开始检测')!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text() === '保存挂售模型')!.trigger('click')
     await flushPromises()
     expect(seller.setUpstreamModels).toHaveBeenCalledWith(11, ['claude-sonnet-4-5', 'claude-opus-4-1'])
-    expect(wrapper.text()).toContain('正在进行上架检测')
+    expect(wrapper.text()).toContain('可以直接发布挂单')
+    expect(wrapper.text()).toContain('未检测')
     wrapper.unmount()
   })
 
-  it('OAuth 授权后先选择模型，提交白名单后才进入检测', async () => {
+  it('OAuth 授权后先选择模型，提交白名单后即可挂单且明确未检测', async () => {
     vi.mocked(seller.completeOAuth).mockResolvedValue({ id: 10, status: 'selecting_models', platform: 'anthropic', auth_type: 'oauth' } as Upstream)
     const wrapper = await openWizard()
     await wrapper.get('#onboarding-proxy').setValue('1')
@@ -169,10 +171,11 @@ describe('onboarding proxy selection', () => {
     expect(wrapper.text()).toContain('选择挂售模型')
     expect(seller.setUpstreamModels).not.toHaveBeenCalled()
     await wrapper.findAll('input[type="checkbox"]')[1]!.setValue(false)
-    await wrapper.findAll('button').find((b) => b.text() === '确认模型并开始检测')!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text() === '保存挂售模型')!.trigger('click')
     await flushPromises()
     expect(seller.setUpstreamModels).toHaveBeenCalledWith(10, ['claude-sonnet-4-5'])
-    expect(wrapper.text()).toContain('正在进行上架检测')
+    expect(wrapper.text()).toContain('可以直接发布挂单')
+    expect(wrapper.text()).toContain('未检测')
     wrapper.unmount()
   })
 
@@ -193,6 +196,54 @@ describe('onboarding proxy selection', () => {
     expect(wrapper.text()).toContain('选择挂售模型')
     expect(seller.upstreamModels).toHaveBeenLastCalledWith(12)
     expect(wrapper.find('#key').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('非空白名单保存后可直接挂单，不自动检测，卖家可主动检测', async () => {
+    const wrapper = await openWizard()
+    await wrapper.setProps({ open: false, resume: { id: 10, platform: 'anthropic', auth_type: 'oauth', status: 'selecting_models' } as Upstream })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text() === '清空')!.trigger('click')
+    const save = () => wrapper.findAll('button').find((b) => b.text() === '保存挂售模型')!
+    expect(save().attributes('disabled')).toBeDefined()
+    expect(seller.setUpstreamModels).not.toHaveBeenCalled()
+    await wrapper.findAll('input[type="checkbox"]')[0]!.setValue(true)
+    await save().trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('可以直接发布挂单')
+    expect(wrapper.text()).toContain('未检测')
+    expect(seller.retryVerification).not.toHaveBeenCalled()
+    expect(wrapper.findAll('button').some((b) => b.text() === '去发布挂单')).toBe(true)
+    vi.mocked(seller.retryVerification).mockResolvedValue({ id: 10, platform: 'anthropic', auth_type: 'oauth', status: 'verifying' } as Upstream)
+    await wrapper.findAll('button').find((b) => b.text() === '主动发起检测')!.trigger('click')
+    await flushPromises()
+    expect(seller.retryVerification).toHaveBeenCalledWith(10)
+    expect(wrapper.text()).toContain('正在进行上架检测')
+    wrapper.unmount()
+  })
+
+  it('基线账号仍按后端返回的 verifying 状态展示检测中', async () => {
+    vi.mocked(seller.setUpstreamModels).mockResolvedValue({ id: 10, platform: 'anthropic', auth_type: 'oauth', status: 'verifying' } as Upstream)
+    const wrapper = await openWizard()
+    await wrapper.setProps({ open: false, resume: { id: 10, platform: 'anthropic', auth_type: 'oauth', status: 'selecting_models' } as Upstream })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text() === '保存挂售模型')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('正在进行上架检测')
+    expect(wrapper.findAll('button').some((b) => b.text() === '去发布挂单')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['suspended', 'removing', 'removed'])('%s 上游不能从向导跳过检测恢复或挂单', async (status) => {
+    const wrapper = await openWizard()
+    await wrapper.setProps({ open: false, resume: { id: 10, platform: 'anthropic', auth_type: 'oauth', status } as Upstream })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    expect(wrapper.findAll('button').some((b) => ['去发布挂单', '主动发起检测', '保存挂售模型'].includes(b.text()))).toBe(false)
+    expect(seller.retryVerification).not.toHaveBeenCalled()
+    expect(seller.setUpstreamModels).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

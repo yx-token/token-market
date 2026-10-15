@@ -90,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 		{"GET /api/market/listings", s.marketListings},
 		{"GET /api/market/listings/{id}", s.marketListing},
 		{"GET /api/market/pools", s.marketPools},
+		{"GET /api/market/credit-offers", s.marketCreditOffers},
 		{"GET /api/market/vendors", s.marketVendors},
 	}
 	user := []route{
@@ -106,8 +107,15 @@ func (s *Server) Handler() http.Handler {
 		{"POST /api/buyer/refunds", s.requestRefund},
 		{"GET /api/buyer/refunds", s.listRefunds},
 		{"POST /api/buyer/packs", s.purchasePack},
+		{"POST /api/buyer/credit-packs", s.purchaseCreditPack},
+		{"GET /api/buyer/credit-packs", s.buyerCreditPacks},
+		{"POST /api/buyer/credit-packs/{id}/refund", s.refundCreditPack},
 		{"GET /api/buyer/packs", s.listPacks},
 		{"POST /api/buyer/packs/{id}/refund", s.refundPack},
+		{"GET /api/buyer/merchants", s.buyerMerchants},
+		{"GET /api/buyer/merchants/listings", s.buyerMerchantListings},
+		{"PUT /api/buyer/merchants/{id}", s.addBuyerMerchant},
+		{"DELETE /api/buyer/merchants/{id}", s.removeBuyerMerchant},
 		{"POST /api/buyer/keys", s.createKey},
 		{"GET /api/buyer/keys", s.listKeys},
 		{"GET /api/buyer/keys/{id}", s.getKey},
@@ -121,6 +129,9 @@ func (s *Server) Handler() http.Handler {
 		{"GET /api/buyer/bills", s.buyerBills},
 
 		{"GET /api/seller/vendors", s.marketVendors},
+		{"GET /api/seller/credit-offers", s.sellerCreditOffers},
+		{"POST /api/seller/credit-offers", s.createCreditOffer},
+		{"PUT /api/seller/credit-offers/{id}", s.updateCreditOffer},
 		{"GET /api/seller/listing-categories", s.listingCategories},
 		{"GET /api/seller/proxies", s.listSellerProxies},
 		{"POST /api/seller/proxies", s.createSellerProxy},

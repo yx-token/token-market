@@ -7,6 +7,8 @@ import type { SellerUsage, SellerUsageRecord, Upstream } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
 import PageHeader from '@/components/PageHeader.vue'
 import RefreshButton from '@/components/RefreshButton.vue'
+import SellerFundNote from '@/components/seller/SellerFundNote.vue'
+import '@/styles/seller-center.css'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import UsageChart from '@/components/UsageChart.vue'
@@ -20,8 +22,18 @@ const upstreamID = ref(Number(route.query.upstream) || 0)
 const days = ref(30)
 const channel = ref('')
 const model = ref('')
-const upstreams = useLoader(() => seller.upstreams(), [] as Upstream[] | null)
-const usage = useLoader(() => seller.usage({ upstream_id: upstreamID.value || undefined, days: days.value }), null as SellerUsage | null)
+const usageError = ref('')
+const upstreams = useLoader(async () => (await seller.upstreams()) ?? [], [] as Upstream[])
+const usage = useLoader(async () => {
+  try {
+    const data = await seller.usage({ upstream_id: upstreamID.value || undefined, days: days.value })
+    usageError.value = ''
+    return data
+  } catch (error) {
+    usageError.value = '用量没有载入'
+    throw error
+  }
+}, null as SellerUsage | null)
 const records = ref<SellerUsageRecord[]>([])
 const more = ref(false)
 const loadingRecords = ref(false)
@@ -71,10 +83,10 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
 </script>
 
 <template>
-  <div>
+  <div class="seller-page">
     <PageHeader
       title="用量"
-      description="你的账号经本平台被调用的情况。数据来自已入账的用量记录，约有 2 分钟延迟；不包含买家身份与请求内容。"
+      description="已完成的调用。买家付款和你的待结算会一起记上；可提现还要过冻结期。不含买家身份和请求内容。"
       :back-to="upstreamID ? `/seller/upstreams/${upstreamID}?from=usage` : undefined"
       :back-label="upstreamID ? `上游 ${nameOf.get(upstreamID) ?? `#${upstreamID}`}` : undefined"
     >
@@ -90,7 +102,13 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
       <RefreshButton :loading="usage.loading.value || loadingRecords" @click="reload" />
     </PageHeader>
 
-    <div class="xm-stats">
+    <SellerFundNote />
+    <div v-if="usageError && !usage.loading.value" class="seller-empty">
+      <strong>用量没有载入</strong>
+      <p>请重试。没有调用记录不是失败。</p>
+      <button type="button" class="xm-btn xm-btn-primary" @click="reload">重试</button>
+    </div>
+    <div v-else class="xm-stats seller-stat-grid">
       <div class="xm-stat">
         <b>请求数</b>
         <strong>{{ t?.requests ?? '—' }}</strong>
@@ -166,7 +184,7 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
     </div>
 
     <div class="card mt-5">
-      <div class="mb-3 flex flex-wrap items-center gap-3">
+      <div class="seller-toolbar mb-3">
         <h2 class="card-title !mb-0">调用记录</h2>
         <select v-model="channel" class="input ml-auto w-40" aria-label="来源">
           <option value="">全部来源</option>

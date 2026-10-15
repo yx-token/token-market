@@ -25,11 +25,12 @@
 | GET | `/api/market/listings` | 生效中的寄售 / 额度包（已排除降智、不可用、不面向买家的上游）。每项含挂售模型 `models: string[]`；筛选：`platform`、`model`、`grade`、`max_price`、`kind`（`channel` / `pack`）；排序 `sort`：`price`（默认）/ `success` / `ttft`。模型筛选按模型 ID 精确匹配；未声明白名单的存量上游不限制模型，也会匹配 |
 | GET | `/api/market/listings/:id` | 挂单摘要：厂商、档位、挂售模型 `models: string[]`、买家价 `price`（= m_s × (1 + c)）、`sku_kind`、额度包 `face_value`/`stock`、按量 `min_amount`、健康状态、等级、24h 成功率与请求数、首字延迟；存量未声明白名单时 `models` 为空数组 |
 | GET | `/api/market/pools` | 默认分组列表及售价 D |
+| GET | `/api/market/credit-offers?seller_id=123` | 指定店铺正在销售的活动包：人民币售价、美元额度及适用厂商/模型 |
 | GET | `/api/market/discovery` | 首页运营配置（类目树、横幅、静态槽位等） |
 | GET | `/api/market/recommend` | 首页四宫格推荐结果（按 `market_recommend` 因子打分） |
 | GET | `/api/market/categories` | 公开分类树（仅启用节点） |
 | GET | `/api/market/vendors` | 已开放接入的厂商、接入方式、寄售倍率区间、是否支持自留比例 |
-| GET | `/api/market/config` | 前端需要的公开参数：Edge 调用地址、抽佣率、冻结天数、最低提现额、最大跳数、可用的支付方式 `payment_channels`、单笔充值上下限 |
+| GET | `/api/market/config` | 前端需要的公开参数：Edge 调用地址、抽佣率、冻结小时数 `freeze_hours`、活动包美元换算率 `credit_usd_to_balance_rate`、最低提现额、最大跳数、可用的支付方式 `payment_channels`、单笔充值上下限 |
 | GET | `/api/market/prices` | 官方价目（美元 / 百万 token），倍率的计算基准；取自 sub2api 内置价目表，模型列表由系统设置 `price_models` 决定 |
 
 ## 3. 买家
@@ -37,6 +38,12 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/buyer/wallet` | `balance`（sub2api 实时余额）、`refundable`（可按充值单退款的余额：实时余额减去未用完的额度包）、`ledger_cash`（账面余额，用量入账有几分钟延迟）、近期充值、进行中的退款 |
+| GET | `/api/buyer/merchants` | 当前买家的商家清单及可选挂单 |
+| PUT / DELETE | `/api/buyer/merchants/:seller_id` | 幂等加入 / 移除商家；移除后相关 Key 不再调用该商家 |
+| GET | `/api/buyer/merchants/listings` | 商家清单内当前可用的挂单，用于配置 Key 优先顺序 |
+| POST | `/api/buyer/credit-packs` | 购买店铺活动包：`offer_id`、`idempotency_key`；从平台余额扣人民币售价，同一买家重复幂等键不重复扣款 |
+| GET | `/api/buyer/credit-packs` | 已购活动包余额、购买快照与开通状态 |
+| POST | `/api/buyer/credit-packs/:id/refund` | 按剩余额度对应实付款退回平台余额，等待在途调用与用量结算 |
 | POST | `/api/buyer/recharge` | 创建充值订单：`amount`（两位小数）、`channel`（`alipay_page` / `alipay_f2f` / `wechat_native` / `manual`，默认 `manual`）。返回订单与 `payment`：`kind` 为 `redirect`（跳转 `url`，支付宝收银台）、`qrcode`（把 `qr_code` 渲染成二维码）或 `manual` |
 | GET | `/api/buyer/recharge/:id` | 充值订单：状态 `pending` / `crediting` / `credited` / `failed` / `cancelled` / `expired`；待支付订单带 `payment` 便于继续支付。待支付的在线订单距上次查单超过 5 秒时先向渠道查单 |
 | POST | `/api/buyer/recharge/:id/cancel` | 取消未支付订单（在线订单先向渠道关单，发现已支付返回 409 `ORDER_PAID`） |
@@ -57,7 +64,7 @@
 | GET | `/api/buyer/usage/:edge_request_id` | 单次请求详情：每一跳的状态、是否产生费用（失败的跳标注"未产生费用"）、实际服务的挂单、费用 |
 | GET | `/api/buyer/bills` | 按日汇总的账单：`days`（默认 30） |
 
-创建 Key 示例：
+先将挂单对应卖家加入商家清单，再按 `hops` 顺序创建或修改 Key。服务端拒绝清单外挂单；迁移会从存量 Key 回填商家，保持已有配置可用。创建 Key 示例：
 
 ```json
 {
@@ -81,7 +88,7 @@
 
 也可以只走默认分组：`{"route": {"type": "default", "pool": "tm-pool-claude"}}`。
 
-校验：最多 5 跳；默认分组只能在最后一跳；同一挂单不能重复出现；只能指定生效中的寄售或额度包挂单（回收挂单只通过默认分组售卖）；链内各跳是同一平台，最后一跳的默认分组必须是同平台分组或全模型分组（`platform = composite`），避免同一请求在不同协议的上游之间转换。额度包购买走 `/api/buyer/packs`，不要手工把额度包挂进多跳链。
+校验：最多 5 跳；默认分组只能在最后一跳；同一挂单不能重复出现；指定商家必须已在清单内，且挂单当前可用（回收挂单只通过默认分组售卖）；链内各跳是同一平台，最后一跳的默认分组必须是同平台分组或全模型分组（`platform = composite`），避免同一请求在不同协议的上游之间转换。旧额度包购买走 `/api/buyer/packs`，不要手工把旧额度包挂进多跳链；店铺活动包使用普通 Key 自动抵扣。
 
 ## 4. 卖家
 
@@ -100,14 +107,14 @@
 | POST | `/api/seller/upstreams/:id/oauth/start` | 获取授权链接（30 分钟有效）；Gemini Code Assist 可选 `project_id`（GCP 项目 ID） |
 | POST | `/api/seller/upstreams/:id/oauth/complete` | 提交授权码或完整回调地址：`code`。需要 state 的厂商（OpenAI、Gemini 等）请粘贴完整回调地址 |
 | POST | `/api/seller/upstreams/:id/coding-key` | 提交 Coding Plan key：`api_key`；智谱国内站团队版另填 `organization`、可选 `project`；查不到官方窗口用量的 key 被拒绝 |
-| POST | `/api/seller/upstreams/:id/import` | 导入授权信息：`data` 为 sub2api v1 导出文件、账号数组、单个账号或纯凭证对象；`account_index` 可选，默认 0。每次导入一个账号。上游已绑定代理时沿用该代理、忽略文件中的代理；未绑定时按账号的 `proxy_key` 取文件 `proxies` 中的代理，登记到自己的代理列表（同一地址复用原记录）并实测连通，失败返回 `IMPORT_PROXY_UNREACHABLE`，文件缺少引用的代理返回 `IMPORT_PROXY_NOT_FOUND`，代理已被占用或停用返回 `PROXY_IN_USE`。仍执行隐私设置、订阅额度校验与上架检测 |
+| POST | `/api/seller/upstreams/:id/import` | 导入授权信息：`data` 为 sub2api v1 导出文件、账号数组、单个账号或纯凭证对象；`account_index` 可选，默认 0。每次导入一个账号。上游已绑定代理时沿用该代理、忽略文件中的代理；未绑定时按账号的 `proxy_key` 取文件 `proxies` 中的代理，登记到自己的代理列表（同一地址复用原记录）并实测连通，失败返回 `IMPORT_PROXY_UNREACHABLE`，文件缺少引用的代理返回 `IMPORT_PROXY_NOT_FOUND`，代理已被占用或停用返回 `PROXY_IN_USE`。仍执行隐私设置与订阅额度校验，质量检测可选 |
 | POST | `/api/seller/upstreams/:id/reauthorize` | 授权失效后重新授权：返回新的授权链接，之后同样用 `oauth/complete` 提交；必须是同一个官方账号；可选 `project_id` 同上 |
-| POST | `/api/seller/upstreams/:id/retry-verification` | 上架检测失败后重新检测 |
+| POST | `/api/seller/upstreams/:id/retry-verification` | 未检测的 ready 上游主动检测，或检测失败后重新检测；不能绕过授权与隔离 |
 | GET | `/api/seller/upstreams` | 上游列表。`account_email` 是授权或导入时识别的官方账号邮箱，控制台用它作为账号名称（Gemini 与 Coding Plan 没有邮箱，按上游编号展示）；不向买家展示 |
 | GET | `/api/seller/upstreams/:id` | 详情：状态、健康状态、档位、等级、挂售模型 `model_whitelist: string[] \| null`、模型目录 `model_catalog: string[]`、目录获取时间 `model_catalog_at`、当前挂单与报价、近 24 小时服务情况（请求数、收益、首字延迟、成功率）、能否使用重置卡与授权自动用卡（`reset_credits_supported`、`auto_reset_supported`）及自动用卡设置 |
 | GET | `/api/seller/upstreams/:id/models` | 已缓存的模型目录与白名单：`catalog: string[]`、`whitelist: string[] \| null`、`fetched_at`（RFC 3339 时间或 null） |
 | POST | `/api/seller/upstreams/:id/models/refresh` | 重新获取并缓存账号模型目录，返回格式同 GET models；不改变白名单。直接同步失败时回退查询，已声明白名单的上游保留并合入缓存目录；两种方式都失败时返回 503 `MODEL_CATALOG_UNAVAILABLE`，保留原目录与获取时间 |
-| PUT | `/api/seller/upstreams/:id/models` | 提交或修改挂售白名单：`{"models":["模型 ID"]}`，必须非空，目录非空时只能选目录内模型；目录为空时允许手动输入具体模型 ID，不接受空白字符或通配符。立即合并写入 sub2api 的 `credentials.model_mapping`，返回更新后的上游；处于 `selecting_models` 时进入 `verifying` 并开始上架检测 |
+| PUT | `/api/seller/upstreams/:id/models` | 提交或修改挂售白名单：`{"models":["模型 ID"]}`，必须非空，目录非空时只能选目录内模型；目录为空时允许手动输入具体模型 ID，不接受空白字符或通配符。立即合并写入 sub2api 的 `credentials.model_mapping`，返回更新后的上游；处于 `selecting_models` 时完成隐私校验后进入 `ready`，普通卖家可不检测直接挂单 |
 | PUT | `/api/seller/upstreams/:id/settings` | 修改自留比例：`self_reserve_percent`（0–90，仅支持窗口阈值的厂商） |
 | GET | `/api/seller/upstreams/:id/quota` | 账号的官方订阅额度：各窗口（5 小时、7 天、Sonnet / Opus 7 天、30 天、Gemini 每日、Antigravity 各模型、Coding Plan 各窗口）的使用率、重置时间与窗口内经平台的请求数 / token / 官方价费用，以及授权失效、封禁等提示和自留比例。Claude 默认读 sub2api 的响应头采样快照（不访问官方）；`refresh=1` 向官方查询（同一上游至少间隔 2 分钟，其余 1 分钟内复用结果） |
 | GET | `/api/seller/upstreams/:id/reset-credits` | 重置卡（仅 Codex 与 Claude 的 OAuth 账号，详情的 `reset_credits_supported` 为真）：`queried`（是否有官方数据）、`available_count`、各张卡的到期时间（Claude 另有恢复的窗口 `clears`、能否使用及原因）、官方冷却时间；Codex 另有自动用卡 `auto`（是否授权、是否已在底层生效、卖家设定与实际生效的阈值、暂停线、sub2api 的运行状态）；最近 20 条用卡记录 `events`（手动与平台自动）。Codex 默认读 sub2api 缓存的快照，Claude 默认返回最近一次查询结果；`refresh=1` 向官方查询（30 秒内复用结果） |
@@ -115,9 +122,11 @@
 | PUT | `/api/seller/upstreams/:id/auto-reset` | 授权或取消平台自动用卡（仅 Codex）：`enabled`，可选 `threshold_5h_percent`、`threshold_7d_percent`（1 到暂停线 100 − 自留比例，留空跟随暂停线，超出返回 `INVALID_AUTO_RESET_THRESHOLD`）。只在挂单面向买家时生效 |
 | DELETE | `/api/seller/upstreams/:id` | 删除上游 |
 
-OAuth 授权、Coding Key 和账号导入成功后进入 `selecting_models`（待选择挂售模型），先获取模型目录，选择提交后才检查隐私设置并开始上架检测；隐私设置失败时保留白名单，进入 `verify_failed` 等待重试。目录优先直接同步上游，失败回退查询账号模型；白名单按 `{模型 ID: 模型 ID}` 保存，重新授权与导入后补写，其他登录凭证保留。存量 `model_whitelist = null` 表示允许全部模型，检测重试时也不要求补选，卖家可以在详情页补填。接入、刷新、白名单提交和重新授权串行执行，同一上游忙碌或操作容量已满时返回 409 `UPSTREAM_BUSY`，可稍后重试；数据库连接池须至少配置两条连接。白名单同步结果不确定或本地保存失败时尝试恢复原映射，上架检测入队失败时回到可重试的 `verify_failed`。
+OAuth 授权、Coding Key 和账号导入成功后进入 `selecting_models`（待选择挂售模型），先获取模型目录，选择提交后检查隐私设置，普通卖家通过后进入 `ready` 可直接挂单，基线账号仍执行检测；隐私设置失败时保留白名单，进入 `verify_failed` 等待重试。目录优先直接同步上游，失败回退查询账号模型；白名单按 `{模型 ID: 模型 ID}` 保存，重新授权与导入后补写，其他登录凭证保留。存量 `model_whitelist = null` 表示允许全部模型，检测重试时也不要求补选，卖家可以在详情页补填。接入、刷新、白名单提交和重新授权串行执行，同一上游忙碌或操作容量已满时返回 409 `UPSTREAM_BUSY`，可稍后重试；数据库连接池须至少配置两条连接。白名单同步结果不确定或本地保存失败时尝试恢复原映射，上架检测入队失败时回到可重试的 `verify_failed`。
 
 ### 4.2 挂单
+
+独立店铺促销：`GET / POST /api/seller/credit-offers` 列出 / 创建活动，`PUT /api/seller/credit-offers/:id` 修改或停售。请求字段为 `title`、`description`、`price_cny`、`face_value_usd`、`allowed_platforms`、`allowed_models`，更新还可传 `status: active|paused`。空范围表示本店全部厂商或模型；已购包保留购买时的快照。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -175,7 +184,7 @@ OAuth 授权、Coding Key 和账号导入成功后进入 `selecting_models`（�
 
 | 模块 | 接口 |
 |---|---|
-| 系统设置 | `GET/PUT /api/admin/settings`：抽佣率、冻结天数、最低提现额、自动审核阈值、等级系数、报价有效期、改价冷却、退款等待、新卖家期、价目模型、质量检测超时（`probe_request_timeout_seconds`、`probe_batch_timeout_minutes`）等（部分更新） |
+| 系统设置 | `GET/PUT /api/admin/settings`：抽佣率、冻结小时数 `freeze_hours`、活动包美元换算率 `credit_usd_to_balance_rate`、最低提现额、自动审核阈值、等级系数、报价有效期、改价冷却、退款等待、新卖家期、价目模型、质量检测超时（`probe_request_timeout_seconds`、`probe_batch_timeout_minutes`）等（部分更新） |
 | 市场运营 | `GET/PUT /api/admin/market-discovery`：首页类目/横幅等运营配置；`GET/PUT /api/admin/market-recommend`：三层推荐配置（`factors` 因子目录 → `profiles` 推荐类型 → `tiles` 首页四格选型）；`GET/POST /api/admin/market-categories`、`PUT/DELETE /api/admin/market-categories/:id`：分类树 CRUD |
 
 | 系统更新 | `GET /api/admin/system/version`：当前版本、提交、运行平台、可用状态和最近更新任务；`GET /api/admin/system/check-update[?force=true]`：最新正式 Release 与更新包是否兼容；`POST /api/admin/system/update`：提交 `{"version":"vX.Y.Z"}`，成功返回 202 和任务，管理员操作写入审计日志 |

@@ -234,7 +234,11 @@ func (f *Funds) advanceRefund(ctx context.Context, r Refund) error {
 		balance := 0.0
 		if len(bs) == 1 {
 			// 退到分；加微小量避免 9.16×100 = 915.999… 之类的浮点误差少退一分
-			balance = math.Floor(bs[0].Balance*100+1e-6) / 100
+			fen, err := f.refundableFen(ctx, r.UserID, bs[0].Balance)
+			if err != nil {
+				return err
+			}
+			balance = float64(fen) / 100
 		}
 		if balance <= 0 {
 			if _, err := f.DB.Exec(ctx, "UPDATE refunds SET status = 'done', amount = 0, finished_at = now() WHERE id = $1", r.ID); err != nil {

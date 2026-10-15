@@ -71,7 +71,7 @@ async function refund() {
 
 <template>
   <div>
-    <PageHeader title="钱包" description="充值进平台余额，供调用扣费。买额度包需余额 ≥ 面额（账面预付，调用仍从可调用余额扣）。">
+    <PageHeader title="钱包" description="充值后可支付调用费用或购买店铺活动包。活动包仅限对应店铺与适用模型，额度用完后自动扣平台余额。">
       <button type="button" class="xm-btn xm-btn-ghost" :disabled="!!wallet.data.value?.active_refund" @click="showRefund = true">申请退款</button>
       <button type="button" class="xm-btn xm-btn-primary" @click="newRecharge">充值</button>
     </PageHeader>

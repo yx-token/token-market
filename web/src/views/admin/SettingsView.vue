@@ -15,7 +15,6 @@ const { busy, run } = useAction()
 
 const numberFields: { key: keyof Settings; label: string; hint: string; step?: string }[] = [
   { key: 'commission_rate', label: '寄售抽佣率 c', hint: '买家价 = 卖家倍率 × (1 + c)，例如 0.2', step: '0.01' },
-  { key: 'freeze_days', label: '收益冻结天数', hint: '结算后多少天可提现' },
   { key: 'withdraw_min', label: '最低提现金额（元）', hint: '', step: '0.01' },
   { key: 'withdraw_auto_approve_max', label: '自动审核上限（元）', hint: '不超过该金额且无风险时自动通过', step: '0.01' },
   { key: 'manual_retest_daily_limit', label: '卖家每日手动复测次数', hint: '' },
@@ -36,6 +35,8 @@ onMounted(load)
 async function load() {
   try {
     s.value = await admin.settings()
+    if (s.value.freeze_hours == null) s.value.freeze_hours = Math.max(0, Number(s.value.freeze_days) || 0) * 24
+    if (s.value.credit_usd_to_balance_rate == null) s.value.credit_usd_to_balance_rate = 1
     grades.value = Object.entries(s.value.grade_coefficients)
       .map(([k, v]) => `${k}=${v}`)
       .join(', ')
@@ -52,7 +53,25 @@ async function save() {
     const [k, v] = part.split('=').map((x) => x.trim())
     if (k && v !== undefined && !Number.isNaN(Number(v))) coeff[k] = Number(v)
   }
-  const patch: Partial<Settings> = { ...s.value, grade_coefficients: coeff, price_models: models.value.split(/[,\s]+/).filter(Boolean) }
+  const hours = Number(s.value.freeze_hours)
+  const rate = Number(s.value.credit_usd_to_balance_rate)
+  if (!Number.isInteger(hours) || hours < 0) {
+    toast.error('冻结小时数须为不小于 0 的整数')
+    return
+  }
+  if (!(rate > 0) || rate > 1_000_000) {
+    toast.error('美元兑换率须大于 0 且不超过 1000000')
+    return
+  }
+  const { freeze_days, ...rest } = s.value
+  void freeze_days
+  const patch: Partial<Settings> = {
+    ...rest,
+    grade_coefficients: coeff,
+    price_models: models.value.split(/[,\s]+/).filter(Boolean),
+    freeze_hours: hours,
+    credit_usd_to_balance_rate: rate,
+  }
   for (const f of numberFields) (patch as Record<string, unknown>)[f.key] = Number(s.value[f.key])
   const res = await run(() => admin.updateSettings(patch), '已保存')
   if (res) s.value = res
@@ -64,6 +83,22 @@ async function save() {
     <PageHeader title="系统设置">
       <button class="btn-primary" :disabled="busy" @click="save">保存</button>
     </PageHeader>
+    <section class="card mb-4" aria-labelledby="freeze-settings">
+      <h2 id="freeze-settings" class="mb-1 text-sm font-semibold">卖家收益冻结</h2>
+      <p class="hint mb-3">用量入账时买家扣费和卖家待结算已经记账。这里只决定待结算何时变成可提现。默认 24 小时。保存后下一轮解冻直接读取，不用重启。</p>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+          <label class="label" for="freeze_hours">冻结小时数</label>
+          <input id="freeze_hours" v-model.number="s.freeze_hours" class="input" type="number" min="0" step="1" data-testid="freeze-hours" />
+          <p class="hint">0 表示没有额外冻结，仍等到该小时结束，可能再等不足 1 小时。按小时桶结束后起算，避免当小时最后一笔提前释放。不要再改天数，避免不满 24 小时被进位。</p>
+        </div>
+        <div>
+          <label class="label" for="credit_usd_to_balance_rate">活动额度美元兑换率</label>
+          <input id="credit_usd_to_balance_rate" v-model.number="s.credit_usd_to_balance_rate" class="input" type="number" min="0.00000001" step="0.00000001" data-testid="credit-rate" />
+          <p class="hint">1 美元活动额度可抵多少平台余额单位，默认 1，必须大于 0。只写入新购买的快照，不改钱包全局扣费，也不追改已购包。调用金额不再乘一次店铺倍率。</p>
+        </div>
+      </div>
+    </section>
     <div class="card grid grid-cols-1 gap-4 md:grid-cols-2">
       <div v-for="f in numberFields" :key="f.key">
         <label class="label" :for="f.key">{{ f.label }}</label>

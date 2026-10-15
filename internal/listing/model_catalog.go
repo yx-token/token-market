@@ -15,13 +15,23 @@ import (
 
 // UpstreamModels 保留目录与卖家选择的区别：白名单为空值时，存量账号不限制模型。
 type UpstreamModels struct {
-	Catalog   []string   `json:"catalog"`
-	Whitelist []string   `json:"whitelist"`
-	FetchedAt *time.Time `json:"fetched_at"`
+	DetectionStatus string           `json:"detection_status"`
+	ModelChecks     []ModelDetection `json:"model_checks"`
+	Catalog         []string         `json:"catalog"`
+	Whitelist       []string         `json:"whitelist"`
+	FetchedAt       *time.Time       `json:"fetched_at"`
 }
 
 func upstreamModels(u *Upstream) *UpstreamModels {
-	return &UpstreamModels{Catalog: u.ModelCatalog, Whitelist: u.ModelWhitelist, FetchedAt: u.ModelCatalogAt}
+	status := u.DetectionStatus
+	if status == "" {
+		status = "untested"
+	}
+	checks := u.ModelChecks
+	if checks == nil {
+		checks = modelDetections(nil, u.ModelWhitelist, nil)
+	}
+	return &UpstreamModels{DetectionStatus: status, ModelChecks: checks, Catalog: u.ModelCatalog, Whitelist: u.ModelWhitelist, FetchedAt: u.ModelCatalogAt}
 }
 
 func (s *Service) GetModels(ctx context.Context, sellerID, upstreamID int64) (*UpstreamModels, error) {
@@ -181,7 +191,7 @@ func modelMapping(models []string) map[string]string {
 	return mapping
 }
 
-// SetModels 先确认 sub2api 已接受白名单，再保存并推进待选择账号的上架检测。
+// SetModels 先确认 sub2api 已接受白名单，再保存并准备直接挂单；检测由卖家主动发起。
 func (s *Service) SetModels(ctx context.Context, sellerID, upstreamID int64, models []string) (*Upstream, error) {
 	release, err := s.lockAccountModels(ctx, upstreamID)
 	if err != nil {
@@ -212,7 +222,10 @@ func (s *Service) SetModels(ctx context.Context, sellerID, upstreamID int64, mod
 	}
 	u.ModelWhitelist = selected
 	if u.Status == StatusSelectingModels {
-		return s.startVerification(ctx, u)
+		if u.IsReference {
+			return s.startVerification(ctx, u)
+		}
+		return s.prepareAuthorizedListing(ctx, u)
 	}
 	s.kick(ctx)
 	return GetUpstream(ctx, s.DB, u.ID)

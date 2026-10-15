@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 接入上游：选择接入方式 → 完成账号接入 → 选择挂售模型 → 进入上架检测。
+// 接入上游：选择接入方式 → 完成账号接入 → 选择挂售模型 → 可挂单，检测由卖家主动发起。
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { market, seller } from '@/api'
@@ -115,11 +115,13 @@ watch(open, (v) => {
   authURL.value = ''
   projectID.value = ''
   team.value = { organization: '', project: '' }
+  selectedModels.value = []
+  modelsValid.value = false
   if (props.resume) {
     upstream.value = props.resume
     platform.value = props.resume.platform
     authType.value = props.resume.auth_type
-    step.value = props.resume.status === 'selecting_models' ? 'models' : 'authorize'
+    step.value = props.resume.status === 'selecting_models' ? 'models' : ['draft', 'authorizing', 'failed'].includes(props.resume.status) ? 'authorize' : 'done'
     // 读取代理策略，判断未绑定代理的上游是否只能通过导入接入。
     if (step.value === 'authorize') void loadProxyChoices()
   } else {
@@ -197,6 +199,19 @@ async function submitModels() {
 function goDetail() {
   open.value = false
   if (upstream.value) router.push(`/seller/upstreams/${upstream.value.id}`)
+}
+
+function goPublish() {
+  open.value = false
+  if (upstream.value?.status === 'ready') router.push({ path: '/seller/publish', query: { upstream: upstream.value.id } })
+}
+
+async function startVerification() {
+  if (!upstream.value || !['ready', 'verify_failed'].includes(upstream.value.status)) return
+  const u = await run(() => seller.retryVerification(upstream.value!.id))
+  if (!u) return
+  upstream.value = u
+  emit('done')
 }
 </script>
 
@@ -287,7 +302,7 @@ function goDetail() {
           <p v-else-if="importOnly" class="hint text-red-600" role="alert">所选账号在导入文件中没有代理，无法导入。请选择带代理的账号，或重新接入并选择已配置的代理。</p>
           <p v-else class="hint">所选账号在导入文件中没有代理，将按平台设置接入。</p>
         </template>
-        <p class="hint">{{ pendingProxy ? '' : '导入账号沿用本上游已绑定的代理，导出文件中的代理不会被使用。' }}分组和调度配置不会被导入；导入后仍需通过隐私设置及上架检测，Coding Plan 会校验官方订阅额度。</p>
+        <p class="hint">{{ pendingProxy ? '' : '导入账号沿用本上游已绑定的代理，导出文件中的代理不会被使用。' }}分组和调度配置不会被导入；导入后仍需通过隐私设置检查并选择挂售模型，Coding Plan 会校验官方订阅额度。</p>
       </template>
 
       <template v-else-if="isOAuth">
@@ -347,12 +362,15 @@ function goDetail() {
 
     <template v-else-if="step === 'models'">
       <h2 class="font-display text-lg font-bold">选择挂售模型</h2>
-      <p class="text-sm text-ink-600">账号接入已完成。选择要挂售的模型后开始上架检测，通过后才能发布商品。</p>
+      <p class="text-sm text-ink-600">账号接入已完成。至少选择一个挂售模型并保存后即可发布商品，无需先运行质量检测。未检测状态会向买家明确展示。</p>
       <ModelWhitelistSelector v-if="upstream" v-model="selectedModels" :upstream-id="upstream.id" :disabled="busy" @valid="modelsValid = $event" />
     </template>
 
     <template v-else>
-      <div v-if="upstream?.status === 'verifying'" class="callout callout-ok">
+      <div v-if="upstream?.status === 'ready'" class="callout callout-ok">
+        授权与模型白名单已保存，可以直接发布挂单。尚未运行质量检测时，商品与模型会标注“未检测”。你也可以主动发起检测。
+      </div>
+      <div v-else-if="upstream?.status === 'verifying'" class="callout callout-ok">
         授权完成，正在进行上架检测（通常几分钟内完成）。检测通过后就可以挂单了，检测报告可以在上游详情中查看。
       </div>
       <div v-else class="callout callout-warn">
@@ -364,8 +382,12 @@ function goDetail() {
       <button type="button" class="xm-btn xm-btn-ghost" @click="open = false">关闭</button>
       <button v-if="step === 'choose'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || loadingProxies || proxyLoadError || !platform || !authType || (requireSellerProxy && !proxyID)" @click="create">下一步</button>
       <button v-else-if="step === 'authorize'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || (mode === 'import' ? !canImport : (isOAuth ? !code.trim() : !apiKey.trim()))" @click="submit">{{ mode === 'import' ? '导入账号' : '提交' }}</button>
-      <button v-else-if="step === 'models'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || !modelsValid" @click="submitModels">确认模型并开始检测</button>
-      <button v-else type="button" class="xm-btn xm-btn-primary" @click="goDetail">查看上游</button>
+      <button v-else-if="step === 'models'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || !modelsValid" @click="submitModels">保存挂售模型</button>
+      <template v-else>
+        <button v-if="upstream?.status === 'ready' || upstream?.status === 'verify_failed'" type="button" class="xm-btn xm-btn-ghost" :disabled="busy" @click="startVerification">主动发起检测</button>
+        <button type="button" class="xm-btn xm-btn-ghost" @click="goDetail">查看上游</button>
+        <button v-if="upstream?.status === 'ready'" type="button" class="xm-btn xm-btn-primary" :disabled="busy" @click="goPublish">去发布挂单</button>
+      </template>
     </template>
   </ModalDialog>
 </template>

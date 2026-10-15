@@ -20,8 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// QualityHook 由质量检测模块实现。首次配置的上游必须通过上架检测才能挂单、被调度（与厂商的检测开关无关，
-// 开关只控制之后的检测）：卖家选择挂售模型后排队上架检测，上游保持 verifying，检测完成后由质量模块推进状态。
+// QualityHook 由质量检测模块实现。卖家可主动检测；有效授权与白名单允许未检测挂单，不能据此生成检测通过证据。
 type QualityHook interface {
 	StartOnboardingCheck(ctx context.Context, upstreamID int64, platform, authType string) error
 }
@@ -642,7 +641,10 @@ func (s *Service) afterAccountCreated(ctx context.Context, upstreamID int64, req
 		if err := s.Admin.SetAccountModelWhitelist(ctx, *u.Sub2APIAccountID, u.ModelWhitelist); err != nil {
 			return nil, fmt.Errorf("接入后同步挂售模型：%w", err)
 		}
-		return s.startVerification(ctx, u)
+		if u.IsReference {
+			return s.startVerification(ctx, u)
+		}
+		return s.prepareAuthorizedListing(ctx, u)
 	}
 	return GetUpstream(ctx, s.DB, u.ID)
 }
@@ -668,7 +670,8 @@ func (s *Service) failStartingVerification(ctx context.Context, upstreamID int64
 	return MarkVerified(cleanup, s.DB, upstreamID, false, reason)
 }
 
-func (s *Service) startVerification(ctx context.Context, u *Upstream) (*Upstream, error) {
+// ensureListingPrivacy 保留授权流程中的隐私保护，跳过质检不能跳过此步骤。
+func (s *Service) ensureListingPrivacy(ctx context.Context, u *Upstream) (bool, error) {
 	// 新账号先保存白名单；隐私设置失败后的重试不会绕过首次模型选择。
 	if privacyPlatforms[u.Platform] && u.AuthType == "oauth" {
 		ok := false
@@ -678,14 +681,72 @@ func (s *Service) startVerification(ctx context.Context, u *Upstream) (*Upstream
 			ok = true
 		}
 		if _, err := s.DB.Exec(ctx, "UPDATE upstreams SET privacy_ok = $2 WHERE id = $1", u.ID, ok); err != nil {
-			return nil, err
+			return false, err
 		}
 		if !ok {
 			if err := s.transitionAccountStatus(ctx, u, StatusVerifyFailed, strPtr("cannot disable training data usage on this account")); err != nil {
-				return nil, err
+				return false, err
 			}
-			return GetUpstream(ctx, s.DB, u.ID)
+			return false, nil
 		}
+	}
+	return true, nil
+}
+
+// requireAuthorizedAccount 阻止已撤销/停用的远端账号借未检测路径上架。
+func (s *Service) requireAuthorizedAccount(ctx context.Context, u *Upstream) error {
+	if u.Sub2APIAccountID == nil {
+		return ErrBadState
+	}
+	account, err := s.Admin.GetAccount(ctx, *u.Sub2APIAccountID)
+	if err != nil {
+		return err
+	}
+	if account.Status != "active" {
+		return httpx.Conflict("AUTHORIZATION_UNAVAILABLE", "upstream authorization is unavailable; authorize an active account before listing")
+	}
+	return nil
+}
+
+// prepareAuthorizedListing 只将刚完成授权、模型选择或隐私重试的账号置为 ready。
+// 不改变 health、grade、Q 或任何质检记录，不能复活冻结、移除或已判定不健康账号。
+func (s *Service) prepareAuthorizedListing(ctx context.Context, u *Upstream) (*Upstream, error) {
+	if u.IsReference || u.Sub2APIAccountID == nil || len(u.ModelWhitelist) == 0 ||
+		(u.Status != StatusSelectingModels && u.Status != StatusVerifyFailed && u.Status != StatusFailed && u.Status != StatusAuthorizing && u.Status != StatusDraft) ||
+		u.Health == HealthDegraded || u.Health == HealthUnavailable {
+		return nil, ErrBadState
+	}
+	v, err := GetVendor(ctx, s.DB, u.Platform)
+	if err != nil {
+		return nil, err
+	}
+	if !v.Enabled {
+		return nil, ErrVendorDisabled
+	}
+	if err := s.requireAuthorizedAccount(ctx, u); err != nil {
+		return nil, err
+	}
+	ok, err := s.ensureListingPrivacy(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return GetUpstream(ctx, s.DB, u.ID)
+	}
+	if err := s.transitionAccountStatus(ctx, u, StatusReady, nil); err != nil {
+		return nil, err
+	}
+	s.kick(ctx)
+	return GetUpstream(ctx, s.DB, u.ID)
+}
+
+func (s *Service) startVerification(ctx context.Context, u *Upstream) (*Upstream, error) {
+	ok, err := s.ensureListingPrivacy(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return GetUpstream(ctx, s.DB, u.ID)
 	}
 	if err := s.transitionAccountStatus(ctx, u, StatusVerifying, nil); err != nil {
 		// 更新响应丢失时也尝试清理；条件更新不会覆盖删除、冻结或已经完成的检测。
@@ -715,7 +776,7 @@ func (s *Service) startVerification(ctx context.Context, u *Upstream) (*Upstream
 	return GetUpstream(ctx, s.DB, u.ID)
 }
 
-// RetryVerification 在上架检测失败后重新检测。
+// RetryVerification 在 ready 时主动检测，或在上次检测失败后重新检测。
 func (s *Service) RetryVerification(ctx context.Context, sellerID, upstreamID int64) (*Upstream, error) {
 	release, err := s.lockAccountModels(ctx, upstreamID)
 	if err != nil {
@@ -726,10 +787,13 @@ func (s *Service) RetryVerification(ctx context.Context, sellerID, upstreamID in
 	if err != nil {
 		return nil, err
 	}
-	if u.Status != StatusVerifyFailed || u.Sub2APIAccountID == nil {
+	if (u.Status != StatusVerifyFailed && u.Status != StatusReady) || u.Sub2APIAccountID == nil {
 		return nil, ErrBadState
 	}
-	return s.afterAccountCreated(ctx, u.ID, false)
+	if err := s.Admin.SetAccountModelWhitelist(ctx, *u.Sub2APIAccountID, u.ModelWhitelist); err != nil {
+		return nil, fmt.Errorf("检测前同步挂售模型：%w", err)
+	}
+	return s.startVerification(ctx, u)
 }
 
 // SetSelfReserve 设置卖家自留比例（窗口用量达到 100 − 自留比例 时暂停调度）。

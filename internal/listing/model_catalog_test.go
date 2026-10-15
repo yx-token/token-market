@@ -49,7 +49,11 @@ func TestUpstreamModelsPreservesUndeclaredWhitelist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(raw) != `{"catalog":[],"whitelist":null,"fetched_at":null}` {
+	var view map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &view); err != nil {
+		t.Fatal(err)
+	}
+	if string(view["catalog"]) != "[]" || string(view["whitelist"]) != "null" || string(view["fetched_at"]) != "null" || string(view["detection_status"]) != `"untested"` || string(view["model_checks"]) != "[]" {
 		t.Fatalf("未声明白名单与空目录必须保留各自含义：%s", raw)
 	}
 }

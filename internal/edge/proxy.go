@@ -58,6 +58,7 @@ type Server struct {
 	ips      clientip.Resolver
 	authFail *ratelimit.Failures
 	client   *http.Client
+	credits  CreditSelector
 	log      *slog.Logger
 	now      func() time.Time
 }
@@ -229,6 +230,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	billable := billablePath(r.Method, r.URL.Path)
 	var last *failedResponse
 	tried := 0
+hops:
 	for i, hop := range cfg.Hops {
 		a := Attempt{EdgeRequestID: reqID, BuyerKeyID: cfg.BuyerKeyID, Hop: i + 1, ListingID: hop.ListingID, PoolID: hop.PoolID,
 			Billable: billable, StartedAt: s.now()}
@@ -249,7 +251,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			metricFailovers.Add(1)
 		}
 		tried++
-		done, fr := s.forward(w, r, body, internalKey, loc, hop, i+1, deadline, &a)
+		afterPackID := int64(0)
+		for s.credits != nil && cfg.CreditCandidate && billable && r.Method == http.MethodPost && hop.ListingID > 0 {
+			selectCtx, cancel := context.WithDeadline(r.Context(), deadline)
+			credit, err := s.credits.Select(selectCtx, cfg, hop, creditRequestModel(r.URL.Path, body), afterPackID)
+			cancel()
+			if err != nil {
+				s.log.Error("select store credit", "buyer_key_id", cfg.BuyerKeyID, "err", err)
+				writeError(w, http.StatusServiceUnavailable, "api_error", "store credit temporarily unavailable")
+				return
+			}
+			if credit == nil {
+				break
+			}
+			done, fr := s.forward(w, r, body, credit.Key, loc, hop, i+1, deadline, &a, true)
+			credit.Release()
+			if done {
+				return
+			}
+			if fr == nil || !creditInsufficient(fr.status, fr.body) {
+				last = fr
+				continue hops
+			}
+			// 准入余额不足不会产生 usage：先找下个匹配包，再回退同店原 key。
+			afterPackID = credit.PackID
+			a = Attempt{EdgeRequestID: reqID, BuyerKeyID: cfg.BuyerKeyID, Hop: i + 1,
+				ListingID: hop.ListingID, PoolID: hop.PoolID, Billable: billable, StartedAt: s.now()}
+		}
+		done, fr := s.forward(w, r, body, internalKey, loc, hop, i+1, deadline, &a, false)
 		if done {
 			return
 		}
@@ -293,7 +322,7 @@ func retryableStatus(code int) bool {
 
 // forward 转发到一跳。返回 done=true 表示响应已写给买家（成功或不可重试的失败）。
 func (s *Server) forward(w http.ResponseWriter, r *http.Request, body []byte, internalKey string, loc keyLocation,
-	hop edgecfg.Hop, hopNo int, deadline time.Time, a *Attempt) (bool, *failedResponse) {
+	hop edgecfg.Hop, hopNo int, deadline time.Time, a *Attempt, credit bool) (bool, *failedResponse) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	var timedOut atomic.Bool
@@ -341,6 +370,16 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, body []byte, in
 	a.HTTPStatus = resp.StatusCode
 	a.Sub2APIRequestID = resp.Header.Get("X-Client-Request-ID")
 	a.TTFBMs = int(s.now().Sub(a.StartedAt).Milliseconds())
+	if credit && resp.StatusCode == http.StatusForbidden {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, attemptErrorBodyLimit))
+		if creditInsufficient(resp.StatusCode, b) {
+			a.ErrorClass, a.EndReason, a.EndedAt = "platform", "retry", s.now()
+			s.record(*a)
+			return false, &failedResponse{status: resp.StatusCode, header: resp.Header.Clone(), body: b}
+		}
+		// 非余额 403 仍按原协议透传，避免丢失已经读过的错误正文。
+		resp.Body = &prefixReadCloser{Reader: io.MultiReader(bytes.NewReader(b), resp.Body), Closer: resp.Body}
+	}
 
 	if retryableStatus(resp.StatusCode) {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))

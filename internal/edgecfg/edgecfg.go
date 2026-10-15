@@ -44,19 +44,23 @@ func (h Hop) AAD() string {
 
 // KeyConfig 是一个买家 Key 的路由配置。
 type KeyConfig struct {
-	BuyerKeyID   int64      `json:"buyer_key_id"`
-	BuyerUserID  int64      `json:"buyer_user_id"`
-	Status       string     `json:"status"`           // active / disabled
-	Reason       string     `json:"reason,omitempty"` // 停用原因，返回给买家
-	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
-	BlockedUntil *time.Time `json:"blocked_until,omitempty"` // 花费限额触发的临时封禁
-	IPWhitelist  []string   `json:"ip_whitelist,omitempty"`
-	Hops         []Hop      `json:"hops"`
-	Version      int64      `json:"version"`
+	BuyerKeyID      int64      `json:"buyer_key_id"`
+	BuyerUserID     int64      `json:"buyer_user_id"`
+	CreditCandidate bool       `json:"credit_candidate,omitempty"` // 本 Key 有可选店铺活动包时才查询活动运行时
+	Status          string     `json:"status"`                     // active / disabled
+	Reason          string     `json:"reason,omitempty"`           // 停用原因，返回给买家
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+	BlockedUntil    *time.Time `json:"blocked_until,omitempty"` // 花费限额触发的临时封禁
+	IPWhitelist     []string   `json:"ip_whitelist,omitempty"`
+	Hops            []Hop      `json:"hops"`
+	Version         int64      `json:"version"`
 }
 
 // InternalKeyAAD 是内部 key 密文的附加认证数据。
 func InternalKeyAAD(id int64) string { return "internal-key:" + strconv.FormatInt(id, 10) }
+
+// CreditKeyAAD 与普通内部 Key 密文隔离，活动凭证不对外发布。
+func CreditKeyAAD(id int64) string { return "store-credit-key:" + strconv.FormatInt(id, 10) }
 
 // HashKey 计算买家 Key 的哈希（Key 本身是高熵随机串，无需加盐）。
 func HashKey(key string) string {

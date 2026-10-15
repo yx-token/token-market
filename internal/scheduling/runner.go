@@ -252,7 +252,7 @@ func (r *Runner) syncAccountHealth(ctx context.Context, ups []UpstreamInput, act
 			if current != nil && strings.HasPrefix(*current, "sub2api:") {
 				// 已通过上架检测的上游恢复为正常；仍在检测中的回到未知，由检测结果决定
 				next := listing.HealthHealthy
-				if u.Status == listing.StatusVerifying || u.Status == listing.StatusVerifyFailed {
+				if u.Untested || u.Status == listing.StatusVerifying || u.Status == listing.StatusVerifyFailed {
 					next = listing.HealthUnknown
 				}
 				if _, err := listing.SetHealth(ctx, r.DB, u.ID, next, ""); err != nil {

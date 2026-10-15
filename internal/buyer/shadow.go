@@ -136,13 +136,19 @@ func (s *ShadowService) createUser(ctx context.Context, it *Identity, password s
 	} else if u != nil {
 		return u.ID, nil
 	}
-	u, err := s.Admin.CreateUser(ctx, adminclient.CreateUserInput{
+	in := adminclient.CreateUserInput{
 		Email:       it.Email,
 		Password:    password,
 		Username:    fmt.Sprintf("tm-%s-%d", it.Kind, it.OwnerID),
 		Notes:       fmt.Sprintf("tm:shadow:%s:%d", it.Kind, it.OwnerID),
 		Concurrency: concurrency,
-	})
+	}
+	if it.Kind == KindCreditPack {
+		// 省略 balance 会继承 sub2api 默认赠金；活动钱包只能持有已购额度。
+		zero := 0.0
+		in.Balance = &zero
+	}
+	u, err := s.Admin.CreateUser(ctx, in)
 	if err == nil {
 		return u.ID, nil
 	}

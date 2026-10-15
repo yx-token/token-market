@@ -261,6 +261,71 @@
       .header-link .sell-extra { display: none; }
       .header-link.admin { display: none; }
     }
+    /* 手机顶栏：搜索折到下一行，账号只留头像，避免 390px 把「搜索」挤成竖排并撑出横向滚动 */
+    @media (max-width: 720px) {
+      .xm-market .header {
+        max-width: 100%;
+        overflow-x: clip;
+      }
+      .header-row {
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 10px;
+        padding: 10px 12px 12px;
+        min-width: 0;
+      }
+      .logo {
+        font-size: 22px;
+        gap: 8px;
+      }
+      .logo-mark {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+      }
+      .logo-mark img {
+        width: 18px;
+        height: 18px;
+      }
+      .header-actions {
+        margin-left: auto;
+        gap: 10px;
+        min-width: 0;
+      }
+      .search {
+        flex: 1 1 100%;
+        order: 3;
+        min-width: 0;
+        gap: 6px;
+        padding: 2px 2px 2px 12px;
+      }
+      .search input {
+        padding: 8px 4px;
+        font-size: 14px;
+      }
+      .search button {
+        flex-shrink: 0;
+        white-space: nowrap;
+        padding: 8px 14px;
+        font-size: 13px;
+      }
+      .user-chip {
+        max-width: none;
+        gap: 0;
+      }
+      .user-chip .uname,
+      .user-chip .user-caret {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+    }
 
     .kw-bar { width: 100%; border-top: 1px solid rgba(0, 0, 0, 0.06); }
     .kw-inner {

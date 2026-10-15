@@ -93,7 +93,8 @@ func TestPlanNotBuyerFacing(t *testing.T) {
 	cases := map[string]UpstreamInput{
 		"degraded":    base(func(u *UpstreamInput) { u.Health = "degraded" }),
 		"unavailable": base(func(u *UpstreamInput) { u.Health = "unavailable" }),
-		"untested":    base(func(u *UpstreamInput) { u.Health = "unknown" }),
+		"no account":  base(func(u *UpstreamInput) { u.AccountID = 0 }),
+		"untested buyback": base(func(u *UpstreamInput) { u.Health = "unknown"; u.Listing.Mode = "buyback" }),
 		"paused":      base(func(u *UpstreamInput) { u.Listing.Status = "paused" }),
 		"suspended":   base(func(u *UpstreamInput) { u.Status = "suspended" }),
 		"reference":   base(func(u *UpstreamInput) { u.IsReference = true }),

@@ -54,6 +54,8 @@ const routes: RouteRecordRaw[] = [
   { path: '/buyer', redirect: '/buyer/keys' },
   { path: '/buyer/wallet', name: 'buyer-wallet', component: () => import('@/views/buyer/WalletView.vue'), meta: { auth: true } },
   { path: '/buyer/keys', name: 'buyer-keys', component: () => import('@/views/buyer/KeysView.vue'), meta: { auth: true } },
+  { path: '/buyer/merchants', name: 'buyer-merchants', component: () => import('@/views/buyer/MerchantsView.vue'), meta: { auth: true } },
+  { path: '/buyer/store-credits', name: 'buyer-store-credits', component: () => import('@/views/buyer/StoreCreditsView.vue'), meta: { auth: true } },
   { path: '/buyer/usage', name: 'buyer-usage', component: () => import('@/views/buyer/UsageView.vue'), meta: { auth: true } },
   { path: '/buyer/bills', name: 'buyer-bills', component: () => import('@/views/buyer/BillsView.vue'), meta: { auth: true } },
 
@@ -70,6 +72,7 @@ const routes: RouteRecordRaw[] = [
   },
   { path: '/seller/usage', name: 'seller-usage', component: () => import('@/views/seller/UsageView.vue'), meta: { auth: true } },
   { path: '/seller/listings', name: 'seller-listings', component: () => import('@/views/seller/ListingsView.vue'), meta: { auth: true } },
+  { path: '/seller/credits', name: 'seller-credits', component: () => import('@/views/seller/StoreCreditsView.vue'), meta: { auth: true } },
   { path: '/seller/earnings', name: 'seller-earnings', component: () => import('@/views/seller/EarningsView.vue'), meta: { auth: true } },
 
   {

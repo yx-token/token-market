@@ -5,6 +5,8 @@ import type { MarketItem, PoolItem } from '@/api/types'
 import { label } from '@/utils/labels'
 import { multiplier } from '@/utils/format'
 import { validateChain, type HopChoice } from '@/utils/route'
+import { detectionText, isTested } from '@/api/market-detection'
+import MarketDetectionSummary from '@/components/MarketDetectionSummary.vue'
 
 const props = defineProps<{ listings: MarketItem[]; pools: PoolItem[]; maxHops: number }>()
 const type = defineModel<'default' | 'chain'>('type', { required: true })
@@ -58,7 +60,7 @@ defineExpose({ error })
       </label>
       <label :class="['choice flex cursor-pointer items-start gap-2.5', type === 'chain' && 'choice-on']">
         <input v-model="type" type="radio" value="chain" class="mt-0.5" />
-        <span><span class="font-medium">指定卖家</span><span class="block text-xs text-ink-500">按顺序故障转移，可用默认分组兜底</span></span>
+        <span><span class="font-medium">商家清单</span><span class="block text-xs text-ink-500">选择挂单并排序，优先调用靠前的挂单</span></span>
       </label>
     </div>
     <div v-if="type === 'default'">
@@ -68,12 +70,14 @@ defineExpose({ error })
       </select>
     </div>
     <div v-else class="space-y-2">
-      <div v-for="(h, i) in hops" :key="i" class="flex items-center gap-2">
+      <div v-for="(h, i) in hops" :key="i" class="space-y-1">
+      <div class="flex items-center gap-2">
         <span class="w-12 shrink-0 font-mono text-[11px] text-ink-500">第 {{ String(i + 1).padStart(2, '0') }} 跳</span>
         <select v-if="!h.pool" class="input" :value="h.listingId ?? ''" :aria-label="`第 ${i + 1} 跳挂单`" @change="setListing(i, ($event.target as HTMLSelectElement).value)">
           <option value="" disabled>选择卖家挂单</option>
+          <option v-if="h.listingId && !listings.some((l) => l.listing_id === h.listingId)" :value="h.listingId" disabled>挂单 #{{ h.listingId }} · 已移出清单或暂不可用</option>
           <option v-for="l in listingOptions(h.listingId)" :key="l.listing_id" :value="l.listing_id">
-            #{{ l.listing_id }} · {{ label('platform', l.platform).text }} · {{ multiplier(l.price) }}{{ l.grade ? ` · ${l.grade} 级` : '' }}
+            商家 #{{ l.seller_id }} / 挂单 #{{ l.listing_id }} · {{ label('platform', l.platform).text }} · {{ multiplier(l.price) }} · {{ detectionText(l.detection_status) }}{{ isTested(l.detection_status) && l.grade ? ` · ${l.grade} 级` : '' }}
           </option>
         </select>
         <select v-else class="input" :value="h.pool" :aria-label="`第 ${i + 1} 跳默认分组`" @change="setPool(i, ($event.target as HTMLSelectElement).value)">
@@ -83,8 +87,10 @@ defineExpose({ error })
         <button type="button" class="btn-ghost btn-sm" :disabled="i >= hops.length - 1 || !!hops[i + 1]?.pool || !!h.pool" aria-label="下移" @click="move(i, 1)">↓</button>
         <button type="button" class="btn-ghost btn-sm text-red-600" aria-label="删除这一跳" @click="hops.splice(i, 1)">✕</button>
       </div>
+      <MarketDetectionSummary v-for="l in listings.filter((l) => l.listing_id === h.listingId)" :key="l.listing_id" class="pl-14" :status="l.detection_status" :models="l.models" :checks="l.model_checks" />
+      </div>
       <div class="flex gap-2">
-        <button type="button" class="btn-secondary btn-sm" :disabled="hops.length >= maxHops" @click="addListing">＋ 添加卖家</button>
+        <button type="button" class="btn-secondary btn-sm" :disabled="hops.length >= maxHops || listings.length === 0" @click="addListing">＋ 添加清单内挂单</button>
         <button type="button" class="btn-secondary btn-sm" :disabled="hops.length >= maxHops || lastIsPool || poolOptions().length === 0" @click="addPool">
           ＋ 以默认分组兜底
         </button>

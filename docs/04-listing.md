@@ -43,7 +43,8 @@
       官方账号邮箱同样从令牌信息读取（与 sub2api 账号列表一致：Claude 为 email_address，
       OpenAI / Antigravity / Grok 为 email），作为卖家和管理员看到的账号名称；Gemini 拿不到邮箱；
       OpenAI、Antigravity 的 OAuth 账号调 set-privacy 关闭训练数据使用（sub2api 只支持这两类）
-  → 上架检测（必做，不受厂商检测开关影响；见决策 D18）
+  → 选择并同步挂售模型白名单，完成隐私设置校验
+  → 可直接挂单，市场标注“未检测”；也可主动发起质量检测
   → 卖家选择挂单模式 → 确认价格 → 挂单生效
 ```
 
@@ -73,11 +74,13 @@ Coding Plan key 查不到账号邮箱，控制台按上游编号展示。
 | 挂单涉及的模型在 sub2api 中有官方价 | 不允许上架，否则结算没有依据 |
 | 同一官方账号未被其他上游占用 | 拒绝上架（按账号标识去重） |
 | 卖家未被风控冻结 | 拒绝上架 |
-| 上架检测通过（首次配置必做） | 进入"检测未通过"，卖家可查看报告后重试；检测无法开始（例如策略没有配置模型）同样记为未通过并说明原因 |
+| 质量检测（寄售可选，平台回收仍须有有效检测证据） | 未做检测时市场标注“未检测”；检测后的不健康结论与平台隔离继续生效，不能借跳过检测恢复 |
 
 ## 3. 挂单模式
 
 第一期三种形态，同一上游同时只能有一条有效挂单：
+
+店铺活动额度包是独立于上游挂单的促销商品：人民币售价购买美元额度，可覆盖同一卖家的多个按量挂单，并可限制厂商、模型。它不占用上游的唯一挂单名额，消费与退款见 [计费说明](08-billing.md#37-店铺活动额度包)。
 
 | | 按量寄售 | 额度包 | 平台回收 |
 |---|---|---|---|
@@ -112,11 +115,13 @@ Coding Plan key 查不到账号邮箱，控制台按上游编号展示。
 stateDiagram-v2
   [*] --> draft
   draft --> authorizing: 生成授权链接 / 提交 key
-  authorizing --> verifying: 账号创建成功
+  authorizing --> selecting_models: 账号创建成功
+  selecting_models --> ready: 模型白名单与隐私校验通过
   authorizing --> failed: 授权失败
   verifying --> ready: 校验与上架检测通过
   verifying --> verify_failed: 检测未通过
   verify_failed --> verifying: 卖家重试
+  ready --> verifying: 卖家主动检测
   ready --> listed: 挂单生效
   listed --> ready: 挂单关闭
   ready --> removed: 卖家删除
@@ -135,7 +140,7 @@ stateDiagram-v2
 | `suspected` | 疑似降智，正在加密探测 | 是 |
 | `degraded` | 确认降智（账号本身原因） | **否** |
 | `unavailable` | 授权失效、被封禁、订阅到期等 | **否** |
-| `unknown` | 尚未通过上架检测 | **否**（首次配置必须先检测，决策 D18）。上架检测通过后变为 `healthy`；结论不够明确时为 `suspected` |
+| `unknown` | 尚无有效质量检测结论 | 有效授权、模型与隐私校验通过的寄售可交易，买家明确看到“未检测”；平台回收仍须检测证据 |
 
 ### 4.3 挂单状态
 

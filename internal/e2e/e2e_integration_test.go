@@ -155,7 +155,7 @@ func setupWithDatabaseMode(t *testing.T, fromScratch bool, opts ...func(cfg *con
 	api := httptest.NewServer(srv.Handler())
 	t.Cleanup(api.Close)
 
-	// 题库：每题要求回答固定口令，替身默认按口令作答。首次配置的上游必须通过上架检测才能挂单。
+	// 题库：每题要求回答固定口令，替身默认按口令作答。旧检测场景会显式发起检测。
 	for i := 1; i <= 12; i++ {
 		if _, err := quality.CreateItem(ctx, a.DB, quality.Item{Suite: "inspection_capability", CheckKey: "D07", Category: "recall",
 			Prompt: fmt.Sprintf("Q%d: reply with the code PONG%d and nothing else", i, i), MaxTokens: 32,
@@ -357,6 +357,7 @@ func (c *client) call(method, path string, body, out any) (int, string) {
 
 func (c *client) must(method, path string, body, out any) {
 	c.e.t.Helper()
+	c.selectRouteMerchants(method, path, body)
 	status, raw := c.call(method, path, body, out)
 	if status >= 300 {
 		c.e.t.Fatalf("%s %s: http %d: %s", method, path, status, raw)
@@ -376,7 +377,50 @@ func (c *client) expect(status int, method, path string, body any) string {
 	return raw
 }
 
-// 现有接入用例自动全选目录，白名单专项用例直接 call，观察待选择状态。
+// 旧 Key 场景先通过公开 API 加入商家；call/expect 保留原始请求以验证权限边界。
+func (c *client) selectRouteMerchants(method, path string, body any) {
+	c.e.t.Helper()
+	if method != http.MethodPost && method != http.MethodPut ||
+		path != "/api/buyer/keys" && !strings.HasPrefix(path, "/api/buyer/keys/") {
+		return
+	}
+	var request struct {
+		Route struct {
+			Type string `json:"type"`
+			Hops []struct {
+				ListingID int64 `json:"listing_id"`
+			} `json:"hops"`
+		} `json:"route"`
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		c.e.t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &request); err != nil {
+		c.e.t.Fatal(err)
+	}
+	if request.Route.Type != "chain" {
+		return
+	}
+	added := make(map[int64]bool)
+	for _, hop := range request.Route.Hops {
+		if hop.ListingID == 0 {
+			continue
+		}
+		var sellerID int64
+		mustScan(c.e.t, c.e.app.DB.QueryRow(c.e.ctx, "SELECT seller_id FROM listings WHERE id = $1", hop.ListingID), &sellerID)
+		if added[sellerID] {
+			continue
+		}
+		status, raw := c.call(http.MethodPut, fmt.Sprintf("/api/buyer/merchants/%d", sellerID), nil, nil)
+		if status >= 300 {
+			c.e.t.Fatalf("add merchant %d before key route: http %d: %s", sellerID, status, raw)
+		}
+		added[sellerID] = true
+	}
+}
+
+// 旧接入场景全选目录并主动检测；白名单专项直接 call，观察待选择或未检测状态。
 func (c *client) selectOnboardingModels(method, path, raw string, out any) {
 	c.e.t.Helper()
 	if method != http.MethodPost || !strings.HasPrefix(path, "/api/seller/upstreams/") ||
@@ -405,6 +449,13 @@ func (c *client) selectOnboardingModels(method, path, raw string, out any) {
 		catalog.Catalog = []string{"claude-sonnet-4-5"}
 	}
 	c.must(http.MethodPut, modelPath, map[string]any{"models": catalog.Catalog}, out)
+	var selected struct {
+		Status string `json:"status"`
+	}
+	c.must(http.MethodGet, fmt.Sprintf("/api/seller/upstreams/%d", response.Data.ID), nil, &selected)
+	if selected.Status == "ready" {
+		c.must(http.MethodPost, fmt.Sprintf("/api/seller/upstreams/%d/retry-verification", response.Data.ID), nil, out)
+	}
 }
 
 type idOnly struct {
@@ -444,9 +495,9 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 		t.Fatal("no auth url")
 	}
 	seller1.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/complete", up1.ID), map[string]string{"code": "alice"}, &up1)
-	// 即使厂商关闭了检测，首次配置也必须先通过上架检测
+	// 共用夹具主动发起检测；主动检测期间不能挂单。
 	if up1.Status != "verifying" {
-		t.Fatalf("new upstream must be verified before listing: %+v", up1)
+		t.Fatalf("explicit onboarding verification should start before this scenario lists: %+v", up1)
 	}
 	// 授权时识别官方账号邮箱，作为上游在本系统中的名称
 	if up1.AccountEmail == nil || *up1.AccountEmail != "alice@example.test" {

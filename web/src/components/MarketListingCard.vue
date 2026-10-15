@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import type { FeedSku } from '@/market/config'
-import { inspectionSummary } from '@/utils/inspection'
-import { dateTime } from '@/utils/format'
+import { isTested } from '@/api/market-detection'
+import MarketDetectionSummary from '@/components/MarketDetectionSummary.vue'
 
 const props = defineProps<{ sku: FeedSku; busy?: boolean }>()
 const emit = defineEmits<{ quickOpen: [sku: FeedSku] }>()
@@ -31,7 +31,7 @@ function onBuy(e: Event) {
 </script>
 
 <template>
-  <article class="xm-card" role="link" tabindex="0" @click="goDetail" @keydown.enter.prevent="goDetail">
+  <article class="xm-card" role="link" tabindex="0" @click="goDetail" @keydown.enter.self.prevent="goDetail">
     <div class="card-cover">
       <img :src="`/assets/${sku.img}`" :alt="sku.title" loading="lazy" />
       <div class="shade" />
@@ -43,18 +43,16 @@ function onBuy(e: Event) {
       <span v-else-if="sku.kind === 'pack'" class="card-kind is-pack">额度包</span>
       <span v-else class="card-kind">按量通道</span>
       <h3 class="card-title">{{ sku.title }}</h3>
-      <p v-if="sku.listingId" class="mb-2 break-all text-xs text-slate-600">挂售模型：{{ sku.models?.length ? sku.models.join('、') : '卖家未声明（不限模型）' }}</p>
+      <p v-if="sku.listingId" class="mb-2 break-all text-xs text-slate-600">挂售模型：{{ sku.models?.length ? sku.models.join('、') : '卖家未声明' }}</p>
       <p v-if="sku.desc" class="mb-2 line-clamp-2 text-xs leading-relaxed text-slate-500">{{ sku.desc }}</p>
       <div class="card-meta">
-        <span class="grade">{{ sku.grade }} 级</span>
-        <span>成功率 {{ (sku.success * 100).toFixed(0) }}%</span>
-        <span>{{ sku.ttft }}ms</span>
+        <span v-if="sku.pool || (isTested(sku.detectionStatus) && sku.grade)" class="grade">{{ sku.grade }} 级</span>
+        <span v-if="sku.success > 0">成功率 {{ (sku.success * 100).toFixed(0) }}%</span>
+        <span v-if="sku.ttft > 0">{{ sku.ttft }}ms</span>
       </div>
       <div v-if="sku.listingId" class="my-2 text-xs leading-relaxed text-slate-500">
-        <p v-for="line in inspectionSummary(sku.qualityChecks)" :key="line">{{ line }}</p>
-        <p>上次检测：{{ sku.lastCheckedAt ? dateTime(sku.lastCheckedAt) : '未提供' }}</p>
-        <p v-if="sku.inspectionMode === 'trial'">试运行，不影响价格</p>
-        <p>检测是抽样，不能保证没有偷换</p>
+        <MarketDetectionSummary :status="sku.detectionStatus" :models="sku.models" :checks="sku.modelChecks" :last-checked-at="sku.lastCheckedAt" />
+        <p v-if="isTested(sku.detectionStatus)">检测为抽样结果</p>
       </div>
       <div class="card-foot">
         <div class="price-block">
@@ -64,11 +62,11 @@ function onBuy(e: Event) {
           </template>
           <template v-else>
             <div class="price"><small>×</small>{{ sku.mult.toFixed(2) }}</div>
-            <div class="price-sub">{{ sku.min === 0 ? '起步免费开通' : `起步 ¥${sku.min}` }} · 超额扣余额</div>
+            <div class="price-sub">{{ sku.pool ? '平台默认分组' : '加入商家清单后配置 Key' }}</div>
           </template>
         </div>
         <button type="button" class="buy" :disabled="busy" @click="onBuy">
-          {{ busy ? '开通中…' : sku.kind === 'pack' ? '购买额度包' : '选用并开通' }}
+          {{ busy ? '处理中…' : sku.kind === 'pack' ? '查看额度包' : sku.pool ? '选用并开通' : '加入商家清单' }}
         </button>
       </div>
     </div>
