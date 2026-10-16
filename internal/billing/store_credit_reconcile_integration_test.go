@@ -4,7 +4,6 @@ package billing
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"testing"
 
@@ -82,7 +81,7 @@ func TestStoreCreditCashDebtCannotBeRefundedAndRetriesAfterRecharge(t *testing.T
 	if err := f.db.QueryRow(ctx, "SELECT status,attempts FROM sub2api_ops WHERE idempotency_key='tm-credit-cash-1'").Scan(&status, &attempts); err != nil || status != "pending" || attempts != 0 {
 		t.Fatalf("recharge did not rearm original operation: %s/%d %v", status, attempts, err)
 	}
-	if err := f.db.QueryRow(ctx, "SELECT count(*) FROM sub2api_ops WHERE idempotency_key=$1", fmt.Sprint("tm-credit-cash-1")).Scan(&count); err != nil || count != 1 {
+	if err := f.db.QueryRow(ctx, "SELECT count(*) FROM sub2api_ops WHERE idempotency_key=$1", "tm-credit-cash-1").Scan(&count); err != nil || count != 1 {
 		t.Fatalf("retry created duplicate cash deduction: %d %v", count, err)
 	}
 	f.assertBalances(t, 68.5, 0, 25.2, 6.3)
