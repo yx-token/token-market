@@ -16,7 +16,6 @@ export const auth = {
 export const market = {
   config: () => http.get<T.MarketConfig>('/api/market/config'),
   discovery: () => http.get<Record<string, unknown>>('/api/market/discovery'),
-  recommend: () => http.get<T.RecommendResult>('/api/market/recommend'),
   categories: () => http.get<T.MarketCategory[] | null>('/api/market/categories'),
   listings: (q?: Query) => http.get<T.MarketItem[] | null>('/api/market/listings', q),
   listing: (id: number) => http.get<T.MarketItem>(`/api/market/listings/${id}`),
@@ -141,8 +140,6 @@ export const admin = {
   marketDiscovery: () => http.get<Record<string, unknown>>('/api/admin/market-discovery'),
   updateMarketDiscovery: (body: Record<string, unknown>) =>
     http.put<Record<string, unknown>>('/api/admin/market-discovery', body),
-  marketRecommend: () => http.get<T.RecommendConfig>('/api/admin/market-recommend'),
-  updateMarketRecommend: (body: T.RecommendConfig) => http.put<T.RecommendConfig>('/api/admin/market-recommend', body),
   marketCategories: () => http.get<T.MarketCategory[] | null>('/api/admin/market-categories'),
   createMarketCategory: (body: Record<string, unknown>) => http.post<T.MarketCategory>('/api/admin/market-categories', body),
   updateMarketCategory: (id: string, body: Record<string, unknown>) =>

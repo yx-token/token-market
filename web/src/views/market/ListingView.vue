@@ -42,7 +42,7 @@ const title = computed(() => {
   if (!it) return ''
   if (it.title) return it.title
   const tier = it.tier ? ` · ${it.tier}` : ''
-  return isPack.value ? `${plat.value}${tier} · ${it.face_value ?? '—'} 元额度包` : `${plat.value}${tier} · 按量通道`
+  return isPack.value ? `${plat.value}${tier} · 订阅套餐` : `${plat.value}${tier} · 按量通道`
 })
 
 const cover = computed(() => {
@@ -68,7 +68,7 @@ const desc = computed(() => {
   if (!it) return ''
   if (it.description) return it.description
   if (isPack.value) {
-    return `预购 ¥${it.face_value} 调用额度，独占本包；包内按 ${it.price.toFixed(2)}× 计费。未用完可退货（退未用量并释放库存）。`
+    return `订阅套餐：付 ¥${it.face_value} 获得周期内调用权，期内按 ${it.price.toFixed(2)}× 抵扣额度。到期或用尽即止；退货按卖家服务标签。`
   }
   return `按量通道，按官方价 × ${it.price.toFixed(2)} 计费。先加入商家清单，再在 API Key 页面选择挂单并调整调用顺序。`
 })
@@ -114,7 +114,7 @@ async function watchPackPay(order: RechargeOrder) {
         const got = (packs ?? []).find((p) => p.recharge_id === order.id && p.status === 'active')
         if (got?.buyer_key_id) {
           stopPoll()
-          toast.success('支付成功，额度包已到账')
+          toast.success('支付成功，订阅套餐已开通')
           await item.load()
           router.push('/buyer/keys')
         }
@@ -146,7 +146,7 @@ async function checkout() {
       const out = await buyer.purchasePack(it.listing_id, channel)
       if (out.key) {
         issuedKey.value = out.key
-        toast.success('额度包已购买，Key 已签发')
+        toast.success('订阅套餐已开通，Key 已签发')
         await item.load()
         return
       }
@@ -201,7 +201,7 @@ async function cancelPay() {
 
     <div v-if="item.data.value" class="sku-layout">
       <div>
-        <span class="kind" :class="{ pack: isPack }">{{ isPack ? '额度包' : '按量通道' }}</span>
+        <span class="kind" :class="{ pack: isPack }">{{ isPack ? '订阅套餐' : '按量通道' }}</span>
         <h1>{{ title }}</h1>
         <p class="lead">{{ desc }}</p>
         <div class="mb-4 rounded-lg border border-slate-200 p-3 text-sm">
@@ -233,8 +233,9 @@ async function cancelPay() {
             <span>{{ percent(item.data.value.success_rate_24h, 0) }} · {{ item.data.value.ttft_p50_ms == null ? '暂无延迟数据' : `${Math.round(item.data.value.ttft_p50_ms)}ms` }}</span>
           </div>
           <template v-if="isPack">
-            <div class="spec"><b>包面额</b><span>¥{{ Number(item.data.value.face_value ?? 0).toFixed(0) }}</span></div>
-            <div class="spec"><b>可售库存</b><span>{{ stockLeft ?? '—' }} 份</span></div>
+            <div class="spec"><b>套餐售价</b><span>¥{{ Number(item.data.value.face_value ?? 0).toFixed(0) }}</span></div>
+            <div class="spec"><b>可售份数</b><span>{{ stockLeft ?? '—' }} 份</span></div>
+            <div class="spec"><b>计费说明</b><span>期内按倍率抵扣 · 到期停用</span></div>
           </template>
           <template v-else>
             <div class="spec">
@@ -258,7 +259,7 @@ async function cancelPay() {
         <div class="pay-label">{{ isPack ? '本单应付' : '调用倍率' }}</div>
         <div class="pay-price">{{ isPack ? `¥${payAmount.toFixed(0)}` : `${item.data.value.price.toFixed(2)}×` }}</div>
         <div class="pay-sub">
-          <template v-if="isPack">支付整包价后获得 Key + 包内额度。未用完可退货。</template>
+          <template v-if="isPack">支付套餐价后获得 Key；周期内使用期内额度，未用完可退货。</template>
           <template v-else>先保存商家，再选择挂单和调用顺序。加入清单不收费。</template>
         </div>
 
@@ -295,7 +296,7 @@ async function cancelPay() {
             :disabled="busy || (isPack && stockLeft === 0)"
             @click="checkout"
           >
-            {{ busy ? '处理中…' : isPack ? (stockLeft === 0 ? '已售罄' : '支付并购买额度包') : '加入商家并配置 Key' }}
+            {{ busy ? '处理中…' : isPack ? (stockLeft === 0 ? '已售罄' : '支付并订阅套餐') : '加入商家并配置 Key' }}
           </button>
         </template>
         <RouterLink :to="{ path: '/buyer/store-credits', query: { seller_id: item.data.value.seller_id } }" class="mt-4 block text-center text-sm font-semibold underline underline-offset-4">店铺活动额度包</RouterLink>
@@ -304,7 +305,7 @@ async function cancelPay() {
           · 挂单按 Key 中的排列顺序优先调用<br />
           · 可选择平台默认分组作为最后兜底<br />
           · 失败请求不计费 · 通过 API Key 调用
-          <template v-if="isPack"><br />· 额度包支持按未用量退货</template>
+          <template v-if="isPack"><br />· 订阅套餐支持按未用量退货</template>
         </div>
         <div v-if="issuedKey" class="done is-on">
           已签发 Key，之后也可以在买家中心再次复制。

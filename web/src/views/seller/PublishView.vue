@@ -307,7 +307,7 @@ async function publish() {
   }
   if (sku.value === 'pack') {
     if (!(Number(faceValue.value) >= 10)) {
-      toast.error('额度包面额至少 10 元')
+      toast.error('订阅套餐售价至少 10 元')
       return
     }
     if (!(Number(stock.value) >= 1)) {
@@ -343,7 +343,7 @@ async function publish() {
           }
   const res = await run(
     () => seller.createListing(upstream.value!.id, body),
-    sku.value === 'buyback' ? '已生成回收报价' : sku.value === 'pack' ? '额度包已上架' : '按量通道已上架',
+    sku.value === 'buyback' ? '已生成回收报价' : sku.value === 'pack' ? '订阅套餐已上架' : '按量通道已上架',
   )
   if (!res) return
   listing.value = res.listing
@@ -393,7 +393,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     </RouterLink>
     <h1 class="text-[28px] font-extrabold tracking-tight text-[#1f1f1f]">发布闲置TOKEN</h1>
     <p class="mt-2 mb-6 max-w-3xl text-[15px] leading-relaxed text-[#666]">
-      授权订阅账号 → 选择挂售模型 → 可直接挂「按量通道」或「额度包」。质量检测可选；未检测会标给买家，不能进保障池，也不能做平台回收。隐私检查不能跳过。
+      授权订阅账号 → 选择挂售模型 → 可直接挂「按量通道」或「订阅套餐」。质量检测可选；未检测会标给买家，不能进保障池，也不能做平台回收。隐私检查不能跳过。
     </p>
 
     <ol class="xm-stepper" aria-label="发布步骤">
@@ -607,8 +607,8 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
         <label class="xm-choice" :class="{ on: sku === 'pack' }">
           <input v-model="sku" type="radio" value="pack" />
           <div>
-            <strong>B. 额度包</strong>
-            <span>固定面额商品（如 ¥100），买家整包购买；未用完可退货释放库存。有可售份数。</span>
+            <strong>B. 订阅套餐</strong>
+            <span>买家付套餐价，获得周期内调用权与期内额度；到期或用尽即止。有可售份数。不进保障池。</span>
           </div>
         </label>
         <label class="xm-choice" :class="{ on: sku === 'buyback', 'seller-choice': untested }" :aria-disabled="untested">
@@ -656,18 +656,20 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       <template v-else-if="sku === 'pack'">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label class="xm-field-label">包面额（元）</label>
+            <label class="xm-field-label">套餐售价（元）</label>
             <input v-model="faceValue" class="xm-input" inputmode="decimal" />
+            <p class="xm-hint">买家一口价；当前亦作为期内额度口径（周期字段后续扩展）</p>
           </div>
           <div>
             <label class="xm-field-label">可售份数</label>
             <input v-model="stock" class="xm-input" inputmode="numeric" />
+            <p class="xm-hint">同时生效的订阅数</p>
           </div>
         </div>
         <div class="mt-3">
-          <label class="xm-field-label">包内计费倍率</label>
+          <label class="xm-field-label">期内计费倍率</label>
           <input v-model="mult" class="xm-input" inputmode="decimal" />
-          <p class="xm-hint">额度包不进保障池；买家整包购买，未用完可退货。</p>
+          <p class="xm-hint">订阅套餐不进保障池；调用按官方价 × 倍率抵扣期内额度。</p>
         </div>
       </template>
 
@@ -683,7 +685,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
 
       <div v-if="sku === 'consignment' || sku === 'pack'" class="mt-4 rounded-[14px] border border-[#f0c000]/40 bg-[#fffbeb] p-4">
         <label class="xm-field-label !mb-1">市场分类（必选，至少选一个）</label>
-        <p class="xm-hint !mt-0 !mb-3">决定出现在市场侧栏与四宫格专场；未选分类不能上架。</p>
+        <p class="xm-hint !mt-0 !mb-3">决定市场分类与筛选归类；未选分类不能上架。</p>
         <div v-if="categoryOpts.length" class="flex flex-col gap-2">
           <label
             v-for="c in categoryOpts"
@@ -732,7 +734,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     <section v-else class="xm-pub-panel text-center">
       <h2 class="!mb-2">已发布</h2>
       <p class="sub !mb-4">
-        <template v-if="sku === 'pack'">额度包已上架，买家可在市场整包购买。</template>
+        <template v-if="sku === 'pack'">订阅套餐已上架，买家可在市场订阅。</template>
         <template v-else-if="sku === 'buyback' && listing?.status === 'pending_confirm'">
           回收报价待确认。
           <button type="button" class="xm-btn xm-btn-primary xm-btn-sm ml-2" :disabled="busy" @click="acceptBuyback">接受报价</button>
@@ -743,7 +745,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
         <div>上游 <b>#{{ upstream?.id }}</b><template v-if="upstream?.account_email">（{{ upstream.account_email }}）</template> · 挂单 <b>#{{ listing?.id }}</b></div>
         <div>
           形态：
-          <b>{{ sku === 'pack' ? '额度包' : sku === 'buyback' ? '平台回收' : '按量通道' }}</b>
+          <b>{{ sku === 'pack' ? '订阅套餐' : sku === 'buyback' ? '平台回收' : '按量通道' }}</b>
         </div>
         <div v-if="sku === 'pack'">面额 ¥{{ faceValue }} · 库存 {{ stock }} · 倍率 {{ multiplier(Number(mult)) }}</div>
         <div v-else-if="sku === 'consignment'">

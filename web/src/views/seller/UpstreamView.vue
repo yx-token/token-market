@@ -183,7 +183,7 @@ async function createListing() {
   }
   if (mode.value === 'pack') {
     if (!(Number(faceValue.value) >= 10)) {
-      toast.error('额度包面额至少 10 元')
+      toast.error('订阅套餐面额至少 10 元')
       return
     }
     if (!(Number(stock.value) >= 1)) {
@@ -202,7 +202,7 @@ async function createListing() {
       : mode.value === 'pack'
         ? { mode: mode.value, multiplier: Number(mult.value), face_value: Number(faceValue.value), stock: Number(stock.value), ...meta }
         : { mode: mode.value, ...meta }
-  const okMsg = mode.value === 'buyback' ? '已生成回收报价，请确认' : mode.value === 'pack' ? '额度包已上架' : '挂单已生效'
+  const okMsg = mode.value === 'buyback' ? '已生成回收报价，请确认' : mode.value === 'pack' ? '订阅套餐已上架' : '挂单已生效'
   if (await run(() => seller.createListing(upstreamId.value, body), okMsg)) reload()
 }
 
@@ -436,7 +436,7 @@ function runStatusText(status: string) {
       <template v-else-if="canCreateListing">
         <div class="flex flex-wrap gap-4 text-sm">
           <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="consignment" /> 按量通道（寄售）</label>
-          <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="pack" /> 额度包</label>
+          <label class="flex items-center gap-1"><input v-model="mode" type="radio" value="pack" /> 订阅套餐</label>
           <label class="flex items-center gap-1" :class="{ 'seller-choice': untested }" :aria-disabled="untested">
             <input v-model="mode" type="radio" value="buyback" :disabled="untested" /> 平台回收
           </label>
@@ -458,7 +458,7 @@ function runStatusText(status: string) {
         </div>
         <div v-else-if="mode === 'pack'" class="mt-3 grid max-w-xl grid-cols-2 gap-3">
           <div>
-            <label class="label" for="face">包面额（元）</label>
+            <label class="label" for="face">套餐价 / 期内额度（元）</label>
             <input id="face" v-model="faceValue" class="input" inputmode="decimal" />
           </div>
           <div>
@@ -466,9 +466,9 @@ function runStatusText(status: string) {
             <input id="stock" v-model="stock" class="input" inputmode="numeric" />
           </div>
           <div class="col-span-2">
-            <label class="label" for="pack-mult">包内计费倍率</label>
+            <label class="label" for="pack-mult">期内计费倍率</label>
             <input id="pack-mult" v-model="mult" class="input" inputmode="decimal" :placeholder="vendor ? `${vendor.consignment_min}–${vendor.consignment_max}` : ''" />
-            <p class="hint">额度包不进保障池；买家整包购买，未用完可退货。{{ buyerPrice ? `买家看到的倍率约 ${multiplier(buyerPrice)}` : '' }}</p>
+            <p class="hint">订阅套餐不进保障池；买家付套餐价后在周期内使用期内额度。{{ buyerPrice ? `买家看到的倍率约 ${multiplier(buyerPrice)}` : '' }}</p>
           </div>
         </div>
         <p v-else class="mt-3 text-sm text-slate-500">平台按质量等级和订阅档位报出回收倍率，你确认后生效，按实际用量结算。不进市场目录，只进保障池。</p>
@@ -499,7 +499,7 @@ function runStatusText(status: string) {
           :disabled="busy || ((mode === 'consignment' || mode === 'pack') && (!categories.length || !categoryOpts.length))"
           @click="createListing"
         >
-          {{ mode === 'buyback' ? '获取报价' : mode === 'pack' ? '上架额度包' : '上架商品' }}
+          {{ mode === 'buyback' ? '获取报价' : mode === 'pack' ? '上架订阅套餐' : '上架商品' }}
         </button>
         <p class="mt-2 text-[12px] text-[#888]">
           推荐走完整向导：

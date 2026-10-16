@@ -14,7 +14,7 @@ const plats = Object.keys(platToApi)
 const kinds = [
   { value: '', label: '不限形态' },
   { value: 'channel', label: '按量通道' },
-  { value: 'pack', label: '额度包' },
+  { value: 'pack', label: '订阅套餐' },
   { value: 'all', label: '全部闲置TOKEN' },
 ]
 

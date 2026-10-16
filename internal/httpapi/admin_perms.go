@@ -45,7 +45,6 @@ func adminRouteResources(pattern string) []string {
 		{"/api/admin/ledger", []string{"console.duty.billing"}},
 		{"/api/admin/risk-events", []string{"console.duty.risk"}},
 
-		{"/api/admin/market-recommend", []string{"console.ops.rec_factors", "console.ops.rec_profiles", "console.ops.rec_tiles"}},
 		{"/api/admin/market-categories", []string{"console.ops.categories"}},
 		{"/api/admin/market-discovery", []string{"console.ops.extras", "console.ops.hot"}},
 

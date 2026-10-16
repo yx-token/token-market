@@ -147,7 +147,7 @@ async function closeListing(row: Listing) {
 
 <template>
   <div class="seller-page">
-    <PageHeader title="我的闲置TOKEN" description="改价、改分类、暂停或下架。未检测的寄售和额度包可以挂，买家会看到未检测；它们不能进保障池。">
+    <PageHeader title="我的闲置TOKEN" description="改价、改分类、暂停或下架。可挂「按量通道」或「订阅套餐」。未检测的寄售和订阅套餐可以挂，买家会看到未检测；它们不能进保障池。">
       <RefreshButton :loading="listings.loading.value" @click="reload()" />
       <RouterLink to="/seller/publish" class="xm-btn xm-btn-primary">＋ 发布闲置TOKEN</RouterLink>
       <RouterLink to="/seller/upstreams" class="xm-btn xm-btn-ghost">我的上游 →</RouterLink>
@@ -157,7 +157,7 @@ async function closeListing(row: Listing) {
       <button v-for="item in [
         ['', '全部形态'],
         ['consignment', '按量'],
-        ['pack', '额度包'],
+        ['pack', '订阅套餐'],
         ['buyback', '回收'],
       ]" :key="item[0] || 'all-mode'" type="button" class="seller-chip" :class="{ 'is-on': modeFilter === item[0] }" @click="modeFilter = item[0]">{{ item[1] }}</button>
     </div>
@@ -191,7 +191,7 @@ async function closeListing(row: Listing) {
         </template>
         <template #cell-mode="{ row }">
           <span class="xm-tag" :class="row.mode === 'pack' ? 'pack' : ''">
-            {{ row.mode === 'pack' ? '额度包' : row.mode === 'buyback' ? '回收' : '按量' }}
+            {{ row.mode === 'pack' ? '订阅套餐' : row.mode === 'buyback' ? '回收' : '按量' }}
           </span>
           <span v-if="sellerUntested(upstreamOf(row.upstream_id) ?? row)" class="xm-tag warn">{{ detectionText(row.detection_status) }}</span>
         </template>

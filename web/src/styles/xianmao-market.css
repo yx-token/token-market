@@ -1,11 +1,19 @@
 /* Ported from docs/prototypes/market-home.html */
 
     :root {
-      --bg: #f0f0f0;
-      --ink: #222;
+      --bg: #f5f5f5;
+      --surface: #ffffff;
+      --ink: #1f1f1f;
+      --muted: #666;
+      --line: rgba(0, 0, 0, 0.08);
+      --preview: #ececef;
       --yellow: #ffe60f;
       --price: #ff5000;
-      --font: "Plus Jakarta Sans", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      --pro: #ffe60f;
+      --pro-ink: #1f1f1f;
+      --radius: 16px;
+      --font: "DM Sans", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      --display: "Instrument Sans", "DM Sans", "PingFang SC", sans-serif;
       --lg-blur: 20px;
       --lg-saturate: 1.6;
       --lg-bg: rgba(255, 255, 255, 0.55);
@@ -21,7 +29,7 @@
       font-family: var(--font);
       color: var(--ink);
       -webkit-font-smoothing: antialiased;
-      background: #f5f5f5;
+      background: var(--bg);
       min-height: 100%;
     }
     .xm-market a { color: inherit; text-decoration: none; }
@@ -61,27 +69,37 @@
       padding: 18px 28px 12px;
       width: 100%;
     }
-    /* 品牌字：对齐闲鱼顶栏 Logo 的字号 / 颜色（#303030、大号加粗） */
+    /* 品牌：彩色猫标 + 黄油体字标 */
     .logo {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
       flex-shrink: 0;
-      color: #303030;
-      font-size: 32px;
-      font-weight: 900;
-      letter-spacing: 0.02em;
+      color: #1f1f1f;
       line-height: 1;
-      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     }
     .logo-mark {
-      width: 44px;
-      height: 44px;
-      border-radius: 13px;
-      background: #303030;
       display: grid;
       place-items: center;
       flex-shrink: 0;
+      width: 44px;
+      height: 40px;
+      background: none;
+      border-radius: 0;
+    }
+    .logo-mark img {
+      width: 44px;
+      height: 38px;
+      object-fit: contain;
+      display: block;
+      filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.12)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.1));
+    }
+    .logo-word {
+      font-family: "ZCOOL QingKe HuangYou", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      font-size: 34px;
+      font-weight: 400;
+      letter-spacing: 0.06em;
+      line-height: 1;
     }
     /* 搜索：默认白，聚焦黄 */
     .search {
@@ -343,496 +361,6 @@
 
     .xm-market .page { width: 100%; padding: 22px 24px 88px; }
 
-    /* 运营区：对齐闲鱼 —— 左类目 | 中横幅 | 右四宫格，等高对齐 */
-    .xm-market .stage {
-      --stage-h: 360px;
-      --tile-h: 173px;
-      --gap: 14px;
-      width: 100%;
-      height: var(--stage-h);
-      border-radius: 16px;
-      overflow: visible;
-      display: grid;
-      grid-template-columns: 232px 240px 1fr;
-      background: #f6f6f6;
-      box-sizing: border-box;
-      position: relative;
-      z-index: 2;
-    }
-    @media (max-width: 1100px) {
-      .xm-market .stage {
-        height: auto;
-        grid-template-columns: 210px 1fr;
-      }
-      .xm-market .promo-grid { grid-column: 1 / -1; height: auto; }
-      .xm-market .promo-banner { min-height: 280px; }
-    }
-    @media (max-width: 720px) {
-      .xm-market .stage { grid-template-columns: 1fr; overflow: hidden; }
-      .xm-market .side-cats { display: none; }
-    }
-
-    /* 闲鱼式类目：图标 + A / B / C，悬停展开飞层 */
-    .xm-market .side-cats {
-      position: relative;
-      height: 100%;
-      background: #f0f0f0;
-      border-radius: 16px 0 0 16px;
-      padding: 10px 0;
-      overflow: visible;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-evenly;
-      z-index: 6;
-    }
-    .xm-market .cat-row {
-      /* position:static → 飞层相对 .side-cats 绝对定位，铺满侧栏高度 */
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 0 14px;
-      min-height: 34px;
-      font-size: 13px;
-      font-weight: 500;
-      color: #1f1f1f;
-      cursor: default;
-    }
-    .cat-row:hover,
-    .xm-market .cat-row.is-open {
-      background: #fff;
-      color: #f58300;
-    }
-    .xm-market .cat-row .ico {
-      width: 20px;
-      height: 20px;
-      flex-shrink: 0;
-      display: grid;
-      place-items: center;
-    }
-    .xm-market .cat-row .ico svg { width: 18px; height: 18px; }
-    .xm-market .cat-labels {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0;
-      line-height: 1.35;
-      min-width: 0;
-    }
-    .xm-market .cat-labels a {
-      color: inherit;
-      font-weight: 500;
-      white-space: nowrap;
-    }
-    .cat-labels a:hover,
-    .xm-market .cat-labels a.is-on { color: #f58300; font-weight: 700; }
-    .xm-market .cat-labels .sep {
-      margin: 0 5px;
-      color: #bbb;
-      font-weight: 400;
-      pointer-events: none;
-    }
-    .xm-market .cat-flyout {
-      display: none;
-      position: absolute;
-      left: 100%;
-      top: 0;
-      height: 100%;
-      /* 铺满运营区中部（横幅+四宫格区域），容纳多列分组 */
-      width: min(720px, max(480px, calc(100vw - 280px)));
-      background: #fff;
-      border-radius: 0 16px 16px 0;
-      box-shadow: 8px 4px 28px rgba(0, 0, 0, 0.08);
-      padding: 16px 18px 14px;
-      overflow: auto;
-      z-index: 8;
-      box-sizing: border-box;
-    }
-    .cat-row:hover .cat-flyout,
-    .xm-market .cat-row.is-open .cat-flyout { display: block; }
-    /* 分组多列铺满：每组一列，组内链接双列排满 */
-    .xm-market .cat-flyout .fly-sections {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
-      gap: 14px 18px;
-      align-content: start;
-      min-height: 100%;
-    }
-    .xm-market .cat-flyout .sec {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      min-width: 0;
-      padding: 0 12px 0 0;
-      border-right: 1px solid #f0f0f0;
-      border-bottom: 0;
-      font-size: 13px;
-      line-height: 1.7;
-    }
-    .xm-market .cat-flyout .sec:last-child {
-      border-right: 0;
-      padding-right: 0;
-    }
-    .xm-market .cat-flyout .sec-title {
-      flex: none;
-      font-weight: 700;
-      color: #1f1f1f;
-      white-space: nowrap;
-      font-size: 13px;
-    }
-    .xm-market .cat-flyout .sec-title::after {
-      content: " ›";
-      color: #ccc;
-      font-weight: 400;
-    }
-    .xm-market .cat-flyout .sec-items {
-      flex: 1;
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 4px 10px;
-      align-content: start;
-      min-width: 0;
-    }
-    .xm-market .cat-flyout .sec-items a {
-      color: #555;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .xm-market .cat-flyout .sec-items a:hover { color: #f58300; }
-    /* 分组很少时（如供给形态）链接改单列，避免空半边 */
-    .xm-market .cat-flyout .fly-sections:has(.sec:only-child) .sec-items,
-    .xm-market .cat-flyout .sec:has(.sec-items a:nth-child(-n+4):last-child) .sec-items {
-      grid-template-columns: 1fr;
-    }
-
-    .xm-market .promo-banner {
-      position: relative;
-      height: 100%;
-      border-radius: 0;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      color: #fff;
-      isolation: isolate;
-      background: #ff7a1a;
-    }
-    .xm-market .promo-banner .bg {
-      position: absolute;
-      inset: 0;
-      background:
-        repeating-linear-gradient(
-          -32deg,
-          rgba(255,255,255,0.07) 0 10px,
-          transparent 10px 22px
-        ),
-        linear-gradient(180deg, #ff9a3d 0%, #ff6a00 55%, #ff5500 100%);
-      z-index: 0;
-    }
-    .xm-market .promo-banner .content {
-      position: relative;
-      z-index: 2;
-      height: 100%;
-      padding: 28px 20px 24px;
-      display: flex;
-      flex-direction: column;
-    }
-    .xm-market .promo-banner h1 {
-      margin: 0;
-      font-size: 28px;
-      font-weight: 900;
-      line-height: 1.25;
-      letter-spacing: 0.02em;
-    }
-    .xm-market .promo-banner .desc {
-      margin: 10px 0 0;
-      font-size: 13px;
-      line-height: 1.4;
-      opacity: 0.95;
-    }
-    .xm-market .promo-banner .mascot-spot {
-      flex: 1;
-      min-height: 0;
-      margin: 8px 0 4px;
-      display: flex;
-      align-items: flex-end;
-      justify-content: center;
-    }
-    .xm-market .promo-banner .mascot-spot img {
-      width: min(168px, 88%);
-      height: auto;
-      display: block;
-      filter: drop-shadow(0 8px 12px rgba(0,0,0,.18));
-      transition: transform 0.45s ease;
-      transform-origin: 50% 90%;
-    }
-    .xm-market .promo-banner:hover .mascot-spot img {
-      transform: scale(1.08) translateY(-4px);
-    }
-    .xm-market .promo-cta {
-      display: inline-flex;
-      align-self: flex-start;
-      margin-top: auto;
-      background: var(--yellow);
-      color: #222;
-      font-weight: 800;
-      font-size: 14px;
-      padding: 10px 20px;
-      border-radius: 999px;
-    }
-
-    .xm-market .promo-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: var(--tile-h) var(--tile-h);
-      gap: var(--gap);
-      height: 100%;
-      padding: 0 0 0 var(--gap);
-      box-sizing: border-box;
-      align-content: stretch;
-    }
-    @media (max-width: 1100px) {
-      .xm-market .promo-grid {
-        padding: var(--gap);
-        grid-template-rows: 173px 173px;
-      }
-    }
-
-    /* 四宫格：对齐闲鱼 right-card */
-    .xm-market .tile {
-      position: relative;
-      border-radius: 16px;
-      height: var(--tile-h);
-      overflow: hidden;
-      display: block;
-      transition: box-shadow 0.5s;
-    }
-    /* 同色加深：浅黄→深黄、浅蓝→深蓝…（不是黑底深色模式） */
-    .xm-market .tile--deal { background-color: #ffc107; }
-    .xm-market .tile--code { background-color: #64b5f6; }
-    .xm-market .tile--pool { background-color: #66bb6a; }
-    .xm-market .tile--buyer { background-color: #f06292; }
-    .xm-market .tile:hover { box-shadow: 0 8px 10px 0 rgba(0, 0, 0, 0.12); }
-
-    .xm-market .tile-eng {
-      position: absolute;
-      left: 10px;
-      top: 8px;
-      font-size: 42px;
-      font-weight: 900;
-      letter-spacing: 0.04em;
-      color: rgba(255,255,255,0.35);
-      line-height: 1;
-      z-index: 0;
-      pointer-events: none;
-      user-select: none;
-      text-transform: uppercase;
-    }
-
-    .xm-market .tile-flower {
-      position: absolute;
-      left: -24px;
-      top: 64px;
-      width: 140px;
-      height: auto;
-      opacity: 0;
-      pointer-events: none;
-      z-index: 0;
-      transition: all 0.5s ease-in-out;
-      transform-origin: center;
-      mix-blend-mode: multiply;
-    }
-    .xm-market .tile--deal .tile-flower { filter: hue-rotate(0deg) saturate(1.15); }
-    .xm-market .tile--code .tile-flower { filter: hue-rotate(170deg) saturate(1); }
-    .xm-market .tile--pool .tile-flower { filter: hue-rotate(80deg) saturate(1.05); }
-    .xm-market .tile--buyer .tile-flower { filter: hue-rotate(310deg) saturate(1.1); }
-    .xm-market .tile:hover .tile-flower {
-      opacity: 1;
-      transform: rotate(90deg);
-    }
-
-    .xm-market .tile-copy {
-      position: absolute;
-      left: 16px;
-      top: 18px;
-      z-index: 3;
-    }
-    .xm-market .tile-copy h3 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 900;
-      color: #1f1f1f;
-      line-height: 20px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .xm-market .tile-copy .arrow {
-      opacity: 0;
-      font-size: 14px;
-      transition: opacity 0.5s ease-in-out;
-      color: #1f1f1f;
-    }
-    .xm-market .tile:hover .tile-copy .arrow { opacity: 1; }
-    .xm-market .tile-copy p {
-      margin: 8px 0 0;
-      font-size: 13px;
-      font-weight: 300;
-      color: rgba(31,31,31,0.75);
-      line-height: 16px;
-    }
-
-    .xm-market .tile-mascot {
-      position: absolute;
-      left: 8px;
-      bottom: 0;
-      width: 108px;
-      height: 108px;
-      z-index: 2;
-      transition: transform 0.5s ease-in-out;
-      pointer-events: none;
-    }
-    .xm-market .tile-mascot img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-      filter: drop-shadow(0 4px 8px rgba(0,0,0,.1));
-    }
-    .xm-market .tile:hover .tile-mascot {
-      transform: translateY(6px) translateX(2px) scale(1.25);
-    }
-
-    .xm-market .tile-tray {
-      position: absolute;
-      top: 4px;
-      right: 4px;
-      bottom: 4px;
-      width: 58%;
-      background: hsla(0, 0%, 100%, 0.82);
-      border-radius: 14px;
-      padding: 14px 12px 10px;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      align-content: start;
-      z-index: 3;
-      box-sizing: border-box;
-      transition: box-shadow 0.5s;
-    }
-    .xm-market .tile:hover .tile-tray { box-shadow: 0 8px 10px 0 rgba(0, 0, 0, 0.08); }
-    .xm-market .thumb {
-      display: block;
-      text-align: center;
-      min-width: 0;
-      color: inherit;
-      text-decoration: none;
-      cursor: pointer;
-    }
-    .xm-market .thumb--empty { cursor: default; opacity: 0.55; }
-    .xm-market .thumb-pic--empty { background: #f0f0f0; }
-    .xm-market .thumb-pic {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 1;
-      border-radius: 12px;
-      overflow: hidden;
-      margin-bottom: 8px;
-      background: #eee;
-      transition: box-shadow 0.5s;
-    }
-    .xm-market .thumb-pic:hover { box-shadow: 0 8px 10px 0 rgba(0, 0, 0, 0.08); }
-    .xm-market .thumb-pic img {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-      border-radius: 12px;
-    }
-    .xm-market .thumb-price {
-      font-size: 14px;
-      font-weight: 600;
-      color: #ff4400;
-      line-height: 1;
-    }
-    .xm-market .thumb.is-skel .thumb-pic {
-      background: #e8e8e8;
-      box-shadow: none;
-    }
-    .xm-market .thumb.is-skel .thumb-price { display: none; }
-    @media (prefers-reduced-motion: reduce) {
-      .xm-market .tile-flower, .xm-market .tile-mascot, .xm-market .tile-copy .arrow { transition: none; }
-      .xm-market .tile:hover .tile-flower { transform: none; opacity: 0.5; }
-      .xm-market .tile:hover .tile-mascot { transform: none; }
-    }
-
-    .xm-market .section-head {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin: 32px 0 14px;
-    }
-    .xm-market .section-head h2 {
-      margin: 0;
-      font-size: 22px;
-      font-weight: 800;
-    }
-    .xm-market .kind-tabs, .xm-market .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
-    .xm-market .tab, .xm-market .kind-tab {
-      padding: 8px 16px;
-      border-radius: 999px;
-      font-size: 14px;
-      font-weight: 700;
-      background: rgba(255,255,255,.55);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,.5);
-      color: #666;
-    }
-    .xm-market .tab.on, .xm-market .kind-tab.on {
-      background: var(--yellow);
-      border-color: transparent;
-      color: #222;
-    }
-    .xm-market .facet-bar {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 10px;
-      margin: 0 0 18px;
-      padding: 12px 14px;
-      background: rgba(255,255,255,.65);
-      border: 1px solid rgba(0,0,0,.06);
-      border-radius: 14px;
-    }
-    .xm-market .facet-bar label {
-      font-size: 12px;
-      font-weight: 700;
-      color: #888;
-      margin-right: 2px;
-    }
-    .xm-market .facet-bar select {
-      appearance: none;
-      background: #fff;
-      border: 1px solid rgba(0,0,0,.1);
-      border-radius: 999px;
-      padding: 7px 28px 7px 12px;
-      font-size: 13px;
-      font-weight: 600;
-      color: #333;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M3 4.5L6 8l3-3.5'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 10px center;
-    }
-    .xm-market .facet-hint {
-      margin-left: auto;
-      font-size: 12px;
-      color: #999;
-    }
-    .xm-market .cat-labels a.is-on { color: #f58300; font-weight: 800; }
     .kw-inner a.is-on { text-decoration: underline; text-underline-offset: 4px; }
 
     .xm-market .feed {
@@ -848,163 +376,11 @@
       font-size: 14px;
     }
 
-    /* 货架卡片：液态玻璃；整卡可点 */
-    .xm-market .xm-card {
-      display: block;
-      color: inherit;
-      text-decoration: none;
-      cursor: pointer;
-      border-radius: 18px;
-      overflow: hidden;
-      background: rgba(255, 255, 255, 0.5);
-      backdrop-filter: blur(18px) saturate(1.5);
-      -webkit-backdrop-filter: blur(18px) saturate(1.5);
-      border: 1px solid rgba(255, 255, 255, 0.65);
-      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7);
-      transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s;
-    }
-    .xm-market .xm-card:hover {
-      transform: translateY(-4px) scale(1.01);
-      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.85);
-    }
-    .xm-market .xm-card .card-cover {
-      display: block;
-      aspect-ratio: 16/10;
-      position: relative;
-      overflow: hidden;
-      background: #e8e8e8;
-    }
-    .xm-market .xm-card .card-cover img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-      transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-    }
-    .xm-market .xm-card:hover .card-cover img { transform: scale(1.06); }
-    .xm-market .xm-card .card-cover .shade {
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,.55));
-      pointer-events: none;
-    }
-    .xm-market .xm-card .card-cover .plat {
-      position: absolute;
-      left: 14px;
-      bottom: 12px;
-      color: #fff;
-      font-weight: 800;
-      font-size: 18px;
-      text-shadow: 0 1px 4px rgba(0,0,0,.4);
-      z-index: 1;
-    }
-    .xm-market .badge {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      z-index: 1;
-      background: rgba(255, 230, 15, 0.92);
-      backdrop-filter: blur(8px);
-      color: #222;
-      font-size: 12px;
-      font-weight: 800;
-      padding: 4px 10px;
-      border-radius: 7px;
-      border: 1px solid rgba(255,255,255,.5);
-    }
-    .xm-market .xm-card .card-body {
-      padding: 14px 14px 14px;
-      background: #fff;
-      border-top: 1px solid rgba(0,0,0,.04);
-    }
-    .xm-market .xm-card .card-kind {
-      display: inline-block;
-      font-size: 11px;
-      font-weight: 800;
-      color: #555;
-      background: #f3f3f3;
-      padding: 3px 8px;
-      border-radius: 6px;
-      margin-bottom: 8px;
-    }
-    .xm-market .xm-card .card-kind.is-pack { color: #9a3412; background: #ffedd5; }
-    .xm-market .xm-card .card-kind.is-pool { color: #166534; background: #dcfce7; }
-    .xm-market .xm-card .card-title {
-      margin: 0 0 8px;
-      font-size: 15px;
-      font-weight: 700;
-      line-height: 1.35;
-      min-height: 2.7em;
-      color: #1f1f1f;
-    }
-    .xm-market .xm-card .card-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px 10px;
-      margin-bottom: 12px;
-      font-size: 12px;
-      color: #666;
-      font-weight: 600;
-    }
-    .xm-market .xm-card .card-meta .grade {
-      color: #1f1f1f;
-      background: #f5f5f5;
-      padding: 1px 6px;
-      border-radius: 4px;
-    }
-    .xm-market .xm-card .card-foot {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 10px;
-    }
-    .xm-market .price-block { min-width: 0; flex: 1; }
-    .xm-market .price { color: var(--price); font-weight: 800; font-size: 22px; line-height: 1.1; }
-    .xm-market .price small { font-size: 13px; }
-    .xm-market .price-sub {
-      margin-top: 4px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #888;
-      line-height: 1.35;
-    }
-    .xm-market .buy {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      appearance: none;
-      border: none;
-      cursor: pointer;
-      background: var(--yellow);
-      color: #1f1f1f;
-      font-size: 13px;
-      font-weight: 800;
-      padding: 10px 12px;
-      border-radius: 12px;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-    .xm-market .buy:hover { filter: brightness(0.97); }
-    .xm-market .buy:disabled { opacity: 0.6; cursor: wait; }
-
-    .xm-market .note {
-      margin-top: 40px;
-      text-align: center;
-      font-size: 12px;
-      color: #666;
-      background: rgba(255,255,255,.45);
-      backdrop-filter: blur(10px);
-      display: inline-block;
-      padding: 8px 14px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,.5);
-    }
     .xm-market .note-wrap { text-align: center; }
     .xm-market .note a { color: var(--price); text-decoration: underline; text-underline-offset: 2px; }
 
     
 
-.logo-mark img { width: 22px; height: 22px; display: block; filter: brightness(0) invert(1); }
 .xm-market a { color: inherit; text-decoration: none; }
 .xm-market button, .xm-market input { font: inherit; }
 
@@ -1387,3 +763,386 @@
   cursor: pointer;
 }
 .xm-market .xm-btn-dark:disabled { opacity: 0.45; }
+
+/* ========== Library 市场页（品牌墙 + 信息流） ========== */
+.xm-market .lib-page,
+.xm-market .page.lib-page {
+  max-width: none;
+  margin: 0;
+  width: 100%;
+  padding: 36px 32px 96px;
+}
+/* 品牌图标墙 */
+.xm-market .info-strip {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-bottom: 22px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  overflow: hidden;
+  animation: lib-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.xm-market .info-brand-wall {
+  display: grid;
+  grid-template-rows: repeat(2, 62px);
+  grid-auto-flow: column;
+  grid-auto-columns: 68px;
+  gap: 10px 8px;
+  padding: 14px 16px 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(255, 230, 15, 0.08), transparent 55%),
+    linear-gradient(180deg, #fafafa 0%, #fff 100%);
+}
+.xm-market .info-brand-wall::-webkit-scrollbar { display: none; }
+.xm-market .info-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 68px;
+  height: 62px;
+  border-radius: 14px;
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.xm-market .info-brand-pad {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.15s, box-shadow 0.18s, background 0.15s;
+}
+.xm-market .info-brand img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  display: block;
+  filter: grayscale(0.15);
+  transition: filter 0.15s, transform 0.18s;
+}
+.xm-market .info-brand-name {
+  display: block;
+  max-width: 100%;
+  padding: 0 2px;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+  color: #666;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.xm-market .info-brand.live .info-brand-name,
+.xm-market .info-brand.on .info-brand-name { color: #1f1f1f; }
+.xm-market .info-brand.live img { filter: none; }
+.xm-market .info-brand:hover {
+  transform: translateY(-2px);
+}
+.xm-market .info-brand:hover .info-brand-pad,
+.xm-market .info-brand.on .info-brand-pad {
+  border-color: rgba(255, 230, 15, 0.85);
+  box-shadow: 0 6px 16px rgba(255, 230, 15, 0.35), 0 0 0 1px rgba(255, 230, 15, 0.35);
+  background: #fffef5;
+}
+.xm-market .info-brand:hover img,
+.xm-market .info-brand.on img {
+  filter: none;
+  transform: scale(1.06);
+}
+.xm-market .info-brand.on .info-brand-pad {
+  background: var(--yellow);
+  border-color: transparent;
+}
+@media (max-width: 720px) {
+  .xm-market .info-brand { width: 58px; height: 56px; }
+  .xm-market .info-brand-pad { width: 36px; height: 36px; }
+  .xm-market .info-brand img { width: 20px; height: 20px; }
+  .xm-market .info-brand-name { font-size: 9px; }
+  .xm-market .info-brand-wall {
+    grid-template-rows: repeat(2, 56px);
+    grid-auto-columns: 58px;
+    gap: 8px 6px;
+    padding: 12px;
+  }
+}
+.xm-market .filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+  animation: lib-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both;
+}
+.xm-market .pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.xm-market .pill {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #666;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.xm-market .pill:hover {
+  color: #1f1f1f;
+  background: #fffef0;
+}
+.xm-market .pill.on {
+  color: #1f1f1f;
+  background: var(--yellow);
+  border-color: transparent;
+  box-shadow: none;
+}
+.xm-market .filter-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.xm-market .feed-count {
+  font-size: 12px;
+  color: #9a9aa3;
+  white-space: nowrap;
+}
+.xm-market .tool-select,
+.xm-market .tool-input {
+  appearance: none;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--ink);
+  outline: none;
+}
+.xm-market .tool-select {
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b6b76' d='M3 4.5L6 8l3-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.xm-market .tool-input { width: 108px; }
+.xm-market .tool-input::placeholder { color: #9a9aa3; font-weight: 500; }
+
+.xm-market .lib-feed,
+.xm-market .feed.lib-feed {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  width: 100%;
+  animation: lib-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
+}
+@media (max-width: 720px) {
+  .xm-market .lib-page,
+  .xm-market .page.lib-page { padding: 24px 16px 72px; }
+  .xm-market .filter-bar { flex-wrap: wrap; }
+  .xm-market .lib-feed,
+  .xm-market .feed.lib-feed {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+.xm-market .lib-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  color: inherit;
+  text-decoration: none;
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s, border-color 0.28s;
+}
+.xm-market .lib-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(17, 17, 19, 0.12);
+  box-shadow: 0 12px 32px rgba(17, 17, 19, 0.08);
+}
+.xm-market .lib-preview {
+  position: relative;
+  aspect-ratio: 1.05;
+  background: var(--preview);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.xm-market .lib-preview::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(80% 60% at 50% 40%, rgba(255,255,255,0.55), transparent 70%),
+    linear-gradient(180deg, rgba(255,255,255,0.2), transparent 50%);
+  pointer-events: none;
+  z-index: 1;
+}
+.xm-market .lib-preview img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.22;
+  filter: saturate(0.7) contrast(1.05);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s;
+}
+.xm-market .lib-card:hover .lib-preview img {
+  transform: scale(1.06);
+  opacity: 0.32;
+}
+.xm-market .lib-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  font-size: 11px;
+  font-weight: 800;
+  color: #222;
+  background: rgba(255, 230, 15, 0.95);
+  padding: 3px 8px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+.xm-market .lib-badge.is-pack {
+  color: #9a3412;
+  background: #ffedd5;
+  border-color: transparent;
+}
+.xm-market .lib-badge.is-pool {
+  color: #166534;
+  background: #dcfce7;
+  border-color: transparent;
+}
+.xm-market .lib-stage {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  width: 100%;
+}
+.xm-market .lib-plat {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  opacity: 0.85;
+  text-align: center;
+}
+.xm-market .lib-metric {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--price);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.xm-market .lib-metric small {
+  font-size: 14px;
+  font-weight: 700;
+  margin-right: 1px;
+}
+.xm-market .lib-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: var(--yellow);
+  border: 1px solid transparent;
+  box-shadow: 0 4px 14px rgba(255, 230, 15, 0.35);
+  font-size: 13px;
+  font-weight: 800;
+  color: #1f1f1f;
+  cursor: pointer;
+  transition: filter 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.xm-market .lib-card:hover .lib-cta {
+  filter: brightness(0.97);
+  box-shadow: 0 6px 18px rgba(255, 230, 15, 0.45);
+}
+.xm-market .lib-cta:disabled { opacity: 0.6; cursor: wait; }
+.xm-market .lib-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 14px 16px;
+  background: #fff;
+}
+.xm-market .lib-meta-text { flex: 1; min-width: 0; }
+.xm-market .lib-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.xm-market .lib-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.xm-market .lib-expand {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-top: -2px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #b0b0b8;
+  transition: color 0.15s, background 0.15s;
+}
+.xm-market .lib-card:hover .lib-expand {
+  color: var(--ink);
+  background: var(--bg);
+}
+
+@keyframes lib-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xm-market .info-strip,
+  .xm-market .filter-bar,
+  .xm-market .lib-feed,
+  .xm-market .lib-card,
+  .xm-market .lib-preview img {
+    animation: none !important;
+    transition: none !important;
+  }
+}

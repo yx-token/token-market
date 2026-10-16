@@ -1,25 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/stores/auth'
 import { useLoginModal } from '@/stores/loginModal'
-import { useMarketDiscovery } from '@/stores/marketDiscovery'
 import type { MarketAction } from '@/market/config'
 
 const auth = useAuth()
 const loginModal = useLoginModal()
-const discovery = useMarketDiscovery()
 const route = useRoute()
 const router = useRouter()
 const q = ref(typeof route.query.q === 'string' ? route.query.q : '')
-const hot = computed(() => discovery.hotSearches)
-const showHot = computed(
-  () => discovery.hotBarEnabled && (route.path === '/' || route.path.startsWith('/market')),
-)
-
-onMounted(() => {
-  discovery.ensure()
-})
 
 watch(
   () => route.query.q,
@@ -52,17 +42,6 @@ function logout() {
   router.push('/')
 }
 
-function hotOn(action: MarketAction) {
-  const kind = typeof route.query.kind === 'string' ? route.query.kind : ''
-  const plat = typeof route.query.plat === 'string' ? route.query.plat : ''
-  const tag = typeof route.query.tag === 'string' ? route.query.tag : ''
-  const qq = typeof route.query.q === 'string' ? route.query.q : ''
-  if (action.kindTab) return kind === action.kindTab
-  if (action.plat !== undefined && action.plat !== '') return plat === action.plat
-  if (action.tag) return tag === action.tag
-  if (action.q) return qq === action.q
-  return false
-}
 </script>
 
 <template>
@@ -70,9 +49,9 @@ function hotOn(action: MarketAction) {
     <div class="header-row">
       <RouterLink class="logo" to="/" aria-label="闲猫首页">
         <span class="logo-mark" aria-hidden="true">
-          <img src="/assets/xianmao-pet.svg" alt="" width="22" height="22" />
+          <img src="/assets/xianmao-pet.svg" alt="" width="44" height="38" />
         </span>
-        闲猫
+        <span class="logo-word">闲猫</span>
       </RouterLink>
       <form class="search" @submit.prevent="search">
         <span class="search-ico" aria-hidden="true">
@@ -123,16 +102,5 @@ function hotOn(action: MarketAction) {
         </template>
       </div>
     </div>
-    <nav v-if="showHot" class="kw-bar" aria-label="快捷筛选">
-      <div class="kw-inner">
-        <a
-          v-for="h in hot"
-          :key="h.id"
-          href="#feed"
-          :class="{ 'is-on': hotOn(h.action) }"
-          @click.prevent="applyAction(h.action)"
-        >{{ h.label }}</a>
-      </div>
-    </nav>
   </header>
 </template>

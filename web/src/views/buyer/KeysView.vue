@@ -239,15 +239,15 @@ const createdSample = computed(() =>
 
 <template>
   <div>
-    <PageHeader title="API Key" description="先在市场把商家加入清单，再选择清单内的挂单创建 Key。挂单按排列顺序优先调用，也可添加平台默认分组兜底。">
+    <PageHeader title="API Key" description="先在市场把商家加入清单，再选择清单内的挂单创建 Key。挂单按排列顺序优先调用，也可添加平台默认分组兜底。订阅套餐从期内额度扣，未用完可按标签退货。">
       <RouterLink to="/buyer/merchants" class="xm-btn xm-btn-ghost">商家清单</RouterLink>
       <button type="button" class="xm-btn xm-btn-primary" @click="openCreate">创建 Key</button>
     </PageHeader>
 
     <div v-if="(packs.data.value ?? []).length" class="xm-pack-list">
-      <h2>我的额度包</h2>
+      <h2>我的订阅套餐</h2>
       <div v-for="p in packs.data.value" :key="p.id" class="xm-pack-row">
-        <span class="xm-tag pack">额度包</span>
+        <span class="xm-tag pack">订阅套餐</span>
         <span class="font-semibold">#{{ p.listing_id }}</span>
         <span>面额 ¥{{ p.face_value.toFixed(0) }} · 剩余 <b style="color:#ff5000">¥{{ p.remaining.toFixed(2) }}</b></span>
         <span style="color:#888">{{ p.status }}</span>
@@ -271,7 +271,7 @@ const createdSample = computed(() =>
     </div>
 
     <div class="xm-yellow-callout">
-      店铺活动包自动抵扣已有 Key 的适用调用，额度不足的部分扣平台余额。整包购买的固定额度商品使用独立 Key，可在上方查看和退货。
+      店铺活动包自动抵扣已有 Key 的适用调用，额度不足的部分扣平台余额。订阅套餐购买会账面预付套餐价；调用从期内额度扣，未用完可退货。
     </div>
 
     <div v-if="keys.loading.value && !keys.data.value?.length" class="py-10 text-center text-[#888]">加载中…</div>
@@ -282,7 +282,7 @@ const createdSample = computed(() =>
           <span class="name">{{ k.name }}</span>
           <span class="prefix">{{ k.key_prefix }}…</span>
           <span class="xm-tag" :class="k.status === 'active' ? 'on' : 'off'">{{ k.status === 'active' ? '使用中' : k.status }}</span>
-          <span v-if="packForKey(k.id)" class="xm-tag pack">额度包</span>
+          <span v-if="packForKey(k.id)" class="xm-tag pack">订阅套餐</span>
           <span v-if="k.limit_blocked_until" class="xm-tag warn">已限额</span>
           <div class="xm-key-actions">
             <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="revealing === k.id" @click="copyKey(k)">

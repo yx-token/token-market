@@ -11,7 +11,7 @@ vi.mock('@/api', () => ({
   auth: {}, buyer: {},
   market: {
     listings: vi.fn(), listing: vi.fn(), pools: vi.fn().mockResolvedValue([]),
-    categories: vi.fn().mockResolvedValue([]), recommend: vi.fn().mockResolvedValue(null), discovery: vi.fn().mockResolvedValue({ slots: [] }),
+    categories: vi.fn().mockResolvedValue([]), discovery: vi.fn().mockResolvedValue({}),
   },
 }))
 const base = { listing_id: 1, platform: 'openai', auth_type: 'oauth', price: 0.6, health: 'healthy', title: '模型通道', models: ['gpt-6-astra', 'gpt-6.1-sol'] } as MarketItem
@@ -19,20 +19,21 @@ const base = { listing_id: 1, platform: 'openai', auth_type: 'oauth', price: 0.6
 describe('市场挂售模型展示与筛选', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('卡片展示模型，筛选参数写入 URL 和列表请求，保留存量未声明商品', async () => {
+  it('筛选参数写入 URL 和列表请求，保留存量未声明商品', async () => {
     const legacy = { ...base, listing_id: 2, title: '存量通道', models: [] }
     vi.mocked(market.listings).mockImplementation(async (q) => q?.model ? [legacy] : [base, legacy])
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
     await router.push('/')
     const wrapper = mount(MarketView, { global: { plugins: [createPinia(), router], stubs: { ModalDialog: true } } })
     await flushPromises()
-    expect(wrapper.text()).toContain('挂售模型：gpt-6-astra、gpt-6.1-sol')
+    expect(wrapper.findAll('.lib-card')).toHaveLength(2)
+    expect(wrapper.text()).toContain('模型通道')
     await wrapper.get('#f-model').setValue('gpt-custom')
     await flushPromises()
     expect(router.currentRoute.value.query.model).toBe('gpt-custom')
     expect(market.listings).toHaveBeenLastCalledWith({ sort: 'price', limit: '200', model: 'gpt-custom' })
-    expect(wrapper.findAll('.xm-card')).toHaveLength(1)
-    expect(wrapper.find('.xm-card').text()).toContain('存量通道')
+    expect(wrapper.findAll('.lib-card')).toHaveLength(1)
+    expect(wrapper.find('.lib-card').text()).toContain('存量通道')
     expect(wrapper.findAll('#market-models option')).toHaveLength(2)
     wrapper.unmount()
   })
@@ -65,8 +66,8 @@ describe('市场挂售模型展示与筛选', () => {
     await flushPromises()
     resolveFirst([{ ...base, title: '第一个模型通道', models: ['first'] }])
     await flushPromises()
-    expect(wrapper.findAll('.xm-card')).toHaveLength(1)
-    expect(wrapper.get('.xm-card').text()).toContain('第二个模型通道')
+    expect(wrapper.findAll('.lib-card')).toHaveLength(1)
+    expect(wrapper.get('.lib-card').text()).toContain('第二个模型通道')
     wrapper.unmount()
   })
 })

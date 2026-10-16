@@ -3,180 +3,233 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>闲猫 · 发布供给</title>
+  <title>闲猫 · 商家上架原型</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="_center-shell.css" />
   <style>
-    .wrap { max-width: 720px; }
+    .wrap { max-width: 880px; }
+    .lead-note {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 12px 14px; margin: 0 0 22px;
+      background: #fffbeb; border: 1px solid #f0c00055; border-radius: 14px;
+      font-size: 13px; line-height: 1.55; color: #5c4a00;
+    }
+    .lead-note b { color: #1f1f1f; }
     .steps {
-      display: flex;
-      gap: 6px;
-      margin: 0 0 28px;
-      flex-wrap: wrap;
+      display: flex; gap: 6px; margin: 0 0 24px; flex-wrap: wrap;
     }
     .step-pill {
-      flex: 1;
-      min-width: 88px;
-      text-align: center;
-      padding: 10px 8px;
-      border-radius: 12px;
-      background: #fff;
-      border: 1px solid var(--line);
-      font-size: 12px;
-      font-weight: 700;
-      color: #999;
+      flex: 1; min-width: 72px; text-align: center;
+      padding: 10px 6px; border-radius: 12px;
+      background: #fff; border: 1px solid var(--line);
+      font-size: 12px; font-weight: 700; color: #999; cursor: default;
     }
     .step-pill .n {
-      display: block;
-      font-size: 11px;
-      margin-bottom: 2px;
+      display: block; font-size: 10px; margin-bottom: 2px;
       font-family: ui-monospace, Menlo, monospace;
     }
-    .step-pill.on {
-      background: var(--yellow);
-      border-color: transparent;
-      color: #1f1f1f;
-    }
+    .step-pill.on { background: var(--yellow); border-color: transparent; color: #1f1f1f; }
     .step-pill.done { color: #1f1f1f; background: #fff8c5; }
     .panel {
-      display: none;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 24px 22px;
+      display: none; background: #fff; border: 1px solid var(--line);
+      border-radius: 18px; padding: 24px 22px;
     }
     .panel.on { display: block; }
-    .panel h2 {
-      margin: 0 0 6px;
-      font-size: 20px;
-      font-weight: 800;
-    }
-    .panel .sub {
-      margin: 0 0 20px;
-      font-size: 13px;
-      color: var(--muted);
-      line-height: 1.55;
-    }
+    .panel h2 { margin: 0 0 6px; font-size: 20px; font-weight: 800; }
+    .panel .sub { margin: 0 0 20px; font-size: 13px; color: var(--muted); line-height: 1.55; }
     .field { margin-bottom: 16px; }
-    .field label {
-      display: block;
-      font-size: 12px;
-      font-weight: 700;
-      color: #666;
-      margin-bottom: 6px;
+    .field label.lbl {
+      display: block; font-size: 12px; font-weight: 700; color: #666; margin-bottom: 6px;
     }
-    .field input, .field select, .field textarea {
-      width: 100%;
-      box-sizing: border-box;
-      border: 1.5px solid rgba(0,0,0,.1);
-      border-radius: 12px;
-      padding: 12px 14px;
-      font: inherit;
-      font-size: 14px;
-      background: #fafafa;
+    .field input[type=text], .field input[type=number], .field input[type=password],
+    .field select, .field textarea {
+      width: 100%; box-sizing: border-box;
+      border: 1.5px solid rgba(0,0,0,.1); border-radius: 12px;
+      padding: 12px 14px; font: inherit; font-size: 14px; background: #fafafa;
     }
     .field textarea { min-height: 72px; resize: vertical; }
     .field input:focus, .field select:focus, .field textarea:focus {
-      outline: none;
-      border-color: #1f1f1f;
-      background: #fff;
+      outline: none; border-color: #1f1f1f; background: #fff;
     }
-    .row2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    @media (max-width: 640px) {
+      .row2, .row3 { grid-template-columns: 1fr; }
     }
-    @media (max-width: 560px) { .row2 { grid-template-columns: 1fr; } }
-    .choice {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-bottom: 18px;
-    }
+    .choice { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
     .choice label {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-      padding: 14px;
-      border: 1.5px solid rgba(0,0,0,.1);
-      border-radius: 14px;
-      cursor: pointer;
-      background: #fafafa;
+      display: flex; gap: 12px; align-items: flex-start;
+      padding: 14px; border: 1.5px solid rgba(0,0,0,.1); border-radius: 14px;
+      cursor: pointer; background: #fafafa;
     }
-    .choice label.on {
-      border-color: #1f1f1f;
-      background: rgba(255, 230, 15, 0.28);
-    }
+    .choice label.on { border-color: #1f1f1f; background: rgba(255, 230, 15, 0.28); }
+    .choice label.muted-opt { opacity: 0.95; }
     .choice input { margin-top: 3px; accent-color: #1f1f1f; }
     .choice strong { display: block; font-size: 14px; margin-bottom: 2px; }
     .choice span { font-size: 12px; color: #777; line-height: 1.45; font-weight: 500; }
+    .badge {
+      display: inline-block; font-size: 11px; font-weight: 800;
+      padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: middle;
+    }
+    .badge-green { background: #dcfce7; color: #166534; }
+    .badge-purple { background: #f3e8ff; color: #6b21a8; }
+    .badge-gray { background: #f1f5f9; color: #475569; }
+    .badge-blue { background: #e0f2fe; color: #075985; }
+    .badge-orange { background: #ffedd5; color: #9a3412; }
     .actions {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      margin-top: 22px;
-      padding-top: 18px;
-      border-top: 1px solid var(--line);
+      display: flex; justify-content: space-between; gap: 12px;
+      margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line);
     }
     .btn {
-      border: none;
-      border-radius: 12px;
-      padding: 12px 20px;
-      font: inherit;
-      font-size: 14px;
-      font-weight: 800;
-      cursor: pointer;
+      border: none; border-radius: 12px; padding: 12px 20px;
+      font: inherit; font-size: 14px; font-weight: 800; cursor: pointer;
     }
     .btn-ghost { background: #f0f0f0; color: #333; }
     .btn-primary { background: var(--yellow); color: #1f1f1f; }
     .btn-primary:hover { filter: brightness(0.97); }
+    .btn-outline {
+      background: #fff; color: #1f1f1f;
+      box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.12);
+    }
     .btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .probe {
-      padding: 16px;
-      border-radius: 14px;
-      background: #f8fafc;
-      border: 1px dashed #cbd5e1;
-      margin-bottom: 16px;
+      padding: 16px; border-radius: 14px; background: #f8fafc;
+      border: 1px dashed #cbd5e1; margin-bottom: 16px;
     }
     .probe .bar {
-      height: 8px;
-      background: #e2e8f0;
-      border-radius: 999px;
-      overflow: hidden;
-      margin: 10px 0;
+      height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin: 10px 0;
     }
     .probe .bar i {
-      display: block;
-      height: 100%;
-      width: 0;
-      background: #22c55e;
-      border-radius: 999px;
-      transition: width 0.3s;
+      display: block; height: 100%; width: 0; background: #22c55e;
+      border-radius: 999px; transition: width 0.3s;
     }
     .probe.ok { background: #f0fdf4; border-color: #86efac; border-style: solid; }
-    .probe.fail { background: #fef2f2; border-color: #fecaca; border-style: solid; }
-    .hint {
-      font-size: 12px;
-      color: #888;
-      line-height: 1.5;
-      margin-top: 6px;
-    }
+    .probe.skip { background: #f8fafc; border-color: #cbd5e1; border-style: solid; }
+    .hint { font-size: 12px; color: #888; line-height: 1.5; margin-top: 6px; }
     .summary {
-      background: #fafafa;
-      border-radius: 14px;
-      padding: 16px;
-      font-size: 14px;
-      line-height: 1.7;
+      background: #fafafa; border-radius: 14px; padding: 16px;
+      font-size: 14px; line-height: 1.7;
     }
     .summary b { font-weight: 800; }
-    .done-box {
-      text-align: center;
-      padding: 12px 0 8px;
-    }
-    .done-box h2 { margin-bottom: 10px; }
+    .done-box { text-align: center; padding: 12px 0 8px; }
     .links { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+      border: 1.5px solid rgba(0,0,0,.1); background: #fafafa; cursor: pointer; user-select: none;
+    }
+    .chip input { accent-color: #1f1f1f; }
+    .chip.on { background: rgba(255,230,15,.35); border-color: #1f1f1f; }
+    .chip.warn-mutex { outline: 2px solid #f97316; }
+    .model-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;
+    }
+    @media (max-width: 560px) { .model-grid { grid-template-columns: 1fr; } }
+    .model-item {
+      display: flex; gap: 8px; align-items: center;
+      padding: 10px 12px; border-radius: 12px; border: 1.5px solid rgba(0,0,0,.1);
+      background: #fafafa; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .model-item.on { border-color: #1f1f1f; background: rgba(255,230,15,.28); }
+    .split {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;
+    }
+    @media (max-width: 720px) { .split { grid-template-columns: 1fr; } }
+    .card-path {
+      border: 1.5px solid rgba(0,0,0,.1); border-radius: 16px; padding: 16px;
+      background: #fafafa; cursor: pointer; transition: .15s;
+    }
+    .card-path:hover { border-color: #999; }
+    .card-path.on { border-color: #1f1f1f; background: rgba(255,230,15,.28); }
+    .card-path h3 { margin: 0 0 6px; font-size: 15px; font-weight: 800; }
+    .card-path p { margin: 0; font-size: 12px; color: #777; line-height: 1.5; }
+    .card-path .tagline { margin-top: 10px; font-size: 11px; font-weight: 800; }
+    .preview {
+      border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px;
+      background: linear-gradient(180deg, #fffef5, #fff); margin-top: 12px;
+    }
+    .preview .pv-title { font-size: 15px; font-weight: 800; margin-bottom: 6px; }
+    .preview .pv-meta { font-size: 12px; color: #666; line-height: 1.6; }
+    .preview .pv-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .flow-mini {
+      display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+      font-size: 11px; font-weight: 700; color: #555; margin: 0 0 18px;
+    }
+    .flow-mini span {
+      background: #fff; border: 1px solid var(--line); padding: 4px 8px; border-radius: 8px;
+    }
+    .flow-mini em { font-style: normal; color: #bbb; }
+    .mutex-banner {
+      display: none; padding: 10px 12px; border-radius: 12px; margin-bottom: 14px;
+      background: #fff7ed; border: 1px solid #fdba74; font-size: 12px; color: #9a3412; line-height: 1.5;
+    }
+    .mutex-banner.on { display: block; }
+    .stat-row {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0;
+    }
+    @media (max-width: 560px) { .stat-row { grid-template-columns: 1fr; } }
+    .stat {
+      background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+    }
+    .stat .k { font-size: 11px; color: #888; font-weight: 700; }
+    .stat .v { font-size: 16px; font-weight: 800; margin-top: 2px; }
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: #1f1f1f; color: #fff; padding: 10px 16px; border-radius: 999px;
+      font-size: 13px; font-weight: 700; opacity: 0; pointer-events: none; transition: .25s; z-index: 99;
+    }
+    .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .checkline {
+      display: flex; align-items: center; gap: 8px; font-size: 13px;
+      padding: 8px 0; border-bottom: 1px solid #f0f0f0;
+    }
+    .checkline:last-child { border-bottom: none; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; flex-shrink: 0; }
+    .dot.ok { background: #22c55e; }
+    .dot.wait { background: #f59e0b; }
+    .result-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;
+    }
+    @media (max-width: 560px) { .result-row { grid-template-columns: 1fr; } }
+    .result-card {
+      position: relative;
+      padding: 14px 16px 14px 18px;
+      border-radius: 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      overflow: hidden;
+      min-height: 76px;
+    }
+    .result-card::before {
+      content: "";
+      position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+      background: #cbd5e1;
+    }
+    .result-card .rk {
+      font-size: 11px; font-weight: 800; letter-spacing: .04em;
+      color: #94a3b8; text-transform: uppercase;
+    }
+    .result-card .rv {
+      margin-top: 6px; font-size: 20px; font-weight: 800; color: #cbd5e1;
+      letter-spacing: -0.02em; line-height: 1.2;
+    }
+    .result-card .rs {
+      margin-top: 4px; font-size: 11px; font-weight: 600; color: #94a3b8;
+    }
+    .result-card.ready {
+      background: linear-gradient(145deg, #fffef5, #fff);
+      border-color: rgba(255, 230, 15, 0.55);
+    }
+    .result-card.ready::before { background: #ffe60f; }
+    .result-card.ready .rk { color: #78716c; }
+    .result-card.ready .rv { color: #1f1f1f; }
+    .result-card.ready .rs { color: #666; }
+    .result-card.grade-a.ready { background: linear-gradient(145deg, #f0fdf4, #fff); border-color: #86efac; }
+    .result-card.grade-a.ready::before { background: #22c55e; }
+    .result-card.grade-a.ready .rv { color: #166534; }
   </style>
 </head>
 <body>
@@ -186,7 +239,7 @@
         <img src="assets/xianmao-pet.svg" alt="" width="36" height="36" />
         闲猫
       </a>
-      <span class="role-tag">发布供给</span>
+      <span class="role-tag">商家上架 · 交互原型</span>
       <div class="spacer"></div>
       <a class="nav-link" href="seller-center.html">卖家中心</a>
       <a class="nav-link" href="market-home.html">回市场</a>
@@ -194,17 +247,35 @@
   </header>
 
   <main class="wrap">
-    <span class="route">/seller/upstreams → 挂单</span>
+    <span class="route">/seller/publish · 原型可点击全流程</span>
     <h1>发布闲置供给</h1>
-    <p class="lead">授权订阅账号 → 上架检测 → 挂「按量通道」或「额度包」。不是上架实物，是开放可调度额度。</p>
+    <p class="lead">接入上游 → 选模型 →（可选）平台质检 → <b>挂商品 A/B</b> 或 <b>走平台回收</b>（互斥）。</p>
+
+    <div class="lead-note">
+      <div>
+        <b>产品口径：</b>买家可购商品只有「按量通道 A」与「订阅套餐 B」。
+        平台回收不是商品，只是把产能包销进保障池；走回收期间不能再发成 A/B。
+      </div>
+    </div>
+
+    <div class="flow-mini" aria-hidden="true">
+      <span>代理</span><em>→</em>
+      <span>接入</span><em>→</em>
+      <span>模型</span><em>→</em>
+      <span>质检可选</span><em>→</em>
+      <span>处置二选一</span><em>→</em>
+      <span>定价/标签</span><em>→</em>
+      <span>完成</span>
+    </div>
 
     <div class="steps" id="steps" aria-label="发布步骤">
       <div class="step-pill on" data-step="0"><span class="n">01</span>代理</div>
       <div class="step-pill" data-step="1"><span class="n">02</span>接入</div>
-      <div class="step-pill" data-step="2"><span class="n">03</span>检测</div>
-      <div class="step-pill" data-step="3"><span class="n">04</span>商品</div>
-      <div class="step-pill" data-step="4"><span class="n">05</span>定价</div>
-      <div class="step-pill" data-step="5"><span class="n">06</span>完成</div>
+      <div class="step-pill" data-step="2"><span class="n">03</span>模型</div>
+      <div class="step-pill" data-step="3"><span class="n">04</span>质检</div>
+      <div class="step-pill" data-step="4"><span class="n">05</span>处置</div>
+      <div class="step-pill" data-step="5"><span class="n">06</span>定价</div>
+      <div class="step-pill" data-step="6"><span class="n">07</span>完成</div>
     </div>
 
     <!-- 0 代理 -->
@@ -212,14 +283,14 @@
       <h2>配置出口代理</h2>
       <p class="sub">授权与调用走同一固定代理；每个代理同时只能绑一个账号。</p>
       <div class="choice" id="proxy-choice">
-        <label class="on"><input type="radio" name="proxy" value="mine" checked /><div><strong>使用我的代理</strong><span>HTTP / SOCKS5，需已在代理列表登记</span></div></label>
-        <label><input type="radio" name="proxy" value="platform" /><div><strong>使用平台代理</strong><span>由平台库存分配（需管理员允许）</span></div></label>
+        <label class="on"><input type="radio" name="proxy" value="mine" checked /><div><strong>使用我的代理</strong><span>HTTP / SOCKS5，需已在代理列表登记且连通成功</span></div></label>
+        <label><input type="radio" name="proxy" value="platform" /><div><strong>使用平台代理</strong><span>由平台库存分配（需管理员关闭「强制卖家代理」）</span></div></label>
       </div>
       <div class="field" id="proxy-select-wrap">
-        <label for="proxy-id">选择代理</label>
+        <label class="lbl" for="proxy-id">选择代理</label>
         <select id="proxy-id">
-          <option value="p1">家宽 · 上海 · socks5://1.2.3.4:1080</option>
-          <option value="p2">VPS · 新加坡 · http://proxy.example:8080</option>
+          <option value="p1">家宽 · 上海 · socks5://1.2.3.4:1080 · 连通✓</option>
+          <option value="p2">VPS · 新加坡 · http://proxy.example:8080 · 连通✓</option>
         </select>
       </div>
       <div class="actions">
@@ -234,19 +305,19 @@
       <p class="sub">只做授权，不交密码。OAuth 跳转官方页；Coding Plan 粘贴订阅 Key。</p>
       <div class="row2">
         <div class="field">
-          <label for="platform">厂商</label>
+          <label class="lbl" for="platform">厂商</label>
           <select id="platform">
-            <option value="Claude">Claude</option>
-            <option value="ChatGPT">ChatGPT / Codex</option>
-            <option value="Kimi">Kimi</option>
-            <option value="Gemini">Gemini</option>
-            <option value="智谱">智谱 GLM</option>
-            <option value="MiniMax">MiniMax</option>
-            <option value="Grok">Grok</option>
+            <option>Claude</option>
+            <option>ChatGPT / Codex</option>
+            <option>Kimi</option>
+            <option>Gemini</option>
+            <option>智谱 GLM</option>
+            <option>MiniMax</option>
+            <option>Grok</option>
           </select>
         </div>
         <div class="field">
-          <label for="auth-type">接入方式</label>
+          <label class="lbl" for="auth-type">接入方式</label>
           <select id="auth-type">
             <option value="oauth">OAuth 授权</option>
             <option value="setup-token">Setup Token</option>
@@ -255,154 +326,305 @@
         </div>
       </div>
       <div class="field" id="oauth-block">
-        <label>授权</label>
+        <label class="lbl">授权</label>
         <button class="btn btn-ghost" type="button" id="btn-oauth" style="width:100%">打开官方授权页（原型模拟）</button>
-        <p class="hint" id="oauth-hint">授权完成后回填授权码，平台换取 token 并创建上游。</p>
+        <p class="hint" id="oauth-hint">授权完成后回填授权码；平台创建上游并绑定代理。</p>
       </div>
       <div class="field" id="key-block" style="display:none">
-        <label for="plan-key">Coding Plan Key</label>
+        <label class="lbl" for="plan-key">Coding Plan Key</label>
         <input id="plan-key" type="password" placeholder="粘贴订阅 Key（不会展示给买家）" />
-        <p class="hint">国内站用官方默认地址；国际站用平台内置地址，不允许自定义 base_url。</p>
+        <p class="hint">不允许自定义 base_url，防止中转 Key 冒充订阅。</p>
       </div>
       <div class="field">
-        <label for="reserve">自留比例（%）</label>
+        <label class="lbl" for="reserve">自留比例（%）</label>
         <input id="reserve" type="number" min="0" max="80" value="20" />
-        <p class="hint">窗口用量达到阈值即暂停调度，只卖掉你用不完的部分。Gemini / Antigravity 等可能不支持自留。</p>
+        <p class="hint">窗口用量达阈值即暂停调度，只卖掉用不完的部分。部分厂商可能不支持。</p>
       </div>
       <div class="actions">
         <button class="btn btn-ghost" type="button" data-prev>上一步</button>
-        <button class="btn btn-primary" type="button" data-next id="btn-connect">创建上游并检测</button>
+        <button class="btn btn-primary" type="button" data-next id="btn-connect">创建上游</button>
       </div>
     </section>
 
-    <!-- 2 检测 -->
+    <!-- 2 模型 -->
     <section class="panel" data-panel="2">
-      <h2>上架检测</h2>
-      <p class="sub">首次接入必做：可用性、性能、降智对照。通过前不能挂单。</p>
-      <div class="probe" id="probe">
-        <div style="font-size:13px;font-weight:700" id="probe-text">准备开始检测…</div>
-        <div class="bar"><i id="probe-bar"></i></div>
-        <div style="font-size:12px;color:#888" id="probe-detail">平台探测 → 可选第三方身份检测</div>
+      <h2>选择挂售模型</h2>
+      <p class="sub">白名单决定买家能调哪些模型；至少选一个。目录来自账号可用模型。</p>
+      <div class="model-grid" id="model-grid">
+        <label class="model-item on"><input type="checkbox" checked value="claude-sonnet-4-5" /> claude-sonnet-4-5</label>
+        <label class="model-item on"><input type="checkbox" checked value="claude-opus-4" /> claude-opus-4</label>
+        <label class="model-item"><input type="checkbox" value="claude-haiku-4-5" /> claude-haiku-4-5</label>
+        <label class="model-item"><input type="checkbox" value="claude-sonnet-4" /> claude-sonnet-4</label>
       </div>
-      <div class="row2">
-        <div class="field">
-          <label>识别档位</label>
-          <input id="tier-view" readonly value="—" />
-        </div>
-        <div class="field">
-          <label>质量等级</label>
-          <input id="grade-view" readonly value="—" />
-        </div>
-      </div>
+      <p class="hint">未选模型无法继续。市场详情会展示这些模型。</p>
       <div class="actions">
         <button class="btn btn-ghost" type="button" data-prev>上一步</button>
-        <button class="btn btn-primary" type="button" data-next id="btn-after-probe" disabled>检测通过，继续</button>
+        <button class="btn btn-outline" type="button" id="btn-refresh-models">刷新目录</button>
+        <button class="btn btn-primary" type="button" data-next id="btn-models-next">下一步</button>
       </div>
     </section>
 
-    <!-- 3 商品形态 -->
+    <!-- 3 质检可选 -->
     <section class="panel" data-panel="3">
-      <h2>选择商品形态</h2>
-      <p class="sub">同一上游同时只能有一条有效挂单；形态决定买家怎么下单。</p>
-      <div class="choice" id="sku-choice">
-        <label class="on" data-sku="channel">
-          <input type="radio" name="sku" value="channel" checked />
+      <h2>平台质检（可选）</h2>
+      <p class="sub">质检通过后打上「平台质检」标签，并生成买家可见报告。也可跳过——仍能上架，但无官方标签。</p>
+
+      <div class="choice" id="qc-choice">
+        <label class="on" data-qc="do">
+          <input type="radio" name="qc" value="do" checked />
           <div>
-            <strong>A. 按量通道（寄售）</strong>
-            <span>买家选用后付最低额度 M（可为 0），调用按官方价 × 你的倍率从平台余额扣。可进市场被指定，也可进保障池。</span>
+            <strong>走平台质检 <span class="badge badge-purple">推荐</span></strong>
+            <span>检测可用性与降智对照。通过后打标签 + 报告，转化更好，纠纷举证更清晰。</span>
           </div>
         </label>
-        <label data-sku="pack">
-          <input type="radio" name="sku" value="pack" />
+        <label data-qc="skip">
+          <input type="radio" name="qc" value="skip" />
           <div>
-            <strong>B. 额度包</strong>
-            <span>发布固定面额商品（如 ¥100），买家整包购买后调用；未用完可退货释放库存。有可售份数。</span>
-          </div>
-        </label>
-        <label data-sku="buyback">
-          <input type="radio" name="sku" value="buyback" />
-          <div>
-            <strong>C. 平台回收（按量）</strong>
-            <span>接受平台报价，不进市场目录，只进保障池优先消化。省心，倍率由平台定。</span>
+            <strong>暂不质检</strong>
+            <span>无「平台质检」标签，无报告。卖家不可自贴该标签。</span>
           </div>
         </label>
       </div>
+
+      <div id="qc-run-wrap">
+        <div class="probe" id="probe">
+          <div style="font-size:13px;font-weight:700" id="probe-text">点击下方开始检测</div>
+          <div class="bar"><i id="probe-bar"></i></div>
+          <div style="font-size:12px;color:#888" id="probe-detail">平台探测 · 降智对照 · 生成报告</div>
+        </div>
+        <div class="result-row" id="qc-results">
+          <div class="result-card" id="tier-card">
+            <div class="rk">识别档位</div>
+            <div class="rv" id="tier-view">待检测</div>
+            <div class="rs" id="tier-sub">质检通过后显示订阅档</div>
+          </div>
+          <div class="result-card" id="grade-card">
+            <div class="rk">质量等级</div>
+            <div class="rv" id="grade-view">—</div>
+            <div class="rs" id="grade-sub">影响回收报价与展示信任</div>
+          </div>
+        </div>
+        <button class="btn btn-outline" type="button" id="btn-start-qc" style="width:100%;margin-bottom:8px">开始平台质检</button>
+      </div>
+
+      <div id="qc-skip-wrap" style="display:none">
+        <div class="probe skip">
+          <div style="font-size:13px;font-weight:700">已选择跳过质检</div>
+          <div style="font-size:12px;color:#888;margin-top:6px">上架后市场不会显示「平台质检」标签。之后仍可补做质检（原型示意）。</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-ghost" type="button" data-prev>上一步</button>
+        <button class="btn btn-primary" type="button" data-next id="btn-after-qc" disabled>继续</button>
+      </div>
+    </section>
+
+    <!-- 4 处置二选一 -->
+    <section class="panel" data-panel="4">
+      <h2>选择处置方式</h2>
+      <p class="sub">同一上游同时只能一条有效处置。<b>商品</b>与<b>回收</b>互斥——走回收就不能再发成 A/B。</p>
+
+      <div class="mutex-banner on">
+        提示：平台回收 <b>不是商品</b>。买家不会在市场里「买到回收单」；流量来自保障池。
+      </div>
+
+      <div class="split" id="path-split">
+        <div class="card-path on" data-path="product" tabindex="0">
+          <h3>挂市场商品 <span class="badge badge-blue">A / B</span></h3>
+          <p>面向买家选购。可选按量通道（付最低额度 M）或订阅套餐（周期 + 期内额度）。可勾选服务标签。</p>
+          <div class="tagline" style="color:#075985">→ 进市场目录，买家可下单</div>
+        </div>
+        <div class="card-path" data-path="buyback" tabindex="0">
+          <h3>走平台回收 <span class="badge badge-green">非商品</span></h3>
+          <p>接受平台报价，产能包销进保障池，优先吃量。不进市场，不能同时挂 A/B。</p>
+          <div class="tagline" style="color:#166534">→ 只进保障池，换确定性吃量</div>
+        </div>
+      </div>
+
+      <div id="product-skus">
+        <p class="lbl" style="font-size:12px;font-weight:700;color:#666;margin:0 0 8px">选择商品形态</p>
+        <div class="choice" id="sku-choice">
+          <label class="on" data-sku="channel">
+            <input type="radio" name="sku" value="channel" checked />
+            <div>
+              <strong>A. 按量通道</strong>
+              <span>买家付最低额度 M（可 0）开通；调用按官方价 × 你的倍率扣费。用超扣余额。可进保障池。</span>
+            </div>
+          </label>
+          <label data-sku="sub">
+            <input type="radio" name="sku" value="sub" />
+            <div>
+              <strong>B. 订阅套餐</strong>
+              <span>买家付套餐价，获得固定周期内的调用权与期内额度；到期或额度用尽即止。可售份数=可同时生效的订阅数。不进保障池。</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div id="buyback-intro" style="display:none">
+        <div class="summary">
+          你将进入「接受回收报价」步骤：平台给出 m_b，你只能接受或放弃。<br />
+          接受后账号仍归你，按成功用量结算；市场看不到此单。
+        </div>
+      </div>
+
       <div class="actions">
         <button class="btn btn-ghost" type="button" data-prev>上一步</button>
         <button class="btn btn-primary" type="button" data-next>下一步</button>
       </div>
     </section>
 
-    <!-- 4 定价 -->
-    <section class="panel" data-panel="4">
-      <h2>定价与上架内容</h2>
-      <p class="sub" id="price-sub">设置买家看到的价格与标题。</p>
+    <!-- 5 定价 / 标签 / 回收报价 -->
+    <section class="panel" data-panel="5">
+      <h2 id="price-title">定价与承诺</h2>
+      <p class="sub" id="price-sub">设置价格、分类与服务标签。</p>
 
-      <div id="fields-channel">
-        <div class="row2">
-          <div class="field">
-            <label for="mult">卖家倍率 m_s</label>
-            <input id="mult" type="number" step="0.01" min="0.3" max="0.95" value="0.55" />
-            <p class="hint">买家价 ≈ m_s × (1 + 抽佣)。需在平台允许区间内。</p>
+      <!-- A/B 定价 -->
+      <div id="fields-product">
+        <div id="fields-channel">
+          <div class="row2">
+            <div class="field">
+              <label class="lbl" for="mult">卖家倍率 m_s</label>
+              <input id="mult" type="number" step="0.01" min="0.3" max="0.95" value="0.55" />
+              <p class="hint">买家价 ≈ m_s × (1 + 抽佣 20%) = <b id="buyer-price">0.66</b>×</p>
+            </div>
+            <div class="field">
+              <label class="lbl" for="min-m">最低额度 M（元）</label>
+              <input id="min-m" type="number" step="1" min="0" value="50" />
+              <p class="hint">开通后须消化这 M；用超扣平台余额。</p>
+            </div>
           </div>
           <div class="field">
-            <label for="min-m">最低额度 M（元）</label>
-            <input id="min-m" type="number" step="1" min="0" value="0" />
-            <p class="hint">下单应付；0 = 免费开通，之后按量扣余额。</p>
+            <label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;cursor:pointer">
+              <input type="checkbox" id="join-pool" checked /> 同时加入保障池（倍率须 ≤ 池子成本上限）
+            </label>
           </div>
         </div>
+
+        <div id="fields-sub" style="display:none">
+          <div class="row2">
+            <div class="field">
+              <label class="lbl" for="sub-price">套餐售价（元）</label>
+              <input id="sub-price" type="number" min="10" step="10" value="99" />
+              <p class="hint">买家一口价购买本周期订阅；钱进平台托管。</p>
+            </div>
+            <div class="field">
+              <label class="lbl" for="sub-period">订阅周期</label>
+              <select id="sub-period">
+                <option value="7">7 天</option>
+                <option value="30" selected>30 天</option>
+                <option value="90">90 天</option>
+              </select>
+              <p class="hint">自开通起算；到期自动停用 Key。</p>
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label class="lbl" for="sub-quota">期内额度（元，官方价口径）</label>
+              <input id="sub-quota" type="number" min="10" step="10" value="150" />
+              <p class="hint">周期内须消化的包含额度；用尽即止，不自动转扣余额。</p>
+            </div>
+            <div class="field">
+              <label class="lbl" for="stock">可售份数（同时生效订阅数）</label>
+              <input id="stock" type="number" min="1" value="3" />
+              <p class="hint">有人订阅占用 1 份；到期/退订后释放。</p>
+            </div>
+          </div>
+          <div class="field">
+            <label class="lbl" for="sub-mult">期内计费倍率</label>
+            <input id="sub-mult" type="number" step="0.01" min="0.3" max="0.95" value="0.55" />
+            <p class="hint">调用按官方价 × 倍率抵扣期内额度。套餐不进保障池；退货看服务标签（如七天无理由 / 用完才退）。</p>
+          </div>
+          <div class="summary" style="margin-bottom:12px;font-size:13px">
+            <b>订阅套餐 vs 旧额度包：</b>多了「周期」——到期未用完默认作废（除非标签允许退）；买家买的是「时段内使用权 + 期内额度」，不是无期限余额包。
+          </div>
+        </div>
+
         <div class="field">
-          <label><input type="checkbox" id="join-pool" checked /> 同时加入保障池（倍率需足够低）</label>
+          <label class="lbl">市场分类（必选，至少 1 个）</label>
+          <div class="chips" id="cat-chips">
+            <label class="chip on"><input type="checkbox" checked value="claude" /> Claude 专场</label>
+            <label class="chip"><input type="checkbox" value="coding" /> Coding Plan</label>
+            <label class="chip"><input type="checkbox" value="high-ctx" /> 长上下文</label>
+            <label class="chip"><input type="checkbox" value="cheap" /> 高性价比</label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="lbl">服务标签（卖家承诺，纠纷按此裁定）</label>
+          <div class="chips" id="tag-chips">
+            <label class="chip" data-tag="refund7"><input type="checkbox" value="refund7" /> 七天无理由全退</label>
+            <label class="chip" data-tag="useup"><input type="checkbox" value="useup" /> 用完才退</label>
+            <label class="chip" data-tag="quality"><input type="checkbox" value="quality" /> 仅质量问题可退</label>
+            <label class="chip" data-tag="partial"><input type="checkbox" value="partial" /> 支持协商退部分</label>
+          </div>
+          <p class="hint" id="tag-hint">「七天无理由」与「用完才退」互斥，只能选其一（原型已做校验）。</p>
+        </div>
+
+        <div class="row2">
+          <div class="field">
+            <label class="lbl" for="title">展示标题（可选）</label>
+            <input id="title" type="text" placeholder="留空则自动生成" />
+          </div>
+          <div class="field">
+            <label class="lbl" for="desc">短描述（可选）</label>
+            <input id="desc" type="text" placeholder="不要写外链或账号信息" />
+          </div>
+        </div>
+
+        <div class="preview" id="buyer-preview">
+          <div style="font-size:11px;font-weight:800;color:#888;margin-bottom:8px">买家侧预览</div>
+          <div class="pv-title" id="pv-title">—</div>
+          <div class="pv-meta" id="pv-meta">—</div>
+          <div class="pv-tags" id="pv-tags"></div>
         </div>
       </div>
 
-      <div id="fields-pack" style="display:none">
-        <div class="row2">
-          <div class="field">
-            <label for="face">包面额（元）</label>
-            <input id="face" type="number" min="10" step="10" value="100" />
-          </div>
-          <div class="field">
-            <label for="stock">可售份数</label>
-            <input id="stock" type="number" min="1" value="3" />
-          </div>
-        </div>
-        <div class="field">
-          <label for="pack-mult">包内计费倍率</label>
-          <input id="pack-mult" type="number" step="0.01" min="0.3" max="0.95" value="0.55" />
-        </div>
-      </div>
-
+      <!-- 回收 -->
       <div id="fields-buyback" style="display:none">
-        <div class="summary">
-          平台回收报价：<b>0.72×</b>（按检测等级 A）<br />
-          有效期 24 小时。接受后按实际用量 × 0.72 结算，不进市场。
+        <div class="summary" style="margin-bottom:14px">
+          <b>平台回收报价</b>（平台配置，你只能接受/拒绝）<br />
+          公式示意：m_b = min(基础倍率 × 等级系数, 池子成本上限)<br />
+          当前：基础 0.60 × 等级 A(1.0) → <b>0.60×</b>，上限 0.72 → 报价 <b id="mb-val">0.60×</b><br />
+          有效期至 <b>2026-10-16 12:00</b>
         </div>
-      </div>
 
-      <div class="field" style="margin-top:16px">
-        <label for="title">展示标题（可选）</label>
-        <input id="title" placeholder="留空则自动生成：厂商 · 档位 · 形态" />
-      </div>
-      <div class="field">
-        <label for="desc">短描述（可选）</label>
-        <textarea id="desc" placeholder="给买家看的说明，不要写外链或账号信息"></textarea>
+        <div class="stat-row">
+          <div class="stat"><div class="k">若自己寄售参考</div><div class="v">~0.55–0.70×</div></div>
+          <div class="stat"><div class="k">回收价 m_b</div><div class="v" style="color:#166534">0.60×</div></div>
+          <div class="stat"><div class="k">预计日消化</div><div class="v">≈ ¥80–120</div></div>
+        </div>
+
+        <div class="summary" style="background:#f0fdf4;border:1px solid #86efac">
+          <b>你会得到什么</b><br />
+          · 保障池 <b>优先吃量</b>（回收兑现核心）<br />
+          · 账号仍归你，按成功用量 × 0.60 结算，不买断<br />
+          · 今日已回收 / 预估收益在卖家中心可见<br />
+          · <b>不能</b>同时挂市场 A/B；退出回收后才可改挂商品
+        </div>
+
+        <div class="choice" style="margin-top:16px" id="buyback-accept">
+          <label class="on"><input type="radio" name="bb" value="accept" checked /><div><strong>接受报价 0.60×</strong><span>进入保障池优先调度</span></div></label>
+          <label><input type="radio" name="bb" value="reject" /><div><strong>放弃，返回改挂商品</strong><span>不生效，可回去选 A/B</span></div></label>
+        </div>
       </div>
 
       <div class="actions">
         <button class="btn btn-ghost" type="button" data-prev>上一步</button>
-        <button class="btn btn-primary" type="button" data-next id="btn-publish">确认上架</button>
+        <button class="btn btn-primary" type="button" data-next id="btn-publish">确认提交</button>
       </div>
     </section>
 
-    <!-- 5 完成 -->
-    <section class="panel" data-panel="5">
+    <!-- 6 完成 -->
+    <section class="panel" data-panel="6">
       <div class="done-box">
-        <h2>已发布</h2>
+        <h2 id="done-h2">已完成</h2>
         <p class="sub" id="done-text" style="margin-bottom:16px"></p>
         <div class="summary" id="done-summary" style="text-align:left"></div>
+        <div class="summary" style="text-align:left;margin-top:12px" id="done-checklist"></div>
         <div class="links">
-          <a class="btn btn-primary" href="market-home.html#feed">去市场看看</a>
+          <a class="btn btn-primary" href="market-home.html#feed" id="link-market">去市场看看</a>
           <a class="btn btn-ghost" href="seller-center.html">回卖家中心</a>
           <button class="btn btn-ghost" type="button" id="btn-again">再发一条</button>
         </div>
@@ -410,20 +632,39 @@
     </section>
   </main>
 
+  <div class="toast" id="toast"></div>
+
   <script>
+    const MAX = 6;
     let step = 0;
-    const max = 5;
+    let probing = false;
     const state = {
       proxy: "mine",
       platform: "Claude",
       auth: "oauth",
-      sku: "channel",
-      tier: "Max 5x",
-      grade: "A",
+      path: "product", // product | buyback
+      sku: "channel",  // channel | sub
+      qc: "do",        // do | skip
+      qcDone: false,
+      qcPassed: false,
+      tier: "—",
+      grade: "—",
+      models: ["claude-sonnet-4-5", "claude-opus-4"],
+      tags: [],
+      cats: ["claude"],
+      bb: "accept",
     };
 
     const pills = [...document.querySelectorAll(".step-pill")];
     const panels = [...document.querySelectorAll(".panel")];
+
+    function toast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.add("on");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove("on"), 2200);
+    }
 
     function show(n) {
       step = n;
@@ -432,31 +673,72 @@
         p.classList.toggle("done", i < n);
       });
       panels.forEach((p) => p.classList.toggle("on", Number(p.dataset.panel) === n));
-      if (n === 2) startProbe();
-      if (n === 4) syncPriceFields();
+      if (n === 3) syncQcUI();
+      if (n === 4) syncPathUI();
+      if (n === 5) syncPriceUI();
+    }
+
+    function selectedModels() {
+      return [...document.querySelectorAll("#model-grid input:checked")].map((i) => i.value);
+    }
+
+    function validateBeforeNext() {
+      if (step === 2) {
+        const ms = selectedModels();
+        if (!ms.length) {
+          toast("请至少选择一个挂售模型");
+          return false;
+        }
+        state.models = ms;
+      }
+      if (step === 3) {
+        if (state.qc === "do" && !state.qcPassed) {
+          toast("请先完成质检，或改为「暂不质检」");
+          return false;
+        }
+      }
+      if (step === 5 && state.path === "product") {
+        const cats = [...document.querySelectorAll("#cat-chips input:checked")];
+        if (!cats.length) {
+          toast("请至少选择一个市场分类");
+          return false;
+        }
+        state.cats = cats.map((c) => c.value);
+        if (state.tags.includes("refund7") && state.tags.includes("useup")) {
+          toast("「七天无理由」与「用完才退」不能同时选");
+          return false;
+        }
+      }
+      if (step === 5 && state.path === "buyback" && state.bb === "reject") {
+        toast("已放弃回收，请返回改挂商品");
+        state.path = "product";
+        show(4);
+        return false;
+      }
+      return true;
     }
 
     document.querySelectorAll("[data-next]").forEach((btn) => {
       btn.addEventListener("click", () => {
+        if (!validateBeforeNext()) return;
         if (step === 1) {
           state.platform = document.getElementById("platform").value;
           state.auth = document.getElementById("auth-type").value;
+          toast("上游已创建（原型）");
         }
-        if (step === 3) {
-          state.sku = document.querySelector("input[name=sku]:checked")?.value || "channel";
-        }
-        if (step === 4) {
+        if (step === 5) {
           finishPublish();
-          show(5);
+          show(6);
           return;
         }
-        if (step < max) show(step + 1);
+        if (step < MAX) show(step + 1);
       });
     });
     document.querySelectorAll("[data-prev]").forEach((btn) => {
       btn.addEventListener("click", () => { if (step > 0) show(step - 1); });
     });
 
+    // proxy
     document.getElementById("proxy-choice").addEventListener("click", (e) => {
       const lab = e.target.closest("label");
       if (!lab) return;
@@ -467,15 +749,117 @@
       document.getElementById("proxy-select-wrap").style.display = state.proxy === "mine" ? "" : "none";
     });
 
+    // auth type
     document.getElementById("auth-type").addEventListener("change", () => {
       const v = document.getElementById("auth-type").value;
       document.getElementById("oauth-block").style.display = v === "coding" ? "none" : "";
       document.getElementById("key-block").style.display = v === "coding" ? "" : "none";
     });
-
     document.getElementById("btn-oauth").addEventListener("click", () => {
-      document.getElementById("oauth-hint").textContent = "已模拟授权成功，可点「创建上游并检测」。";
+      document.getElementById("oauth-hint").textContent = "已模拟授权成功，可点「创建上游」。";
+      toast("授权成功（模拟）");
     });
+
+    // models
+    document.getElementById("model-grid").addEventListener("click", (e) => {
+      const lab = e.target.closest(".model-item");
+      if (!lab) return;
+      const input = lab.querySelector("input");
+      if (e.target !== input) input.checked = !input.checked;
+      lab.classList.toggle("on", input.checked);
+    });
+    document.getElementById("btn-refresh-models").addEventListener("click", () => toast("已刷新模型目录（原型）"));
+
+    // QC choice
+    document.getElementById("qc-choice").addEventListener("click", (e) => {
+      const lab = e.target.closest("label");
+      if (!lab) return;
+      document.querySelectorAll("#qc-choice label").forEach((x) => x.classList.remove("on"));
+      lab.classList.add("on");
+      lab.querySelector("input").checked = true;
+      state.qc = lab.dataset.qc;
+      syncQcUI();
+    });
+
+    function syncQcUI() {
+      const doQc = state.qc === "do";
+      document.getElementById("qc-run-wrap").style.display = doQc ? "" : "none";
+      document.getElementById("qc-skip-wrap").style.display = doQc ? "none" : "";
+      const btn = document.getElementById("btn-after-qc");
+      if (!doQc) {
+        state.qcPassed = true;
+        state.qcDone = true;
+        btn.disabled = false;
+      } else {
+        btn.disabled = !state.qcPassed;
+      }
+    }
+
+    document.getElementById("btn-start-qc").addEventListener("click", startProbe);
+
+    function startProbe() {
+      if (probing) return;
+      probing = true;
+      state.qcPassed = false;
+      const box = document.getElementById("probe");
+      const bar = document.getElementById("probe-bar");
+      const text = document.getElementById("probe-text");
+      const detail = document.getElementById("probe-detail");
+      const next = document.getElementById("btn-after-qc");
+      box.classList.remove("ok", "skip");
+      next.disabled = true;
+      const stages = [
+        [25, "写入探测环境…", "隔离探测分组"],
+        [50, "可用性探测…", "发送测试请求"],
+        [75, "降智对照…", "对照基线账号"],
+        [100, "质检通过", "已生成报告，可打「平台质检」标签"],
+      ];
+      let i = 0;
+      const tick = () => {
+        if (i >= stages.length) {
+          probing = false;
+          box.classList.add("ok");
+          state.tier = state.platform.includes("Kimi") ? "Coding" : "Max 5x";
+          state.grade = "A";
+          state.qcPassed = true;
+          state.qcDone = true;
+          const tierCard = document.getElementById("tier-card");
+          const gradeCard = document.getElementById("grade-card");
+          document.getElementById("tier-view").textContent = state.tier;
+          document.getElementById("tier-sub").textContent = "来自官方订阅识别";
+          document.getElementById("grade-view").textContent = state.grade;
+          document.getElementById("grade-sub").textContent = "满血档 · 可打「平台质检」标签";
+          tierCard.classList.add("ready");
+          gradeCard.classList.add("ready", "grade-a");
+          next.disabled = false;
+          toast("质检通过，已获得「平台质检」标签");
+          return;
+        }
+        const [w, t, d] = stages[i++];
+        bar.style.width = w + "%";
+        text.textContent = t;
+        detail.textContent = d;
+        setTimeout(tick, 420);
+      };
+      bar.style.width = "0";
+      tick();
+    }
+
+    // path product vs buyback
+    document.getElementById("path-split").addEventListener("click", (e) => {
+      const card = e.target.closest(".card-path");
+      if (!card) return;
+      document.querySelectorAll(".card-path").forEach((c) => c.classList.remove("on"));
+      card.classList.add("on");
+      state.path = card.dataset.path;
+      syncPathUI();
+    });
+
+    function syncPathUI() {
+      const isProduct = state.path === "product";
+      document.getElementById("product-skus").style.display = isProduct ? "" : "none";
+      document.getElementById("buyback-intro").style.display = isProduct ? "none" : "";
+    }
 
     document.getElementById("sku-choice").addEventListener("click", (e) => {
       const lab = e.target.closest("label");
@@ -483,113 +867,217 @@
       document.querySelectorAll("#sku-choice label").forEach((x) => x.classList.remove("on"));
       lab.classList.add("on");
       lab.querySelector("input").checked = true;
+      state.sku = lab.dataset.sku;
     });
 
-    function syncPriceFields() {
-      const sku = state.sku;
-      document.getElementById("fields-channel").style.display = sku === "channel" ? "" : "none";
-      document.getElementById("fields-pack").style.display = sku === "pack" ? "" : "none";
-      document.getElementById("fields-buyback").style.display = sku === "buyback" ? "" : "none";
-      const map = {
-        channel: "寄售按量：自定倍率 + 最低额度 M。",
-        pack: "额度包：面额、库存、包内倍率。买家未用完可退货。",
-        buyback: "平台回收：确认报价即可，无需自定倍率。",
-      };
-      document.getElementById("price-sub").textContent = map[sku] || "";
-      const auto = state.platform + " · " + state.tier + " · " +
-        (sku === "pack" ? "额度包" : sku === "buyback" ? "回收通道" : "按量通道");
-      const title = document.getElementById("title");
-      if (!title.value) title.placeholder = auto;
+    // pricing / tags
+    function syncPriceUI() {
+      const isProduct = state.path === "product";
+      document.getElementById("fields-product").style.display = isProduct ? "" : "none";
+      document.getElementById("fields-buyback").style.display = isProduct ? "none" : "";
+      document.getElementById("price-title").textContent = isProduct ? "定价与承诺" : "确认回收报价";
+      document.getElementById("price-sub").textContent = isProduct
+        ? "设置价格、分类与服务标签；下单后标签对买家可见并锁定。"
+        : "平台出价，你接受即包销进保障池。这不是上架商品。";
+      if (isProduct) {
+        document.getElementById("fields-channel").style.display = state.sku === "channel" ? "" : "none";
+        document.getElementById("fields-sub").style.display = state.sku === "sub" ? "" : "none";
+        updateBuyerPrice();
+        updatePreview();
+      }
+      document.getElementById("btn-publish").textContent = isProduct ? "确认上架" : "确认接受回收";
     }
 
-    let probing = false;
-    function startProbe() {
-      if (probing) return;
-      probing = true;
-      const box = document.getElementById("probe");
-      const bar = document.getElementById("probe-bar");
-      const text = document.getElementById("probe-text");
-      const detail = document.getElementById("probe-detail");
-      const next = document.getElementById("btn-after-probe");
-      box.classList.remove("ok", "fail");
-      next.disabled = true;
-      let p = 0;
-      const stages = [
-        [20, "创建上游账号…", "写入探测分组"],
-        [45, "探测可用性…", "发送测试请求"],
-        [70, "性能与降智对照…", "对照基线账号"],
-        [90, "第三方身份检测（可选）…", "BazaarLink"],
-        [100, "检测通过", "档位已识别，可以挂单"],
-      ];
-      let i = 0;
-      const tick = () => {
-        if (i >= stages.length) {
-          probing = false;
-          box.classList.add("ok");
-          state.tier = state.platform === "Kimi" ? "Coding" : state.platform === "Claude" ? "Max 5x" : "Pro";
-          state.grade = "A";
-          document.getElementById("tier-view").value = state.tier;
-          document.getElementById("grade-view").value = state.grade + " 级";
-          next.disabled = false;
-          return;
-        }
-        const [w, t, d] = stages[i++];
-        p = w;
-        bar.style.width = p + "%";
-        text.textContent = t;
-        detail.textContent = d;
-        setTimeout(tick, 450);
-      };
-      tick();
+    function updateBuyerPrice() {
+      const m = Number(document.getElementById("mult").value) || 0;
+      document.getElementById("buyer-price").textContent = (m * 1.2).toFixed(2);
+      updatePreview();
+    }
+    document.getElementById("mult").addEventListener("input", updateBuyerPrice);
+    document.getElementById("min-m").addEventListener("input", updatePreview);
+    ["sub-price", "sub-period", "sub-quota", "sub-mult", "stock", "title"].forEach((id) => {
+      document.getElementById(id).addEventListener("input", updatePreview);
+      document.getElementById(id).addEventListener("change", updatePreview);
+    });
+
+    // chips
+    function wireChips(rootId, onChange) {
+      document.getElementById(rootId).addEventListener("click", (e) => {
+        const lab = e.target.closest(".chip");
+        if (!lab) return;
+        const input = lab.querySelector("input");
+        if (e.target !== input) input.checked = !input.checked;
+        lab.classList.toggle("on", input.checked);
+        onChange && onChange();
+      });
+    }
+    wireChips("cat-chips", () => {
+      state.cats = [...document.querySelectorAll("#cat-chips input:checked")].map((i) => i.value);
+      updatePreview();
+    });
+    wireChips("tag-chips", () => {
+      const tags = [...document.querySelectorAll("#tag-chips input:checked")].map((i) => i.value);
+      // mutex refund7 vs useup
+      if (tags.includes("refund7") && tags.includes("useup")) {
+        const last = tags[tags.length - 1];
+        const drop = last === "refund7" ? "useup" : "refund7";
+        const el = document.querySelector(`#tag-chips [data-tag="${drop}"]`);
+        el.querySelector("input").checked = false;
+        el.classList.remove("on");
+        el.classList.add("warn-mutex");
+        setTimeout(() => el.classList.remove("warn-mutex"), 800);
+        toast("已自动取消互斥标签");
+      }
+      state.tags = [...document.querySelectorAll("#tag-chips input:checked")].map((i) => i.value);
+      updatePreview();
+    });
+
+    document.getElementById("buyback-accept").addEventListener("click", (e) => {
+      const lab = e.target.closest("label");
+      if (!lab) return;
+      document.querySelectorAll("#buyback-accept label").forEach((x) => x.classList.remove("on"));
+      lab.classList.add("on");
+      lab.querySelector("input").checked = true;
+      state.bb = lab.querySelector("input").value;
+    });
+
+    const TAG_LABEL = {
+      refund7: "七天无理由全退",
+      useup: "用完才退",
+      quality: "仅质量问题可退",
+      partial: "支持协商退部分",
+    };
+
+    function updatePreview() {
+      const autoTitle = state.platform + " · " + (state.tier !== "—" ? state.tier : "未质检") + " · " +
+        (state.sku === "sub" ? "订阅套餐" : "按量通道");
+      const title = document.getElementById("title").value.trim() || autoTitle;
+      document.getElementById("pv-title").textContent = title;
+      let meta = "";
+      if (state.sku === "channel") {
+        const m = document.getElementById("mult").value;
+        const min = document.getElementById("min-m").value;
+        meta = `按量通道 · 买家价 ${(Number(m)*1.2).toFixed(2)}× · 起步 M ¥${min} · 模型 ${state.models.join(", ")}`;
+      } else {
+        const days = document.getElementById("sub-period").value;
+        meta = `订阅套餐 · ¥${document.getElementById("sub-price").value} / ${days}天 · 期内额度 ¥${document.getElementById("sub-quota").value} · ${document.getElementById("stock").value} 份 · 模型 ${state.models.join(", ")}`;
+      }
+      document.getElementById("pv-meta").textContent = meta;
+      const tagsEl = document.getElementById("pv-tags");
+      tagsEl.innerHTML = "";
+      if (state.qc === "do" && state.qcPassed) {
+        tagsEl.innerHTML += `<span class="badge badge-purple">平台质检 · ${state.grade}级</span>`;
+      } else {
+        tagsEl.innerHTML += `<span class="badge badge-gray">未质检</span>`;
+      }
+      state.tags.forEach((t) => {
+        tagsEl.innerHTML += `<span class="badge badge-orange">${TAG_LABEL[t] || t}</span>`;
+      });
+      state.cats.forEach((c) => {
+        tagsEl.innerHTML += `<span class="badge badge-blue">${c}</span>`;
+      });
     }
 
     function finishPublish() {
-      const sku = state.sku;
+      const linkMarket = document.getElementById("link-market");
+      const checklist = document.getElementById("done-checklist");
+      if (state.path === "buyback") {
+        document.getElementById("done-h2").textContent = "已接受平台回收";
+        document.getElementById("done-text").textContent =
+          "产能已进入保障池优先调度。这不是市场商品——买家不会在目录里看到你的回收单。";
+        document.getElementById("done-summary").innerHTML = [
+          "<b>处置</b> 平台回收（非商品）",
+          "<b>回收倍率 m_b</b> 0.60×",
+          "<b>市场</b> 不展示",
+          "<b>保障池</b> 优先吃量",
+          "<b>质检</b> " + (state.qcPassed && state.qc === "do" ? `平台质检 · ${state.grade}级` : "未质检"),
+          "<b>互斥</b> 须退出回收后才能再挂 A/B",
+        ].join("<br />");
+        checklist.innerHTML = [
+          '<div class="checkline"><i class="dot ok"></i>报价已接受并锁定有效期</div>',
+          '<div class="checkline"><i class="dot ok"></i>已加入保障池调度队列</div>',
+          '<div class="checkline"><i class="dot wait"></i>等待池子流量消化（卖家中心可看今日已回收）</div>',
+        ].join("");
+        linkMarket.style.display = "none";
+        return;
+      }
+
+      linkMarket.style.display = "";
       const title = document.getElementById("title").value.trim() ||
-        (state.platform + " · " + state.tier + " · " +
-          (sku === "pack" ? "额度包" : sku === "buyback" ? "回收通道" : "按量通道"));
-      let lines = [];
-      if (sku === "channel") {
+        (state.platform + " · " + (state.tier !== "—" ? state.tier : "供给") + " · " +
+          (state.sku === "sub" ? "订阅套餐" : "按量通道"));
+      const tagStr = state.tags.map((t) => TAG_LABEL[t]).filter(Boolean).join("、") || "无";
+      const qcStr = state.qc === "do" && state.qcPassed
+        ? `平台质检 · ${state.grade}级（报告可查）`
+        : "未质检（无官方标签）";
+
+      if (state.sku === "channel") {
         const m = document.getElementById("mult").value;
         const min = document.getElementById("min-m").value;
         const pool = document.getElementById("join-pool").checked;
-        lines = [
-          "<b>形态</b> 按量通道（寄售）",
+        document.getElementById("done-h2").textContent = "商品 A 已上架";
+        document.getElementById("done-text").textContent =
+          "按量通道已进市场。买家付 M 开通后须消化额度；用超扣余额。退货按服务标签协商。";
+        document.getElementById("done-summary").innerHTML = [
+          "<b>商品</b> A · 按量通道",
           "<b>标题</b> " + title,
-          "<b>倍率</b> " + m + "× · <b>起步 M</b> ¥" + min,
+          "<b>倍率</b> " + m + "× · 买家价 " + (Number(m)*1.2).toFixed(2) + "× · <b>起步 M</b> ¥" + min,
           "<b>保障池</b> " + (pool ? "加入" : "不加入"),
-          "<b>市场</b> 买家可「选用并开通」",
-        ];
-        document.getElementById("done-text").textContent = "按量通道已上架。买家下单付 M 后得 Key；调用扣平台余额。";
-      } else if (sku === "pack") {
-        const face = document.getElementById("face").value;
-        const stock = document.getElementById("stock").value;
-        const pm = document.getElementById("pack-mult").value;
-        lines = [
-          "<b>形态</b> 额度包",
-          "<b>标题</b> " + title,
-          "<b>面额</b> ¥" + face + " · <b>库存</b> " + stock + " 份",
-          "<b>包内倍率</b> " + pm + "×",
-          "<b>退货</b> 未用量可退，释放库存",
-        ];
-        document.getElementById("done-text").textContent = "额度包已上架。买家整包付款后调用；支持按未用量退货。";
+          "<b>模型</b> " + state.models.join(", "),
+          "<b>分类</b> " + state.cats.join(", "),
+          "<b>质检</b> " + qcStr,
+          "<b>服务标签</b> " + tagStr,
+        ].join("<br />");
       } else {
-        lines = [
-          "<b>形态</b> 平台回收",
+        const days = document.getElementById("sub-period").value;
+        document.getElementById("done-h2").textContent = "商品 B 已上架";
+        document.getElementById("done-text").textContent =
+          "订阅套餐已进市场。买家付套餐价后，在周期内使用期内额度；到期或用尽即止。退货按服务标签协商。";
+        document.getElementById("done-summary").innerHTML = [
+          "<b>商品</b> B · 订阅套餐",
           "<b>标题</b> " + title,
-          "<b>回收倍率</b> 0.72×",
-          "<b>市场</b> 不展示，只进保障池",
-        ];
-        document.getElementById("done-text").textContent = "已接受回收报价，供给进入保障池调度。";
+          "<b>售价</b> ¥" + document.getElementById("sub-price").value +
+            " · <b>周期</b> " + days + " 天",
+          "<b>期内额度</b> ¥" + document.getElementById("sub-quota").value +
+            " · <b>倍率</b> " + document.getElementById("sub-mult").value + "×",
+          "<b>可售份数</b> " + document.getElementById("stock").value,
+          "<b>模型</b> " + state.models.join(", "),
+          "<b>分类</b> " + state.cats.join(", "),
+          "<b>质检</b> " + qcStr,
+          "<b>服务标签</b> " + tagStr,
+          "<b>到期</b> 未用完默认作废（标签另有约定除外）",
+        ].join("<br />");
       }
-      document.getElementById("done-summary").innerHTML = lines.join("<br />");
+      checklist.innerHTML = [
+        '<div class="checkline"><i class="dot ok"></i>市场目录可见</div>',
+        '<div class="checkline"><i class="dot ok"></i>服务标签已写入挂单（下单后快照锁定）</div>',
+        state.qc === "do" && state.qcPassed
+          ? '<div class="checkline"><i class="dot ok"></i>「平台质检」标签与报告已关联</div>'
+          : '<div class="checkline"><i class="dot wait"></i>未质检：买家端无官方质检标签</div>',
+      ].join("");
     }
 
     document.getElementById("btn-again").addEventListener("click", () => {
       probing = false;
+      state.qcPassed = false;
+      state.qcDone = false;
+      state.path = "product";
+      state.sku = "channel";
+      state.qc = "do";
       document.getElementById("probe-bar").style.width = "0";
+      document.getElementById("probe-text").textContent = "点击下方开始检测";
+      document.getElementById("probe").classList.remove("ok");
+      document.getElementById("tier-view").textContent = "待检测";
+      document.getElementById("tier-sub").textContent = "质检通过后显示订阅档";
+      document.getElementById("grade-view").textContent = "—";
+      document.getElementById("grade-sub").textContent = "影响回收报价与展示信任";
+      document.getElementById("tier-card").classList.remove("ready");
+      document.getElementById("grade-card").classList.remove("ready", "grade-a");
       document.getElementById("title").value = "";
       document.getElementById("desc").value = "";
+      document.querySelectorAll(".card-path").forEach((c) => c.classList.toggle("on", c.dataset.path === "product"));
+      document.querySelectorAll("#qc-choice label").forEach((l) => l.classList.toggle("on", l.dataset.qc === "do"));
+      document.querySelector('#qc-choice input[value="do"]').checked = true;
       show(0);
     });
   </script>

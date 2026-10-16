@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { buyer, market } from '@/api'
 import { merchants } from '@/api/merchants'
 import { isTested } from '@/api/market-detection'
-import type { MarketCategory, MarketItem, PoolItem, RecommendResult } from '@/api/types'
+import type { MarketItem, PoolItem } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
 import MarketListingCard from '@/components/MarketListingCard.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
@@ -17,23 +17,12 @@ import { copyText } from '@/utils/clipboard'
 import { sampleRequest } from '@/utils/keySample'
 import {
   apiToPlat,
-  buildCategoryNavGroups,
-  catIconSvg,
+  brandAction,
   coverFor,
-  tileThemeIcon,
+  platBrands,
   type FeedSku,
   type MarketAction,
 } from '@/market/config'
-
-type TileThumb = { key: string; img: string; price: string; href?: string }
-type DisplayTile = {
-  id: string
-  title: string
-  desc: string
-  eng: string
-  theme: string
-  action: MarketAction
-}
 
 const route = useRoute()
 const router = useRouter()
@@ -42,16 +31,14 @@ const loginModal = useLoginModal()
 const toast = useToast()
 const appCfg = useConfig()
 const discoveryStore = useMarketDiscovery()
-const recommend = ref<RecommendResult | null>(null)
-const catTree = ref<MarketCategory[]>([])
 const cfg = computed(() => discoveryStore.cfg)
-const banner = computed(() => cfg.value.slots.find((s) => s.id === 'banner' && s.enabled !== false))
 const openingId = ref('')
 const created = ref<{ key: string; platform: string; title: string } | null>(null)
 const edgeBase = computed(() => appCfg.config.edge_url || window.location.origin)
 const createdSample = computed(() =>
   created.value ? sampleRequest(created.value.platform, edgeBase.value, created.value.key, appCfg.config.price_models ?? []) : null,
 )
+const hotPills = computed(() => (discoveryStore.hotSearches ?? []).slice(0, 4))
 
 async function copy(text: string) {
   if (await copyText(text)) toast.success('已复制')
@@ -90,39 +77,6 @@ async function quickOpen(sku: FeedSku) {
     openingId.value = ''
   }
 }
-
-/** 侧栏类目：分类树切成多组飞层，每行 3 个快捷入口 */
-const groups = computed(() => buildCategoryNavGroups(catTree.value))
-
-/** 四宫格：优先推荐接口；不足时用运营位默认补齐到 4 格 */
-const tiles = computed((): DisplayTile[] => {
-  const fromRec = (recommend.value?.tiles ?? []).map((t) => ({
-    id: t.id,
-    title: t.title,
-    desc: t.desc,
-    eng: t.eng,
-    theme: t.theme || 'deal',
-    action: (t.action || {}) as MarketAction,
-  }))
-  if (fromRec.length >= 4) return fromRec.slice(0, 4)
-  const seen = new Set(fromRec.map((t) => t.id))
-  const extras: DisplayTile[] = []
-  for (const s of cfg.value.slots) {
-    if (!s.id.startsWith('tile_') || s.enabled === false) continue
-    const id = s.id.replace(/^tile_/, '')
-    if (seen.has(id)) continue
-    extras.push({
-      id,
-      title: s.title || s.name || id,
-      desc: s.desc || '',
-      eng: s.eng || '',
-      theme: s.theme || 'deal',
-      action: s.action || {},
-    })
-    if (fromRec.length + extras.length >= 4) break
-  }
-  return [...fromRec, ...extras].slice(0, 4)
-})
 
 const state = reactive({
   kind: 'all' as string,
@@ -180,7 +134,37 @@ function setKind(kind: string) {
   const query = { ...route.query } as Record<string, string>
   if (kind && kind !== 'all') query.kind = kind
   else delete query.kind
+  delete query.tag
+  delete query.plat
   router.replace({ query })
+}
+
+function setPill(id: string) {
+  if (id === 'all' || id === 'channel' || id === 'pack') {
+    setKind(id)
+    return
+  }
+  const query = { ...route.query } as Record<string, string>
+  delete query.kind
+  if (id === 'pool') {
+    query.plat = '保障池'
+    delete query.tag
+  } else {
+    query.tag = id
+    delete query.plat
+  }
+  router.replace({ query })
+}
+
+function pillOn(id: string) {
+  if (id === 'all') {
+    return (!state.kind || state.kind === 'all') && !state.tag && !state.plat
+  }
+  if (id === 'channel' || id === 'pack') {
+    return state.kind === id && !state.tag
+  }
+  if (id === 'pool') return state.plat === '保障池'
+  return state.tag === id
 }
 
 function setModel(event: Event) {
@@ -207,7 +191,7 @@ function toSku(it: MarketItem): FeedSku {
     kind: isPack ? 'pack' : 'channel',
     plat,
     tier: it.tier || '',
-    title: it.title || `${plat}${it.tier ? ` · ${it.tier}` : ''} · ${isPack ? `${it.face_value ?? '—'} 元额度包` : '按量通道'}`,
+    title: it.title || `${plat}${it.tier ? ` · ${it.tier}` : ''} · ${isPack ? '订阅套餐' : '按量通道'}`,
     img: coverFor(plat, it.listing_id),
     mult: it.price,
     min: it.min_amount ?? 0,
@@ -216,7 +200,7 @@ function toSku(it: MarketItem): FeedSku {
     grade: isTested(it.detection_status) ? it.grade || '' : '',
     success: it.success_rate_24h ?? 0,
     ttft: Math.round(it.ttft_p50_ms ?? 0),
-    badge: isPack ? '可退货' : cats.includes('low_rate') || it.price <= 0.55 ? '低倍率' : undefined,
+    badge: isPack ? '订阅套餐' : cats.includes('low_rate') || it.price <= 0.55 ? '低倍率' : undefined,
     categories: cats,
     inspectionMode: it.inspection_mode,
     qualityChecks: it.quality_checks,
@@ -253,120 +237,48 @@ function hasCat(s: FeedSku, id: string) {
   return (s.categories ?? []).includes(id)
 }
 
-function matchAction(skus: FeedSku[], action: MarketAction): FeedSku[] {
-  let list = skus
-  if (action.kindTab === 'pack' || action.kindTab === 'channel') list = list.filter((s) => s.kind === action.kindTab)
-  if (action.plat === '保障池') list = list.filter((s) => s.pool || s.plat === '保障池')
-  else if (action.plat) list = list.filter((s) => s.plat === action.plat)
-  if (action.tag === 'low_rate') {
-    list = list.filter((s) => hasCat(s, 'low_rate') || (s.kind === 'channel' && s.mult <= 0.55))
-  } else if (action.tag === 'grade_s') {
-    list = list.filter((s) => s.grade === 'S')
-  } else if (action.tag === 'coding') {
-    list = list.filter((s) => hasCat(s, 'coding') || codingPlats.has(s.plat))
-  } else if (action.tag === 'refundable' || action.tag === 'pack') {
-    list = list.filter((s) => s.kind === 'pack')
-  } else if (action.tag === 'consignment') {
-    list = list.filter((s) => s.kind === 'channel' && !s.pool)
-  } else if (action.tag) {
-    list = list.filter((s) => hasCat(s, action.tag!))
-  }
-  if (action.q) {
-    const q = action.q.toLowerCase()
-    list = list.filter((s) => (s.plat + ' ' + s.tier + ' ' + s.title + ' ' + (s.desc ?? '')).toLowerCase().includes(q))
-  }
-  return list
-}
-
-function assetUrl(img: string): string {
-  return img.startsWith('/') || img.startsWith('http') ? img : `/assets/${img}`
-}
-
-function priceLabel(s: FeedSku): string {
-  if (s.kind === 'pack') return `¥${s.face ?? '—'}`
-  return `${Number(s.mult).toFixed(2)}×`
-}
-
 const allSkus = computed(() => {
   const listingSkus = (listings.data.value ?? []).map(toSku)
   const poolSkus = (pools.data.value ?? []).filter((p) => p.market_published).map(toPoolSku)
   return [...poolSkus, ...listingSkus]
 })
 
-function skuHref(s: FeedSku): string {
-  if (s.listingId) return `/market/listings/${s.listingId}`
-  if (s.pool) return '/buyer/keys'
-  return '/#feed'
-}
-
-function pushThumb(picks: TileThumb[], s: FeedSku) {
-  if (picks.length >= 3 || picks.some((x) => x.key === s.id)) return
-  picks.push({ key: s.id, img: assetUrl(s.img), price: priceLabel(s), href: skuHref(s) })
-}
-
-/** 四宫格右侧三图：只展示真实挂单/保障池；本专场不足则用其它在售补齐 */
-const tileThumbs = computed(() => {
-  const map: Record<string, TileThumb[]> = {}
-  for (const t of tiles.value) {
-    const picks: TileThumb[] = []
-    const recItems = recommend.value?.tiles?.find((r) => r.id === t.id)?.items
-
-    if (recItems?.length) {
-      for (const it of recItems.slice(0, 3)) {
-        const plat = apiToPlat[it.plat] || it.plat
-        const key = it.key
-        if (picks.some((x) => x.key === key)) continue
-        const href = it.listing_id
-          ? `/market/listings/${it.listing_id}`
-          : it.pool
-            ? '/buyer/keys'
-            : undefined
-        picks.push({
-          key,
-          img: assetUrl(coverFor(plat, it.listing_id ?? it.key)),
-          price: it.price,
-          href,
-        })
-      }
+/** 信息条图标墙：完整品牌清单；有货的排前面 */
+const infoBrands = computed(() => {
+  const counts = new Map<string, number>()
+  for (const s of allSkus.value) {
+    if (!s.plat || s.plat === '保障池') continue
+    counts.set(s.plat, (counts.get(s.plat) || 0) + 1)
+    if (s.models?.length) {
+      for (const m of s.models) counts.set(m, (counts.get(m) || 0) + 1)
     }
-
-    if (picks.length < 3 && t.action.plat === '保障池') {
-      const published = (pools.data.value ?? []).filter((p) => p.market_published)
-      const poolList = published.length ? published : (pools.data.value ?? [])
-      for (const [i, p] of poolList.entries()) {
-        if (picks.length >= 3) break
-        const plat = apiToPlat[p.platform] || p.platform
-        const key = `pool-${p.id || p.name}`
-        if (picks.some((x) => x.key === key)) continue
-        picks.push({
-          key,
-          img: assetUrl(coverFor(plat, p.id || i)),
-          price: `${Number(p.price).toFixed(2)}×`,
-          href: '/buyer/keys',
-        })
-      }
-    }
-
-    if (picks.length < 3) {
-      const matched = [...matchAction(allSkus.value, t.action)]
-      if (t.action.tag === 'low_rate') matched.sort((a, b) => a.mult - b.mult)
-      else if (t.action.kindTab === 'pack') matched.sort((a, b) => (a.face ?? 0) - (b.face ?? 0))
-      else matched.sort((a, b) => b.success - a.success)
-      for (const s of matched) pushThumb(picks, s)
-    }
-
-    if (picks.length < 3) {
-      const rest = [...allSkus.value].sort((a, b) => b.success - a.success)
-      for (const s of rest) pushThumb(picks, s)
-    }
-
-    map[t.id] = picks
   }
-  return map
+  const score = (b: (typeof platBrands)[number]) => {
+    if (b.plat && counts.has(b.plat)) return counts.get(b.plat)!
+    if (b.q) {
+      const q = b.q.toLowerCase()
+      let n = 0
+      for (const [k, v] of counts) if (k.toLowerCase().includes(q)) n += v
+      return n
+    }
+    return 0
+  }
+  return [...platBrands]
+    .map((b) => ({ ...b, count: score(b) }))
+    .sort((a, b) => b.count - a.count || 0)
 })
 
+function brandIsOn(b: { plat: string; q?: string; label: string }) {
+  if (b.plat && state.plat === b.plat) return true
+  const qq = b.q || (!b.plat ? b.label : '')
+  return !!qq && state.q === qq
+}
+
+function pickBrand(b: { plat: string; q?: string; label: string }) {
+  applyAction(brandAction(b))
+}
+
 const feedSkus = computed(() => {
-  // 只展示真实挂单；空货架不再用 demoSkus 假数据
   let list = [...allSkus.value]
   if (state.model) list = list.filter((s) => !s.pool && (!s.models?.length || s.models.includes(state.model)))
   if (state.kind === 'pack' || state.kind === 'channel') list = list.filter((s) => s.kind === state.kind)
@@ -390,17 +302,13 @@ const feedSkus = computed(() => {
   return list
 })
 
-const feedTitle = computed(() => {
-  const kindText = state.kind === 'pack' ? '额度包' : state.kind === 'channel' ? '按量通道' : '在售闲置TOKEN'
-  return state.plat ? `${state.plat} · ${kindText}` : kindText
-})
-
 function labelOn(action: MarketAction) {
   if (action.href) return false
   if (action.plat !== undefined && !action.tag && !action.q && !action.kindTab) {
     return (action.plat || '') === (state.plat || '') && !state.tag && !state.q
   }
   if (action.tag && action.plat === undefined && !action.q) return state.tag === action.tag
+  if (action.kindTab) return state.kind === action.kindTab
   return false
 }
 
@@ -408,12 +316,7 @@ onMounted(() => {
   syncFromRoute()
   listings.load()
   pools.load()
-  // 类目树 / 四宫格 / 运营配置并行拉，避免串行瀑布拖慢首屏运营区
-  void Promise.all([
-    discoveryStore.ensure(),
-    market.categories().then((v) => { catTree.value = v ?? [] }).catch(() => { catTree.value = [] }),
-    market.recommend().then((v) => { recommend.value = v }).catch(() => { recommend.value = null }),
-  ])
+  void discoveryStore.ensure()
 })
 
 watch(
@@ -427,129 +330,70 @@ watch(
 </script>
 
 <template>
-  <div class="page">
-    <!-- 运营区：左类目 | 中横幅 | 右四宫格 -->
-    <section class="stage" aria-label="市场运营区">
-      <aside class="side-cats" aria-label="市场类目">
-        <div v-for="g in groups" :key="g.id" class="cat-row">
-          <span class="ico" aria-hidden="true" v-html="catIconSvg[g.icon] || catIconSvg.chat" />
-          <div class="cat-labels">
-            <template v-for="(lab, i) in g.labels" :key="lab.text">
-              <span v-if="i" class="sep">/</span>
-              <a
-                href="#feed"
-                :class="{ 'is-on': labelOn(lab.action) }"
-                @click.prevent="applyAction(lab.action)"
-              >{{ lab.text }}</a>
-            </template>
-          </div>
-          <div v-if="g.sections?.length" class="cat-flyout" role="region" :aria-label="g.labels.map((l) => l.text).join(' / ')">
-            <div class="fly-sections">
-              <div v-for="sec in g.sections" :key="sec.title" class="sec">
-                <div class="sec-title">{{ sec.title }}</div>
-                <div class="sec-items">
-                  <a
-                    v-for="it in sec.items"
-                    :key="it.text"
-                    href="#feed"
-                    @click.prevent="applyAction(it.action)"
-                  >{{ it.text }}</a>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <a
-        v-if="banner"
-        class="promo-banner"
-        href="#feed"
-        @click.prevent="applyAction(banner.action)"
-      >
-        <div class="bg" aria-hidden="true" />
-        <div class="content">
-          <h1 v-html="banner.title.replace(/\n/g, '<br />')" />
-          <p class="desc">{{ banner.desc }}</p>
-          <div class="mascot-spot" aria-hidden="true">
-            <img src="/assets/xianmao-pet.svg" alt="闲猫" />
-          </div>
-          <span class="promo-cta">去看看 ›</span>
-        </div>
-      </a>
-
-      <div class="promo-grid">
+  <div class="page lib-page">
+    <section class="info-strip" aria-label="模型品牌">
+      <div class="info-brand-wall" role="list" aria-label="全球模型品牌">
         <a
-          v-for="t in tiles"
-          :key="t.id"
-          class="tile"
-          :class="`tile--${t.theme || 'deal'}`"
+          v-for="b in infoBrands"
+          :key="b.icon + b.label"
+          class="info-brand"
+          :class="{ on: brandIsOn(b), live: b.count > 0 }"
+          role="listitem"
           href="#feed"
-          @click.prevent="applyAction(t.action)"
+          :title="b.count ? `${b.label} · ${b.count} 个在售` : b.label"
+          @click.prevent="pickBrand(b)"
         >
-          <div class="tile-eng" aria-hidden="true">{{ t.eng }}</div>
-          <img class="tile-flower" src="/assets/tile-flower.png" alt="" aria-hidden="true" />
-          <div class="tile-copy">
-            <h3>{{ t.title }} <span class="arrow">›</span></h3>
-            <p>{{ t.desc }}</p>
-          </div>
-          <div class="tile-mascot">
-            <img :src="tileThemeIcon[t.theme || 'deal']" alt="" />
-          </div>
-          <div class="tile-tray">
-            <template v-if="tileThumbs[t.id]?.length">
-              <RouterLink
-                v-for="th in tileThumbs[t.id]"
-                :key="th.key"
-                class="thumb"
-                :to="th.href || '#feed'"
-                @click.stop
-              >
-                <div class="thumb-pic"><img :src="th.img" alt="" /></div>
-                <div class="thumb-price">{{ th.price }}</div>
-              </RouterLink>
-            </template>
-            <div v-else class="thumb thumb--empty">
-              <div class="thumb-pic thumb-pic--empty" />
-              <div class="thumb-price">暂无</div>
-            </div>
-          </div>
+          <span class="info-brand-pad">
+            <img :src="b.icon" alt="" width="26" height="26" loading="lazy" />
+          </span>
+          <span class="info-brand-name">{{ b.label }}</span>
         </a>
       </div>
     </section>
 
-    <div id="feed" class="section-head">
-      <h2>{{ feedTitle }}</h2>
-      <div class="kind-tabs" role="tablist" aria-label="商品形态">
-        <button type="button" class="kind-tab" :class="{ on: state.kind === 'all' || !state.kind }" @click="setKind('all')">全部</button>
-        <button type="button" class="kind-tab" :class="{ on: state.kind === 'channel' }" @click="setKind('channel')">按量通道</button>
-        <button type="button" class="kind-tab" :class="{ on: state.kind === 'pack' }" @click="setKind('pack')">额度包</button>
+    <div id="feed" class="filter-bar">
+      <div class="pills" role="tablist" aria-label="筛选">
+        <button type="button" class="pill" :class="{ on: pillOn('all') }" @click="setPill('all')">全部</button>
+        <button type="button" class="pill" :class="{ on: pillOn('channel') }" @click="setPill('channel')">按量通道</button>
+        <button type="button" class="pill" :class="{ on: pillOn('pack') }" @click="setPill('pack')">订阅套餐</button>
+        <button
+          v-for="h in hotPills"
+          :key="h.id"
+          type="button"
+          class="pill"
+          :class="{ on: labelOn(h.action) }"
+          @click="applyAction(h.action)"
+        >{{ h.label }}</button>
+      </div>
+      <div class="filter-tools">
+        <span class="feed-count">{{ feedSkus.length }} 个</span>
+        <input
+          id="f-model"
+          :value="state.model"
+          list="market-models"
+          placeholder="模型"
+          class="tool-input"
+          aria-label="模型"
+          @change="setModel"
+        />
+        <datalist id="market-models"><option v-for="model in modelChoices" :key="model" :value="model" /></datalist>
+        <select id="f-grade" v-model="state.grade" class="tool-select" aria-label="等级">
+          <option value="">等级</option>
+          <option value="S">S</option>
+          <option value="A">A</option>
+          <option value="B">B</option>
+          <option value="C">C</option>
+        </select>
+        <select id="f-sort" v-model="state.sort" class="tool-select" aria-label="排序">
+          <option value="default">综合</option>
+          <option value="price">倍率/价格</option>
+          <option value="success">成功率</option>
+          <option value="ttft">更快</option>
+        </select>
       </div>
     </div>
 
-    <div class="facet-bar" aria-label="筛选">
-      <label for="f-model">模型</label>
-      <input id="f-model" :value="state.model" list="market-models" placeholder="全部模型" class="input !w-48" @change="setModel" />
-      <datalist id="market-models"><option v-for="model in modelChoices" :key="model" :value="model" /></datalist>
-      <label for="f-grade">等级</label>
-      <select id="f-grade" v-model="state.grade">
-        <option value="">全部</option>
-        <option value="S">S</option>
-        <option value="A">A</option>
-        <option value="B">B</option>
-        <option value="C">C</option>
-      </select>
-      <label for="f-sort">排序</label>
-      <select id="f-sort" v-model="state.sort">
-        <option value="default">综合</option>
-        <option value="price">倍率/价格</option>
-        <option value="success">成功率</option>
-        <option value="ttft">更快</option>
-      </select>
-      <span class="facet-hint">{{ feedSkus.length }} 个闲置TOKEN</span>
-    </div>
-
-    <div class="feed">
+    <div class="feed lib-feed">
       <MarketListingCard
         v-for="sku in feedSkus"
         :key="sku.id"

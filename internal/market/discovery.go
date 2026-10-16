@@ -12,7 +12,7 @@ import (
 
 const discoveryKey = "market_discovery"
 
-// DiscoveryConfig 市场运营发现配置（类目 / 四宫格 / 热搜）。结构与前端 market/config.ts 对齐。
+// DiscoveryConfig 市场运营发现配置（热搜 / 货架开关等）。结构与前端 market/config.ts 对齐。
 type DiscoveryConfig map[string]any
 
 type discoveryDB interface {

@@ -138,7 +138,7 @@ export interface RefundPayout {
 export interface Refund {
   id: number
   user_id: number
-  /** balance 退全部余额 / order 按充值单 / pack 额度包原路退回 */
+  /** balance 退全部余额 / order 按充值单 / pack 订阅套餐原路退回 */
   kind: string
   recharge_order_id?: number
   status: string
@@ -209,7 +209,7 @@ export interface PaymentStatus {
 
 export interface Wallet {
   balance: number | null
-  /** 可按充值单退款的余额：实时余额减去未用完的额度包 */
+  /** 可按充值单退款的余额：实时余额减去未用完的订阅套餐 */
   refundable?: number
   ledger_cash: number
   recent_recharges: RechargeOrder[] | null
@@ -384,87 +384,6 @@ export interface ListingCategoryOption {
   desc: string
   parent_id?: string
   path?: string
-}
-
-export interface RecommendFactor {
-  id: string
-  name: string
-  desc: string
-  group: string
-  enabled: boolean
-  default_weight: number
-  reserved?: boolean
-}
-
-export interface RecommendProfile {
-  id: string
-  name: string
-  desc: string
-  enabled: boolean
-  filter_kind: string
-  filter_val: string
-  action_tag?: string
-  action_kind?: string
-  action_plat?: string
-  weights: Record<string, number>
-  low_rate_max_multiplier: number
-  per_tile_sku: number
-  fresh_days: number
-  diversity_per_plat: number
-  min_sku_to_show_tile: number
-}
-
-export interface HomeTile {
-  id: string
-  title: string
-  desc: string
-  eng: string
-  theme: string
-  enabled: boolean
-  sort: number
-  boost: number
-  profile_id: string
-}
-
-/** 三层推荐运营配置：因子 → 推荐类型 → 首页四格 */
-export interface RecommendConfig {
-  version: number
-  factors: RecommendFactor[]
-  profiles: RecommendProfile[]
-  tiles: HomeTile[]
-  max_tiles: number
-  hide_empty_tiles: boolean
-}
-
-export interface RecommendTileItem {
-  listing_id?: number
-  key: string
-  title: string
-  plat: string
-  price: string
-  score: number
-  pool?: boolean
-  kind: string
-  face_value?: number
-  mult?: number
-}
-
-export interface RecommendTile {
-  id: string
-  title: string
-  desc: string
-  eng: string
-  theme: string
-  score: number
-  profile_id?: string
-  action: { tag?: string; kindTab?: string; plat?: string }
-  items: RecommendTileItem[]
-}
-
-export interface RecommendResult {
-  config_version: number
-  generated_at: string
-  tiles: RecommendTile[]
 }
 
 export interface MarketCategory {

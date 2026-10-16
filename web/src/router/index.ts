@@ -8,16 +8,15 @@ const adminMeta = { auth: true, admin: true } as const
 const consoleChildren: RouteRecordRaw[] = [
   { path: '', name: 'console', component: () => import('@/views/admin/DashboardView.vue') },
   { path: 'settings', name: 'console-settings', component: () => import('@/views/admin/SettingsView.vue') },
-  // 运营 · 推荐运营
-  { path: 'ops/recommend/factors', name: 'console-rec-factors', component: () => import('@/views/admin/RecommendFactorsView.vue') },
-  { path: 'ops/recommend/profiles', name: 'console-rec-profiles', component: () => import('@/views/admin/RecommendProfilesView.vue') },
-  { path: 'ops/recommend/tiles', name: 'console-rec-tiles', component: () => import('@/views/admin/RecommendTilesView.vue') },
   { path: 'ops/categories', name: 'console-ops-categories', component: () => import('@/views/admin/CategoriesView.vue') },
   { path: 'ops/hot-searches', name: 'console-ops-hot', component: () => import('@/views/admin/MarketHotSearchView.vue') },
   { path: 'ops/extras', name: 'console-ops-extras', component: () => import('@/views/admin/MarketExtrasView.vue') },
-  // 旧路径兼容
+  // 旧路径兼容（推荐四宫格已下线）
   { path: 'ops/discovery', redirect: '/console/ops/extras' },
-  { path: 'market-recommend', redirect: '/console/ops/recommend/tiles' },
+  { path: 'ops/recommend/factors', redirect: '/console/ops/extras' },
+  { path: 'ops/recommend/profiles', redirect: '/console/ops/extras' },
+  { path: 'ops/recommend/tiles', redirect: '/console/ops/extras' },
+  { path: 'market-recommend', redirect: '/console/ops/extras' },
   { path: 'market-categories', redirect: '/console/ops/categories' },
   { path: 'market-discovery', redirect: '/console/ops/extras' },
   { path: 'system-update', name: 'console-system-update', component: () => import('@/views/admin/SystemUpdateView.vue') },

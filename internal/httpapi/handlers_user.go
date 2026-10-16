@@ -305,18 +305,6 @@ func (s *Server) marketDiscovery(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, cfg)
 }
 
-func (s *Server) marketRecommend(w http.ResponseWriter, r *http.Request) error {
-	pools, err := s.Market.Pools(r.Context())
-	if err != nil {
-		return err
-	}
-	out, err := s.Market.CachedRecommendations(r.Context(), pools)
-	if err != nil {
-		return err
-	}
-	return ok(w, out)
-}
-
 func (s *Server) listingCategories(w http.ResponseWriter, r *http.Request) error {
 	opts, err := listing.SellerCategoryOptions(r.Context(), s.DB)
 	if err != nil {

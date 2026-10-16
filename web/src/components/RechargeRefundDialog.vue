@@ -11,7 +11,7 @@ import { money, parseAmount } from '@/utils/format'
 
 const props = defineProps<{
   order: RechargeOrder | null
-  /** 买家当前可退余额（实时余额减去未用完的额度包）；管理员不传，由后端校验 */
+  /** 买家当前可退余额（实时余额减去未用完的订阅套餐）；管理员不传，由后端校验 */
   refundable?: number | null
   asAdmin?: boolean
 }>()
@@ -27,7 +27,7 @@ const orderLeft = computed(() => (props.order ? Math.max(0, Math.round((props.or
 const max = computed(() => (props.refundable == null ? orderLeft.value : Math.max(0, Math.min(orderLeft.value, props.refundable))))
 const limitHint = computed(() => {
   if (props.asAdmin) return '，同时不能超过买家当前的可退余额'
-  return max.value < orderLeft.value ? '，受当前可退余额限制（未用完的额度包不计入）' : ''
+  return max.value < orderLeft.value ? '，受当前可退余额限制（未用完的订阅套餐不计入）' : ''
 })
 
 watch(open, (v) => {

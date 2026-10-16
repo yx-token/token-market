@@ -80,19 +80,9 @@ const navItems: NavNode[] = [
     text: '运营',
     icon: 'layout-dashboard',
     children: [
-      {
-        key: 'recommend-ops',
-        text: '推荐运营',
-        icon: 'sliders-horizontal',
-        children: [
-          { key: 'rec-factors', text: '推荐因子', to: '/console/ops/recommend/factors', icon: 'sliders-horizontal' },
-          { key: 'rec-profiles', text: '推荐类型', to: '/console/ops/recommend/profiles', icon: 'layers' },
-          { key: 'rec-tiles', text: '首页四格', to: '/console/ops/recommend/tiles', icon: 'layout-dashboard' },
-        ],
-      },
+      { key: 'market-hot', text: '热搜与筛选', to: '/console/ops/hot-searches', icon: 'search' },
       { key: 'market-categories', text: '市场分类', to: '/console/ops/categories', icon: 'filter' },
-      { key: 'market-hot', text: '热搜词', to: '/console/ops/hot-searches', icon: 'search' },
-      { key: 'market-extras', text: '其他配置', to: '/console/ops/extras', icon: 'settings' },
+      { key: 'market-extras', text: '货架开关', to: '/console/ops/extras', icon: 'settings' },
     ],
   },
   {

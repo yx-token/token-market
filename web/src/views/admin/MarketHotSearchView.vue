@@ -111,8 +111,8 @@ async function save() {
 <template>
   <ConsoleListPage
     id="console-market-hot-page"
-    title="热搜词"
-    description="控制首页顶栏快捷筛选词；拖拽调整顺序，保存后立即生效。"
+    title="热搜与筛选"
+    description="显示在市场页筛选 pill 上，取启用列表前 4 项，排在「全部 / 按量通道 / 订阅套餐」之后。拖拽调序，保存即生效。"
     plain
   >
     <template #actions>

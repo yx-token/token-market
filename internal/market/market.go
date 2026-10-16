@@ -3,7 +3,6 @@ package market
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/DueGin/token-market/internal/listing"
@@ -59,24 +58,11 @@ type Service struct {
 	DB         *pgxpool.Pool
 	Commission func(ctx context.Context) (float64, error)
 	Prices     *PriceBook
-
-	recMu    sync.Mutex
-	recCache *RecommendResult
-	recUntil time.Time
 }
 
-// List 返回生效中的寄售挂单（已排除降智、不可用、被冻结的上游）。
-// 含 24h 成功率 / 首字延迟聚合，货架列表用；首页推荐请用 ListForRecommend。
+// List 返回生效中的寄售挂单（已排除降智、不可用、被冻结的上游），含 24h 成功率 / 首字延迟聚合。
 func (s *Service) List(ctx context.Context, f Filter, limit, offset int) ([]Item, error) {
 	return s.list(ctx, f, limit, offset, true)
-}
-
-// ListForRecommend 首页四格打分用：跳过 edge_attempts / usage_records 侧向聚合，显著降低延迟。
-func (s *Service) ListForRecommend(ctx context.Context, limit int) ([]Item, error) {
-	if limit <= 0 {
-		limit = 200
-	}
-	return s.list(ctx, Filter{Sort: "price"}, limit, 0, false)
 }
 
 func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMetrics bool) ([]Item, error) {

@@ -96,34 +96,6 @@ func (s *Server) updateMarketDiscovery(w http.ResponseWriter, r *http.Request) e
 	return ok(w, out)
 }
 
-func (s *Server) getMarketRecommend(w http.ResponseWriter, r *http.Request) error {
-	cfg, err := market.LoadRecommend(r.Context(), s.DB)
-	if err != nil {
-		return err
-	}
-	return ok(w, cfg)
-}
-
-func (s *Server) updateMarketRecommend(w http.ResponseWriter, r *http.Request) error {
-	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	if err != nil {
-		return err
-	}
-	var cfg market.RecommendConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return httpx.BadRequest("INVALID_RECOMMEND", "body must be recommend config JSON")
-	}
-	out, err := market.SaveRecommend(r.Context(), s.DB, cfg)
-	if err != nil {
-		return err
-	}
-	if s.Market != nil {
-		s.Market.InvalidateRecommendCache()
-	}
-	s.audit(r, "market_recommend.update", "settings", json.RawMessage(raw))
-	return ok(w, out)
-}
-
 func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) error {
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {

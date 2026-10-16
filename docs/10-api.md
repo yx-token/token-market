@@ -26,8 +26,7 @@
 | GET | `/api/market/listings/:id` | 挂单摘要：厂商、档位、挂售模型 `models: string[]`、买家价 `price`（= m_s × (1 + c)）、`sku_kind`、额度包 `face_value`/`stock`、按量 `min_amount`、健康状态、等级、24h 成功率与请求数、首字延迟；存量未声明白名单时 `models` 为空数组 |
 | GET | `/api/market/pools` | 默认分组列表及售价 D |
 | GET | `/api/market/credit-offers?seller_id=123` | 指定店铺正在销售的活动包：人民币售价、美元额度及适用厂商/模型 |
-| GET | `/api/market/discovery` | 首页运营配置（类目树、横幅、静态槽位等） |
-| GET | `/api/market/recommend` | 首页四宫格推荐结果（按 `market_recommend` 因子打分） |
+| GET | `/api/market/discovery` | 市场运营配置（热搜、货架开关等） |
 | GET | `/api/market/categories` | 公开分类树（仅启用节点） |
 | GET | `/api/market/vendors` | 已开放接入的厂商、接入方式、寄售倍率区间、是否支持自留比例 |
 | GET | `/api/market/config` | 前端需要的公开参数：Edge 调用地址、抽佣率、冻结小时数 `freeze_hours`、活动包美元换算率 `credit_usd_to_balance_rate`、最低提现额、最大跳数、可用的支付方式 `payment_channels`、单笔充值上下限 |
@@ -185,7 +184,7 @@ OAuth 授权、Coding Key 和账号导入成功后进入 `selecting_models`（�
 | 模块 | 接口 |
 |---|---|
 | 系统设置 | `GET/PUT /api/admin/settings`：抽佣率、冻结小时数 `freeze_hours`、活动包美元换算率 `credit_usd_to_balance_rate`、最低提现额、自动审核阈值、等级系数、报价有效期、改价冷却、退款等待、新卖家期、价目模型、质量检测超时（`probe_request_timeout_seconds`、`probe_batch_timeout_minutes`）等（部分更新） |
-| 市场运营 | `GET/PUT /api/admin/market-discovery`：首页类目/横幅等运营配置；`GET/PUT /api/admin/market-recommend`：三层推荐配置（`factors` 因子目录 → `profiles` 推荐类型 → `tiles` 首页四格选型）；`GET/POST /api/admin/market-categories`、`PUT/DELETE /api/admin/market-categories/:id`：分类树 CRUD |
+| 市场运营 | `GET/PUT /api/admin/market-discovery`：热搜与货架开关；`GET/POST /api/admin/market-categories`、`PUT/DELETE /api/admin/market-categories/:id`：分类树 CRUD |
 
 | 系统更新 | `GET /api/admin/system/version`：当前版本、提交、运行平台、可用状态和最近更新任务；`GET /api/admin/system/check-update[?force=true]`：最新正式 Release 与更新包是否兼容；`POST /api/admin/system/update`：提交 `{"version":"vX.Y.Z"}`，成功返回 202 和任务，管理员操作写入审计日志 |
 | 厂商 | `GET /api/admin/vendors`、`PUT /api/admin/vendors/:platform`：是否开放接入、开放的接入方式（`auth_types`，只能从 `supported_auth_types` 中选）、寄售倍率区间、回收基础倍率表（按档位）、默认并发、限流参数 |

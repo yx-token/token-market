@@ -52,7 +52,7 @@ const table: Record<string, Record<string, Label>> = {
   mode: {
     consignment: { text: '寄售', tone: 'blue' },
     buyback: { text: '平台回收', tone: 'purple' },
-    pack: { text: '额度包', tone: 'yellow' },
+    pack: { text: '订阅套餐', tone: 'yellow' },
   },
   listingStatus: {
     pending_quote: { text: '待报价', tone: 'gray' },
@@ -140,7 +140,7 @@ const table: Record<string, Record<string, Label>> = {
   refundKind: {
     balance: { text: '全部余额', tone: 'gray' },
     order: { text: '按充值单', tone: 'blue' },
-    pack: { text: '额度包', tone: 'purple' },
+    pack: { text: '订阅套餐', tone: 'purple' },
   },
   refundStatus: {
     locking: { text: '暂停 Key 中', tone: 'blue' },

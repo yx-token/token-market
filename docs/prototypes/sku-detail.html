@@ -158,24 +158,24 @@
       { id: "c-1013", kind: "channel", plat: "Kimi", tier: "Coding", title: "Kimi · 高成功率卖家", img: "card10.jpg", mult: 0.51, min: 0, grade: "S", success: 0.99, ttft: 490 },
       { id: "c-1014", kind: "channel", plat: "Antigravity", tier: "OAuth", title: "Antigravity · OAuth 按量", img: "thumb7.jpg", mult: 0.61, min: 10, grade: "B", success: 0.91, ttft: 520 },
       { id: "c-1015", kind: "channel", plat: "智谱", tier: "团队版", title: "智谱 · 团队版 · 组织已配", img: "card11.jpg", mult: 0.53, min: 0, grade: "A", success: 0.94, ttft: 500 },
-      { id: "p-2001", kind: "pack", plat: "Claude", tier: "Max", title: "Claude · Max · 100 元额度包", img: "card14.jpg", mult: 0.55, face: 100, stock: 3, grade: "S", success: 0.98, ttft: 420 },
-      { id: "p-2002", kind: "pack", plat: "Kimi", tier: "Coding", title: "Kimi Coding · 50 元额度包", img: "thumb5.jpg", mult: 0.48, face: 50, stock: 8, grade: "A", success: 0.97, ttft: 510 },
-      { id: "p-2003", kind: "pack", plat: "ChatGPT", tier: "Plus", title: "ChatGPT · 200 元额度包", img: "thumb11.jpg", mult: 0.62, face: 200, stock: 2, grade: "A", success: 0.96, ttft: 380 },
-      { id: "p-2004", kind: "pack", plat: "智谱", tier: "Coding", title: "智谱 · 80 元额度包", img: "thumb10.jpg", mult: 0.52, face: 80, stock: 5, grade: "B", success: 0.93, ttft: 530 },
-      { id: "p-2005", kind: "pack", plat: "MiniMax", tier: "Coding", title: "MiniMax · 60 元额度包", img: "card7.jpg", mult: 0.54, face: 60, stock: 1, grade: "A", success: 0.94, ttft: 550 },
-      { id: "p-2006", kind: "pack", plat: "Gemini", tier: "Pro", title: "Gemini · 150 元额度包", img: "card12.jpg", mult: 0.69, face: 150, stock: 4, grade: "B", success: 0.92, ttft: 460 },
+      { id: "p-2001", kind: "pack", plat: "Claude", tier: "Max", title: "Claude · Max · 30 天订阅", img: "card14.jpg", mult: 0.55, face: 99, price: 99, days: 30, quota: 150, stock: 3, grade: "S", success: 0.98, ttft: 420 },
+      { id: "p-2002", kind: "pack", plat: "Kimi", tier: "Coding", title: "Kimi Coding · 7 天订阅", img: "thumb5.jpg", mult: 0.48, face: 49, price: 49, days: 7, quota: 80, stock: 8, grade: "A", success: 0.97, ttft: 510 },
+      { id: "p-2003", kind: "pack", plat: "ChatGPT", tier: "Plus", title: "ChatGPT · Plus · 30 天订阅", img: "thumb11.jpg", mult: 0.62, face: 129, price: 129, days: 30, quota: 200, stock: 2, grade: "A", success: 0.96, ttft: 380 },
+      { id: "p-2004", kind: "pack", plat: "智谱", tier: "Coding", title: "智谱 · Coding · 30 天订阅", img: "thumb10.jpg", mult: 0.52, face: 79, price: 79, days: 30, quota: 120, stock: 5, grade: "B", success: 0.93, ttft: 530 },
+      { id: "p-2005", kind: "pack", plat: "MiniMax", tier: "Coding", title: "MiniMax · 7 天订阅", img: "card7.jpg", mult: 0.54, face: 39, price: 39, days: 7, quota: 60, stock: 1, grade: "A", success: 0.94, ttft: 550 },
+      { id: "p-2006", kind: "pack", plat: "Gemini", tier: "Pro", title: "Gemini · Pro · 90 天订阅", img: "card12.jpg", mult: 0.69, face: 199, price: 199, days: 90, quota: 300, stock: 4, grade: "B", success: 0.92, ttft: 460 },
     ];
     const id = new URLSearchParams(location.search).get("id") || "c-1001";
     const s = list.find((x) => x.id === id) || list[0];
-    s.desc = s.kind === "pack"
-      ? `预购 ¥${s.face} 调用额度，独占本包；包内按 ${s.mult.toFixed(2)}× 计费。未用完可退货（退未用量并释放库存）。`
+    const isSub = s.kind === "pack";
+    s.desc = isSub
+      ? `订阅套餐：付 ¥${s.price || s.face} 获得 ${s.days || 30} 天使用权，期内额度 ¥${s.quota || s.face}，按 ${s.mult.toFixed(2)}× 抵扣。到期或用尽即止；退货按卖家服务标签。`
       : (s.pool
         ? `平台保障池按量通道，倍率 ${s.mult.toFixed(2)}×。下单付起步金后签发 Key，调用只扣平台余额。`
         : `按量通道，倍率 ${s.mult.toFixed(2)}×，起步金 M=${s.min === 0 ? "0（免费开通）" : "¥" + s.min}。用完 M 后继续扣平台余额；余额不足提示充值。`);
-    const isPack = s.kind === "pack";
-    const payAmount = isPack ? s.face : s.min;
-    const kindClass = s.pool ? "pool" : isPack ? "pack" : "";
-    const kindText = s.pool ? "保障池 · 按量通道" : isPack ? "额度包" : "按量通道";
+    const payAmount = isSub ? (s.price || s.face) : s.min;
+    const kindClass = s.pool ? "pool" : isSub ? "pack" : "";
+    const kindText = s.pool ? "保障池 · 按量通道" : isSub ? "订阅套餐" : "按量通道";
 
     document.getElementById("root").innerHTML = `
       <div>
@@ -188,8 +188,8 @@
           <div class="spec"><b>质量等级</b><span>${s.grade} 级</span></div>
           <div class="spec"><b>计费倍率</b><span>${s.mult.toFixed(2)}× 官方价</span></div>
           <div class="spec"><b>24h 成功率</b><span>${(s.success * 100).toFixed(0)}% · ${s.ttft}ms</span></div>
-          ${isPack
-            ? `<div class="spec"><b>包面额</b><span>¥${s.face}</span></div><div class="spec"><b>可售库存</b><span>${s.stock} 份</span></div>`
+          ${isSub
+            ? `<div class="spec"><b>套餐售价</b><span>¥${s.price || s.face}</span></div><div class="spec"><b>订阅周期</b><span>${s.days || 30} 天</span></div><div class="spec"><b>期内额度</b><span>¥${s.quota || s.face}</span></div><div class="spec"><b>可售份数</b><span>${s.stock} 份</span></div>`
             : `<div class="spec"><b>最低额度 M</b><span>${s.min === 0 ? "¥0（免费开通）" : "¥" + s.min}</span></div><div class="spec"><b>超额计费</b><span>只扣平台余额</span></div>`}
         </div>
       </div>
@@ -197,8 +197,8 @@
         <div style="font-size:13px;font-weight:700;color:#888">本单应付</div>
         <div class="pay-price">${payAmount === 0 ? "¥0" : "¥" + payAmount}</div>
         <div class="pay-sub">
-          ${isPack
-            ? "支付整包价后获得 Key + 包内额度。未用完可退货。"
+          ${isSub
+            ? `支付套餐价后获得 Key，${s.days || 30} 天内可用期内额度 ¥${s.quota || s.face}。到期或用尽即止。`
             : (payAmount === 0
               ? "0 元开通通道，签发 Key。之后调用从平台余额扣费。"
               : "支付起步金开通通道。用完起步额度后继续扣平台余额。")}
@@ -208,12 +208,12 @@
           <label class="pay-way"><input type="radio" name="pay" value="alipay" /> 支付宝</label>
           <label class="pay-way"><input type="radio" name="pay" value="wechat" /> 微信支付</label>
         </div>
-        <button class="btn-pay" type="button" id="btn-pay">${isPack ? "支付并购买额度包" : "支付并开通通道"}</button>
+        <button class="btn-pay" type="button" id="btn-pay">${isSub ? "支付并订阅套餐" : "支付并开通通道"}</button>
         <div class="rules">
           · 下单可用余额或支付宝/微信<br />
           · 调用阶段只扣平台余额，扣完提示充值<br />
           · 失败请求不计费 · 交付物为 API Key（非账号）
-          ${isPack ? "<br />· 额度包支持按未用量退货" : ""}
+          ${isSub ? "<br />· 订阅退货按卖家服务标签（如七天无理由 / 用完才退）" : ""}
         </div>
         <div class="done" id="done"></div>
       </div>
@@ -233,8 +233,8 @@
       const key = "tm_" + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
       const done = document.getElementById("done");
       done.classList.add("is-on");
-      done.innerHTML = isPack
-        ? `已用「${wayLabel}」支付 ¥${payAmount}。<br />已签发 Key，并绑定本额度包（剩余 ¥${s.face}）。<code>${key}</code>把 SDK Base URL 换成平台 Edge 即可调用。未用完可在买家中心申请退货。`
+      done.innerHTML = isSub
+        ? `已用「${wayLabel}」支付套餐价 ¥${payAmount}。<br />已签发 Key，订阅 ${s.days || 30} 天，期内额度 ¥${s.quota || s.face}。<code>${key}</code>把 SDK Base URL 换成平台 Edge 即可调用。到期或用尽后自动停用。`
         : `已用「${wayLabel}」${payAmount === 0 ? "完成 0 元开通" : "支付起步金 ¥" + payAmount}。<br />已签发 Key，路由指向本通道。<code>${key}</code>调用只扣平台余额；余额不足时请先充值。`;
     });
   </script>

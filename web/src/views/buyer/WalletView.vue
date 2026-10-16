@@ -71,7 +71,7 @@ async function refund() {
 
 <template>
   <div>
-    <PageHeader title="钱包" description="充值后可支付调用费用或购买店铺活动包。活动包仅限对应店铺与适用模型，额度用完后自动扣平台余额。">
+    <PageHeader title="钱包" description="充值后可支付调用费用、购买店铺活动包或订阅套餐。活动包仅限对应店铺与适用模型；订阅套餐需余额 ≥ 套餐价。">
       <button type="button" class="xm-btn xm-btn-ghost" :disabled="!!wallet.data.value?.active_refund" @click="showRefund = true">申请退款</button>
       <button type="button" class="xm-btn xm-btn-primary" @click="newRecharge">充值</button>
     </PageHeader>
@@ -85,7 +85,7 @@ async function refund() {
       <div class="xm-stat">
         <b>账面余额</b>
         <strong>{{ money(wallet.data.value?.ledger_cash) }}</strong>
-        <em>含额度包预付后的账本</em>
+        <em>含订阅套餐预付后的账本</em>
       </div>
       <div class="xm-stat">
         <b>退款</b>
