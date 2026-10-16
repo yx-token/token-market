@@ -91,14 +91,14 @@ func TestPlanNotBuyerFacing(t *testing.T) {
 		return u
 	}
 	cases := map[string]UpstreamInput{
-		"degraded":    base(func(u *UpstreamInput) { u.Health = "degraded" }),
-		"unavailable": base(func(u *UpstreamInput) { u.Health = "unavailable" }),
-		"no account":  base(func(u *UpstreamInput) { u.AccountID = 0 }),
+		"degraded":         base(func(u *UpstreamInput) { u.Health = "degraded" }),
+		"unavailable":      base(func(u *UpstreamInput) { u.Health = "unavailable" }),
+		"no account":       base(func(u *UpstreamInput) { u.AccountID = 0 }),
 		"untested buyback": base(func(u *UpstreamInput) { u.Health = "unknown"; u.Listing.Mode = "buyback" }),
-		"paused":      base(func(u *UpstreamInput) { u.Listing.Status = "paused" }),
-		"suspended":   base(func(u *UpstreamInput) { u.Status = "suspended" }),
-		"reference":   base(func(u *UpstreamInput) { u.IsReference = true }),
-		"no listing":  base(func(u *UpstreamInput) { u.Listing = nil; u.Status = "ready" }),
+		"paused":           base(func(u *UpstreamInput) { u.Listing.Status = "paused" }),
+		"suspended":        base(func(u *UpstreamInput) { u.Status = "suspended" }),
+		"reference":        base(func(u *UpstreamInput) { u.IsReference = true }),
+		"no listing":       base(func(u *UpstreamInput) { u.Listing = nil; u.Status = "ready" }),
 	}
 	for name, u := range cases {
 		d := Plan(planCtx(), []UpstreamInput{u})[0]

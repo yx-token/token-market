@@ -90,7 +90,9 @@ type CreateListingInput struct {
 // CreateListing 创建挂单。寄售直接生效；回收先生成报价，卖家接受后生效。
 func (s *Service) CreateListing(ctx context.Context, sellerID, upstreamID int64, in CreateListingInput) (*Listing, *Quote, error) {
 	release, err := s.lockAccountModels(ctx, upstreamID)
-	if err != nil { return nil, nil, err }
+	if err != nil {
+		return nil, nil, err
+	}
 	defer release()
 	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
 	if err != nil {
@@ -106,8 +108,12 @@ func (s *Service) CreateListing(ctx context.Context, sellerID, upstreamID int64,
 		return nil, nil, httpx.Conflict("PRIVACY_REQUIRED", "training data usage must be disabled before listing")
 	}
 	v, err := GetVendor(ctx, s.DB, u.Platform)
-	if err != nil { return nil, nil, err }
-	if !v.Enabled { return nil, nil, ErrVendorDisabled }
+	if err != nil {
+		return nil, nil, err
+	}
+	if !v.Enabled {
+		return nil, nil, ErrVendorDisabled
+	}
 	if u.Health == HealthDegraded || u.Health == HealthUnavailable {
 		return nil, nil, httpx.Conflict("UPSTREAM_UNHEALTHY", "unhealthy upstreams cannot be listed")
 	}
@@ -118,7 +124,9 @@ func (s *Service) CreateListing(ctx context.Context, sellerID, upstreamID int64,
 	if in.Mode == ModeBuyback && u.LastCheckedAt == nil {
 		return nil, nil, httpx.Conflict("INSPECTION_REQUIRED", "platform buyback requires inspection evidence")
 	}
-	if err := s.requireAuthorizedAccount(ctx, u); err != nil { return nil, nil, err }
+	if err := s.requireAuthorizedAccount(ctx, u); err != nil {
+		return nil, nil, err
+	}
 	join := true
 	if in.JoinDefaultPool != nil {
 		join = *in.JoinDefaultPool

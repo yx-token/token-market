@@ -111,7 +111,9 @@ func (r *Reconciler) RunAttempts(ctx context.Context) (*ReconcileResult, error) 
 		return nil, err
 	}
 	creditFrozen, err := r.freezeOrphanCreditKeys(ctx, since)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	frozen += creditFrozen
 	res.FrozenKeys = frozen
 	if res.R1+res.R2+res.R3+res.R4 > 0 {

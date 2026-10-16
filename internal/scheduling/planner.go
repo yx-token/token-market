@@ -50,11 +50,11 @@ type UpstreamInput struct {
 	DefaultGrade  string  // 检测没有给出等级时使用的默认等级（厂商策略的 default_grade）
 	QualityFactor float64 // 已生效扣价的 Q；未检测或无有效值时排序按 1
 	ConfirmedGate bool
-	Untested bool // 按可追溯有效检测证据计算，远端授权恢复不能把未检测账号放入平台池
+	Untested      bool // 按可追溯有效检测证据计算，远端授权恢复不能把未检测账号放入平台池
 }
 
 type VendorInput struct {
-	Disabled bool
+	Disabled           bool
 	DefaultConcurrency int
 	ExtraLimits        map[string]any
 }
@@ -387,13 +387,21 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 		}
 		ups = append(ups, u)
 	}
-	if err := rows.Err(); err != nil { return pc, nil, err }
+	if err := rows.Err(); err != nil {
+		return pc, nil, err
+	}
 	rows.Close()
 	ids := make([]int64, len(ups))
-	for i := range ups { ids[i] = ups[i].ID }
+	for i := range ups {
+		ids[i] = ups[i].ID
+	}
 	views, err := listing.LoadInspectionViews(ctx, db, ids)
-	if err != nil { return pc, nil, err }
-	for i := range ups { ups[i].Untested = views[ups[i].ID].DetectionStatus != "tested" }
+	if err != nil {
+		return pc, nil, err
+	}
+	for i := range ups {
+		ups[i].Untested = views[ups[i].ID].DetectionStatus != "tested"
+	}
 	return pc, ups, nil
 }
 
