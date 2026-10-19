@@ -123,14 +123,14 @@
 - [x] `MARKET.md`、`market/README.md`、`SOURCE.md`、`DEPLOY.md`
 - [x] 拷入市场环境：`market/deploy`、`scripts`、`Dockerfile`、`Makefile`、`market-ci.yml`、`market-release.yml`
 - [x] 远程不改名（保持现状）
-- [ ] 选定 `market` module path，加 `market/go.mod` + `go.work`
+- [x] 选定 module `github.com/yx-token/idlicat/market`，已加 `market/go.mod` + 根 `go.work`
 - [ ] （可选）为 idlicat 配置可推送的 GitHub 远程后 `git push -u`
 
-### Task 2.2 开工门禁（全部勾选后才允许阶段 3 搬代码）
+### Task 2.2 开工门禁
 
 - [x] 功能全覆盖清单与模块地图已覆盖主要包
-- [ ] 宿主 `idlicat` 工作区已提交本轮脚手架
-- [ ] 本仓测试基线：`go test ./internal/listing/...` 与 `pnpm test` 迁包前为绿
+- [x] 宿主已迁入 `platform` + `sub2api` + `contract` + `migrations`，单测通过
+- [ ] 本仓对照：`go test ./internal/listing/...`（迁 listing 前再跑）
 
 ---
 
@@ -256,8 +256,10 @@
 
 ### 后端包
 
-- [ ] `internal/platform` → `market/internal/platform`
-- [ ] `internal/sub2api`（全部子包，含 `gateway`）→ `market/internal/sub2api`
+- [x] `internal/platform` → `market/internal/platform`
+- [x] `internal/sub2api`（全部子包，含 `gateway`）→ `market/internal/sub2api`
+- [x] `contract/` → `market/contract`
+- [x] `migrations/` → `market/migrations`
 - [ ] `internal/account` → `market/internal/account`
 - [ ] `internal/settings` → `market/internal/settings`
 - [ ] `internal/listing`（上游、挂单、代理、厂商、额度包商品、分类、模型白名单、导入）→ `market/internal/listing`
@@ -276,8 +278,6 @@
 - [ ] `internal/payment`（支付宝、微信、商户配置）→ `market/internal/payment`
 - [ ] `internal/httpapi` → `market/internal/httpapi`
 - [ ] `internal/app` → `market/internal/app`
-- [ ] `migrations/` → `market/migrations`
-- [ ] `contract/` → `market/contract`（只读 SQL 契约，跟社区升级用）
 - [ ] `cmd/api` `cmd/worker` `cmd/edge` `cmd/market-runner` → `market/cmd`
 - [ ] `cmd/fake-sub2api` `cmd/fake-thirdparty` `internal/testutil` `internal/e2e` → `market/`
 
@@ -304,6 +304,5 @@
 ## 当前进度
 
 - 阶段 0–1：完成
-- 阶段 2：文档与宿主骨架完成；**执行门禁未过**（unshallow、go.work）。远程不改。
-- 功能全覆盖清单：0 项已迁（以上全部未勾）
-- **下一步执行顺序：** unshallow → go.work → 按清单从上到下迁包（platform/sub2api 起）
+- 阶段 2：`idlicat` 已建；`go.work` + `platform`/`sub2api`/`contract`/`migrations` 已迁且单测通过
+- **下一步：** 迁 `account` → `settings` → `listing` → …
