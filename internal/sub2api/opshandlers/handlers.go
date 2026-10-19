@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/DueGin/token-market/internal/sub2api/adminclient"
+	"github.com/DueGin/token-market/internal/sub2api/gateway"
 	"github.com/DueGin/token-market/internal/sub2api/ops"
 )
 
@@ -79,7 +80,8 @@ type UserUpdatePayload struct {
 }
 
 // Register 把全部处理器注册到发送器。
-func Register(s *ops.Sender, c *adminclient.Client) {
+// c 一般为 gateway.HTTP(adminClient)；进程内实现也可直接传入。
+func Register(s *ops.Sender, c gateway.Admin) {
 	s.Register(TypeUserBalanceAdd, balance(c, adminclient.BalanceAdd))
 	s.Register(TypeUserBalanceSubtract, balance(c, adminclient.BalanceSubtract))
 	s.Register(TypeAccountCreate, handle(func(ctx context.Context, op ops.Op, p AccountCreatePayload) (any, error) {
@@ -140,7 +142,7 @@ func Register(s *ops.Sender, c *adminclient.Client) {
 	}))
 }
 
-func balance(c *adminclient.Client, op adminclient.BalanceOperation) ops.Handler {
+func balance(c gateway.Admin, op adminclient.BalanceOperation) ops.Handler {
 	return handle(func(ctx context.Context, o ops.Op, p BalancePayload) (any, error) {
 		// 幂等键直接复用出站记录的键：重试时 sub2api 返回首次结果而不会重复加减
 		return c.UpdateBalance(ctx, p.UserID, op, p.Amount, p.Notes, o.IdempotencyKey)
