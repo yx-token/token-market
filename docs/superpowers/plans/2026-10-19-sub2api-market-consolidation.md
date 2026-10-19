@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go、PostgreSQL、Redis、sub2api v0.2.14 全树、token-market 迁入模块、Vue 3（本产品风格）。
 
-**宿主路径（本地）：** `../github-fork/sub2api`（分支 `market/consolidation`）  
+**宿主路径（本地）：** `../idlicat`（产品名 Idlicat；完整 sub2api + `market/`）  
 **过渡仓：** 本仓库 `token-market`（满足退役条件前仍可发版）
 
 **ADR:** [docs/adr/0001-sub2api-market-consolidation.md](../../adr/0001-sub2api-market-consolidation.md)  
@@ -58,12 +58,13 @@
 
 ## 宿主仓库与社区同步
 
-当前本地克隆为 **shallow**，且 `origin` 指向社区 `Wei-Shaw/sub2api`。完善动作：
+产品宿主为 **`idlicat`**（本地 `../idlicat`）。社区上游 URL：`https://github.com/Wei-Shaw/sub2api`。
 
-- [ ] `git fetch --unshallow`（或重新全量 clone）补全历史，便于日后 merge 社区 tag
-- [ ] 增加产品远程（如 `yx-token/sub2api-market` 或组织约定名）为 `product`；社区保持 `upstream`
-- [ ] 升级社区版本流程：`upstream` 取 tag → merge 进 `market/consolidation`（或 release 分支）→ 跑 `s2a-compat` + market e2e → 再动 `market/` 适配
-- [ ] 冲突优先落在 `market/` 或薄适配层；避免改 `backend/internal` 计费/OAuth/usage 内核
+- [x] 已用社区树创建 `idlicat`（含 `backend/`/`frontend/` 等全量目录）
+- [x] 已拷入闲置 TOKEN 市场环境：`market/deploy`、`market/scripts`、`market/Dockerfile`、`market/Makefile`、`.github/workflows/market-*.yml`
+- [x] 远程不改名：本仓 `origin` 仍为 token-market；`idlicat` 的 `origin` 可暂指向社区；产品 GitHub 仓建好后再加推送地址
+- [ ] 升级社区版本：在 `idlicat` 上 fetch 社区 tag → merge → `s2a-compat` + market e2e → 再改 `market/`
+- [ ] 冲突优先落在 `market/`；避免改 `backend/internal` 计费/OAuth/usage 内核
 
 ---
 
@@ -116,24 +117,26 @@
 
 ## 阶段 2 — 宿主骨架（进行中）
 
-### Task 2.1 基座（文档已齐；执行项仍待做）
+### Task 2.1 基座（idlicat）
 
-- [x] 分支 `market/consolidation` @ v0.2.14
-- [x] `market/README.md`、`market/SOURCE.md`、`market/DEPLOY.md`、根 `MARKET.md`
-- [x] `backend` 可 `go build ./cmd/server`
-- [ ] 执行：`git fetch --unshallow`（失败则全量重新 clone 到同分支）
-- [ ] 执行：`git remote rename origin upstream`；新增产品远程 `product`（组织仓库名开工时填入，未建仓则先本地分支）
-- [ ] 执行：选定 module path 并加 `market/go.mod` + 根 `go.work`（含 `backend` 与 `market`）
+- [x] 创建本地仓 `../idlicat`，内含完整社区 sub2api 树
+- [x] `MARKET.md`、`market/README.md`、`SOURCE.md`、`DEPLOY.md`
+- [x] 拷入市场环境：`market/deploy`、`scripts`、`Dockerfile`、`Makefile`、`market-ci.yml`、`market-release.yml`
+- [x] 远程不改名（保持现状）
+- [ ] 选定 `market` module path，加 `market/go.mod` + `go.work`
+- [ ] （可选）为 idlicat 配置可推送的 GitHub 远程后 `git push -u`
 
 ### Task 2.2 开工门禁（全部勾选后才允许阶段 3 搬代码）
 
-- [ ] 功能全覆盖清单（文末）与模块地图一致，无「未列包」
-- [ ] 宿主工作区干净，分支为 `market/consolidation`
-- [ ] 本仓测试基线记录：`go test ./internal/listing/...` 与 `pnpm test` 在迁包前为绿（作对照）
+- [x] 功能全覆盖清单与模块地图已覆盖主要包
+- [ ] 宿主 `idlicat` 工作区已提交本轮脚手架
+- [ ] 本仓测试基线：`go test ./internal/listing/...` 与 `pnpm test` 迁包前为绿
 
 ---
 
 ## 阶段 3 — 供给 / 调度 / 控制面（功能拆分）
+
+执行以文末「功能全覆盖清单」为准；本节只规定本阶段允许动的包，不得漏迁清单中的对应项。
 
 ### 3.1 listing（P1）
 
@@ -237,7 +240,7 @@
 
 | 风险 | 缓解 |
 |---|---|
-| 浅克隆导致 merge 社区失败 | 阶段 2 unshallow + 产品远程 |
+| 浅克隆导致 merge 社区失败 | 阶段 2 unshallow；远程名保持现状 |
 | 误把社区 frontend 当主站 | 双前端部署约定 + DEPLOY 文档 |
 | 迁包后风格漂移 | 阶段 4 视觉验收；禁止换社区皮肤 |
 | 双仓发版混乱 | 退役条件清单；未退役前生产只认过渡仓 tag |
@@ -301,6 +304,6 @@
 ## 当前进度
 
 - 阶段 0–1：完成
-- 阶段 2：文档与宿主骨架完成；**执行门禁未过**（unshallow、产品远程、go.work）
+- 阶段 2：文档与宿主骨架完成；**执行门禁未过**（unshallow、go.work）。远程不改。
 - 功能全覆盖清单：0 项已迁（以上全部未勾）
-- **下一步执行顺序：** 2.1 未勾三项 → 2.2 门禁 → 按清单从上到下迁包（platform/sub2api 起）
+- **下一步执行顺序：** unshallow → go.work → 按清单从上到下迁包（platform/sub2api 起）

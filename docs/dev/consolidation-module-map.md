@@ -2,7 +2,7 @@
 
 对照 [ADR 0001](../adr/0001-sub2api-market-consolidation.md) 与 [实施计划](../superpowers/plans/2026-10-19-sub2api-market-consolidation.md)。
 
-**宿主：** `../github-fork/sub2api` @ `market/consolidation`（完整社区树 + 顶层 `market/`）  
+**宿主：** `../idlicat`（完整社区 sub2api + 顶层 `market/`；含市场 deploy/CI）  
 **过渡仓：** 本仓库；迁入完成并满足退役条件前，本仓仍是生产权威实现。
 
 | 来源 | 优先级 | 宿主路径 | 说明 |
