@@ -116,25 +116,20 @@
 
 ## 阶段 2 — 宿主骨架（进行中）
 
-### Task 2.1 基座
+### Task 2.1 基座（文档已齐；执行项仍待做）
 
 - [x] 分支 `market/consolidation` @ v0.2.14
-- [x] `market/README.md`、`market/SOURCE.md`
-- [x] `backend` 可 `go build ./cmd/server`（已本地验证）
-- [ ] unshallow / 全量历史
-- [ ] 配置 `upstream` + 产品远程
-- [ ] 宿主根增加简短 `MARKET.md` 指向 `market/README.md`（避免只看到社区 README）
+- [x] `market/README.md`、`market/SOURCE.md`、`market/DEPLOY.md`、根 `MARKET.md`
+- [x] `backend` 可 `go build ./cmd/server`
+- [ ] 执行：`git fetch --unshallow`（失败则全量重新 clone 到同分支）
+- [ ] 执行：`git remote rename origin upstream`；新增产品远程 `product`（组织仓库名开工时填入，未建仓则先本地分支）
+- [ ] 执行：选定 module path 并加 `market/go.mod` + 根 `go.work`（含 `backend` 与 `market`）
 
-### Task 2.2 约定落地到宿主文档
+### Task 2.2 开工门禁（全部勾选后才允许阶段 3 搬代码）
 
-- [x] 双前端原则写入 `market/README.md`
-- [ ] `market/DEPLOY.md`：主站=`market/web`；社区 frontend 内网-only 示例
-- [ ] `market/SOURCE.md` 增加「退役检查清单」链接到本计划退役节
-
-### Task 2.3 第一批迁包准备
-
-- [ ] `go.work`（本仓 + 宿主 `backend` + 宿主 `market` module）
-- [ ] 选定 `market` 的 module path（建议 `github.com/<org>/sub2api/market` 或暂用 replace）
+- [ ] 功能全覆盖清单（文末）与模块地图一致，无「未列包」
+- [ ] 宿主工作区干净，分支为 `market/consolidation`
+- [ ] 本仓测试基线记录：`go test ./internal/listing/...` 与 `pnpm test` 在迁包前为绿（作对照）
 
 ---
 
@@ -252,7 +247,60 @@
 
 ---
 
+## 功能全覆盖清单（执行时逐项勾选；缺一项即未完成）
+
+迁入规则：源目录整包复制到宿主对应路径，改 import 前缀；**不改行为**；视觉文件随 `web/` 原样迁。每包迁完跑该包 `go test`；前端迁完跑 `pnpm test` 与 `pnpm build`。
+
+### 后端包
+
+- [ ] `internal/platform` → `market/internal/platform`
+- [ ] `internal/sub2api`（全部子包，含 `gateway`）→ `market/internal/sub2api`
+- [ ] `internal/account` → `market/internal/account`
+- [ ] `internal/settings` → `market/internal/settings`
+- [ ] `internal/listing`（上游、挂单、代理、厂商、额度包商品、分类、模型白名单、导入）→ `market/internal/listing`
+- [ ] `internal/market`（列表、热搜 discovery、官方价）→ `market/internal/market`
+- [ ] `internal/scheduling` → `market/internal/scheduling`
+- [ ] `internal/buyer`（影子用户、Key、商家清单、活动包购买）→ `market/internal/buyer`
+- [ ] `internal/edgecfg` → `market/internal/edgecfg`
+- [ ] `internal/edge`（链式 failover、活动额度运行时）→ `market/internal/edge`
+- [ ] `internal/iam` → `market/internal/iam`
+- [ ] `internal/quality`（含 `thirdparty`）→ `market/internal/quality`
+- [ ] `internal/inspection` → `market/internal/inspection`
+- [ ] `internal/risk` → `market/internal/risk`
+- [ ] `internal/compat` + `cmd/s2a-compat` → `market/`
+- [ ] `internal/update` → `market/internal/update`
+- [ ] `internal/billing`（账本、结算、退款、提现、店铺活动额度）→ `market/internal/billing`
+- [ ] `internal/payment`（支付宝、微信、商户配置）→ `market/internal/payment`
+- [ ] `internal/httpapi` → `market/internal/httpapi`
+- [ ] `internal/app` → `market/internal/app`
+- [ ] `migrations/` → `market/migrations`
+- [ ] `contract/` → `market/contract`（只读 SQL 契约，跟社区升级用）
+- [ ] `cmd/api` `cmd/worker` `cmd/edge` `cmd/market-runner` → `market/cmd`
+- [ ] `cmd/fake-sub2api` `cmd/fake-thirdparty` `internal/testutil` `internal/e2e` → `market/`
+
+### 前端页面（`web/` → `market/web`，风格禁止改）
+
+- [ ] 市场：`MarketView` `ListingView` 及品牌墙/筛选/热搜
+- [ ] 买家：`KeysView` `WalletView` `MerchantsView` `StoreCreditsView` `UsageView` `BillsView` `ProfileView`
+- [ ] 卖家：`PublishView` `UpstreamView` `UpstreamsView` `ListingsView` `ProxiesView` `UsageView` `EarningsView` `StoreCreditsView`
+- [ ] 运营：`Dashboard` `Users` `Vendors` `Pools` `Proxies` `Quality` `Detection` `ProbeItems` `ProbeRecords` `InspectionChecks` `Categories` `MarketHotSearch` `MarketExtras` `Payments` `Billing` `Funds` `Risk` `Audit` `Settings` `ThirdParty` `SystemUpdate` `OrgUnits` `OrgRoles` `OrgStaff` `Upstreams`
+- [ ] 登录注册：`LoginView` `RegisterView`
+- [ ] 样式与静态资源：`styles/`、`public/assets/brands/`、控制台布局
+
+### 产品能力验收（与上表对应，执行结束前必须全勾）
+
+- [ ] 卖家：OAuth/Coding Plan/导入、代理、模型白名单、寄售、订阅套餐、回收、改价下架
+- [ ] 市场：品牌墙、热搜、分类筛选、详情购买/加入商家
+- [ ] 买家：商家清单、Key 顺序、钱包充值退款、店铺活动包、订阅套餐退货、账单用量
+- [ ] 运营：质检题库与检测、第三方检测、支付商户、资金调账、IAM、系统更新、热搜配置
+- [ ] Edge：默认池与 ≤5 跳故障转移；社区 backend 扣费路径未被改写
+- [ ] 主站只提供 `market/web`；社区 `frontend/` 未作为默认入口
+
+---
+
 ## 当前进度
 
-- 阶段 0–1：完成（本仓）
-- 阶段 2：宿主分支 + `market/` 骨架 + 本轮计划完善；待 unshallow、产品远程、`MARKET.md`/`DEPLOY.md`、开搬 `listing`
+- 阶段 0–1：完成
+- 阶段 2：文档与宿主骨架完成；**执行门禁未过**（unshallow、产品远程、go.work）
+- 功能全覆盖清单：0 项已迁（以上全部未勾）
+- **下一步执行顺序：** 2.1 未勾三项 → 2.2 门禁 → 按清单从上到下迁包（platform/sub2api 起）
