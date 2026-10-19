@@ -21,3 +21,6 @@
 | `migrations/` | 贯穿 | `market/migrations` | 市场库，可同实例不同 schema |
 
 **禁止直接修改（社区合并敏感）：** `backend/internal` 下计费、余额、usage 入账、OAuth 刷新——变更落在 `market/` 或经 Admin 端口。
+
+**双前端：** 主站 = `market/web`；社区 `frontend/` 内网对照。详见宿主 `market/DEPLOY.md`。  
+**退役：** 实施计划「过渡仓退役条件」全部勾选前，生产发版仍以本仓为准。
