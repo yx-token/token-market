@@ -2,11 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在不硬改社区计费/网关内核的前提下，分阶段把 token-market 能力迁到以 sub2api v0.2.14 为底座的统一产品上；前期保留出站队列与影子用户，便于跟社区更新。
+**Goal:** 先拿到**完整** sub2api（基线 v0.2.14）代码树作为改造宿主，再在其上增量叠加 token-market 全部能力；不硬改社区计费/网关内核；前期保留出站队列与影子用户，便于跟社区更新。
 
-**Architecture:** Strangler。市场代码继续以独立模块演进；通过 `Gateway` 端口抽象隔离「HTTP Admin」与未来「进程内调用」。sub2api 原文件尽量只读；市场表仍在 market PG（可同实例 `market` schema）。Edge / 挂单 / 质检 / 资金按阶段迁入或并仓。
+**Architecture:** 宿主仓库 = 全量 sub2api + 顶层 `market/` 增量目录。Strangler：业务从 `token-market` 仓按模块迁入 `market/`。通过 `Gateway` 端口抽象隔离「HTTP Admin」与未来「进程内调用」。社区 `backend/`/`frontend/` 保持可独立构建运行。
 
-**Tech Stack:** Go 1.26、PostgreSQL、Redis、现有 token-market 模块、sub2api v0.2.14（`../github-fork/sub2api`）、Vue 3 前端。
+**Tech Stack:** Go、PostgreSQL、Redis、sub2api v0.2.14 全树、token-market 迁入模块、Vue 3。
+
+**宿主路径（本地）：** `../github-fork/sub2api`（分支 `market/consolidation`）  
+**过渡仓：** 本仓库 `token-market`（仍可发版，直至迁完）
 
 **ADR:** [docs/adr/0001-sub2api-market-consolidation.md](../../adr/0001-sub2api-market-consolidation.md)
 
@@ -14,8 +17,9 @@
 
 ## 已锁定决策（勿擅自推翻）
 
+- [x] **先全量 sub2api，再叠加市场代码**（不裁剪社区树）
 - [x] 保留双系统胶水（出站队列、影子用户）至资金与 Gateway 稳定之后
-- [x] 少改 sub2api 原文件，优先新模块
+- [x] 少改 sub2api 原文件，优先 `market/` 新目录
 - [x] 资金域最后动
 - [x] 契约测试基线仍为 v0.2.14
 
@@ -102,17 +106,17 @@
 
 ## 阶段 2 — 并仓骨架（下一批）
 
-### Task 2.1：sub2api fork 分支
+### Task 2.1：完整 sub2api 宿主 + market/ 骨架
 
-- [ ] 在 `../github-fork/sub2api` 从 `v0.2.14` 建分支 `market/consolidation`
-- [ ] 添加 `market/README.md`：说明模块边界与「禁止改 backend/internal 计费」清单
-- [ ] 可选 `go.work` 同时包含 token-market 与 sub2api（仅本地开发）
+- [x] 在 `../github-fork/sub2api` 从本地 `v0.2.14` 建分支 `market/consolidation`（全量社区树保留）
+- [x] 添加 `market/README.md`、`market/SOURCE.md`：增量边界与迁入清单
+- [ ] 可选 `go.work`（迁入第一个 Go 包时再加）
+- [ ] 验证 `cd backend && go build ./cmd/server`
 
 ### Task 2.2：迁移地图
 
-- [ ] 维护 `docs/dev/consolidation-module-map.md`：`internal/listing|buyer|edge|...` → 目标仓路径
-- [ ] 明确第一批搬迁包：`listing` 只读查询 / 健康检查类，不含资金
-
+- [x] 维护 `docs/dev/consolidation-module-map.md`（目标路径改为宿主 `market/`）
+- [x] 第一批搬迁包：`listing`（不含资金）— 待开始具体搬迁
 ---
 
 ## 阶段 3+ — 摘要（详细任务在进入阶段时再拆）
@@ -147,6 +151,5 @@
 
 ## 当前进度
 
-- 阶段 0 文档：完成
-- 阶段 1 代码：完成（待提交）
-- 下一阶段：2.1 sub2api fork 分支 + market/README 边界说明
+- 阶段 0–1：完成（token-market 仓 Gateway 端口）
+- 阶段 2：宿主分支 + `market/` 骨架已建；下一步把 `listing` 等模块迁入 `market/internal/`
