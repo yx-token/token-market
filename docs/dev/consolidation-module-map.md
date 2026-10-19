@@ -17,7 +17,7 @@
 | `internal/edge` | P2 | `market/internal/edge` | 勿先改进社区扣费路径 |
 | `internal/quality` + `inspection` | P3 | `market/internal/quality` 等 | |
 | `internal/billing` + `payment` | P4 最后 | `market/internal/billing` 等 | |
-| `web/` | 贯穿 | `market/web` | 与社区 `frontend/` 并列 |
+| `web/` | 贯穿 | `market/web` | **主 UI**：保留闲置TOKEN/控制台风格；社区 `frontend/` 并列保留但不替换本产品后台 |
 | `migrations/` | 贯穿 | `market/migrations` | 市场库，可同实例不同 schema |
 
 **禁止直接修改（社区合并敏感）：** `backend/internal` 下计费、余额、usage 入账、OAuth 刷新——变更落在 `market/` 或经 Admin 端口。
