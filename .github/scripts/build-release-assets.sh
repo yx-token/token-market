@@ -13,8 +13,11 @@ trap 'rm -rf "$staging_root"' EXIT
 for arch in amd64 arm64; do
   bundle="$staging_root/$arch"
   docker buildx build --platform "linux/$arch" --target release \
+    --file market/Dockerfile \
     --output "type=local,dest=$bundle" \
-    --build-arg VERSION="$release_tag" --build-arg COMMIT="$release_commit" .
+    --build-arg VERSION="$release_tag" --build-arg COMMIT="$release_commit" \
+    market
+
   for binary in api worker edge s2a-compat; do test -s "$bundle/bin/$binary"; done
   test -s "$bundle/web/index.html"
   tar -C "$bundle" -czf "release-assets/token-market_linux_$arch.tar.gz" \

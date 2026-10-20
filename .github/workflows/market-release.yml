@@ -86,7 +86,8 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: market
+          file: market/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -133,9 +134,9 @@ jobs:
         run: |
           dir="token-market-deploy-${GITHUB_REF_NAME}"
           mkdir "$dir"
-          cp deploy/docker-compose.yml "$dir/"
+          cp market/deploy/docker-compose.yml "$dir/"
           # 示例配置里的镜像改为本次发布的版本
-          sed "s#^TM_IMAGE=.*#TM_IMAGE=ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME}#" deploy/.env.example > "$dir/.env.example"
+          sed "s#^TM_IMAGE=.*#TM_IMAGE=ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME}#" market/deploy/.env.example > "$dir/.env.example"
           tar czf "$dir.tar.gz" "$dir"
 
       - name: 发布

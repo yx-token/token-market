@@ -14,7 +14,7 @@ RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm run build
 
-FROM --platform=$BUILDPLATFORM ${REGISTRY}library/golang:1.26-alpine AS go
+FROM --platform=$BUILDPLATFORM ${REGISTRY}library/golang:1.27-alpine AS go
 WORKDIR /src
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath
 COPY go.mod go.sum ./
@@ -25,7 +25,7 @@ ARG TARGETARCH
 ARG VERSION=dev
 ARG COMMIT=
 RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
-      -ldflags="-s -w -X github.com/DueGin/token-market/internal/platform/buildinfo.Version=${VERSION} -X github.com/DueGin/token-market/internal/platform/buildinfo.Commit=${COMMIT}" \
+      -ldflags="-s -w -X github.com/yx-token/token-market/market/internal/platform/buildinfo.Version=${VERSION} -X github.com/yx-token/token-market/market/internal/platform/buildinfo.Commit=${COMMIT}" \
       -o /out/ ./cmd/api ./cmd/worker ./cmd/edge ./cmd/s2a-compat ./cmd/market-runner
 RUN printf '{"schema":1,"version":"%s","commit":"%s","os":"%s","arch":"%s"}\n' \
       "$VERSION" "$COMMIT" "$TARGETOS" "$TARGETARCH" > /manifest.json
