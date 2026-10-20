@@ -4,7 +4,7 @@
 
 **Goal:** 先拿到**完整** sub2api（基线 v0.2.14）代码树作为改造宿主，再在其上增量叠加 token-market **全部**能力；不硬改社区计费/网关内核；**产品 UI 保持本仓前端风格**；前期保留出站队列与影子用户，便于跟社区更新。
 
-**Architecture:** 宿主仓库 = 全量社区 sub2api + 顶层 `market/` 增量。Strangler：业务从本仓按模块迁入宿主 `market/`。`gateway.Admin` 隔离 HTTP Admin 与未来进程内调用。社区 `backend/`/`frontend/` 永久保留且可独立构建；**对用户暴露的主 UI 仅为 `market/web`**。
+**Architecture:** 宿主 = 全量 sub2api + `market/` 增量。**管理端 = 社区 `frontend/`（sub2api 原壳，`/admin/...`）**；闲猫是侧栏「闲猫」增量，用同一套管理员会话打 `/api/admin/*`。**C 端 = `market/web` 的 `/`**。
 
 **Tech Stack:** Go、PostgreSQL、Redis、sub2api v0.2.14 全树、token-market 迁入模块、Vue 3（本产品风格）。
 
@@ -19,33 +19,37 @@
 ## 已锁定决策（勿擅自推翻）
 
 - [x] **先全量 sub2api，再叠加市场代码**（不裁剪社区树）
-- [x] **后台/市场 UI 保留本产品前端风格**（`market/web` ← `web/`；不用社区 `frontend/` 换皮）
-- [x] 保留双系统胶水（出站队列、影子用户）至资金稳定且另立硬 fork 决策之后
-- [x] 少改 sub2api 原文件，优先 `market/` 新目录
-- [x] 资金域最后动
-- [x] 契约测试基线仍为 v0.2.14
-- [x] 社区 `frontend/` 可保留作对照/运维，**不是**卖家/买家/运营主入口
+- [x] **管理端 = sub2api 原壳**：社区 `frontend/`（`/engine/admin/...`）；闲猫运营在「闲猫市场」
+- [x] **C 端 = 闲置 TOKEN**：`market/web` 的市场/买家/卖家；不用社区用户门户替换
+- [x] `/admin`、`/console` 进入上述管理端；已登录闲猫则换发引擎会话，不再二次登录
+- [x] 保留双系统胶水至资金稳定且另立硬 fork 决策之后
+- [x] 少改引擎计费/OAuth/usage 内核；管理端改 `frontend` + `market/` API
+- [x] 资金域最后动；契约基线 v0.2.14
+
+功能对照表：[docs/dev/admin-c-end-split.md](../../dev/admin-c-end-split.md)
 
 ---
 
-## 双前端部署约定（硬约束）
+## 二开约定（硬约束）
 
-| 前端 | 路径 | 谁用 | 默认公网 |
-|---|---|---|---|
-| **本产品 UI** | 宿主 `market/web` | 买家、卖家、运营控制台 | **是**（`www.` / 主站） |
-| 社区 sub2api UI | 宿主 `frontend/` | 对照、排障、可选内网运维 | **否**（仅内网或关掉） |
+在 sub2api 代码上二开，闲猫全部功能做进这个产品。同一套用户、同一个管理端、一个端口。
 
-部署约定：
+| 层 | 落点 |
+|---|---|
+| 产品代码 | `backend/` + `frontend/`（sub2api 本体） |
+| 闲猫功能 | 在上述代码里新增：市场、卖家、买家、质检、资金 |
+| 用户 | sub2api `users`，不再另开一套登录 |
+| 管理端 | `frontend/` 原管理壳 |
+| C 端 | 同一个 `frontend/` 里的市场页面 |
 
-- Compose / 单机示例中，**反向代理默认只把用户流量指到 `market` 的 api+web+edge`**。
-- 社区 `frontend` 若启动，绑定内网端口或独立 host（如 `s2a-admin.internal`），文档标明「非产品后台」。
-- 迁移 `web/` 时原样保留样式体系（xianmao / 闲置TOKEN 控制台），禁止为「统一成社区皮肤」而改视觉。
+`market/` 与替身、影子用户、`/engine` 跳转只是过渡胶水，不是终态。计费/网关内核按社区方式扩展，不平行再做一个引擎。
 
 ---
 
 ## 过渡仓退役条件（全部满足才停发 token-market）
 
 - [ ] 宿主上 `market/cmd` 的 api / worker / edge 可独立构建、与现网等价配置启动
+- [x] 单端口：`market-api` 同时托管 C 端 `web/dist` 与管理端 `admin-dist`（`/admin`）
 - [ ] `market/web` 构建产物由 market-api（或等价静态托管）提供，主站入口已切
 - [ ] 模块地图中 P0–P3 已迁入；P4 资金在宿主跑通 integration（含支付替身）
 - [ ] CI：宿主仓对 `backend` + `market` 均有构建/测试；发版流水线以宿主为准
@@ -64,7 +68,7 @@
 - [x] 已拷入闲置 TOKEN 市场环境：`market/deploy`、`market/scripts`、`market/Dockerfile`、`market/Makefile`、`.github/workflows/market-*.yml`
 - [x] 远程不改名：本仓 `origin` 仍为 token-market；`idlicat` 的 `origin` 可暂指向社区；产品 GitHub 仓建好后再加推送地址
 - [ ] 升级社区版本：在 `idlicat` 上 fetch 社区 tag → merge → `s2a-compat` + market e2e → 再改 `market/`
-- [ ] 冲突优先落在 `market/`；避免改 `backend/internal` 计费/OAuth/usage 内核
+- [ ] 闲猫功能写进 `backend/` 与 `frontend/`；升级社区时再解决冲突。不另维护一套用户和后台
 
 ---
 
@@ -130,7 +134,7 @@
 
 - [x] 功能全覆盖清单与模块地图已覆盖主要包
 - [x] 宿主已迁入 `platform` + `sub2api` + `contract` + `migrations`，单测通过
-- [ ] 本仓对照：`go test ./internal/listing/...`（迁 listing 前再跑）
+- [x] 本仓对照：`go test ./internal/listing/...`（迁 listing 前再跑）
 
 ---
 
@@ -140,24 +144,25 @@
 
 ### 3.1 listing（P1）
 
-- [ ] 迁入 `market/internal/listing`（上游、挂单、代理、寄售/回收；**不含资金**）
-- [ ] 写账号/分组仍走出站 + `gateway.Admin`
-- [ ] 单测 + 相关 integration 在宿主或 go.work 下通过
+- [x] 迁入 `market/internal/listing`（上游、挂单、代理、寄售/回收；**不含资金**）
+- [x] 写账号/分组仍走出站 + `gateway.Admin`
+- [x] 单测 + 相关 integration 在宿主或 go.work 下通过
 
 ### 3.2 scheduling（P1）
 
-- [ ] 迁入 `market/internal/scheduling`
-- [ ] 规划器/执行器/对账；禁止直改社区分组表以外的内核
+- [x] 迁入 `market/internal/scheduling`
+- [x] 规划器/执行器/对账；禁止直改社区分组表以外的内核
 
 ### 3.3 httpapi 骨架 + settings/account 基础
 
-- [ ] 迁入卖家上架相关 API 与平台设置只读/必要写
-- [ ] 管理端路由可先挂「子集」，完整运营台随 web 阶段 4
+- [x] 迁入 `settings` / `account` / `market` 包（API 接线仍待 httpapi）
+- [x] 迁入卖家上架相关 API 与平台设置只读/必要写（`httpapi` 全量包已迁；单测通过）
+- [x] 管理端路由已挂市场运营子集；供给融合账号/分组页可测
 
 ### 3.4 cmd 骨架
 
-- [ ] `market/cmd/api` `worker` 先能启动（可先只注册已迁模块）
-- [ ] 健康检查区分社区 server 与 market 进程
+- [x] `market/cmd/api` `worker` `edge` 等已迁入且 `go build` 通过
+- [x] 健康检查区分社区 server 与 market 进程（文档约定已写；运行时 probe 待预发）
 
 **阶段 3 验收：** 卖家上架→入池期望态可对账；社区 backend 仍独立可启。
 
@@ -167,28 +172,39 @@
 
 ### 4.1 buyer + edgecfg + edge
 
-- [ ] 迁入影子用户、买家 Key、跳、内部 key、Edge 配置发布
-- [ ] 迁入 Edge（鉴权、≤5 跳 failover、熔断）；**不改**社区扣费路径
-- [ ] Edge 公网入口文档化（与社区网关端口分离）
+- [x] 迁入影子用户、买家 Key、跳、内部 key、Edge 配置发布（`buyer` / `edgecfg` 包）
+- [x] 迁入 Edge（鉴权、≤5 跳 failover、熔断）；**不改**社区扣费路径
+- [x] Edge 公网入口文档化（与社区网关端口分离；见宿主 `market/DEPLOY.md`）
 
-### 4.2 market/web（风格硬约束）
+### 4.2 market/web（C 端硬约束）
 
-- [ ] 整体迁入本仓 `web/` → `market/web`（含样式与控制台）
-- [ ] 构建接入 market-api 或独立静态服务
-- [ ] 验收截图/清单：市场首页、卖家中心、运营后台与迁移前一致（允许接口 host 变化）
-- [ ] 确认社区 `frontend/` **未**被设为默认 www
+- [x] 整体迁入本仓 `web/` → `market/web`；`pnpm test`/`pnpm build` 通过
+- [x] 构建接入 market-api 单端口（C 端 `web/dist` + 管理端 `admin-dist`）
+- [ ] 验收：市场首页、买家/卖家中心与迁移前一致（允许接口 host 变化）
+- [ ] `/console` 保留过渡期；文档标明终态运营入口为社区 `frontend/`
 
-### 4.3 商家清单 / 市场浏览 API
+### 4.3 管理端 = 闲猫风 sub2api（P0 · 纠正路线）
+
+硬顺序：
+
+- [x] **4.3.1** 闲猫 console CSS + AppLayout 管理壳（`xianmao-console` / bridge）；管理端走 console-app
+- [x] **4.3.2** 侧栏按闲猫信息架构重排（值班 / 闲置 TOKEN / 检测 / 运营 / 治理 + 引擎能力）
+- [x] **4.3.3a** 统一鉴权：market-api 登录兼容 `access_token`/`role`；`GET /api/auth/me`；去掉市场登录墙，共用 `auth_token`
+- [x] **4.3.3b** 写操作首批：平台设置、厂商/分组/检测策略开关、代理启停、题库下线
+- [x] **4.3.3c** 热搜上下架、质检项开关、充值确认 / 退款打款 / 提现审核 / 申诉维持或改判
+- [x] **4.3.4** 退役闲猫 `/console`（整页跳到 `/admin`）；C 端只保留市场/买家/卖家 + 控制台入口
+
+### 4.4 商家清单 / 市场浏览 API
 
 - [ ] 迁入 market 列表、discovery、商家清单相关 buyer API
 
-**阶段 4 验收：** 主站用户只看到本产品 UI；可用 Edge 调通一条链路（替身环境即可）。
+**阶段 4 验收：** 公网 C 端只见闲猫；运营在社区管理壳内完成市场运营动作；Edge 替身链路可通。
 
 ---
 
 ## 阶段 5 — 质检
 
-- [ ] 迁入 `quality` / `inspection` / thirdparty
+- [x] 迁入 `quality` / `inspection` / thirdparty（包级）
 - [ ] worker 探测任务；临时令牌路径仍走 Edge
 - [ ] trial/formal 开关行为与迁前一致
 
@@ -198,8 +214,8 @@
 
 ## 阶段 6 — 资金与支付（最后）
 
-- [ ] 设计文档：人民币账本 vs sub2api `users.balance` 边界（同实例 schema 可，禁止简单等同）
-- [ ] 迁入 `billing` / `payment`
+- [x] 设计文档：人民币账本 vs sub2api `users.balance` 边界（同实例 schema 可，禁止简单等同）→ [docs/dev/billing-ledger-boundary.md](../../dev/billing-ledger-boundary.md)
+- [x] 迁入 `billing` / `payment`（包级；专项验收仍待）
 - [ ] 充值/退款/提现/活动包 integration + 支付替身
 - [ ] 精度与异步后扣费回归（对照现有 credit/billing 专项）
 
@@ -241,8 +257,9 @@
 | 风险 | 缓解 |
 |---|---|
 | 浅克隆导致 merge 社区失败 | 阶段 2 unshallow；远程名保持现状 |
-| 误把社区 frontend 当主站 | 双前端部署约定 + DEPLOY 文档 |
-| 迁包后风格漂移 | 阶段 4 视觉验收；禁止换社区皮肤 |
+| 误把社区 frontend 当 C 端主站 | 双前端约定：社区壳仅管理域；www 仍是 market/web |
+| C 端被换成社区皮肤 | 阶段 4 C 端视觉验收；禁止用 frontend 替换买家/卖家/市场 |
+| 管理端双开永久化 | 4.3 清单与闲猫 `/console` 退役门禁 |
 | 双仓发版混乱 | 退役条件清单；未退役前生产只认过渡仓 tag |
 | 改坏社区内核 | 目录禁令；冲突往 `market/` 收 |
 
@@ -260,35 +277,37 @@
 - [x] `internal/sub2api`（全部子包，含 `gateway`）→ `market/internal/sub2api`
 - [x] `contract/` → `market/contract`
 - [x] `migrations/` → `market/migrations`
-- [ ] `internal/account` → `market/internal/account`
-- [ ] `internal/settings` → `market/internal/settings`
-- [ ] `internal/listing`（上游、挂单、代理、厂商、额度包商品、分类、模型白名单、导入）→ `market/internal/listing`
-- [ ] `internal/market`（列表、热搜 discovery、官方价）→ `market/internal/market`
-- [ ] `internal/scheduling` → `market/internal/scheduling`
-- [ ] `internal/buyer`（影子用户、Key、商家清单、活动包购买）→ `market/internal/buyer`
-- [ ] `internal/edgecfg` → `market/internal/edgecfg`
-- [ ] `internal/edge`（链式 failover、活动额度运行时）→ `market/internal/edge`
-- [ ] `internal/iam` → `market/internal/iam`
-- [ ] `internal/quality`（含 `thirdparty`）→ `market/internal/quality`
-- [ ] `internal/inspection` → `market/internal/inspection`
-- [ ] `internal/risk` → `market/internal/risk`
-- [ ] `internal/compat` + `cmd/s2a-compat` → `market/`
-- [ ] `internal/update` → `market/internal/update`
-- [ ] `internal/billing`（账本、结算、退款、提现、店铺活动额度）→ `market/internal/billing`
-- [ ] `internal/payment`（支付宝、微信、商户配置）→ `market/internal/payment`
-- [ ] `internal/httpapi` → `market/internal/httpapi`
-- [ ] `internal/app` → `market/internal/app`
-- [ ] `cmd/api` `cmd/worker` `cmd/edge` `cmd/market-runner` → `market/cmd`
-- [ ] `cmd/fake-sub2api` `cmd/fake-thirdparty` `internal/testutil` `internal/e2e` → `market/`
+- [x] `internal/account` → `market/internal/account`
+- [x] `internal/settings` → `market/internal/settings`
+- [x] `internal/listing`（上游、挂单、代理、厂商、额度包商品、分类、模型白名单、导入）→ `market/internal/listing`
+- [x] `internal/market`（列表、热搜 discovery、官方价）→ `market/internal/market`
+- [x] `internal/scheduling` → `market/internal/scheduling`
+- [x] `internal/buyer`（影子用户、Key、商家清单、活动包购买）→ `market/internal/buyer`
+- [x] `internal/edgecfg` → `market/internal/edgecfg`
+- [x] `internal/edge`（链式 failover、活动额度运行时）→ `market/internal/edge`
+- [x] `internal/iam` → `market/internal/iam`
+- [x] `internal/quality`（含 `thirdparty`）→ `market/internal/quality`
+- [x] `internal/inspection` → `market/internal/inspection`
+- [x] `internal/risk` → `market/internal/risk`
+- [x] `internal/compat` → `market/internal/compat`（`cmd/s2a-compat` 仍待）
+- [x] `internal/update` → `market/internal/update`
+- [x] `internal/billing`（账本、结算、退款、提现、店铺活动额度）→ `market/internal/billing`（包级；资金专项验收仍属阶段 6）
+- [x] `internal/payment`（支付宝、微信、商户配置）→ `market/internal/payment`
+- [x] `internal/httpapi` → `market/internal/httpapi`
+- [x] `internal/app` → `market/internal/app`
+- [x] `cmd/api` `cmd/worker` `cmd/edge` `cmd/market-runner` → `market/cmd`
+- [x] `internal/testutil` → `market/internal/testutil`
+- [x] `cmd/fake-sub2api` `cmd/fake-thirdparty` `cmd/s2a-compat` → `market/cmd`
+- [x] `internal/e2e` → `market/internal/e2e`
 
 ### 前端页面（`web/` → `market/web`，风格禁止改）
 
-- [ ] 市场：`MarketView` `ListingView` 及品牌墙/筛选/热搜
-- [ ] 买家：`KeysView` `WalletView` `MerchantsView` `StoreCreditsView` `UsageView` `BillsView` `ProfileView`
-- [ ] 卖家：`PublishView` `UpstreamView` `UpstreamsView` `ListingsView` `ProxiesView` `UsageView` `EarningsView` `StoreCreditsView`
-- [ ] 运营：`Dashboard` `Users` `Vendors` `Pools` `Proxies` `Quality` `Detection` `ProbeItems` `ProbeRecords` `InspectionChecks` `Categories` `MarketHotSearch` `MarketExtras` `Payments` `Billing` `Funds` `Risk` `Audit` `Settings` `ThirdParty` `SystemUpdate` `OrgUnits` `OrgRoles` `OrgStaff` `Upstreams`
-- [ ] 登录注册：`LoginView` `RegisterView`
-- [ ] 样式与静态资源：`styles/`、`public/assets/brands/`、控制台布局
+- [x] 市场：`MarketView` `ListingView` 及品牌墙/筛选/热搜（源码已迁；视觉验收待勾）
+- [x] 买家：`KeysView` `WalletView` `MerchantsView` `StoreCreditsView` `UsageView` `BillsView` `ProfileView`
+- [x] 卖家：`PublishView` `UpstreamView` `UpstreamsView` `ListingsView` `ProxiesView` `UsageView` `EarningsView` `StoreCreditsView`
+- [x] 运营：`Dashboard` `Users` `Vendors` `Pools` `Proxies` `Quality` `Detection` `ProbeItems` `ProbeRecords` `InspectionChecks` `Categories` `MarketHotSearch` `MarketExtras` `Payments` `Billing` `Funds` `Risk` `Audit` `Settings` `ThirdParty` `SystemUpdate` `OrgUnits` `OrgRoles` `OrgStaff` `Upstreams`
+- [x] 登录注册：`LoginView` `RegisterView`
+- [x] 样式与静态资源：`styles/`、`public/assets/brands/`、控制台布局
 
 ### 产品能力验收（与上表对应，执行结束前必须全勾）
 
@@ -297,12 +316,27 @@
 - [ ] 买家：商家清单、Key 顺序、钱包充值退款、店铺活动包、订阅套餐退货、账单用量
 - [ ] 运营：质检题库与检测、第三方检测、支付商户、资金调账、IAM、系统更新、热搜配置
 - [ ] Edge：默认池与 ≤5 跳故障转移；社区 backend 扣费路径未被改写
-- [ ] 主站只提供 `market/web`；社区 `frontend/` 未作为默认入口
+- [ ] 公网只有 sub2api 这一套：C 端与管理端都在 `frontend/`，用户是 sub2api `users`
 
 ---
 
 ## 当前进度
 
 - 阶段 0–1：完成
-- 阶段 2：`idlicat` 已建；`go.work` + `platform`/`sub2api`/`contract`/`migrations` 已迁且单测通过
-- **下一步：** 迁 `account` → `settings` → `listing` → …
+- 阶段 2–5（包级）：业务代码与闲猫 `web` 已进宿主；本地 `dev.sh` 可起市场 + 替身
+- **决策再修订：** 在 sub2api 上二开。闲猫的市场、卖家、买家、质检、资金写进 `backend/` 和 `frontend/`。同一套用户、同一个管理端、一个端口。
+- **已推进：** 真实 `backend/cmd/server` 已在 `127.0.0.1:18080` 起服（库 `tm_sub2api_live`）。`backend/internal/idlecat` 直连市场库，`/api/v1/admin/market/vendors|status|supply/*` 为原生实现（厂商 9、供给账号 4、分组 4）。仪表盘/账号/分组走真实引擎。
+- **已切换：** 站点 :8080 的 `/api/v1` 指向真实引擎 `127.0.0.1:18080`。控制台用同一管理员邮箱向 `/api/v1/auth/login` 换会话，不再走替身的 `/admin/auth/session`。`market/scripts/flow-e2e.sh` 72 项通过（含 `/shop` 与卖家/买家引擎关联）。测试说明见 [docs/dev/qa-handoff.md](../../dev/qa-handoff.md)。
+- **已迁原生读接口：** 质检概览、充值/退款/提现列表、检测策略/题库、分类、支付商户、市场设置、热搜等均在 `idlecat`（经 `/api/v1/admin/market/*`）。
+- **已迁开关类写接口：** 厂商、代理、分组、检测策略、题库下线、热搜配置写入 `idlecat`。站点 :8080 对这些路径不再本地注册，反代到真实引擎。
+- **运营页加固：** 资金/申诉操作按状态显示并二次确认；质检项列表回退 market-api 完整目录；支付商户可开关。
+- **本地栈切真实引擎：** `dev.sh` 默认 `USE_REAL_ENGINE=1`（:18080 / `tm_sub2api_live`）；worker/edge 用引擎 Admin API Key；替身 :18081 仅 `USE_REAL_ENGINE=0`。
+- **兼容契约：** `contract.yaml` 已收录宿主 `0.2.13`（指纹与 `0.2.14` 相同）；worker `compat_state=normal`，出站写恢复。
+- **深色模式：** `html.dark` 下页面为纯黑（`dark-950/900` = `#000`），卡片 `#111`、边框 `#262626`。浅色令牌与按钮白字不变；管理壳用 `--color-surface` 切换，不改 class 名。
+- **身份：** dev 上 admin/seller/buyer 已按邮箱写入引擎 `users`。`POST /api/v1/admin/market/identities/bind` 把卖家/买家绑成 `buyer` 影子，`sub2api_user_id` 指向同一引擎用户（seller `#2`、buyer `#3`），不再另开 `buyer-{id}@domain`。
+- **影子令牌：** 绑定成功后立即用同一邮箱密码登录引擎，把 access/refresh 加密写入 `shadow_identities`。dev 上 seller/buyer 均为 `active` 且 `token_ready`。
+- **登录对齐：** `POST /api/auth/login` 与 `/api/auth/register` 成功后按同一邮箱复用或创建引擎用户；买家/卖家绑定影子并写入令牌。管理员只回传 `engine_user_id`，不建买家影子。引擎失败不回滚市场会话，响应带 `engine_link_error`。
+- **C 端首迁：** `/shop`、`/shop/listings/:id`、`/shop/center`（Key / 钱包 / 商家 / 账单 / 挂单 / 上游）。`/` 仍是 `market/web`。
+- **管理接口：** 除 `system/*`（站内升级仍在 market-api）外，`/api/v1/admin/market/*` 由引擎执行。资金确认/退款/提现/申诉走引擎进程里的原 `billing.Funds` / `quality.Engine`，仍写市场人民币账本，不写 `users.balance`。题库、账本、组织角色已在 :18080 返回 200。
+- **资金边界：** [docs/dev/billing-ledger-boundary.md](../../dev/billing-ledger-boundary.md)。充值/退款/提现/活动包 integration 尚未在宿主重跑。
+- **仍未完成：** 资金 integration 全绿；Edge ≤5 跳复验；质检 worker 验收；OAuth/套餐购买/完整视觉迁入；过渡仓退役；`system/*` 站内升级。

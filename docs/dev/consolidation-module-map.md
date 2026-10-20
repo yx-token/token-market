@@ -19,7 +19,8 @@
 | `cmd/api` `cmd/worker` `cmd/edge` | P1 | `market/cmd/...` | 与社区 `backend/cmd` 并列 |
 | `internal/buyer` `edgecfg` | P2 | `market/internal/buyer` `edgecfg` | 影子用户、Key、商家清单 |
 | `internal/edge` | P2 | `market/internal/edge` | 链式路由；不改社区扣费 |
-| `web/` | P2 | `market/web` | **主 UI**，风格原样保留 |
+| `web/`（C 端） | P2 | `market/web` | 市场/买家/卖家；闲猫风格原样 |
+| 管理端合并 | P1 | `frontend/` + market admin API | 社区壳为主；闲猫 `/console` 过渡后退役 |
 | `internal/iam` | P2 | `market/internal/iam` | 组织/角色/菜单 |
 | `internal/quality` `inspection` | P3 | 同名路径 under `market/internal/` | 质检与估价 |
 | `internal/risk` | P3 | `market/internal/risk` | |
@@ -30,5 +31,5 @@
 | `deploy/` `scripts/` | P4 | `market/deploy` `market/scripts` | 市场进程部署；社区 deploy 保留 |
 
 **禁止：** 为迁功能而删改 `backend/internal` 计费、余额、usage、OAuth 刷新。  
-**双前端：** 主站 = `market/web`；社区 `frontend/` 内网。见宿主 `market/DEPLOY.md`。  
+**双前端：** C 端主站 = `market/web`；管理端 = 社区 `frontend/`（含市场运营增量）。见宿主 `market/DEPLOY.md`。  
 **退役：** 实施计划「功能全覆盖清单」全部勾选，且退役条件满足，才停本仓发版。
