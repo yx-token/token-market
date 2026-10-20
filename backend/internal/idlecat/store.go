@@ -93,7 +93,7 @@ func (s *Store) Status(ctx context.Context) (*Status, error) {
 	if err != nil {
 		return st, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var status string
 		var n int
@@ -121,7 +121,7 @@ func (s *Store) ListVendors(ctx context.Context) ([]Vendor, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []Vendor
 	for rows.Next() {
 		var v Vendor
@@ -167,7 +167,7 @@ func (s *Store) ListSupplyAccounts(ctx context.Context) ([]FusedAccount, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	type up struct {
 		ID, SellerID             int64
 		Platform, Status, Health string
@@ -250,7 +250,7 @@ func (s *Store) listEngineAccounts(ctx context.Context) ([]engineAccount, error)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []engineAccount
 	for rows.Next() {
 		var a engineAccount
@@ -290,7 +290,7 @@ func (s *Store) ListSupplyGroups(ctx context.Context) ([]FusedGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	type pool struct {
 		ID             int64
 		Name, Platform string
@@ -362,7 +362,7 @@ func (s *Store) listEngineGroups(ctx context.Context) ([]engineGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []engineGroup
 	for rows.Next() {
 		var g engineGroup

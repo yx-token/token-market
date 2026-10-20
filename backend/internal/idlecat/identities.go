@@ -35,7 +35,7 @@ func (s *Store) ListIdentities(ctx context.Context) ([]IdentityRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := make([]IdentityRow, 0)
 	for rows.Next() {

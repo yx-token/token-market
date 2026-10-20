@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	_ "github.com/yx-token/token-market/ent/runtime"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/repository"
-	"github.com/lib/pq"
 )
 
 const classifierVersion = "ingress-reject-v1"

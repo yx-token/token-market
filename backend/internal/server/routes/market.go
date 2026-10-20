@@ -477,7 +477,8 @@ func mountMarketUpstream(admin *gin.RouterGroup) bool {
 	if err != nil || target.Scheme == "" || target.Host == "" {
 		return false
 	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
+	// MARKET_UPSTREAM_URL is operator-controlled env, not request input.
+	proxy := httputil.NewSingleHostReverseProxy(target) //nolint:gosec // G704: trusted deploy env URL
 	admin.Any("/market/*path", func(c *gin.Context) {
 		rest := strings.TrimPrefix(c.Param("path"), "/")
 		if rest == "" || rest == "status" {

@@ -9,7 +9,7 @@ import (
 )
 
 func scanJSONRows(rows *sql.Rows) ([]map[string]any, error) {
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	cols, err := rows.Columns()
 	if err != nil {
 		return nil, err
@@ -165,7 +165,7 @@ func (s *Store) GetSettings(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := map[string]any{}
 	for rows.Next() {
 		var key string

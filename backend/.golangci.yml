@@ -107,6 +107,8 @@ linters:
         - -ST1020  # Comment on exported method format
         - -ST1021  # Comment on exported type format
         - -ST1022  # Comment on exported variable format
+        # x/net@v0.60+ deprecates http2.* helpers; keep current keepalive until migrated.
+        - -SA1019
     unused:
       # Default: true
       field-writes-are-uses: true

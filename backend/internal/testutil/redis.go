@@ -3,10 +3,10 @@ package testutil
 import (
 	"testing"
 
-	"github.com/yx-token/token-market/internal/repository"
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"github.com/yx-token/token-market/internal/repository"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // NewRedisGatewayCache returns a real Redis-backed gateway cache for tests.
