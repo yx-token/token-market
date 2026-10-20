@@ -10,10 +10,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/edgecfg"
 	"github.com/yx-token/token-market/market/internal/platform/randx"
 	"github.com/yx-token/token-market/market/internal/quality/thirdparty"
-	"github.com/jackc/pgx/v5"
 )
 
 // 第三方身份核验在内部题执行前提交，内部题结束后统一等待和合并结论。

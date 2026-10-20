@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // compatGate 依据 worker 中兼容自检写入的 compat_state 决定是否允许同步写 sub2api。

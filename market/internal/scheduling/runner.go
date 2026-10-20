@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/yx-token/token-market/market/internal/listing"
 	"github.com/yx-token/token-market/market/internal/settings"
 	"github.com/yx-token/token-market/market/internal/sub2api/ops"
 	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
 	"github.com/yx-token/token-market/market/internal/sub2api/replica"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 )
 
 const kickChannel = "tm:scheduler:kick"

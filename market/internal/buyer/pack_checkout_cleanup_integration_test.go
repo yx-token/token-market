@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/yx-token/token-market/market/internal/edgecfg"
 	"github.com/yx-token/token-market/market/internal/testutil"
-	"github.com/redis/go-redis/v9"
 )
 
 func TestPackCheckoutCleanupAfterAnotherWorkerFinishes(t *testing.T) {

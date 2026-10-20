@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/token-market/market/internal/inspection"
 	"github.com/jackc/pgx/v5"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 const maxExecutionSnapshot = 32 << 20

@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/edgecfg"
 	"github.com/yx-token/token-market/market/internal/listing"
 	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 	"github.com/yx-token/token-market/market/internal/sub2api/ops"
 	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
-	"github.com/jackc/pgx/v5"
 )
 
 // KindCreditPack 的余额只属于一个店铺活动包，绝不能注入普通 buyer 身份。

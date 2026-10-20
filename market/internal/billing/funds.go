@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/internal/buyer"
 	"github.com/yx-token/token-market/market/internal/payment"
 	"github.com/yx-token/token-market/market/internal/platform/crypto"
@@ -17,8 +19,6 @@ import (
 	"github.com/yx-token/token-market/market/internal/sub2api/ops"
 	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
 	"github.com/yx-token/token-market/market/internal/sub2api/replica"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // RiskChecker 由风控模块实现：提现是否需要人工审核。

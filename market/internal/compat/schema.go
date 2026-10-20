@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yx-token/token-market/market/internal/sub2api/replica"
 	"github.com/jackc/pgx/v5"
+	"github.com/yx-token/token-market/market/internal/sub2api/replica"
 )
 
 // ApplySub2APIMigrations 在一个空数据库上按 sub2api 迁移执行器的规则执行迁移：

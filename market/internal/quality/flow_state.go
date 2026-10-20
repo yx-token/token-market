@@ -9,9 +9,9 @@ import (
 	"slices"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/inspection"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
-	"github.com/jackc/pgx/v5"
 )
 
 var detectionFlows = []string{inspection.FlowIntelligence, inspection.FlowDegradation, inspection.FlowIdentity}

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/internal/platform/db"
 	"github.com/yx-token/token-market/market/internal/settings"
 	"github.com/yx-token/token-market/market/internal/testutil"
 	"github.com/yx-token/token-market/market/migrations"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func unfreezeDB(t *testing.T) *pgxpool.Pool {

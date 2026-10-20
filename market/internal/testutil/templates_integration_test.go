@@ -14,12 +14,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/yx-token/token-market/market/internal/compat"
-	"github.com/yx-token/token-market/market/internal/platform/db"
-	"github.com/yx-token/token-market/market/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/yx-token/token-market/market/internal/compat"
+	"github.com/yx-token/token-market/market/internal/platform/db"
+	"github.com/yx-token/token-market/market/migrations"
 )
 
 func TestMain(m *testing.M) {

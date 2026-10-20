@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 const discoveryKey = "market_discovery"

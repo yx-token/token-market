@@ -7,8 +7,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/yx-token/token-market/market/internal/inspection"
 	"github.com/jackc/pgx/v5"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 func inspectionItemKey(it Item) string { return it.CheckKey }

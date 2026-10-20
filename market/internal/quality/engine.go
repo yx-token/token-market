@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/internal/buyer"
 	"github.com/yx-token/token-market/market/internal/edgecfg"
 	"github.com/yx-token/token-market/market/internal/inspection"
@@ -23,8 +25,6 @@ import (
 	"github.com/yx-token/token-market/market/internal/sub2api/ops"
 	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
 	"github.com/yx-token/token-market/market/internal/sub2api/replica"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Engine 调度并执行探测、判定、处置。实现 listing.QualityHook。

@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 	"github.com/yx-token/token-market/market/internal/sub2api/ops"
 	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
-	"github.com/jackc/pgx/v5"
 )
 
 // 重置卡：部分订阅（Codex、Claude）有官方发放的重置卡，用一张可以立即恢复额度窗口。

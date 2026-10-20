@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 	"github.com/jackc/pgx/v5"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 )
 
 // 开发替身仅返回确定性报告，不连接用户填写的代理或真实 AI 站点。

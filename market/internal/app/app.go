@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/yx-token/token-market/market/internal/account"
 	"github.com/yx-token/token-market/market/internal/billing"
 	"github.com/yx-token/token-market/market/internal/buyer"
@@ -29,8 +31,6 @@ import (
 	"github.com/yx-token/token-market/market/internal/sub2api/replica"
 	"github.com/yx-token/token-market/market/internal/sub2api/userclient"
 	"github.com/yx-token/token-market/market/migrations"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 )
 
 type App struct {

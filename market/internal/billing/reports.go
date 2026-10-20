@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/jackc/pgx/v5"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 type UsageItem struct {

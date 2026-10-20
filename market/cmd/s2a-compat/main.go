@@ -22,10 +22,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/contract"
 	"github.com/yx-token/token-market/market/internal/compat"
 	"github.com/yx-token/token-market/market/internal/sub2api/replica"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (

@@ -10,11 +10,11 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/internal/inspection"
 	"github.com/yx-token/token-market/market/internal/platform/db"
 	"github.com/yx-token/token-market/market/internal/testutil"
 	"github.com/yx-token/token-market/market/migrations"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const astraMigration = "0027_astra_pigeonhole_capability.sql"

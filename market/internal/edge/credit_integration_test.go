@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/buyer"
 	"github.com/yx-token/token-market/market/internal/compat"
 	"github.com/yx-token/token-market/market/internal/edgecfg"
@@ -27,7 +28,6 @@ import (
 	"github.com/yx-token/token-market/market/internal/testutil"
 	"github.com/yx-token/token-market/market/internal/testutil/fakesub2api"
 	"github.com/yx-token/token-market/market/migrations"
-	"github.com/jackc/pgx/v5"
 )
 
 // 真实 PostgreSQL + sub2api v0.2.14 迁移 + 真实 Admin/User/网关替身，

@@ -10,14 +10,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/internal/platform/crypto"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/settings"
 	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 	"github.com/yx-token/token-market/market/internal/sub2api/provision"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // QualityHook 由质量检测模块实现。卖家可主动检测；有效授权与白名单允许未检测挂单，不能据此生成检测通过证据。

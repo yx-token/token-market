@@ -14,13 +14,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/yx-token/token-market/market/internal/edge"
 	"github.com/yx-token/token-market/market/internal/edgecfg"
 	"github.com/yx-token/token-market/market/internal/platform/buildinfo"
 	"github.com/yx-token/token-market/market/internal/platform/config"
 	"github.com/yx-token/token-market/market/internal/platform/crypto"
 	"github.com/yx-token/token-market/market/internal/platform/db"
-	"github.com/redis/go-redis/v9"
 )
 
 func main() {

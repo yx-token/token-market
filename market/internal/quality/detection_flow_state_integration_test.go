@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/internal/inspection"
 	"github.com/yx-token/token-market/market/internal/listing"
 	"github.com/yx-token/token-market/market/internal/settings"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func detectionStateFixture(t *testing.T) (*pgxpool.Pool, *Engine, runRow, *Policy, InspectionSettings) {

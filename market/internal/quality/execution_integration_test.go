@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/market/internal/testutil"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/yx-token/token-market/market/internal/testutil"
 )
 
 func inspectionDB(t *testing.T) (*pgxpool.Pool, runRow, runRow) {

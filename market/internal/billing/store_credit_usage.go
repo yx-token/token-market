@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/sub2api/ops"
 	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
-	"github.com/jackc/pgx/v5"
 )
 
 // allocateStoreCredits 在与 usage 认领和复式账本同一事务内分摊，精度均在 SQL numeric 中计算。

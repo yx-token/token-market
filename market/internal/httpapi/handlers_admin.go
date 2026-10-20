@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/billing"
 	"github.com/yx-token/token-market/market/internal/listing"
 	"github.com/yx-token/token-market/market/internal/market"
@@ -14,7 +15,6 @@ import (
 	"github.com/yx-token/token-market/market/internal/quality"
 	"github.com/yx-token/token-market/market/internal/scheduling"
 	"github.com/yx-token/token-market/market/internal/settings"
-	"github.com/jackc/pgx/v5"
 )
 
 func adminID(r *http.Request) int64 { return httpx.MustUser(r).UserID }

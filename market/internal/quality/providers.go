@@ -8,10 +8,10 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/platform/crypto"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/quality/thirdparty"
-	"github.com/jackc/pgx/v5"
 )
 
 // ProviderSettings 是一个第三方检测站在后台的配置与说明。

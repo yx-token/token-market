@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/jackc/pgx/v5"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // CreditOffer is a seller-wide promotion, independent of any upstream or legacy quota pack.

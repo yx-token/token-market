@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/contract"
 	"github.com/yx-token/token-market/market/internal/compat"
 	"github.com/yx-token/token-market/market/internal/sub2api/compatguard"
 	"github.com/yx-token/token-market/market/internal/sub2api/replica"
 	"github.com/yx-token/token-market/market/internal/testutil"
-	"github.com/jackc/pgx/v5"
 )
 
 // 在真实的 sub2api 表结构上验证全部契约查询，并验证只读访问层可以扫描结果。

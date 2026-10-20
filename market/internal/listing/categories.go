@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // CategoryPack 系统标签：额度包挂单自动带上，卖家不可单独勾选/去掉。

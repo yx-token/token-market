@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yx-token/token-market/market/internal/platform/httpx"
-	"github.com/yx-token/token-market/market/internal/settings"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/settings"
 )
 
 type Service struct {

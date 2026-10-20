@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 	"github.com/yx-token/token-market/market/internal/sub2api/userclient"
-	"github.com/jackc/pgx/v5"
 )
 
 func env(t *testing.T, name string) string {

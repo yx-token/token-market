@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/jackc/pgx/v5"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // BuyerPrice 返回寄售挂单的买家价 p = m_s × (1 + c)，保留 4 位小数（sub2api 倍率精度）。

@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/internal/listing"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type modelWhitelistUpstream struct {

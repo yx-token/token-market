@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/yx-token/token-market/market/internal/payment"
 	"github.com/yx-token/token-market/market/internal/payment/alipay"
 	"github.com/yx-token/token-market/market/internal/payment/wechat"
@@ -22,8 +24,6 @@ import (
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/platform/randx"
 	"github.com/yx-token/token-market/market/internal/settings"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type DB interface {

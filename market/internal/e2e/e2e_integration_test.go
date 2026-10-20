@@ -26,6 +26,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/yx-token/token-market/market/contract"
 	"github.com/yx-token/token-market/market/internal/app"
 	"github.com/yx-token/token-market/market/internal/billing"
@@ -41,9 +44,6 @@ import (
 	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
 	"github.com/yx-token/token-market/market/internal/testutil"
 	"github.com/yx-token/token-market/market/internal/testutil/fakesub2api"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 )
 
 type env struct {
