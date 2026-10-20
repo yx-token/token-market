@@ -1,6 +1,6 @@
 module github.com/yx-token/token-market
 
-go 1.27.0
+go 1.27.2
 
 require (
 	entgo.io/ent v0.14.5

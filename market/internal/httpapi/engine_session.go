@@ -43,7 +43,7 @@ func (s *Server) engineSession(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return httpx.Unavailable("ENGINE_UNAVAILABLE", "engine session failed")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
 		return httpx.Unavailable("ENGINE_UNAVAILABLE", "engine session rejected")
@@ -72,7 +72,7 @@ func (s *Server) enginePasswordLogin(w http.ResponseWriter, r *http.Request, ema
 	if err != nil {
 		return httpx.Unavailable("ENGINE_UNAVAILABLE", "engine login failed")
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
 		return httpx.Unavailable("ENGINE_UNAVAILABLE", "engine login rejected")

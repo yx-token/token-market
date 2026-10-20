@@ -58,7 +58,7 @@ func (s *Server) engineAuthMe(ctx context.Context, bearer string) (email, role s
 	if err != nil {
 		return "", "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {
 		return "", "", httpx.Unauthorized("UNAUTHORIZED", "invalid engine token")

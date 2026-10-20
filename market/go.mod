@@ -1,6 +1,6 @@
 module github.com/yx-token/token-market/market
 
-go 1.27.0
+go 1.27.2
 
 require (
 	github.com/alicebob/miniredis/v2 v2.38.0
