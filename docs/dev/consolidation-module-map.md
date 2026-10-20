@@ -2,8 +2,8 @@
 
 对照 [ADR 0001](../adr/0001-sub2api-market-consolidation.md) 与 [实施计划](../superpowers/plans/2026-10-19-sub2api-market-consolidation.md)。
 
-**宿主：** `../idlicat`（完整社区 sub2api + 顶层 `market/`；含市场 deploy/CI）  
-**过渡仓：** 本仓库；迁入完成并满足退役条件前，本仓仍是生产权威实现。
+**宿主：** 本仓 `idlicat/`（完整社区 sub2api + 顶层 `market/`；含市场 deploy/CI；本地亦可继续用旁路 `../idlicat` 联调）  
+**过渡仓：** 本仓库根目录市场实现；迁入完成并满足退役条件前，根目录仍是生产权威发版路径。
 
 | 来源 | 优先级 | 宿主路径 | 说明 |
 |---|---|---|---|

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 160" fill="none">
+  <!-- 闲猫趴姿：趴在弹窗沿上 -->
+  <!-- 身体横趴 -->
+  <path fill="#FFE60F" d="
+    M36 88
+    C30 58 58 36 96 40
+    C130 28 170 32 196 52
+    C240 48 286 66 292 100
+    C296 128 268 146 220 148
+    C180 150 120 152 78 140
+    C48 132 38 110 36 88Z"/>
+
+  <!-- 毛簇（右侧/后背） -->
+  <path fill="#E8B800" d="M250 52 C268 36 296 44 300 68 C284 58 264 56 250 52Z"/>
+  <path fill="#FFE60F" d="M252 56 C268 42 290 50 294 70 C280 60 264 58 252 56Z"/>
+  <path fill="#E8B800" d="M278 78 C300 78 308 104 288 120 C294 100 286 86 278 78Z"/>
+  <path fill="#FFE60F" d="M276 82 C294 82 300 104 284 116 C288 98 282 88 276 82Z"/>
+
+  <!-- 弧形猫耳：够大但不拉长 -->
+  <path fill="#FFE60F" d="M86 50 C80 34 90 16 108 16 C124 16 126 34 118 48 C108 50 94 52 86 50Z"/>
+  <path fill="#FFE60F" d="M122 42 C118 26 130 10 148 12 C162 14 160 32 150 44 C142 44 128 44 122 42Z"/>
+  <path fill="#FF9DB8" d="M94 44 C90 34 98 24 108 24 C116 24 118 34 114 42 C108 44 98 46 94 44Z"/>
+  <path fill="#FF9DB8" d="M130 38 C128 30 136 20 146 22 C154 24 152 32 148 38 C142 38 134 38 130 38Z"/>
+
+  <!-- 大白眼 -->
+  <ellipse cx="106" cy="82" rx="42" ry="44" fill="#fff"/>
+  <ellipse cx="144" cy="84" rx="40" ry="42" fill="#fff"/>
+  <rect x="98" y="72" width="13" height="24" rx="6.5" fill="#1f1f1f"/>
+  <rect x="136" y="74" width="13" height="24" rx="6.5" fill="#1f1f1f"/>
+
+  <!-- ω 嘴 -->
+  <path d="M116 112 C120 118 124 118 128 112 C132 118 136 118 140 112"
+        stroke="#1f1f1f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 前爪搭在沿上 -->
+  <ellipse cx="96" cy="142" rx="22" ry="12" fill="#FFE60F"/>
+  <ellipse cx="148" cy="144" rx="22" ry="12" fill="#FFE60F"/>
+  <!-- 爪垫暗示 -->
+  <ellipse cx="90" cy="144" rx="4" ry="3" fill="#F0C200"/>
+  <ellipse cx="102" cy="144" rx="4" ry="3" fill="#F0C200"/>
+  <ellipse cx="142" cy="146" rx="4" ry="3" fill="#F0C200"/>
+  <ellipse cx="154" cy="146" rx="4" ry="3" fill="#F0C200"/>
+</svg>

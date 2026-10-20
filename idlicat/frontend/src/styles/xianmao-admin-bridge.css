@@ -1,0 +1,1093 @@
+/* 管理端壳：设计令牌。数值与 --color-* / --spacing-* / --border-radius-* 对齐。 */
+
+.console-app {
+  --color-primary: #0555ce;
+  --color-primary-hover: #0446a7;
+  --color-primary-light: #e6eefa;
+  --color-primary-bg: rgba(5, 85, 206, 0.05);
+  --color-text-primary: #262626;
+  --color-text-secondary: #868686;
+  --color-text-placeholder: #c5c5c5;
+  --color-border: #e8e8e8;
+  --color-bg-page: #f2f4f7;
+  --color-bg-container: #f2f6fc;
+  --color-surface: #ffffff;
+  --color-white: #ffffff;
+  --color-success: #52c41a;
+  --color-warning: #faad14;
+  --color-error: #ff4d4f;
+  --shadow-level-1: 0px 4px 16px 0px rgba(38, 38, 38, 0.2);
+  --shadow-level-2: 0px 2px 8px 0px rgba(38, 38, 38, 0.2);
+  --shadow-level-3: 0px 2px 4px 0px rgba(38, 38, 38, 0.2);
+  --shadow-primary: 0px 4px 16px 0px rgba(5, 85, 206, 0.2);
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --spacing-xs: 4px;
+  --spacing-sm: 6px;
+  --spacing-md: 8px;
+  --spacing-lg: 12px;
+  --spacing-xl: 16px;
+  --font-size-h3: 16px;
+  --font-size-body: 14px;
+  --font-size-caption: 12px;
+  --glass-bg: rgba(255, 255, 255, 0.68);
+  --glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.45);
+  --glass-blur: blur(20px) saturate(1.8);
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--console-side-width, 256px) minmax(0, 1fr);
+  height: 100vh;
+  max-height: 100vh;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--color-bg-page, #f2f4f7);
+  color: var(--color-text-primary, #262626);
+  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.console-app .console-mesh {
+  display: block;
+}
+
+.console-app .sidebar {
+  position: sticky !important;
+  top: 0;
+  left: auto !important;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: var(--console-side-width, 256px) !important;
+  min-width: var(--console-side-width, 256px) !important;
+  max-width: var(--console-side-width, 256px) !important;
+  height: 100vh;
+  max-height: 100vh;
+  margin: 0 !important;
+  padding: 0;
+  border: none;
+  border-right: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 0;
+  box-sizing: border-box;
+  /* 与主内容区同属液态玻璃：半透明白底 + 模糊，不再用实心白 */
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(24px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.8) !important;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.35);
+  transform: none !important;
+}
+
+.console-app .sidebar-footer {
+  background: transparent !important;
+  border-top-color: rgba(15, 23, 42, 0.06) !important;
+}
+
+.console-app.is-side-collapsed .sidebar,
+.console-app .sidebar.is-collapsed {
+  width: 72px !important;
+  min-width: 72px !important;
+  max-width: 72px !important;
+}
+
+.console-app .sidebar-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 4rem; /* 与顶栏 h-16 对齐 */
+  min-height: 4rem;
+  gap: 8px;
+  padding: 0 var(--spacing-md, 8px);
+  margin: 0;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+  box-sizing: border-box;
+}
+
+.console-app .sidebar-brand-title {
+  font-size: var(--font-size-h3, 16px);
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: 0;
+  color: var(--color-text-primary, #262626);
+}
+
+.console-app .sidebar-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 12px 16px !important;
+}
+
+.console-app .sidebar-section {
+  margin-bottom: 1.25rem !important;
+}
+
+.console-app .sidebar-section--personal {
+  margin-top: 0.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.console-app .sidebar-divider {
+  display: none;
+}
+
+/* 全侧栏统一为「我的账户」样式：圆角胶囊 + 浅蓝激活底 */
+.console-app .sidebar-link,
+.console-app .sidebar-footer .sidebar-link,
+.console-app .sidebar-section--personal .sidebar-link {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-height: 40px !important;
+  margin: 2px 0 !important;
+  padding: 10px 14px !important;
+  border-radius: 12px !important;
+  color: #64748b !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 22px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.console-app .sidebar-link--l1 {
+  min-height: 40px !important;
+  padding: 10px 14px !important;
+}
+
+.console-app .sidebar-link--l2 {
+  min-height: 36px !important;
+  padding: 8px 14px 8px 42px !important;
+}
+
+.console-app .sidebar-link--l3 {
+  min-height: 34px !important;
+  padding: 8px 14px 8px 56px !important;
+}
+
+.console-app .sidebar-ico,
+.console-app .sidebar-ico--l1 {
+  flex-shrink: 0 !important;
+  width: 18px !important;
+  height: 18px !important;
+  color: currentColor !important;
+}
+
+.console-app .sidebar-svg-icon.sidebar-ico--l1 svg {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.console-app .sidebar-caret {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: currentColor;
+  opacity: 0.85;
+  transition: transform 0.2s ease;
+}
+
+.console-app .sidebar-link:hover,
+.console-app .sidebar-footer .sidebar-link:hover {
+  color: #0f172a !important;
+  background: rgba(15, 23, 42, 0.04) !important;
+}
+
+.console-app .sidebar-link-active,
+.console-app .sidebar-link.sidebar-link-active,
+.console-app .sidebar-section--personal .sidebar-link-active {
+  color: #0555ce !important;
+  background: rgba(5, 85, 206, 0.1) !important;
+  box-shadow: none !important;
+  font-weight: 500 !important;
+}
+
+.console-app .sidebar-link-active:hover,
+.console-app .sidebar-link.sidebar-link-active:hover,
+.console-app .sidebar-section--personal .sidebar-link-active:hover {
+  color: #0555ce !important;
+  background: rgba(5, 85, 206, 0.14) !important;
+}
+
+.console-app .sidebar-submenu {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.console-app .sidebar-submenu--l2,
+.console-app .sidebar-submenu--l3 {
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-left: none;
+}
+
+.console-app .sidebar-section-label,
+.console-app .sidebar-section-title {
+  display: flex !important;
+  margin-bottom: 0.5rem !important;
+  padding: 0 12px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  color: #94a3b8 !important;
+}
+
+.console-app .console-main-col {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* 顶栏 + 页签固定，仅下方内容区滚动 */
+.console-app .console-main-col > header.glass,
+.console-app .console-main-col > header {
+  position: relative;
+  top: auto;
+  flex-shrink: 0;
+  z-index: 20;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(32px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(1.8) !important;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.console-app .console-main-col > .app-tab-bar {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 19;
+}
+
+.console-app .console-body-slot {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+}
+
+.console-app .card,
+.console-app .stat-card,
+.console-app .lg-card {
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.56)) !important;
+  color: var(--color-text-primary, #262626) !important;
+  border: 1px solid rgba(255, 255, 255, 0.55) !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 8px 24px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(18px) saturate(1.65) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.65) !important;
+}
+
+.console-app .btn,
+.console-app .btn-primary,
+.console-app .console-body-slot button.bg-primary-500,
+.console-app .console-body-slot button.bg-indigo-600 {
+  border-radius: var(--border-radius-sm, 4px) !important;
+}
+
+.console-app .btn-primary,
+.console-app .console-body-slot button.bg-primary-500,
+.console-app .console-body-slot button.bg-indigo-600 {
+  background: var(--color-primary, #0555ce) !important;
+  border-color: var(--color-primary, #0555ce) !important;
+  color: var(--color-white, #ffffff) !important;
+  box-shadow: none !important;
+}
+
+.console-app .btn-primary:hover,
+.console-app .console-body-slot button.bg-primary-500:hover {
+  background: var(--color-primary-hover, #0446a7) !important;
+  box-shadow: var(--shadow-primary, 0px 4px 16px 0px rgba(5, 85, 206, 0.2)) !important;
+}
+
+.console-app .y-page {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100%;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 14px;
+  box-shadow:
+    0 8px 24px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(18px) saturate(1.65);
+  -webkit-backdrop-filter: blur(18px) saturate(1.65);
+  overflow: hidden;
+}
+
+.console-app .y-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm, 6px);
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.console-app .y-title {
+  margin: 0;
+  font-size: var(--font-size-h3, 16px);
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--color-text-primary, #262626);
+}
+
+.console-app .y-container--tight {
+  flex: 1;
+  overflow: auto;
+  padding: 0 8px 6px;
+}
+
+.console-app .y-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--color-text-secondary, #868686);
+  font-size: var(--font-size-caption, 12px);
+}
+
+.console-app .y-page table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-body, 14px);
+}
+
+.console-app .y-page thead th {
+  padding: 6px 8px;
+  text-align: left;
+  font-size: var(--font-size-caption, 12px);
+  font-weight: 500;
+  color: #64748b;
+  background: rgba(242, 246, 252, 0.72);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.console-app .y-page tbody td {
+  padding: 6px 8px;
+  color: var(--color-text-primary, #262626);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+  background: transparent;
+}
+
+.console-app .y-page tbody tr:nth-child(even) td {
+  background: rgba(242, 244, 247, 0.45);
+}
+
+.console-app .y-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--color-primary, #0555ce);
+  border-radius: 8px;
+  background: var(--color-primary, #0555ce);
+  color: var(--color-white, #ffffff);
+  font-size: 13px;
+}
+
+.console-app .y-btn:disabled {
+  opacity: 0.6;
+}
+
+.console-app .y-btn.y-btn--ghost {
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--color-text-primary, #262626);
+  border-color: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+}
+
+.console-app .y-link {
+  color: var(--color-primary, #0555ce);
+  font-size: var(--font-size-body, 14px);
+}
+
+.console-app .y-msg {
+  margin: var(--spacing-xs, 4px) var(--spacing-sm, 8px) 0;
+  font-size: var(--font-size-caption, 12px);
+}
+
+.console-app .y-msg--error {
+  color: var(--color-error, #ff4d4f);
+}
+
+.console-app .y-msg--ok {
+  color: var(--color-success, #52c41a);
+}
+
+.console-app .y-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+}
+
+.console-app .y-search input {
+  height: 28px;
+  width: 200px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--color-text-primary, #262626);
+  font-size: 13px;
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+}
+
+.console-app .y-pager {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs, 4px);
+}
+
+.console-app .y-pager button {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 var(--spacing-sm, 8px);
+  border: 1px solid var(--color-border, #e8e8e8);
+  border-radius: var(--border-radius-sm, 4px);
+  background: var(--color-white, #ffffff);
+  color: var(--color-text-secondary, #868686);
+  font-size: var(--font-size-caption, 12px);
+}
+
+.console-app .y-pager button.is-on {
+  border-color: var(--color-primary, #0555ce);
+  color: var(--color-primary, #0555ce);
+}
+
+.console-app .y-page th.y-col-op,
+.console-app .y-page td.y-col-op {
+  position: sticky;
+  right: 0;
+}
+
+.console-app .y-page-desc {
+  margin: 0;
+  color: var(--color-text-secondary, #868686);
+  font-size: var(--font-size-caption, 12px);
+  line-height: 20px;
+}
+
+.console-app .page-hero {
+  margin-bottom: var(--spacing-lg, 16px);
+}
+
+.console-app .page-hero h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 30px;
+  color: var(--color-text-primary, #262626);
+}
+
+.console-app .page-hero p {
+  margin: var(--spacing-xs, 4px) 0 0;
+  color: var(--color-text-secondary, #868686);
+  font-size: var(--font-size-body, 14px);
+  line-height: 22px;
+}
+
+.console-app .y-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px 0;
+}
+
+.console-app .y-tab {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.45);
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+}
+
+.console-app .y-tab.is-on {
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(30, 41, 59, 0.82);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.console-app .y-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--spacing-sm, 8px);
+  border-radius: 999px;
+  background: var(--color-bg-container, #f2f6fc);
+  color: var(--color-text-secondary, #868686);
+  font-size: var(--font-size-caption, 12px);
+}
+
+.console-app .y-chip--ok {
+  background: rgba(82, 196, 26, 0.12);
+  color: var(--color-success, #52c41a);
+}
+
+.console-app .y-chip--warn {
+  background: rgba(250, 173, 20, 0.14);
+  color: var(--color-warning, #faad14);
+}
+
+.console-app .y-chip--err {
+  background: rgba(255, 77, 79, 0.12);
+  color: var(--color-error, #ff4d4f);
+}
+
+.console-app .y-page .input,
+.console-app .console-body-slot .input,
+.console-app .console-body-slot select,
+.console-app .console-body-slot input[type='text'],
+.console-app .console-body-slot input[type='search'],
+.console-app .console-body-slot input[type='number'],
+.console-app .console-body-slot input[type='date'] {
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.65) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, 0.55) !important;
+  color: var(--color-text-primary, #262626) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+}
+
+.console-app .console-body-slot select:focus,
+.console-app .console-body-slot input:focus,
+.console-app .y-page .input:focus {
+  border-color: var(--color-primary, #0555ce) !important;
+  box-shadow: 0 0 0 3px rgba(5, 85, 206, 0.12) !important;
+  outline: none;
+}
+
+.console-app .card .rounded-lg.bg-blue-100,
+.console-app .card .rounded-lg.bg-purple-100,
+.console-app .card .rounded-lg.bg-green-100,
+.console-app .card .rounded-lg.bg-emerald-100,
+.console-app .card .rounded-lg.bg-amber-100,
+.console-app .card .rounded-lg.bg-indigo-100,
+.console-app .card .rounded-lg.bg-violet-100,
+.console-app .card .rounded-lg.bg-orange-100 {
+  background: var(--color-primary-light, #e6eefa) !important;
+}
+
+.console-app .card .text-blue-600,
+.console-app .card .text-purple-600,
+.console-app .card .text-green-600,
+.console-app .card .text-emerald-600,
+.console-app .card .text-amber-600,
+.console-app .card .text-indigo-600,
+.console-app .card .text-violet-600,
+.console-app .card .text-orange-600,
+.console-app .card svg.text-blue-600,
+.console-app .card svg.text-purple-600,
+.console-app .card svg.text-green-600,
+.console-app .card svg.text-emerald-600 {
+  color: var(--color-primary, #0555ce) !important;
+}
+
+.console-app .card .text-gray-500,
+.console-app .card .text-gray-400 {
+  color: var(--color-text-secondary, #868686) !important;
+}
+
+.console-app .card .text-gray-900,
+.console-app .card .text-xl {
+  color: var(--color-text-primary, #262626) !important;
+}
+
+/* 深色：页面纯黑；文字强制高对比（兼容 html.dark / .dark） */
+html.dark .console-app,
+.dark .console-app {
+  --color-text-primary: #f5f5f5;
+  --color-text-secondary: #d4d4d4;
+  --color-text-placeholder: #a3a3a3;
+  --color-border: #333333;
+  --color-bg-page: #000000;
+  --color-bg-container: #111111;
+  --color-surface: #111111;
+  --color-primary-light: rgba(5, 85, 206, 0.28);
+  --color-primary-bg: rgba(5, 85, 206, 0.16);
+  --glass-bg: rgba(17, 17, 17, 0.72);
+  --glass-bg-strong: rgba(17, 17, 17, 0.86);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --shadow-level-1: none;
+  --shadow-level-2: none;
+  --shadow-level-3: none;
+  color-scheme: dark;
+  background: #000000;
+  color: #f5f5f5;
+}
+
+html.dark .console-app .sidebar-brand-title,
+html.dark .console-app .sidebar-brand,
+.dark .console-app .sidebar-brand-title,
+.dark .console-app .sidebar-brand {
+  color: #f5f5f5 !important;
+}
+
+html.dark .console-app .sidebar-link,
+html.dark .console-app .sidebar-footer .sidebar-link,
+html.dark .console-app .sidebar-section--personal .sidebar-link,
+.dark .console-app .sidebar-link,
+.dark .console-app .sidebar-footer .sidebar-link,
+.dark .console-app .sidebar-section--personal .sidebar-link {
+  color: #d4d4d4 !important;
+  background: transparent !important;
+}
+
+html.dark .console-app .sidebar-link:hover,
+html.dark .console-app .sidebar-footer .sidebar-link:hover,
+.dark .console-app .sidebar-link:hover,
+.dark .console-app .sidebar-footer .sidebar-link:hover {
+  color: #f5f5f5 !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark .console-app .sidebar-link-active,
+html.dark .console-app .sidebar-link.sidebar-link-active,
+html.dark .console-app .sidebar-section--personal .sidebar-link-active,
+.dark .console-app .sidebar-link-active,
+.dark .console-app .sidebar-link.sidebar-link-active,
+.dark .console-app .sidebar-section--personal .sidebar-link-active {
+  color: #93c5fd !important;
+  background: rgba(5, 85, 206, 0.22) !important;
+}
+
+html.dark .console-app .sidebar-link-active:hover,
+html.dark .console-app .sidebar-section--personal .sidebar-link-active:hover,
+.dark .console-app .sidebar-link-active:hover,
+.dark .console-app .sidebar-section--personal .sidebar-link-active:hover {
+  color: #93c5fd !important;
+  background: rgba(5, 85, 206, 0.28) !important;
+}
+
+html.dark .console-app .sidebar-section--personal,
+.dark .console-app .sidebar-section--personal {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .console-app .sidebar-divider,
+.dark .console-app .sidebar-divider {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .console-app .sidebar-section-title,
+html.dark .console-app .sidebar-section-label,
+.dark .console-app .sidebar-section-title,
+.dark .console-app .sidebar-section-label {
+  color: #a3a3a3 !important;
+}
+
+html.dark .console-app .sidebar,
+html.dark .console-app .console-main-col > header,
+html.dark .console-app .console-main-col > header.glass,
+.dark .console-app .sidebar,
+.dark .console-app .console-main-col > header,
+.dark .console-app .console-main-col > header.glass {
+  background: rgba(0, 0, 0, 0.78) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #f5f5f5 !important;
+  backdrop-filter: blur(24px) saturate(1.5) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.5) !important;
+}
+
+/* 顶栏页签：未激活字在深色下曾几乎不可见，强制提亮 */
+html.dark .console-app .app-tab-bar,
+.dark .console-app .app-tab-bar {
+  background: rgba(0, 0, 0, 0.72) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  color: #e5e5e5 !important;
+}
+
+html.dark .console-app .app-tab-bar .tab-item,
+.dark .console-app .app-tab-bar .tab-item {
+  color: #e5e5e5 !important;
+}
+
+html.dark .console-app .app-tab-bar .tab-item:hover,
+.dark .console-app .app-tab-bar .tab-item:hover {
+  background: rgba(5, 85, 206, 0.18) !important;
+  color: #93c5fd !important;
+}
+
+html.dark .console-app .app-tab-bar .tab-item.active,
+.dark .console-app .app-tab-bar .tab-item.active {
+  color: #93c5fd !important;
+  background: rgba(5, 85, 206, 0.32) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark .console-app .app-tab-bar .tab-close,
+.dark .console-app .app-tab-bar .tab-close {
+  color: #a3a3a3 !important;
+}
+
+html.dark .console-app .app-tab-bar .tab-close:hover,
+.dark .console-app .app-tab-bar .tab-close:hover {
+  color: #f5f5f5 !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark .console-app .card,
+html.dark .console-app .stat-card,
+html.dark .console-app .lg-card,
+html.dark .console-app .y-page,
+.dark .console-app .card,
+.dark .console-app .stat-card,
+.dark .console-app .lg-card,
+.dark .console-app .y-page {
+  background: linear-gradient(155deg, rgba(17, 17, 17, 0.92), rgba(17, 17, 17, 0.72)) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #f5f5f5 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35) !important;
+  backdrop-filter: blur(18px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.4) !important;
+}
+
+html.dark .console-app .y-header,
+html.dark .console-app .y-footer,
+.dark .console-app .y-header,
+.dark .console-app .y-footer {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #d4d4d4 !important;
+}
+
+html.dark .console-app .y-title,
+html.dark .console-app .page-hero h1,
+html.dark .console-app .console-body-slot h1,
+html.dark .console-app .console-body-slot h2,
+html.dark .console-app .console-body-slot h3,
+.dark .console-app .y-title,
+.dark .console-app .page-hero h1,
+.dark .console-app .console-body-slot h1,
+.dark .console-app .console-body-slot h2,
+.dark .console-app .console-body-slot h3 {
+  color: #f5f5f5 !important;
+}
+
+html.dark .console-app .y-page-desc,
+html.dark .console-app .page-hero p,
+.dark .console-app .y-page-desc,
+.dark .console-app .page-hero p {
+  color: #a3a3a3 !important;
+}
+
+html.dark .console-app .y-page thead th,
+.dark .console-app .y-page thead th {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #d4d4d4 !important;
+}
+
+html.dark .console-app .y-page tbody td,
+.dark .console-app .y-page tbody td {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #f5f5f5 !important;
+}
+
+html.dark .console-app .y-page tbody tr:nth-child(even) td,
+.dark .console-app .y-page tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+html.dark .console-app .y-btn.y-btn--ghost,
+html.dark .console-app .y-search input,
+html.dark .console-app .y-tab,
+html.dark .console-app .y-page .input,
+html.dark .console-app .console-body-slot .input,
+html.dark .console-app .console-body-slot select,
+html.dark .console-app .console-body-slot input[type='text'],
+html.dark .console-app .console-body-slot input[type='search'],
+html.dark .console-app .console-body-slot input[type='number'],
+html.dark .console-app .console-body-slot input[type='date'],
+html.dark .console-app .console-body-slot input[type='password'],
+html.dark .console-app .console-body-slot textarea,
+.dark .console-app .y-btn.y-btn--ghost,
+.dark .console-app .y-search input,
+.dark .console-app .y-tab,
+.dark .console-app .y-page .input,
+.dark .console-app .console-body-slot .input,
+.dark .console-app .console-body-slot select,
+.dark .console-app .console-body-slot input[type='text'],
+.dark .console-app .console-body-slot input[type='search'],
+.dark .console-app .console-body-slot input[type='number'],
+.dark .console-app .console-body-slot input[type='date'],
+.dark .console-app .console-body-slot input[type='password'],
+.dark .console-app .console-body-slot textarea {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: rgba(17, 17, 17, 0.85) !important;
+  color: #f5f5f5 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+html.dark .console-app input::placeholder,
+html.dark .console-app textarea::placeholder,
+.dark .console-app input::placeholder,
+.dark .console-app textarea::placeholder {
+  color: #a3a3a3 !important;
+  opacity: 1 !important;
+}
+
+html.dark .console-app .y-tab.is-on,
+.dark .console-app .y-tab.is-on {
+  border-color: rgba(5, 85, 206, 0.55);
+  background: rgba(5, 85, 206, 0.82);
+  color: #ffffff !important;
+}
+
+html.dark .console-app .y-pager button,
+.dark .console-app .y-pager button {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(17, 17, 17, 0.85);
+  color: #d4d4d4 !important;
+}
+
+html.dark .console-app .y-pager button.is-on,
+.dark .console-app .y-pager button.is-on {
+  border-color: #0555ce;
+  color: #93c5fd !important;
+}
+
+html.dark .console-app .lg-tab,
+.dark .console-app .lg-tab {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(17, 17, 17, 0.65);
+  color: #d4d4d4 !important;
+  box-shadow: none;
+}
+
+html.dark .console-app .lg-tab.is-active,
+.dark .console-app .lg-tab.is-active {
+  border-color: rgba(5, 85, 206, 0.55);
+  background: rgba(5, 85, 206, 0.82);
+  color: #ffffff !important;
+}
+
+html.dark .console-app .y-link,
+.dark .console-app .y-link {
+  color: #93c5fd !important;
+}
+
+html.dark .console-app .y-chip,
+.dark .console-app .y-chip {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d4d4d4;
+}
+
+/* 覆盖正文区残留的浅色 Tailwind 字色 */
+html.dark .console-app .text-gray-900,
+html.dark .console-app .text-gray-800,
+html.dark .console-app .text-slate-900,
+html.dark .console-app .text-slate-800,
+html.dark .console-app .text-neutral-900,
+.dark .console-app .text-gray-900,
+.dark .console-app .text-gray-800,
+.dark .console-app .text-slate-900,
+.dark .console-app .text-slate-800,
+.dark .console-app .text-neutral-900 {
+  color: #f5f5f5 !important;
+}
+
+html.dark .console-app .text-gray-700,
+html.dark .console-app .text-gray-600,
+html.dark .console-app .text-gray-500,
+html.dark .console-app .text-slate-600,
+html.dark .console-app .text-slate-500,
+html.dark .console-app .text-neutral-500,
+.dark .console-app .text-gray-700,
+.dark .console-app .text-gray-600,
+.dark .console-app .text-gray-500,
+.dark .console-app .text-slate-600,
+.dark .console-app .text-slate-500,
+.dark .console-app .text-neutral-500 {
+  color: #a3a3a3 !important;
+}
+
+html.dark .console-app .bg-white,
+html.dark .console-app .bg-gray-50,
+html.dark .console-app .bg-gray-100,
+.dark .console-app .bg-white,
+.dark .console-app .bg-gray-50,
+.dark .console-app .bg-gray-100 {
+  background-color: rgba(17, 17, 17, 0.88) !important;
+  color: #f5f5f5;
+}
+
+html.dark .console-app .border-gray-100,
+html.dark .console-app .border-gray-200,
+html.dark .console-app .border-gray-300,
+.dark .console-app .border-gray-100,
+.dark .console-app .border-gray-200,
+.dark .console-app .border-gray-300 {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark .console-app .card .text-gray-900,
+html.dark .console-app .card .text-xl,
+.dark .console-app .card .text-gray-900,
+.dark .console-app .card .text-xl {
+  color: #f5f5f5 !important;
+}
+
+html.dark .console-app .card .text-gray-500,
+html.dark .console-app .card .text-gray-400,
+.dark .console-app .card .text-gray-500,
+.dark .console-app .card .text-gray-400 {
+  color: #a3a3a3 !important;
+}
+
+html.dark .tab-context-menu,
+.dark .tab-context-menu {
+  background: rgba(17, 17, 17, 0.94) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #f5f5f5 !important;
+}
+
+html.dark .tab-context-menu .menu-item,
+.dark .tab-context-menu .menu-item {
+  color: #f5f5f5 !important;
+}
+
+html.dark .tab-context-menu .menu-item:hover,
+.dark .tab-context-menu .menu-item:hover {
+  background: rgba(5, 85, 206, 0.28) !important;
+  color: #93c5fd !important;
+}
+
+.console-app .sidebar {
+  position: relative;
+}
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  z-index: 5;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--color-border, #e8e8e8);
+}
+
+.sidebar-resizer:hover::after {
+  background: #0555ce;
+}
+
+.sidebar-axis-btn {
+  flex: 1;
+  border: 1px solid var(--color-border, #e8e8e8);
+  border-radius: 6px;
+  background: transparent;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--color-text-secondary, #868686);
+}
+
+.sidebar-axis-btn.is-on {
+  border-color: #0555ce;
+  color: #0555ce;
+  background: rgba(5, 85, 206, 0.08);
+}
+
+.console-app.is-menu-horizontal {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.console-app.is-menu-horizontal .sidebar {
+  width: auto !important;
+  height: auto;
+  max-height: none;
+  margin: 8px 8px 0;
+  flex-direction: row;
+  align-items: flex-start;
+  overflow: visible;
+}
+
+.console-app.is-menu-horizontal .sidebar-nav {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  overflow: visible;
+  gap: 4px;
+}
+
+.console-app.is-menu-horizontal .sidebar-section {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.console-app.is-menu-horizontal .sidebar-group {
+  position: relative;
+}
+
+.console-app.is-menu-horizontal .sidebar-submenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: 220px;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--color-border, #e8e8e8);
+  border-radius: 8px;
+  background: var(--color-surface, #fff);
+  box-shadow: var(--shadow-level-2);
+}
+
+.console-app.is-menu-horizontal .sidebar-resizer {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .console-app {
+    grid-template-columns: 1fr;
+  }
+  .console-app .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: min(80vw, 280px);
+    z-index: 50;
+  }
+}

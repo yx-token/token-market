@@ -12,7 +12,7 @@ token-market（闲猫）是闲置额度交易所；sub2api（契约基线 v0.2.1
 
 ## 决策
 
-1. **改造宿主 = 新产品仓 `idlicat`**，内含完整社区 [sub2api](https://github.com/Wei-Shaw/sub2api) 代码树，再叠加市场代码。
+1. **改造宿主 = 本仓 `idlicat/`**，内含完整社区 [sub2api](https://github.com/Wei-Shaw/sub2api) 代码树，再叠加市场代码（过渡期根目录市场实现仍可发版）。
 2. **产品形态（终态 / 2026-10-19）：**
    - **管理端 = 社区 `frontend/`**：sub2api 原壳，地址 `/engine/admin/...`。闲猫运营在侧栏「闲猫市场」。
    - **C 端 = `market/web` `/`**：市场 / 买家 / 卖家。

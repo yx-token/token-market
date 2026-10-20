@@ -6,3 +6,17 @@ config.yaml
 .DS_Store
 data/
 deploy/.env
+
+# 宿主 idlicat 本地构建与依赖（源码在 idlicat/）
+idlicat/**/node_modules/
+idlicat/frontend/dist/
+idlicat/frontend/data/
+idlicat/market/engine-dist/
+idlicat/market/admin-dist/
+idlicat/market/bin/
+idlicat/market/data/
+idlicat/backend/bin/
+idlicat/data/
+idlicat/.env
+idlicat/.env.*
+idlicat/**/*.local
