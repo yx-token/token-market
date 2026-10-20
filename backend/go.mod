@@ -61,10 +61,10 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.44.3
-	github.com/yx-token/idlicat/market v0.0.0
+	github.com/yx-token/token-market/market v0.0.0
 )
 
-replace github.com/yx-token/idlicat/market => ../market
+replace github.com/yx-token/token-market/market => ../market
 
 require (
 	ariga.io/atlas v0.32.1-0.20250325101103-175b25e1c1b9 // indirect
