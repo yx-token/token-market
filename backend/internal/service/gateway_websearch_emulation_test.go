@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/websearch"
-	"github.com/stretchr/testify/require"
 )
 
 // --- isOnlyWebSearchToolInBody ---

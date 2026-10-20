@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/payment"
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments"
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments/h5"
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments/jsapi"
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments/native"
+	"github.com/yx-token/token-market/internal/payment"
 )
 
 // generateTestKeyPair returns a fresh RSA 2048 key pair as PEM strings.

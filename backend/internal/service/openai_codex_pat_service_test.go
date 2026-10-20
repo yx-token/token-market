@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/openai"
 )
 
 func TestOpenAIOAuthService_ValidateCodexPersonalAccessToken(t *testing.T) {

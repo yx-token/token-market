@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/imroc/req/v3"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/imroc/req/v3"
 )
 
 // NewOpenAIOAuthClient creates a new OpenAI OAuth client

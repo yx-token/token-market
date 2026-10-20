@@ -11,12 +11,12 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 	middleware "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 )
 
 // clientCancelUpstream 模拟上游尚未响应时客户端断开：Do 期间取消请求 context，

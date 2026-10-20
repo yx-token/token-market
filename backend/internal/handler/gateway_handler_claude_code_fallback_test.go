@@ -10,12 +10,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 	middleware "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 )
 
 // groupScopedSchedulerCache 按桶的分组只返回该分组的成员账号，并记录被查询过的分组。

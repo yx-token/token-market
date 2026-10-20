@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 type grokStandaloneSearchRequest struct {

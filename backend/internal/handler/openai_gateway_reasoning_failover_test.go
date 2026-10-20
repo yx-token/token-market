@@ -3,9 +3,9 @@ package handler
 import (
 	"testing"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // kiroReasoningCanonicalBody mirrors a native OpenAI Responses request whose input

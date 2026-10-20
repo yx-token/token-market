@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // gpt55OverrideCatalogJSON 镜像真实目录形态：长上下文以 above_272k 绝对价字段表达。

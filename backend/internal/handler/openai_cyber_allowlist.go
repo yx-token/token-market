@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func (h *OpenAIGatewayHandler) cyberPolicyLogOnly(c *gin.Context, apiKey *service.APIKey) bool {

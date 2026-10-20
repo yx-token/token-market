@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/ent/schema/mixins"
 	"github.com/yx-token/token-market/ent/userplatformquota"
-	"github.com/stretchr/testify/require"
 )
 
 func TestUpsertForUser_NewUserInsertsAllRecords(t *testing.T) {

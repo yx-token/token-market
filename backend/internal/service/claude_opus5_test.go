@@ -3,11 +3,11 @@ package service
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/domain"
 	"github.com/yx-token/token-market/internal/pkg/claude"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // Claude Opus 5 官方定价（USD per token）：$5 输入 / $25 输出 per MTok。

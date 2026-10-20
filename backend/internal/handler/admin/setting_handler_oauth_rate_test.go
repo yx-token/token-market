@@ -7,10 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func TestSettingHandler_OAuthSchedulingRateRoundTrip(t *testing.T) {

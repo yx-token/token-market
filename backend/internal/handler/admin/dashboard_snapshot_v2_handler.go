@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yx-token/token-market/internal/pkg/response"
 	"github.com/yx-token/token-market/internal/pkg/usagestats"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/gin-gonic/gin"
 )
 
 var dashboardSnapshotV2Cache = newSnapshotCache(30 * time.Second)

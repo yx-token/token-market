@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 func TestIsOpenAIImageRateLimitError(t *testing.T) {

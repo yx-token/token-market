@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/logger"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRequestLogRetention_RuntimePolicy(t *testing.T) {

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/openai_compat"
-	"github.com/stretchr/testify/require"
 )
 
 func newResponsesProbeAccount(id int64) Account {

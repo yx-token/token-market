@@ -6,9 +6,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMergePlatformQuotaDefaults_PatchSemantics(t *testing.T) {

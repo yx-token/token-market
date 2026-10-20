@@ -9,10 +9,10 @@ import (
 	"net"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	coderws "github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 func TestIsOpenAIWSClientDisconnectError(t *testing.T) {

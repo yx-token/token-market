@@ -11,13 +11,13 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )

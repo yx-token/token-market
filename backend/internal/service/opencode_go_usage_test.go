@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
-	"github.com/stretchr/testify/require"
 )
 
 // openCodeGoUsageFixture is the verified upstream 200 response (2026-08-13).

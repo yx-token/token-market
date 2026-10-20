@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
 )
 
 // --- marshalModelMapping ---

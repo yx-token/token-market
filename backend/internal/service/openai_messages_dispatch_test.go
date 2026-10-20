@@ -3,8 +3,8 @@ package service
 import (
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 func TestNormalizeOpenAIMessagesDispatchModelConfig(t *testing.T) {

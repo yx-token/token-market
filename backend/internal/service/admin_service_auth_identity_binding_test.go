@@ -7,12 +7,12 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/ent/authidentity"
 	"github.com/yx-token/token-market/ent/authidentitychannel"
 	"github.com/yx-token/token-market/ent/enttest"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	"github.com/stretchr/testify/require"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"

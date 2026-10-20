@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
-	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/openai"
 )
 
 // --- mock: 只记录临时不可调度写入，其余方法不应被调用 ---

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tidwall/gjson"
 	"github.com/yx-token/token-market/internal/config"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/singleflight"
 )
 

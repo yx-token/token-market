@@ -6,10 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func requestModelForTest(h *GatewayHandler, group *service.Group, modelID, etag string) *httptest.ResponseRecorder {

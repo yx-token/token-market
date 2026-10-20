@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	dbent "github.com/yx-token/token-market/ent"
 	_ "github.com/yx-token/token-market/ent/runtime"
 	"github.com/yx-token/token-market/internal/pkg/timezone"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"

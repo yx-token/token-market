@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yx-token/token-market/internal/pkg/typesafe"
 	"github.com/gin-gonic/gin"
+	"github.com/yx-token/token-market/internal/pkg/typesafe"
 )
 
 const (

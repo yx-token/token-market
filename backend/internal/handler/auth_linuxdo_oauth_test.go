@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/ent/authidentity"
 	"github.com/yx-token/token-market/ent/identityadoptiondecision"
@@ -18,8 +20,6 @@ import (
 	"github.com/yx-token/token-market/internal/config"
 	servermiddleware "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSanitizeFrontendRedirectPath(t *testing.T) {

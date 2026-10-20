@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	appTimezone "github.com/yx-token/token-market/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
+	appTimezone "github.com/yx-token/token-market/internal/pkg/timezone"
 )
 
 func useGroupUsageTestTimezone(t *testing.T, name string) {

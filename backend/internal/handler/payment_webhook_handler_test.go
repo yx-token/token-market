@@ -11,11 +11,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/payment"
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/payment"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func TestWriteSuccessResponse(t *testing.T) {

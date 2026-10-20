@@ -8,10 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/gin-gonic/gin"
 )
 
 type responseEnvelope struct {

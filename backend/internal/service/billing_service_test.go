@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // captureStdLog 重定向 stdlib log 输出到 buffer,返回该 buffer;通过 t.Cleanup 还原。

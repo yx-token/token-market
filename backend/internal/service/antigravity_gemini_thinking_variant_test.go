@@ -3,8 +3,8 @@ package service
 import (
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/antigravity"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/antigravity"
 )
 
 func newAntigravityAccountWithMapping(mapping map[string]string) *Account {

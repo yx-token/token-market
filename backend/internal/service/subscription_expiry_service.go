@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/google/uuid"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
 )
 
 const (

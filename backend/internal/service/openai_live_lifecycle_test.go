@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
 	coderws "github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 type liveTestFrame struct {

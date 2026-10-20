@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 const redeemTestOrg = "11111111-1111-4111-8111-111111111111"

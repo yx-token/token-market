@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/domain"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/require"
 )
 
 // 配额模式 repo 层集成测试：

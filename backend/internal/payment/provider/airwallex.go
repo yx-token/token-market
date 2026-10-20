@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/token-market/internal/payment"
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	"github.com/yx-token/token-market/internal/payment"
 )
 
 const (

@@ -11,9 +11,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/yx-token/token-market/internal/pkg/servertiming"
 	"github.com/imroc/req/v3"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/servertiming"
 )
 
 func forceHTTPVersion(t *testing.T, client *req.Client) string {

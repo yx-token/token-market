@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // 8 字节 PNG 魔数足以让字节嗅探判定为 image/png。

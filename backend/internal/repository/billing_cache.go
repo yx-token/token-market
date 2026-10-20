@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/redis/go-redis/v9"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 const (

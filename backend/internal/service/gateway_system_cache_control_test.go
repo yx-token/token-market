@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // 客户端打在 system 上的 cache_control 是它自己的缓存意图，网关不该替它删掉。

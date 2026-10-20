@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // TestDingTalkOAuthStart_Disabled は sentinel テスト。

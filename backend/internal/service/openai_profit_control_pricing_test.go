@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/timezone"
-	"github.com/stretchr/testify/require"
 )
 
 // WithOpenAIRequestPricingContext：装门 + 固定 pricingAt；显式抑制标记

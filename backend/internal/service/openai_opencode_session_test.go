@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
-	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
 )
 
 func newOpenCodeSessionTestContext(t *testing.T, value string) *gin.Context {

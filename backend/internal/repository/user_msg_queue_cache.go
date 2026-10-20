@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/redis/go-redis/v9"
 )
 
 // Redis Key 模式（使用 hash tag 确保 Redis Cluster 下同一 accountID 的 key 落入同一 slot）

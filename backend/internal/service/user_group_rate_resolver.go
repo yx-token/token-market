@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/logger"
 	gocache "github.com/patrickmn/go-cache"
+	"github.com/yx-token/token-market/internal/pkg/logger"
 	"golang.org/x/sync/singleflight"
 )
 

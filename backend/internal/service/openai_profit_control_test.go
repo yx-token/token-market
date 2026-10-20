@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 	"github.com/yx-token/token-market/internal/pkg/timezone"
-	"github.com/stretchr/testify/require"
 )
 
 func profitControlTestGroup(id int64, margin, buffer float64) *Group {

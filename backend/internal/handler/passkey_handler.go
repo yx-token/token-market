@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/yx-token/token-market/internal/pkg/ip"
 	"github.com/yx-token/token-market/internal/pkg/response"
 	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/gin-gonic/gin"
 )
 
 type PasskeyHandler struct {

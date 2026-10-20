@@ -7,10 +7,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/securityaudit"
-	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/securityaudit"
+	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )

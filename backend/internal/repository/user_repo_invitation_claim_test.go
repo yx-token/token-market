@@ -6,11 +6,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/ent/redeemcode"
 	"github.com/yx-token/token-market/ent/user"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/require"
 )
 
 // TestCreateWithEmailAliasGuardJoinsOuterTransaction 验证用户创建会加入调用方开启的

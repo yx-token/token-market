@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/domain"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/domain"
 )
 
 func mustParseSessionHashRequest(t *testing.T, body string, ctx *SessionContext) *ParsedRequest {

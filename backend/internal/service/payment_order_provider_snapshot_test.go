@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/payment"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/payment"
 )
 
 func TestBuildPaymentOrderProviderSnapshot_ExcludesSensitiveConfig(t *testing.T) {

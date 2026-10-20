@@ -15,14 +15,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/ip"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/yx-token/token-market/internal/platform/liveattestation"
 	"github.com/yx-token/token-market/internal/util/responseheaders"
-	"github.com/cespare/xxhash/v2"
-	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 

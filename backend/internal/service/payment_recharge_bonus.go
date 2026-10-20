@@ -10,10 +10,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/shopspring/decimal"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/internal/payment"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	"github.com/shopspring/decimal"
 )
 
 // 充值优惠阶梯：余额充值订单按用户输入的支付金额命中阶梯（取不超过该金额的最大 MinAmount），

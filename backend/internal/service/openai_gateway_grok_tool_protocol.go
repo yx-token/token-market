@@ -8,9 +8,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/yx-token/token-market/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/pkg/apicompat"
 )
 
 const grokResponsesClientToolMappingContextKey = "grok_responses_client_tool_mapping"

@@ -15,10 +15,10 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
-	pluginv1 "github.com/yx-token/token-market/pkg/pluginapi/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
+	pluginv1 "github.com/yx-token/token-market/pkg/pluginapi/v1"
 )
 
 func TestPluginPackageInstallerInstallUnsignedDevelopmentPackage(t *testing.T) {

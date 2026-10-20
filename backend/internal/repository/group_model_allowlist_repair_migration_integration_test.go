@@ -7,8 +7,8 @@ import (
 	"database/sql"
 	"testing"
 
-	dbmigrations "github.com/yx-token/token-market/migrations"
 	"github.com/stretchr/testify/require"
+	dbmigrations "github.com/yx-token/token-market/migrations"
 )
 
 const groupModelAllowlistRepairMigration = "236_group_model_allowlist_repair.sql"

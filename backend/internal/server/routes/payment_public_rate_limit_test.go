@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/handler"
-	"github.com/yx-token/token-market/internal/handler/admin"
-	servermiddleware "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/handler"
+	"github.com/yx-token/token-market/internal/handler/admin"
+	servermiddleware "github.com/yx-token/token-market/internal/server/middleware"
 )
 
 func newPaymentRoutesTestRouter(redisClient *redis.Client) *gin.Engine {

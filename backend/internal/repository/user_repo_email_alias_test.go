@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func seedUserForAliasTest(t *testing.T, repo *userRepository, email string) {

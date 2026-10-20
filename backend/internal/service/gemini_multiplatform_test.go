@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 	"github.com/yx-token/token-market/internal/pkg/pagination"
-	"github.com/stretchr/testify/require"
 )
 
 // mockAccountRepoForGemini Gemini 测试用的 mock

@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yx-token/token-market/internal/pkg/antigravity"
 	"github.com/yx-token/token-market/internal/pkg/logger"
-	"github.com/gin-gonic/gin"
 )
 
 // antigravityRetryLoopParams 重试循环的参数

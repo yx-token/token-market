@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // 固定账号 manifest 配置必须在管理端 DTO 完整序列化：漏映射会让编辑对话框回显

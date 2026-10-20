@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 )
 
 func TestClientRequestIDGeneratesAndExposesID(t *testing.T) {

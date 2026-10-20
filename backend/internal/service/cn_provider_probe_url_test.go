@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
-	"github.com/stretchr/testify/require"
 )
 
 func cnProbeAllowlistConfig(hosts ...string) *config.Config {

@@ -6,9 +6,9 @@ import (
 	"errors"
 	"time"
 
+	"github.com/lib/pq"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/lib/pq"
 )
 
 const (

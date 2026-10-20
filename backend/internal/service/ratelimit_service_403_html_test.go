@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // countingOpenAI403CounterCache 在既有桩的基础上记录递增次数。

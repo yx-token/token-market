@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
-	"github.com/yx-token/token-market/internal/pkg/typesafe"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/typesafe"
 )
 
 func newTypeSafeAccountTestFixture(t *testing.T, status int, responseBody string) (*AccountTestService, *systemOnePolicyAccountRepo, *[]*http.Request, *gin.Context, *httptest.ResponseRecorder) {

@@ -19,10 +19,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	"github.com/stretchr/testify/require"
 )
 
 func TestBatchImagePublicService_SelectAccountPriority(t *testing.T) {

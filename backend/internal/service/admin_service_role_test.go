@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
 )
 
 func TestAdminService_CreateUser_WithAdminRole(t *testing.T) {

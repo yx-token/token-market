@@ -6,10 +6,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
-	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 )
 
 type openAIFastPolicyRepoStub struct {

@@ -7,8 +7,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // newPlazaService 构造 ListGroups 测试用的 ModelPlazaService（不接计费服务：展示定价原样透传）。

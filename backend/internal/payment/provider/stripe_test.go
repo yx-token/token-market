@@ -7,9 +7,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/payment"
 	"github.com/stretchr/testify/require"
 	stripe "github.com/stripe/stripe-go/v85"
+	"github.com/yx-token/token-market/internal/payment"
 )
 
 type stripeRefundBackend struct {

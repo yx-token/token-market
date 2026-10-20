@@ -9,9 +9,9 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/yx-token/token-market/internal/pkg/pagination"
-	"github.com/stretchr/testify/require"
 )
 
 type accountRepoStubForBulkUpdate struct {

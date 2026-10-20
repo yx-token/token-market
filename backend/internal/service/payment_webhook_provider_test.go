@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/internal/payment"
-	"github.com/stretchr/testify/require"
 )
 
 const webhookProviderTestEncryptionKey = "0123456789abcdef0123456789abcdef"

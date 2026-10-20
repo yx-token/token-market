@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/claude"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/claude"
 )
 
 type accountRepoStubForCompositeModelsList struct {

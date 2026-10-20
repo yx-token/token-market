@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func TestBatchUpsertIngressRejectsUsesFixedMultiRowChunks(t *testing.T) {

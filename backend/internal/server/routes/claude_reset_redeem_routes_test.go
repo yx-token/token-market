@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/handler"
 	adminhandler "github.com/yx-token/token-market/internal/handler/admin"
 	servermiddleware "github.com/yx-token/token-market/internal/server/middleware"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 )
 
 // The Claude redeem route consumes an irreversible credit just like the Codex

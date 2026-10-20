@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/yx-token/token-market/internal/domain"
 	"github.com/yx-token/token-market/internal/pkg/antigravity"
 	"github.com/yx-token/token-market/internal/pkg/gemini"
@@ -21,7 +22,6 @@ import (
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/google/uuid"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"

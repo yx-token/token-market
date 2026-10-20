@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/pkg/usagestats"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/require"
 )
 
 func TestUsageLog_UpstreamModelMismatchFilterAndPartialIndex(t *testing.T) {

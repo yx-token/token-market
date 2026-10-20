@@ -6,11 +6,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/service"
-	dbmigrations "github.com/yx-token/token-market/migrations"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/service"
+	dbmigrations "github.com/yx-token/token-market/migrations"
 )
 
 func requireCanonicalUUIDString(t *testing.T, value string) {

@@ -3,8 +3,8 @@ package handler
 import (
 	"strings"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // ──────────────────────────────────────────────────────────

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/timezone"
 )
 
 // dailyMidnightResetRepo 记录 ResetDailyUsage 收到的新窗口起点。

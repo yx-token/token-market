@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"github.com/yx-token/token-market/internal/domain"
 	"github.com/yx-token/token-market/internal/pkg/claude"
 	"github.com/yx-token/token-market/internal/pkg/logger"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 const defaultBedrockRegion = "us-east-1"

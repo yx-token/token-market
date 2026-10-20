@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 const (

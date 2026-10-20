@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/pkg/timezone"
-	"github.com/google/uuid"
 )
 
 // InflightBalanceReservationCache 余额在途预留的缓存能力（可选）。

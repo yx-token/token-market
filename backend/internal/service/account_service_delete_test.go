@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
 )
 
 // accountRepoStub 是 AccountRepository 接口的测试桩实现。

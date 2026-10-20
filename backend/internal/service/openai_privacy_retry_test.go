@@ -7,9 +7,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/imroc/req/v3"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 func TestAdminService_EnsureOpenAIPrivacy_RetriesNonSuccessModes(t *testing.T) {

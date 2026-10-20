@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // 测试用 TTL 配置（15 分钟，与默认值一致）

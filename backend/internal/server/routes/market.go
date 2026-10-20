@@ -11,10 +11,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yx-token/token-market/internal/idlecat"
 	"github.com/yx-token/token-market/internal/pkg/response"
 	"github.com/yx-token/token-market/internal/server/middleware"
-	"github.com/gin-gonic/gin"
 	"github.com/yx-token/token-market/market/enginehost"
 )
 

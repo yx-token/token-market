@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yx-token/token-market/internal/pkg/antigravity"
 	"github.com/yx-token/token-market/internal/pkg/logger"
-	"github.com/gin-gonic/gin"
 )
 
 type antigravityStreamResult struct {

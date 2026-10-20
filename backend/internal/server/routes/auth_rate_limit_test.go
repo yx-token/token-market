@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/handler"
-	servermiddleware "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/handler"
+	servermiddleware "github.com/yx-token/token-market/internal/server/middleware"
 )
 
 func newAuthRoutesTestRouter(redisClient *redis.Client) *gin.Engine {

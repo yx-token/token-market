@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
-	"github.com/yx-token/token-market/internal/pkg/usagestats"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/usagestats"
 )
 
 func TestForwardGrokResponses_PropagatesSearchCountFromJSON(t *testing.T) {

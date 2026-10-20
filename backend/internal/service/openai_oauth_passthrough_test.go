@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/apicompat"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
@@ -20,9 +23,6 @@ import (
 	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/yx-token/token-market/internal/pkg/openai_compat"
 	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func f64p(v float64) *float64 { return &v }

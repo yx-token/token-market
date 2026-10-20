@@ -11,8 +11,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yx-token/token-market/internal/payment"
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/auth/verifiers"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/notify"
@@ -23,6 +21,8 @@ import (
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments/native"
 	"github.com/wechatpay-apiv3/wechatpay-go/services/refunddomestic"
 	"github.com/wechatpay-apiv3/wechatpay-go/utils"
+	"github.com/yx-token/token-market/internal/payment"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 // WeChat Pay constants.

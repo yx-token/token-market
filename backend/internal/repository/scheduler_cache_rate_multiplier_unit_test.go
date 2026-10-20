@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // TestSchedulerCachePreservesRateMultiplier 钉死账号调度快照的两份 payload

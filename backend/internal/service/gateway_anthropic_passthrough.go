@@ -17,10 +17,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/logger"
-	"github.com/yx-token/token-market/internal/util/responseheaders"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/yx-token/token-market/internal/pkg/logger"
+	"github.com/yx-token/token-market/internal/util/responseheaders"
 
 	"github.com/gin-gonic/gin"
 )

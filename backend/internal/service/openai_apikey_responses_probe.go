@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tidwall/gjson"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/yx-token/token-market/internal/pkg/openai_compat"
-	"github.com/tidwall/gjson"
 )
 
 // openaiResponsesProbeTimeout 是探测请求的超时时长。

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	servermiddleware "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	servermiddleware "github.com/yx-token/token-market/internal/server/middleware"
 )
 
 type fakePromptAdminService struct {

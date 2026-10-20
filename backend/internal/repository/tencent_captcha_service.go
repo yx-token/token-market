@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yx-token/token-market/internal/service"
 	captcha "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/captcha/v20190722"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/profile"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 type tencentCaptchaAPI interface {

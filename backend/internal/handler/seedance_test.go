@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	middleware "github.com/yx-token/token-market/internal/server/middleware"
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	middleware "github.com/yx-token/token-market/internal/server/middleware"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func TestSeedanceHandlerLifecycleAndOwnership(t *testing.T) {

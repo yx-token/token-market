@@ -7,10 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // 场景：codex 子智能体经 HTTP 入站、网关内部走 WS 池转发时，与父线程共用 session_id 头。

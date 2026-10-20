@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/redis/go-redis/v9"
 )
 
 // 并发控制缓存常量定义

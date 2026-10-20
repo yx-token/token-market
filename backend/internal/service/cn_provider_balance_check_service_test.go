@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // 周期任务对 coding plan 账号的额度探测行为（runOnce 集成路径）：

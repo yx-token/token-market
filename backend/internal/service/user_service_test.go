@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
 )
 
 // --- mock: UserRepository ---

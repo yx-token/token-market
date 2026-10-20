@@ -11,12 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/logger"
-	"github.com/yx-token/token-market/internal/pkg/openai"
-	openaiwsv2 "github.com/yx-token/token-market/internal/service/openai_ws_v2"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/pkg/logger"
+	"github.com/yx-token/token-market/internal/pkg/openai"
+	openaiwsv2 "github.com/yx-token/token-market/internal/service/openai_ws_v2"
 )
 
 type openAIWSClientFrameConn struct {

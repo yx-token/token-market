@@ -9,11 +9,11 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 )
 
 type ingressRejectSettingRepo struct {

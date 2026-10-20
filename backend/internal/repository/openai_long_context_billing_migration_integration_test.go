@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	dbmigrations "github.com/yx-token/token-market/migrations"
 	"github.com/stretchr/testify/require"
+	dbmigrations "github.com/yx-token/token-market/migrations"
 )
 
 func TestMigration175EnforcesOpenAILongContextBillingWriteInvariant(t *testing.T) {

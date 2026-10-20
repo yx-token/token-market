@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/imroc/req/v3"
 	"github.com/stretchr/testify/require"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func referralTestClient(t *testing.T, handler http.HandlerFunc) *openAIReferralClient {

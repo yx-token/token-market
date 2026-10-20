@@ -11,13 +11,13 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/yx-token/token-market/internal/pkg/timezone"
 	"github.com/yx-token/token-market/internal/pkg/usagestats"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
 )
 
 type UsageLogRepoSuite struct {

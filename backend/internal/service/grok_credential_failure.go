@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/gin-gonic/gin"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 const (

@@ -26,6 +26,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/tidwall/gjson"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/claude"
 	"github.com/yx-token/token-market/internal/pkg/geminicli"
@@ -33,9 +36,6 @@ import (
 	"github.com/yx-token/token-market/internal/pkg/openai_compat"
 	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/yx-token/token-market/internal/util/urlvalidator"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"github.com/tidwall/gjson"
 )
 
 // sseDataPrefix matches SSE data lines with optional whitespace after colon.

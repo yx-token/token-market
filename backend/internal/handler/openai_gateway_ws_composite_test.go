@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/service"
 	coderws "github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 type compositeWSRouteRepo struct {

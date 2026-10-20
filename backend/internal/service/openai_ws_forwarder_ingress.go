@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/openai"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/yx-token/token-market/internal/pkg/openai"
 )
 
 type openAIWSRejectedFieldRetryError struct {

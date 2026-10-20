@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 )
 
 func TestRequestMetadataWriteAndRead_NoBridge(t *testing.T) {

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 func TestClassifyOpenAIWSAcquireError(t *testing.T) {

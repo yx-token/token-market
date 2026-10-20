@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/wire"
+	"github.com/redis/go-redis/v9"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/payment"
@@ -13,8 +15,6 @@ import (
 	"github.com/yx-token/token-market/internal/pkg/claude"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/pkg/xai"
-	"github.com/google/wire"
-	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 

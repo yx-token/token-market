@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/lib/pq"
+	"github.com/yx-token/token-market/internal/service"
 	"gopkg.in/yaml.v3"
 )
 

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yx-token/token-market/internal/payment"
 	stripe "github.com/stripe/stripe-go/v85"
 	"github.com/stripe/stripe-go/v85/webhook"
+	"github.com/yx-token/token-market/internal/payment"
 )
 
 // Stripe constants.

@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/apicompat"
-	"github.com/stretchr/testify/require"
 )
 
 func TestParseSSEUsagePassthroughNormalizesKimiPromptUsage(t *testing.T) {

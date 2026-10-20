@@ -7,10 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/ctxkey"
-	"github.com/yx-token/token-market/internal/securityaudit"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/ctxkey"
+	"github.com/yx-token/token-market/internal/securityaudit"
 )
 
 func promptGuardDecision(kind securityaudit.DecisionKind) *securityaudit.Decision {

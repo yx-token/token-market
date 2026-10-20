@@ -9,8 +9,8 @@ import (
 
 	"github.com/imroc/req/v3"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 type referralClientStub struct {

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/model"
 )
 
 // mockErrorPassthroughRepo 用于测试的 mock repository

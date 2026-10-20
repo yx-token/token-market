@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/yx-token/token-market/internal/pkg/response"
-	"github.com/gin-gonic/gin"
 )
 
 // Recovery converts panics into the project's standard JSON error envelope.

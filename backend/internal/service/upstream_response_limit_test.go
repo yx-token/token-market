@@ -6,9 +6,9 @@ import (
 	"testing"
 	"testing/iotest"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 func TestResolveUpstreamResponseReadLimit(t *testing.T) {

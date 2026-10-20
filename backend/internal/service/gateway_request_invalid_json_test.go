@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/domain"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/domain"
 )
 
 func TestDescribeInvalidJSON_TruncatedBody(t *testing.T) {

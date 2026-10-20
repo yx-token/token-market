@@ -11,9 +11,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	"github.com/stretchr/testify/require"
 )
 
 type duplicateAccountRepoStub struct {

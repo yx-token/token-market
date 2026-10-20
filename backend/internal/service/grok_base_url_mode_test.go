@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 type grokBaseURLSettingRepoStub struct{ values map[string]string }

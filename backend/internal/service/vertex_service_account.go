@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/yx-token/token-market/internal/pkg/proxyurl"
 	"github.com/yx-token/token-market/internal/pkg/proxyutil"
 	"github.com/yx-token/token-market/internal/pkg/servertiming"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 const (

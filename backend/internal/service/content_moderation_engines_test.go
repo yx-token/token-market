@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/typesafe"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/typesafe"
 )
 
 func TestContentModerationEngineProfilesPreserveLegacy(t *testing.T) {

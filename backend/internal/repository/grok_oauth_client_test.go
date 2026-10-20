@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 func TestGrokOAuthClientExchangeAndRefreshUseFormFields(t *testing.T) {

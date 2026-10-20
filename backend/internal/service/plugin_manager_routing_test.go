@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
 )
 
 type pluginRoutingHTTPUpstream struct {

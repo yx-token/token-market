@@ -5,9 +5,9 @@ package service
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/xai"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGrokAPIKeyURLPolicyFollowsGlobalSecurityConfig(t *testing.T) {

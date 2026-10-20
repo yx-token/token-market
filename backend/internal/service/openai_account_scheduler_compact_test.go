@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // TestOpenAIGatewayService_SelectAccountWithScheduler_CompactPrefersSupportedOverUnknown

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yx-token/token-market/internal/domain"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/yx-token/token-market/internal/domain"
 )
 
 const (

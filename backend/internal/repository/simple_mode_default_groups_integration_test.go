@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/ent/group"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/require"
 )
 
 func TestEnsureSimpleModeDefaultGroups_CreatesMissingDefaults(t *testing.T) {

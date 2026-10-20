@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/lib/pq"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/ent/channelmonitor"
 	"github.com/yx-token/token-market/ent/channelmonitorrequesttemplate"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/lib/pq"
 )
 
 // channelMonitorRequestTemplateRepository 实现 service.ChannelMonitorRequestTemplateRepository。

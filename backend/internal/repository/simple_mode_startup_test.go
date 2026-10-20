@@ -8,9 +8,9 @@ import (
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/internal/config"
-	"github.com/stretchr/testify/require"
 )
 
 func TestEnsureSimpleModeStartup(t *testing.T) {

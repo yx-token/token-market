@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/servertiming"
 	"github.com/gin-gonic/gin"
+	"github.com/yx-token/token-market/internal/pkg/servertiming"
 )
 
 func runServerTimingRequest(

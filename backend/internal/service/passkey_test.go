@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 func TestNormalizePasskeyName(t *testing.T) {

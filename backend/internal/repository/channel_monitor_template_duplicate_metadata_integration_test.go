@@ -6,11 +6,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/ent/channelmonitor"
 	"github.com/yx-token/token-market/ent/channelmonitorrequesttemplate"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/require"
 )
 
 func TestApplyChannelMonitorTemplatePreservesDuplicateOperationMetadata(t *testing.T) {

@@ -4,9 +4,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yx-token/token-market/internal/pkg/openai_compat"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/yx-token/token-market/internal/pkg/openai_compat"
 )
 
 // Ollama Cloud 的 OpenAI 兼容 /v1/chat/completions 把思维放在 reasoning / thinking，

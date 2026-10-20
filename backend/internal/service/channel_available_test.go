@@ -7,8 +7,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
 )
 
 // stubGroupRepoForAvailable 是 ListAvailable 测试用的 GroupRepository stub，

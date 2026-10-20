@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 type grokCredentialPersistingRepo struct {

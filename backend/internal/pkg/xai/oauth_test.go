@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/util/urlvalidator"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/util/urlvalidator"
 )
 
 func TestParseAuthorizationInput(t *testing.T) {

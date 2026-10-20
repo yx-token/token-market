@@ -7,9 +7,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
-	"github.com/stretchr/testify/require"
 )
 
 func gatewayProfitTestGroup(id int64, platform string) *Group {

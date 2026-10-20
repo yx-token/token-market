@@ -17,11 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
-	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
 )
 

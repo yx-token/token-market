@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/ctxkey"
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/ctxkey"
+	"github.com/yx-token/token-market/internal/service"
 	"go.uber.org/zap"
 )
 

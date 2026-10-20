@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"github.com/redis/go-redis/v9"
 	"github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/handler"
@@ -18,7 +19,6 @@ import (
 	"github.com/yx-token/token-market/internal/server"
 	"github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/redis/go-redis/v9"
 	"log"
 	"net/http"
 	"sync"

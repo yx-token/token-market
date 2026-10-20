@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
-	"github.com/stretchr/testify/require"
 )
 
 func profitControlWSAccount(id int64, rate float64, now time.Time) Account {

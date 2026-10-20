@@ -3,8 +3,8 @@ package service
 import (
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/antigravity"
 	"github.com/stretchr/testify/assert"
+	"github.com/yx-token/token-market/internal/pkg/antigravity"
 )
 
 func TestNormalizeAntigravitySubscription_PaidTierWithIneligible(t *testing.T) {

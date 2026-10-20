@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
-	"github.com/yx-token/token-market/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/apicompat"
 )
 
 type passthroughFlushTestWriter struct {

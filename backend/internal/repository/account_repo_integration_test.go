@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/ent/accountgroup"
 	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
 )
 
 type AccountRepoSuite struct {

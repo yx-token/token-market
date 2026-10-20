@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // TestAllowUserViewErrorRequests_PersistsToDB 验证 buildSystemSettingsUpdates 会将

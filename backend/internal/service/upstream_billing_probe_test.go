@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
-	"github.com/stretchr/testify/require"
 )
 
 type upstreamBillingProbeAccountRepo struct {

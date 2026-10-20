@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/ent/apikey"
 	"github.com/yx-token/token-market/ent/authidentity"
@@ -22,7 +23,6 @@ import (
 	"github.com/yx-token/token-market/ent/usersubscription"
 	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/lib/pq"
 
 	entsql "entgo.io/ent/dialect/sql"
 )

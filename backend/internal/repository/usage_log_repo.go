@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	gocache "github.com/patrickmn/go-cache"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/internal/service"
-	gocache "github.com/patrickmn/go-cache"
 )
 
 const rawUsageLogModelColumn = "model"

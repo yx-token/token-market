@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	dbent "github.com/yx-token/token-market/ent"
 	"github.com/stretchr/testify/require"
+	dbent "github.com/yx-token/token-market/ent"
 )
 
 func TestComputeBasicStatsGroupsAmountsByCurrency(t *testing.T) {

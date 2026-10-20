@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yx-token/token-market/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/yx-token/token-market/internal/pkg/apicompat"
 )
 
 const openAIResponsesNamespaceNamesContextKey = "openai_responses_namespace_names"

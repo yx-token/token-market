@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // newCNQuotaExhaustedTestAccount 构造一个 Kimi Coding Plan 账号：

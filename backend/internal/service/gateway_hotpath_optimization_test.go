@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
+	gocache "github.com/patrickmn/go-cache"
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/yx-token/token-market/internal/pkg/usagestats"
-	gocache "github.com/patrickmn/go-cache"
-	"github.com/stretchr/testify/require"
 )
 
 type userGroupRateRepoHotpathStub struct {

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/token-market/internal/payment"
 	"github.com/smartwalle/alipay/v3"
+	"github.com/yx-token/token-market/internal/payment"
 )
 
 // Alipay product codes.

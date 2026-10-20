@@ -9,10 +9,10 @@ import (
 	"sync"
 	"testing"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
 )
 
 // ---------------------------------------------------------------------------

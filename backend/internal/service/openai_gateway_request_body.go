@@ -11,13 +11,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/yx-token/token-market/internal/pkg/apicompat"
-	"github.com/yx-token/token-market/internal/pkg/ctxkey"
-	"github.com/yx-token/token-market/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/yx-token/token-market/internal/pkg/apicompat"
+	"github.com/yx-token/token-market/internal/pkg/ctxkey"
+	"github.com/yx-token/token-market/internal/util/urlvalidator"
 )
 
 func (s *OpenAIGatewayService) validateUpstreamBaseURL(raw string) (string, error) {

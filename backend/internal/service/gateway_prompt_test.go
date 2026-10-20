@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/claude"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/pkg/claude"
 )
 
 func TestIsClaudeCodeClient(t *testing.T) {

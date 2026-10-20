@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/proxyutil"
 	"github.com/redis/go-redis/v9"
+	"github.com/yx-token/token-market/internal/pkg/proxyutil"
 )
 
 // ProviderConfig holds the configuration for a single search provider.

@@ -3,9 +3,9 @@ package handler
 import (
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 func TestBuildGrokXSearchResponsesBody(t *testing.T) {

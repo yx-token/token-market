@@ -6,9 +6,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
 	capcha "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/captcha/v20190722"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 type tencentCaptchaAPIStub struct {

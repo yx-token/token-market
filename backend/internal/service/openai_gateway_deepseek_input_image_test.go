@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/openai_compat"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/pkg/openai_compat"
 )
 
 const deepSeekInputImageDataURI = "data:image/png;base64,AQID"

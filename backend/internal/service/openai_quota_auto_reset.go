@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/yx-token/token-market/internal/pkg/pagination"
-	"github.com/google/uuid"
 )
 
 const (

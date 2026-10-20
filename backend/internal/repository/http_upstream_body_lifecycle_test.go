@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/require"
 )
 
 // Exercise both public entry points. The TLS case uses the test server's trusted

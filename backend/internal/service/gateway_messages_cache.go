@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/yx-token/token-market/internal/pkg/claude"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/yx-token/token-market/internal/pkg/claude"
 )
 
 // stripMessageCacheControl 移除 $.messages[*].content[*].cache_control。

@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"testing"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 // userGroupRateRepoStubForGroupRate implements UserGroupRateRepository for group rate tests.

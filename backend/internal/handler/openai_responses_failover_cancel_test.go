@@ -11,12 +11,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
-	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/config"
+	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // openAIResponsesFailoverCancelUpstream 固定返回 HTTP 520，可在首次上游调用时

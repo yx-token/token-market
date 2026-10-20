@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/antigravity"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/antigravity"
 )
 
 func TestCleanGeminiNativeThoughtSignatures_ReplacesNestedThoughtSignatures(t *testing.T) {

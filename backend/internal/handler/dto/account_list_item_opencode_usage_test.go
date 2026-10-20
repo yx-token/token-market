@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // 账号列表页固定传 lite=1，lite 投影（AccountListItemFromAccount）必须与完整

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 func grokInt64PtrForTest(v int64) *int64 { return &v }

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/typesafe"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/typesafe"
 )
 
 // Opt-in paid network test. Never use real customer prompts or embed a credential.

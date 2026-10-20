@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 func TestGatewayAnthropicCompatReasoningPricingUsesForwardedEffort(t *testing.T) {

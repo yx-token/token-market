@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/imroc/req/v3"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 // ErrSparkShadowResetNotSupported is returned when ResetCredit is called on a

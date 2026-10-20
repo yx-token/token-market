@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
-	pluginv1 "github.com/yx-token/token-market/pkg/pluginapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
+	pluginv1 "github.com/yx-token/token-market/pkg/pluginapi/v1"
 	"google.golang.org/grpc"
 )
 

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/domain"
 	"github.com/yx-token/token-market/internal/pkg/xai"
-	"github.com/stretchr/testify/require"
 )
 
 // --- fetcher 依赖 stub ---

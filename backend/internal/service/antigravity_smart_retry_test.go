@@ -5,8 +5,8 @@ package service
 import (
 	"bytes"
 	"context"
-	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
 	"io"
 	"net/http"
 	"strings"

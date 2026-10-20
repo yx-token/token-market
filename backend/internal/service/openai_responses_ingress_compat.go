@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yx-token/token-market/internal/pkg/apicompat"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/pkg/apicompat"
 )
 
 // normalizeOpenAIResponsesLegacyIngress accepts the Chat Completions-shaped

@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/yx-token/token-market/internal/config"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 const (

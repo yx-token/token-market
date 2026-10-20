@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/lib/pq"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 type userGroupRateRepository struct {

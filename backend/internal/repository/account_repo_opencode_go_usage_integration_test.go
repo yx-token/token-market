@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // openCodeGoManagedExtra 构造同时携带探测 / Ollama / OpenCode 受管键的 extra，

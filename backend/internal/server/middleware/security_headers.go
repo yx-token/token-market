@@ -7,8 +7,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/gin-gonic/gin"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 const (

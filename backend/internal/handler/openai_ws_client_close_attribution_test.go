@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/service"
 	coderws "github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // issue #6105：入站 Responses WebSocket 的正常结束会被记成账号故障。

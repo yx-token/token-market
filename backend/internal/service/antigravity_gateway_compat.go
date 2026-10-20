@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/yx-token/token-market/internal/pkg/antigravity"
 	"github.com/yx-token/token-market/internal/pkg/apicompat"
-	"github.com/gin-gonic/gin"
 )
 
 type antigravityCompatProtocol uint8

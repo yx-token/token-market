@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/imroc/req/v3"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	sharedhttp "github.com/yx-token/token-market/internal/pkg/httpclient"
 	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/yx-token/token-market/internal/service"
 	"github.com/yx-token/token-market/internal/util/logredact"
-	"github.com/imroc/req/v3"
 )
 
 type grokOAuthClient struct {

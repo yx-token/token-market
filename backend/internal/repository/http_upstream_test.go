@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
 	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
 )
 
 func TestHTTPUpstreamDoCanDisableRedirectsPerRequest(t *testing.T) {

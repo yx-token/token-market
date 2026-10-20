@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/yx-token/token-market/internal/pkg/xai"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGrokMediaGenerationEligibility(t *testing.T) {

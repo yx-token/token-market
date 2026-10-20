@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/gin-gonic/gin"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 var corsWarningOnce sync.Once

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/ctxkey"
 )
 
 // ---------------------------------------------------------------------------

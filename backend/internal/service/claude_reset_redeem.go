@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/google/uuid"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 const (

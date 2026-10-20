@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/ent/schema/mixins"
 	"github.com/yx-token/token-market/ent/userplatformquota"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/require"
 )
 
 // mustCreateUserForQuota 在指定 client 上创建测试用户（满足 FK 约束）。

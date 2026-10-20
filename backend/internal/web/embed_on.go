@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/gin-gonic/gin"
+	"github.com/yx-token/token-market/internal/server/middleware"
 )
 
 const (

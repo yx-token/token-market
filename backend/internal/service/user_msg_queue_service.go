@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tidwall/gjson"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/logger"
-	"github.com/tidwall/gjson"
 )
 
 // UserMsgQueueCache 用户消息串行队列 Redis 缓存接口

@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
 )
 
 type ollamaUsageTestEncryptor struct{}

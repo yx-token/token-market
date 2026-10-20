@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/migrations"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/migrations"
 )
 
 func TestGroupUsageRollupTriggerInvalidatesCascadedHistoricalDelete(t *testing.T) {

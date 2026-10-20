@@ -5,8 +5,8 @@ package service
 import (
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/apicompat"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/apicompat"
 )
 
 func TestCopyOpenAIUsageFromResponsesUsageTrustsCanonicalCacheCreationValue(t *testing.T) {

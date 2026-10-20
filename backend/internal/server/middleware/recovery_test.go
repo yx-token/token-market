@@ -9,10 +9,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
-	"github.com/yx-token/token-market/internal/pkg/response"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/pkg/response"
 )
 
 func TestRecovery_PanicLogContainsInfo(t *testing.T) {

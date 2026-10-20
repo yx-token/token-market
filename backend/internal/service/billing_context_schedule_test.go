@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // scheduleScenario 阶梯表测试场景：同一份场景既做断言也做与计费函数的对账。

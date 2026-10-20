@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/yx-token/token-market/internal/pkg/timezone"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/lib/pq"
 )
 
 type dashboardAggregationRepository struct {

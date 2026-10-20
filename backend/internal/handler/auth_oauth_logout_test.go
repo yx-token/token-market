@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/ent/pendingauthsession"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/ent/pendingauthsession"
 )
 
 func TestLogoutClearsOAuthStateCookiesAndConsumesPendingSession(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/openai"
 )
 
 func TestFetchOpenAIAccountModelsOAuthPopulatesPickerFields(t *testing.T) {

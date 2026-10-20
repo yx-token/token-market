@@ -7,10 +7,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/yx-token/token-market/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 const (

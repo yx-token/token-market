@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/apicompat"
 )
 
 func TestAnthropicChatStreamAuthoritativeUsage(t *testing.T) {

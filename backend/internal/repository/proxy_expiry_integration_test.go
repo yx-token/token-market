@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/suite"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/internal/service"
-	"github.com/stretchr/testify/suite"
 )
 
 type ProxyExpirySuite struct {

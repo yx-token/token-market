@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/token-market/internal/pkg/logger"
 	coderws "github.com/coder/websocket"
+	"github.com/yx-token/token-market/internal/pkg/logger"
 	"go.uber.org/zap"
 )
 

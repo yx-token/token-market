@@ -3,8 +3,8 @@ package service
 import (
 	"math"
 
-	"github.com/yx-token/token-market/internal/payment"
 	"github.com/shopspring/decimal"
+	"github.com/yx-token/token-market/internal/payment"
 )
 
 const defaultBalanceRechargeMultiplier = 1.0

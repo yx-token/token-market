@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/yx-token/token-market/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // Anthropic Messages 出站（三个 builder）的 Ollama Cloud DeepSeek max_tokens clamp
