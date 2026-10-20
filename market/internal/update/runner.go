@@ -148,10 +148,10 @@ func (r Runtime) Run(ctx context.Context, component, healthAddr string, args []s
 		timer := time.NewTimer(40 * time.Second)
 		defer timer.Stop()
 		select {
-		case _ = <-done:
+		case <-done: //nolint:errcheck // child Wait result after stop is best-effort
 		case <-timer.C:
 			_ = child.Process.Kill()
-			_ = <-done
+			<-done //nolint:errcheck // child Wait result after kill is best-effort
 		}
 		child, done = nil, nil
 	}

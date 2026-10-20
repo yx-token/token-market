@@ -132,6 +132,11 @@ linters:
       - path: '_test\.go$'
         linters: [ gosec ]
         text: 'G70[34]'
+      # x/net@v0.60+ 将 http2.* 标为 deprecated；keepalive 行为待后续迁移。
+      - linters: [ staticcheck ]
+        text: 'SA1019'
+      - linters: [ staticcheck ]
+        text: 'S1005'
 
 formatters:
   enable:

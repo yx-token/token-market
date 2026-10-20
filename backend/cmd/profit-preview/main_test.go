@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func TestParsePreviewInputsIgnoresNullUserOverride(t *testing.T) {
