@@ -4,9 +4,9 @@ import (
 	"strconv"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/internal/pkg/response"
+	"github.com/yx-token/token-market/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

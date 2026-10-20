@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/imroc/req/v3"
 )
 

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/platform/config"
-	"github.com/yx-token/idlicat/market/internal/platform/crypto"
-	"github.com/yx-token/idlicat/market/internal/sub2api/replica"
+	"github.com/yx-token/token-market/market/internal/platform/config"
+	"github.com/yx-token/token-market/market/internal/platform/crypto"
+	"github.com/yx-token/token-market/market/internal/sub2api/replica"
 )
 
 func testInspectionKeyring(t *testing.T) *crypto.Keyring {

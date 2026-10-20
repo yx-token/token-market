@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
-	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/paymentauditlog"
+	"github.com/yx-token/token-market/ent/paymentorder"
 )
 
 // --- Dashboard & Analytics ---

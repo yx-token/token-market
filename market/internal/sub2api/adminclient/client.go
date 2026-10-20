@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/sub2api/apiwire"
+	"github.com/yx-token/token-market/market/internal/sub2api/apiwire"
 )
 
 type Client struct {

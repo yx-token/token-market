@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // engineSession 把已登录的闲猫管理员换成引擎 /api/v1 会话，避免二次登录。

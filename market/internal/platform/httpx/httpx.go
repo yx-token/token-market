@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/platform/auth"
-	"github.com/yx-token/idlicat/market/internal/platform/clientip"
+	"github.com/yx-token/token-market/market/internal/platform/auth"
+	"github.com/yx-token/token-market/market/internal/platform/clientip"
 )
 
 // Error 是可以直接返回给调用方的业务错误。

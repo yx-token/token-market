@@ -12,14 +12,14 @@ import (
 	"strings"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/authidentity"
-	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/oauth"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/authidentity"
+	"github.com/yx-token/token-market/ent/authidentitychannel"
+	"github.com/yx-token/token-market/internal/payment"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/pkg/oauth"
+	"github.com/yx-token/token-market/internal/pkg/response"
+	"github.com/yx-token/token-market/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

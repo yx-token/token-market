@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/yx-token/idlicat/market/internal/iam"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/iam"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 func (s *Server) listOrgUnits(w http.ResponseWriter, r *http.Request) error {

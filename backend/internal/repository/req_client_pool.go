@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
+	"github.com/yx-token/token-market/internal/pkg/proxyurl"
+	"github.com/yx-token/token-market/internal/pkg/servertiming"
 
 	"github.com/imroc/req/v3"
 )

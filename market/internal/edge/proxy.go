@@ -21,10 +21,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/edgecfg"
-	"github.com/yx-token/idlicat/market/internal/platform/clientip"
-	"github.com/yx-token/idlicat/market/internal/platform/crypto"
-	"github.com/yx-token/idlicat/market/internal/platform/ratelimit"
+	"github.com/yx-token/token-market/market/internal/edgecfg"
+	"github.com/yx-token/token-market/market/internal/platform/clientip"
+	"github.com/yx-token/token-market/market/internal/platform/crypto"
+	"github.com/yx-token/token-market/market/internal/platform/ratelimit"
 )
 
 var (

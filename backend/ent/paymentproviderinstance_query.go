@@ -12,8 +12,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
-	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/yx-token/token-market/ent/paymentproviderinstance"
+	"github.com/yx-token/token-market/ent/predicate"
 )
 
 // PaymentProviderInstanceQuery is the builder for querying PaymentProviderInstance entities.

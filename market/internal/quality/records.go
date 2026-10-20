@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/listing"
 	"github.com/jackc/pgx/v5"
 )
 

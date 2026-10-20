@@ -2,7 +2,7 @@ package quality
 
 import (
 	"context"
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 // 执行引擎与估价、调度共同读取独立的 inspection 设置。

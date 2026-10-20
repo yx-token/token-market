@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/platform/crypto"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/quality/thirdparty"
+	"github.com/yx-token/token-market/market/internal/platform/crypto"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/quality/thirdparty"
 	"github.com/jackc/pgx/v5"
 )
 

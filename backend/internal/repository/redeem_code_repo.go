@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
-	"github.com/Wei-Shaw/sub2api/ent/user"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/redeemcode"
+	"github.com/yx-token/token-market/ent/user"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
+	"github.com/yx-token/token-market/internal/service"
 
 	entsql "entgo.io/ent/dialect/sql"
 )

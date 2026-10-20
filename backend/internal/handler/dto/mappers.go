@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func UserFromServiceShallow(u *service.User) *User {

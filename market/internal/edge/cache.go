@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/edgecfg"
+	"github.com/yx-token/token-market/market/internal/edgecfg"
 )
 
 // Cache 是 Edge 进程内的路由配置缓存。Redis 不可用时继续使用已缓存的配置。

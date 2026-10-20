@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/billing"
-	"github.com/yx-token/idlicat/market/internal/buyer"
-	"github.com/yx-token/idlicat/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/billing"
+	"github.com/yx-token/token-market/market/internal/buyer"
+	"github.com/yx-token/token-market/market/internal/listing"
 )
 
 type packCheckoutRechargeView struct {

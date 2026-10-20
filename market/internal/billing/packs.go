@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/yx-token/idlicat/market/internal/buyer"
-	"github.com/yx-token/idlicat/market/internal/payment"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/sub2api/ops"
-	"github.com/yx-token/idlicat/market/internal/sub2api/opshandlers"
+	"github.com/yx-token/token-market/market/internal/buyer"
+	"github.com/yx-token/token-market/market/internal/payment"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/sub2api/ops"
+	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
 )
 
 // RequirePackBalance 购买额度包前校验可调用余额 ≥ 面额。

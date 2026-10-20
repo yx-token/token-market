@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/testutil"
+	"github.com/yx-token/token-market/market/internal/testutil"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

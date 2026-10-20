@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/apikey"
-	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
-	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/apikey"
+	"github.com/yx-token/token-market/ent/schema/mixins"
+	"github.com/yx-token/token-market/ent/usersubscription"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
 )
 

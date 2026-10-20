@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/payment"
+	"github.com/yx-token/token-market/market/internal/payment"
 )
 
 const (

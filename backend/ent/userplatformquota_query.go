@@ -12,9 +12,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/predicate"
-	"github.com/Wei-Shaw/sub2api/ent/user"
-	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/yx-token/token-market/ent/predicate"
+	"github.com/yx-token/token-market/ent/user"
+	"github.com/yx-token/token-market/ent/userplatformquota"
 )
 
 // UserPlatformQuotaQuery is the builder for querying UserPlatformQuota entities.

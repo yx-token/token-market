@@ -22,9 +22,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/yx-token/idlicat/market/contract"
-	"github.com/yx-token/idlicat/market/internal/compat"
-	"github.com/yx-token/idlicat/market/internal/sub2api/replica"
+	"github.com/yx-token/token-market/market/contract"
+	"github.com/yx-token/token-market/market/internal/compat"
+	"github.com/yx-token/token-market/market/internal/sub2api/replica"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

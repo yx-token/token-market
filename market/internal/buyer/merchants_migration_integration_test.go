@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/testutil"
-	"github.com/yx-token/idlicat/market/migrations"
+	"github.com/yx-token/token-market/market/internal/testutil"
+	"github.com/yx-token/token-market/market/migrations"
 )
 
 func TestMerchantMigrationPreservesExistingKeysAndPendingCheckouts(t *testing.T) {

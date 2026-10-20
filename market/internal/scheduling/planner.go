@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
-	"github.com/yx-token/idlicat/market/internal/listing"
-	"github.com/yx-token/idlicat/market/internal/settings"
+	"github.com/yx-token/token-market/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/settings"
 )
 
 // 优先级段：回收段 1–19 严格优先于寄售段 50–79；不面向买家的账号放在 99。

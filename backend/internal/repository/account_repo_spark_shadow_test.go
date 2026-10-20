@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func TestAccountRepoSparkShadowRoundTrip(t *testing.T) {

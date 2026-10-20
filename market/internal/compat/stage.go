@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/idlicat/market/contract"
+	"github.com/yx-token/token-market/market/contract"
 )
 
 // CheckContractVersion 检查本系统部署的契约是否已经登记了目标版本与升级后的迁移指纹。

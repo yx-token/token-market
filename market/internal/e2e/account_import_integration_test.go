@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/listing"
 )
 
 func TestAccountImportOnboarding(t *testing.T) {

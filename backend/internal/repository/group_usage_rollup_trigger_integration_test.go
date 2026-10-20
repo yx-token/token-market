@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/migrations"
+	"github.com/yx-token/token-market/migrations"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )

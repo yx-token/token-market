@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/sub2api/adminclient"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 )
 
 // CheckProxy 的 sellerID 非空时必须先检查所有权，不能让卖家探测他人的代理。

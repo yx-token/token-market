@@ -26,14 +26,14 @@ import (
 	"golang.org/x/mod/semver"
 	"golang.org/x/net/http2"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
-	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/proxyurl"
+	"github.com/yx-token/token-market/internal/pkg/proxyutil"
+	"github.com/yx-token/token-market/internal/pkg/servertiming"
+	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
+	"github.com/yx-token/token-market/internal/pkg/xai"
+	"github.com/yx-token/token-market/internal/service"
+	"github.com/yx-token/token-market/internal/util/urlvalidator"
 )
 
 // 默认配置常量

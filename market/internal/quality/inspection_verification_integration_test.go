@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 func TestInspectionFailedVerificationDistinguishesIncompleteAndConfirmed(t *testing.T) {

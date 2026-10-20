@@ -13,11 +13,11 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/apikey"
-	"github.com/Wei-Shaw/sub2api/ent/group"
-	"github.com/Wei-Shaw/sub2api/ent/predicate"
-	"github.com/Wei-Shaw/sub2api/ent/usagelog"
-	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/yx-token/token-market/ent/apikey"
+	"github.com/yx-token/token-market/ent/group"
+	"github.com/yx-token/token-market/ent/predicate"
+	"github.com/yx-token/token-market/ent/usagelog"
+	"github.com/yx-token/token-market/ent/user"
 )
 
 // APIKeyQuery is the builder for querying APIKey entities.

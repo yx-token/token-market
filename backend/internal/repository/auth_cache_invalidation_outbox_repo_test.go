@@ -9,7 +9,7 @@ import (
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
-	"github.com/Wei-Shaw/sub2api/migrations"
+	"github.com/yx-token/token-market/migrations"
 	"github.com/stretchr/testify/require"
 )
 

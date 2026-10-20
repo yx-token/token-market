@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/sub2api/adminclient"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 )
 
 // QuotaWindow 是官方订阅的一个用量窗口。Utilization 由官方统计（包含卖家在本平台之外的使用），

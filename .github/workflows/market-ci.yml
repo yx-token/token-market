@@ -45,7 +45,7 @@ jobs:
       - name: 获取 sub2api 迁移（v0.2.10、v0.2.14）
         run: |
           git init -q "$TM_SUB2API_REPO"
-          git -C "$TM_SUB2API_REPO" fetch -q --depth=1 https://github.com/Wei-Shaw/sub2api.git \
+          git -C "$TM_SUB2API_REPO" fetch -q --depth=1 https://github.com/yx-token/token-market.git \
             refs/tags/v0.2.10:refs/tags/v0.2.10 refs/tags/v0.2.14:refs/tags/v0.2.14
 
       - name: gofmt

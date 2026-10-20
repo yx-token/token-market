@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/ctxkey"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
+	"github.com/yx-token/token-market/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"

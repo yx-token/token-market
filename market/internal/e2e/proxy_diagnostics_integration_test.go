@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/listing"
-	"github.com/yx-token/idlicat/market/internal/sub2api/adminclient"
+	"github.com/yx-token/token-market/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 )
 
 func TestProxyDiagnosticsPersistenceAndOwnership(t *testing.T) {

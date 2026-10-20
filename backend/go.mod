@@ -1,4 +1,4 @@
-module github.com/Wei-Shaw/sub2api
+module github.com/yx-token/token-market
 
 go 1.27.0
 

@@ -14,7 +14,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/yx-token/idlicat/market/internal/platform/config"
+	"github.com/yx-token/token-market/market/internal/platform/config"
 )
 
 const formatVersion byte = 1

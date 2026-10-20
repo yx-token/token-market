@@ -9,8 +9,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/yx-token/idlicat/market/internal/sub2api/adminclient"
-	"github.com/yx-token/idlicat/market/internal/sub2api/replica"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
+	"github.com/yx-token/token-market/market/internal/sub2api/replica"
 )
 
 type Provisioner struct {

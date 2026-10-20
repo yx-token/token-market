@@ -7,12 +7,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/buyer"
-	"github.com/yx-token/idlicat/market/internal/payment"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/platform/randx"
-	"github.com/yx-token/idlicat/market/internal/sub2api/ops"
-	"github.com/yx-token/idlicat/market/internal/sub2api/opshandlers"
+	"github.com/yx-token/token-market/market/internal/buyer"
+	"github.com/yx-token/token-market/market/internal/payment"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/platform/randx"
+	"github.com/yx-token/token-market/market/internal/sub2api/ops"
+	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
 	"github.com/jackc/pgx/v5"
 )
 

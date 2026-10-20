@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
-	"github.com/yx-token/idlicat/market/internal/quality"
+	"github.com/yx-token/token-market/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/quality"
 )
 
 // 两条流程独立选题；测智偏低只标疑似，开启扣价后在试运行也写入 Q。

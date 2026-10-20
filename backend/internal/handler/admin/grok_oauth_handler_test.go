@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/yx-token/token-market/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/pkg/tlsfingerprint"
+	"github.com/yx-token/token-market/internal/pkg/xai"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 type grokQuotaHandlerAccountRepo struct {

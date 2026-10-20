@@ -3,7 +3,7 @@ package middleware
 import (
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

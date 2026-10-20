@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
-	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/yx-token/token-market/ent/schema/mixins"
+	"github.com/yx-token/token-market/ent/userplatformquota"
 	"github.com/stretchr/testify/require"
 )
 

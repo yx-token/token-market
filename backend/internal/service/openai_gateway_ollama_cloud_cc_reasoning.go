@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
+	"github.com/yx-token/token-market/internal/pkg/openai_compat"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )

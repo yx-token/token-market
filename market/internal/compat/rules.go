@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yx-token/idlicat/market/contract"
+	"github.com/yx-token/token-market/market/contract"
 )
 
 type Severity string

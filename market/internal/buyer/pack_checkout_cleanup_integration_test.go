@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/edgecfg"
-	"github.com/yx-token/idlicat/market/internal/testutil"
+	"github.com/yx-token/token-market/market/internal/edgecfg"
+	"github.com/yx-token/token-market/market/internal/testutil"
 	"github.com/redis/go-redis/v9"
 )
 

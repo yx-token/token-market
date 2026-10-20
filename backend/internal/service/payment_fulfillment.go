@@ -13,11 +13,11 @@ import (
 
 	"entgo.io/ent/dialect"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
-	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/paymentauditlog"
+	"github.com/yx-token/token-market/ent/paymentorder"
+	"github.com/yx-token/token-market/internal/payment"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 // ErrOrderNotFound is returned by HandlePaymentNotification when the webhook

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/handler"
-	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
-	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/yx-token/token-market/internal/handler"
+	"github.com/yx-token/token-market/internal/handler/admin"
+	servermiddleware "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"

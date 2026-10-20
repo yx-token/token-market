@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/lib/pq"
 )
 

@@ -12,7 +12,7 @@ token-market 是闲置额度交易所；sub2api（契约基线 v0.2.14）负责�
 
 ## 决策
 
-1. **改造宿主 = 新产品仓 `idlicat`**，内含完整社区 [sub2api](https://github.com/Wei-Shaw/sub2api) 代码树，再叠加市场代码。不在「只有适配层、没有引擎源码」的仓库里做终态产品。
+1. **改造宿主 = 新产品仓 `idlicat`**，内含完整社区 [sub2api](https://github.com/yx-token/token-market) 代码树，再叠加市场代码。不在「只有适配层、没有引擎源码」的仓库里做终态产品。
 2. **市场代码只增量添加**：在 `idlicat/market/`（及市场专用流水线/部署），**不删、不裁剪**社区 `backend/` / `frontend/` / 社区 `deploy/` 等；跟社区升级时以整树 merge / 搬迁为主。闲置 TOKEN 的部署、脚本、镜像定义、CI/Release 一并迁入并保留。
 3. **后台与市场前端保留本产品视觉与交互风格**（现 `token-market/web`：闲置TOKEN / xianmao 体系、买家中心、卖家中心、运营控制台）。迁入后落在 `market/web`，**不以社区 `frontend/` 换皮或重做后台**；社区前端可继续随社区树保留（运维/对照），但不作为本产品对卖家/买家/运营的主 UI。
 4. **采用 strangler（绞杀）合并，不 big-bang。** 现网 `token-market` 仓库过渡期仍可发版，代码按模块迁入 `idlicat`。

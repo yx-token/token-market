@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/yx-token/idlicat/market/internal/app"
-	"github.com/yx-token/idlicat/market/internal/httpapi"
-	"github.com/yx-token/idlicat/market/internal/platform/config"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/app"
+	"github.com/yx-token/token-market/market/internal/httpapi"
+	"github.com/yx-token/token-market/market/internal/platform/config"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // APIError 是可直接返回给管理端的业务错误。

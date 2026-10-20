@@ -10,9 +10,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/yx-token/idlicat/market/internal/edgecfg"
-	"github.com/yx-token/idlicat/market/internal/platform/randx"
-	"github.com/yx-token/idlicat/market/internal/quality/thirdparty"
+	"github.com/yx-token/token-market/market/internal/edgecfg"
+	"github.com/yx-token/token-market/market/internal/platform/randx"
+	"github.com/yx-token/token-market/market/internal/quality/thirdparty"
 	"github.com/jackc/pgx/v5"
 )
 

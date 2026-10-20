@@ -7,7 +7,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 // InspectionView 是卖家与市场共用的脱敏质检摘要，估价在读取时采用当前厂商基准。

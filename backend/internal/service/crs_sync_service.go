@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
-	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/httpclient"
+	"github.com/yx-token/token-market/internal/util/urlvalidator"
 )
 
 type CRSSyncService struct {

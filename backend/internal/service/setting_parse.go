@@ -11,11 +11,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/antigravity"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/pkg/openai"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 // InitializeDefaultSettings 初始化默认设置

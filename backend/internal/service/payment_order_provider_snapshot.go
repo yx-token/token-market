@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/internal/payment"
 )
 
 type paymentOrderProviderSnapshot struct {

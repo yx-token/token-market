@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/yx-token/idlicat/market/internal/app"
-	"github.com/yx-token/idlicat/market/internal/platform/auth"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/app"
+	"github.com/yx-token/token-market/market/internal/platform/auth"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // ServeAdmin 用现有管理处理函数执行一次请求。引擎进程通过它承接尚未单独重写的闲猫管理接口。

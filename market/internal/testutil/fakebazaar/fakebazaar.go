@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/platform/randx"
+	"github.com/yx-token/token-market/market/internal/platform/randx"
 )
 
 type item struct {

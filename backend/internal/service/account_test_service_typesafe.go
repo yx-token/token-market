@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
+	"github.com/yx-token/token-market/internal/pkg/typesafe"
 	"github.com/gin-gonic/gin"
 )
 

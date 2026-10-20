@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/update"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/update"
 )
 
 func (s *Server) systemVersion(w http.ResponseWriter, _ *http.Request) error {

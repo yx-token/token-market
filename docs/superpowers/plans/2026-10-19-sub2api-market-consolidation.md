@@ -1,15 +1,14 @@
-# sub2api 底座吸收市场能力 Implementation Plan
+# 闲猫并仓与产品宿主 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 先拿到**完整** sub2api（基线 v0.2.14）代码树作为改造宿主，再在其上增量叠加 token-market **全部**能力；不硬改社区计费/网关内核；**产品 UI 保持本仓前端风格**；前期保留出站队列与影子用户，便于跟社区更新。
+**Goal:** 闲猫专属仓交付：网关 + 管理端 + 闲置 TOKEN 市场同仓同端口；**对外品牌统一为闲猫 / IdleCat**。
 
-**Architecture:** 宿主 = 全量 sub2api + `market/` 增量。**管理端 = 社区 `frontend/`（sub2api 原壳，`/admin/...`）**；闲猫是侧栏「闲猫」增量，用同一套管理员会话打 `/api/admin/*`。**C 端 = `market/web` 的 `/`**。
+**Architecture:** 根目录 = `backend/` + `frontend/` + `market/`。**管理端 = `frontend/` `/admin`**；侧栏「闲猫」为市场增量。**C 端 = `market/web` `/`**。
 
-**Tech Stack:** Go、PostgreSQL、Redis、sub2api v0.2.14 全树、token-market 迁入模块、Vue 3（本产品风格）。
+**Tech Stack:** Go、PostgreSQL、Redis、Vue 3。
 
-**宿主路径：** 本仓库根目录（原 idlicat 宿主）（产品名 Idlicat；完整 sub2api + `market/`；已提交到 GitHub）  
-**过渡仓：** 本仓库根目录市场实现（满足退役条件前仍可发版）
+**宿主路径：** 本仓库根目录（闲猫产品代码）
 
 **ADR:** [docs/adr/0001-sub2api-market-consolidation.md](../../adr/0001-sub2api-market-consolidation.md)  
 **模块地图:** [docs/dev/consolidation-module-map.md](../../dev/consolidation-module-map.md)
@@ -62,7 +61,7 @@
 
 ## 宿主仓库与社区同步
 
-产品宿主为 **本仓库根目录**（由 idlicat 覆盖旧过渡实现）。社区上游 URL：`https://github.com/Wei-Shaw/sub2api`。
+产品宿主为 **本仓库根目录**（由 idlicat 覆盖旧过渡实现）。产品仓即本仓库；不再以社区项目名义对外。
 
 - [x] 已用社区树创建 `idlicat`（含 `backend/`/`frontend/` 等全量目录）
 - [x] 已拷入闲置 TOKEN 市场环境：`market/deploy`、`market/scripts`、`market/Dockerfile`、`market/Makefile`、`.github/workflows/market-*.yml`

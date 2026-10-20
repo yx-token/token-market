@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/handler"
-	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/Wei-Shaw/sub2api/internal/web"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/handler"
+	servermiddleware "github.com/yx-token/token-market/internal/server/middleware"
+	"github.com/yx-token/token-market/internal/service"
+	"github.com/yx-token/token-market/internal/web"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/domain"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/domain"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
 )
 

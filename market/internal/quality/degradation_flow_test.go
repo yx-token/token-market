@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 // degradationItem 是一道限定型号的降智题（原 inspection_capability / D07 迁入后的形状）。

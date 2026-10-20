@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
-	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/paymentorder"
+	"github.com/yx-token/token-market/internal/payment"
+	"github.com/yx-token/token-market/internal/payment/provider"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/pkg/servertiming"
 	"github.com/shopspring/decimal"
 )
 

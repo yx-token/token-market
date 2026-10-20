@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // ImportAccountInput 支持 sub2api 导出文件、账号数组、单个账号及 credentials 对象。

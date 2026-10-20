@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/yx-token/idlicat/market/internal/account"
+	"github.com/yx-token/token-market/market/internal/account"
 )
 
 // attachEngineIdentity 让市场用户与同邮箱的引擎用户对齐。管理员只核对引擎账号；买家/卖家再绑定影子并登录换令牌。

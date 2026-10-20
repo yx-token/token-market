@@ -4,7 +4,7 @@ package model
 import (
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/yx-token/token-market/internal/domain"
 )
 
 // ErrorPassthroughRule 全局错误透传规则

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 // 只累计当前及上一轮恢复的门槛后新样本，不用暂停前生产记录或无限历史证明修复。

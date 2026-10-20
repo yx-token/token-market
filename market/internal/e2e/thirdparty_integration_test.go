@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/testutil/fakebazaar"
+	"github.com/yx-token/token-market/market/internal/testutil/fakebazaar"
 )
 
 // 两条流程上架一起检测，第三方在内部题之前提交；身份不符按处置规则暂停，结束后临时令牌失效。

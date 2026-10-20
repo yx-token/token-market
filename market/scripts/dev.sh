@@ -86,7 +86,7 @@ ensure_engine_admin_key() {
     -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["access_token"])')"
   curl -fsS -X POST "$ENGINE/api/v1/admin/compliance/accept" -H "Authorization: Bearer $tok" \
     -H 'Content-Type: application/json' \
-    -d '{"phrase":"我已阅读、理解并同意 Sub2API 部署与运营合规承诺","language":"zh"}' >/dev/null || true
+    -d '{"phrase":"我已阅读、理解并同意 闲猫 部署与运营合规承诺","language":"zh"}' >/dev/null || true
   key="$(curl -fsS -X POST "$ENGINE/api/v1/admin/settings/admin-api-key/regenerate" -H "Authorization: Bearer $tok" \
     | python3 -c 'import sys,json; d=json.load(sys.stdin); x=d.get("data") or d; print(x.get("key") or x.get("admin_api_key") or "")')"
   [[ -n "$key" ]] || { echo "无法生成引擎 Admin API Key" >&2; exit 1; }

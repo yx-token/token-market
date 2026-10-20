@@ -3,11 +3,11 @@ package routes
 import (
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/handler"
-	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
-	ratelimit "github.com/Wei-Shaw/sub2api/internal/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/handler"
+	"github.com/yx-token/token-market/internal/handler/admin"
+	ratelimit "github.com/yx-token/token-market/internal/middleware"
+	"github.com/yx-token/token-market/internal/server/middleware"
+	"github.com/yx-token/token-market/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"

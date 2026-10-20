@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/payment"
+	"github.com/yx-token/token-market/market/internal/payment"
 )
 
 func cert(t *testing.T, cn string) (string, *rsa.PrivateKey) {

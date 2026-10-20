@@ -1,4 +1,4 @@
-module github.com/yx-token/idlicat/market
+module github.com/yx-token/token-market/market
 
 go 1.27.0
 

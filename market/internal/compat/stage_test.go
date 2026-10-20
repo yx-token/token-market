@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/contract"
+	"github.com/yx-token/token-market/market/contract"
 )
 
 func TestCheckContractVersion(t *testing.T) {

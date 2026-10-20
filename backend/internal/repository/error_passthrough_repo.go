@@ -3,10 +3,10 @@ package repository
 import (
 	"context"
 
-	"github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
-	"github.com/Wei-Shaw/sub2api/internal/model"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/errorpassthroughrule"
+	"github.com/yx-token/token-market/internal/model"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 type errorPassthroughRepository struct {

@@ -5,9 +5,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/listing"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/scheduling"
+	"github.com/yx-token/token-market/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/scheduling"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

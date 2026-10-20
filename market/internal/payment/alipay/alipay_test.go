@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/payment"
-	"github.com/yx-token/idlicat/market/internal/payment/alipay"
-	"github.com/yx-token/idlicat/market/internal/testutil/fakepay"
+	"github.com/yx-token/token-market/market/internal/payment"
+	"github.com/yx-token/token-market/market/internal/payment/alipay"
+	"github.com/yx-token/token-market/market/internal/testutil/fakepay"
 )
 
 const appID = "2021000000000001"

@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/payment"
-	"github.com/yx-token/idlicat/market/internal/payment/merchants"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/payment"
+	"github.com/yx-token/token-market/market/internal/payment/merchants"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // paymentNotify 处理渠道的异步通知：验签 → 推进订单 → 按渠道要求应答。不经过登录鉴权，安全性完全依赖验签。

@@ -21,7 +21,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/yx-token/idlicat/market/internal/platform/randx"
+	"github.com/yx-token/token-market/market/internal/platform/randx"
 )
 
 const (

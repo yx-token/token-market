@@ -8,9 +8,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/yx-token/idlicat/market/internal/platform/db"
-	"github.com/yx-token/idlicat/market/internal/testutil"
-	"github.com/yx-token/idlicat/market/migrations"
+	"github.com/yx-token/token-market/market/internal/platform/db"
+	"github.com/yx-token/token-market/market/internal/testutil"
+	"github.com/yx-token/token-market/market/migrations"
 )
 
 func TestMigrateIsIdempotent(t *testing.T) {

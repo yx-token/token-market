@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/internal/payment"
 	"github.com/stretchr/testify/require"
 )
 

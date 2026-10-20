@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/yx-token/idlicat/market/internal/platform/auth"
-	"github.com/yx-token/idlicat/market/internal/platform/crypto"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/platform/auth"
+	"github.com/yx-token/token-market/market/internal/platform/crypto"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 type User struct {

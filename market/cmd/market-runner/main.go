@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/platform/config"
-	"github.com/yx-token/idlicat/market/internal/update"
+	"github.com/yx-token/token-market/market/internal/platform/config"
+	"github.com/yx-token/token-market/market/internal/update"
 )
 
 func main() {

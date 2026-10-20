@@ -9,56 +9,56 @@ const ADMIN_JWT = process.env.SUB2API_JWT || "";
 
 function usage() {
   console.log(`Usage:
-  sub2api-admin.js accounts list [--page-size 200] [--page N] [--search TEXT] [--platform openai] [--type oauth] [--status active] [--group NAME] [--privacy-mode MODE] [--sort-by name] [--sort-order asc]
-  sub2api-admin.js accounts export [--ids 1,2] [--file accounts.json] [--include-proxies false] [list filters...]
-  sub2api-admin.js accounts import-data --file accounts.json [--skip-default-group-bind]
-  sub2api-admin.js accounts create --json '{...}' | --file account.json
-  sub2api-admin.js accounts update <id> --json '{...}' | --file patch.json
-  sub2api-admin.js accounts get <id>
-  sub2api-admin.js accounts delete <id>
-  sub2api-admin.js accounts keep-only --name <account-name>
-  sub2api-admin.js accounts usage <id> [--source SOURCE] [--force]
-  sub2api-admin.js accounts stats <id> [--days 30]
-  sub2api-admin.js accounts today-stats <id>
-  sub2api-admin.js accounts batch-today-stats --ids 1,2
-  sub2api-admin.js accounts set-status <id> <active|paused|...>
-  sub2api-admin.js accounts set-schedulable <id> <true|false>
-  sub2api-admin.js accounts clear-error <id>
-  sub2api-admin.js accounts clear-rate-limit <id>
-  sub2api-admin.js accounts recover-state <id>
-  sub2api-admin.js accounts reset-quota <id>
-  sub2api-admin.js accounts refresh <id>
-  sub2api-admin.js accounts test <id>
-  sub2api-admin.js accounts models <id>
-  sub2api-admin.js accounts sync-models <id>
-  sub2api-admin.js accounts apply-oauth <id> --json '{...}' | --file credentials.json
-  sub2api-admin.js accounts batch-create --file accounts.json
-  sub2api-admin.js accounts batch-update-credentials --json '{...}' | --file payload.json
-  sub2api-admin.js accounts bulk-update --ids 1,2 --json '{...}' | --file patch.json
-  sub2api-admin.js accounts batch-refresh --ids 1,2
-  sub2api-admin.js accounts batch-clear-error --ids 1,2
-  sub2api-admin.js accounts temp-unschedulable <id>
-  sub2api-admin.js accounts reset-temp-unschedulable <id>
-  sub2api-admin.js accounts crs-preview --json '{...}' | --file payload.json
-  sub2api-admin.js accounts crs-sync --json '{...}' | --file payload.json
-  sub2api-admin.js accounts import-codex-session --json '{...}' | --file payload.json
-  sub2api-admin.js accounts antigravity-default-model-mapping
-  sub2api-admin.js accounts import-json --file <path> --template-name <name> [--skip-name <name>] [--dry-run]
-  sub2api-admin.js groups all
-  sub2api-admin.js proxies all
-  sub2api-admin.js redeem-codes list [--page-size 200] [--page N] [--type balance] [--status unused] [--search TEXT] [--sort-by id] [--sort-order desc]
-  sub2api-admin.js redeem-codes export [--file redeem-codes.csv] [list filters...]
-  sub2api-admin.js redeem-codes get <id>
-  sub2api-admin.js redeem-codes generate --json '{...}' | --file payload.json [--idempotency-key KEY]
-  sub2api-admin.js redeem-codes create-and-redeem --json '{...}' | --file payload.json [--idempotency-key KEY]
-  sub2api-admin.js redeem-codes batch-update --ids 1,2 --json '{...}' | --file fields.json
-  sub2api-admin.js redeem-codes delete <id>
-  sub2api-admin.js redeem-codes batch-delete --ids 1,2
-  sub2api-admin.js redeem-codes expire <id>
-  sub2api-admin.js redeem-codes stats
-  sub2api-admin.js error-rules list|get|create|update|delete|toggle ...
-  sub2api-admin.js tls-profiles list|get|create|update|delete ...
-  sub2api-admin.js api <GET|POST|PUT|DELETE> <admin-path> [--json '{...}' | --file payload.json]
+  xianmao-admin.js accounts list [--page-size 200] [--page N] [--search TEXT] [--platform openai] [--type oauth] [--status active] [--group NAME] [--privacy-mode MODE] [--sort-by name] [--sort-order asc]
+  xianmao-admin.js accounts export [--ids 1,2] [--file accounts.json] [--include-proxies false] [list filters...]
+  xianmao-admin.js accounts import-data --file accounts.json [--skip-default-group-bind]
+  xianmao-admin.js accounts create --json '{...}' | --file account.json
+  xianmao-admin.js accounts update <id> --json '{...}' | --file patch.json
+  xianmao-admin.js accounts get <id>
+  xianmao-admin.js accounts delete <id>
+  xianmao-admin.js accounts keep-only --name <account-name>
+  xianmao-admin.js accounts usage <id> [--source SOURCE] [--force]
+  xianmao-admin.js accounts stats <id> [--days 30]
+  xianmao-admin.js accounts today-stats <id>
+  xianmao-admin.js accounts batch-today-stats --ids 1,2
+  xianmao-admin.js accounts set-status <id> <active|paused|...>
+  xianmao-admin.js accounts set-schedulable <id> <true|false>
+  xianmao-admin.js accounts clear-error <id>
+  xianmao-admin.js accounts clear-rate-limit <id>
+  xianmao-admin.js accounts recover-state <id>
+  xianmao-admin.js accounts reset-quota <id>
+  xianmao-admin.js accounts refresh <id>
+  xianmao-admin.js accounts test <id>
+  xianmao-admin.js accounts models <id>
+  xianmao-admin.js accounts sync-models <id>
+  xianmao-admin.js accounts apply-oauth <id> --json '{...}' | --file credentials.json
+  xianmao-admin.js accounts batch-create --file accounts.json
+  xianmao-admin.js accounts batch-update-credentials --json '{...}' | --file payload.json
+  xianmao-admin.js accounts bulk-update --ids 1,2 --json '{...}' | --file patch.json
+  xianmao-admin.js accounts batch-refresh --ids 1,2
+  xianmao-admin.js accounts batch-clear-error --ids 1,2
+  xianmao-admin.js accounts temp-unschedulable <id>
+  xianmao-admin.js accounts reset-temp-unschedulable <id>
+  xianmao-admin.js accounts crs-preview --json '{...}' | --file payload.json
+  xianmao-admin.js accounts crs-sync --json '{...}' | --file payload.json
+  xianmao-admin.js accounts import-codex-session --json '{...}' | --file payload.json
+  xianmao-admin.js accounts antigravity-default-model-mapping
+  xianmao-admin.js accounts import-json --file <path> --template-name <name> [--skip-name <name>] [--dry-run]
+  xianmao-admin.js groups all
+  xianmao-admin.js proxies all
+  xianmao-admin.js redeem-codes list [--page-size 200] [--page N] [--type balance] [--status unused] [--search TEXT] [--sort-by id] [--sort-order desc]
+  xianmao-admin.js redeem-codes export [--file redeem-codes.csv] [list filters...]
+  xianmao-admin.js redeem-codes get <id>
+  xianmao-admin.js redeem-codes generate --json '{...}' | --file payload.json [--idempotency-key KEY]
+  xianmao-admin.js redeem-codes create-and-redeem --json '{...}' | --file payload.json [--idempotency-key KEY]
+  xianmao-admin.js redeem-codes batch-update --ids 1,2 --json '{...}' | --file fields.json
+  xianmao-admin.js redeem-codes delete <id>
+  xianmao-admin.js redeem-codes batch-delete --ids 1,2
+  xianmao-admin.js redeem-codes expire <id>
+  xianmao-admin.js redeem-codes stats
+  xianmao-admin.js error-rules list|get|create|update|delete|toggle ...
+  xianmao-admin.js tls-profiles list|get|create|update|delete ...
+  xianmao-admin.js api <GET|POST|PUT|DELETE> <admin-path> [--json '{...}' | --file payload.json]
 `);
 }
 

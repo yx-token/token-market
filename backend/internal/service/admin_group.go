@@ -8,17 +8,17 @@ import (
 	"strings"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/antigravity"
+	"github.com/yx-token/token-market/internal/pkg/claude"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/pkg/geminicli"
+	"github.com/yx-token/token-market/internal/pkg/logger"
+	"github.com/yx-token/token-market/internal/pkg/openai"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
+	"github.com/yx-token/token-market/internal/pkg/typesafe"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 // Group management implementations

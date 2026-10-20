@@ -7,7 +7,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 	"github.com/jackc/pgx/v5"
 )
 

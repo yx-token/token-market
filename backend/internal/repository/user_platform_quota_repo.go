@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/userplatformquota"
+	"github.com/yx-token/token-market/internal/pkg/timezone"
 )
 
 // UserPlatformQuotaRecord 是 repository 层的传输结构体，

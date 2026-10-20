@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 )
 

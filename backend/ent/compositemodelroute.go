@@ -9,8 +9,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
-	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/yx-token/token-market/ent/compositemodelroute"
+	"github.com/yx-token/token-market/ent/group"
 )
 
 // CompositeModelRoute is the model entity for the CompositeModelRoute schema.

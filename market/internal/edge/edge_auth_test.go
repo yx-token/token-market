@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/edgecfg"
-	"github.com/yx-token/idlicat/market/internal/platform/clientip"
-	"github.com/yx-token/idlicat/market/internal/platform/ratelimit"
+	"github.com/yx-token/token-market/market/internal/edgecfg"
+	"github.com/yx-token/token-market/market/internal/platform/clientip"
+	"github.com/yx-token/token-market/market/internal/platform/ratelimit"
 )
 
 func TestInvalidKeyThrottlingAndWhitelistIgnoresSpoofedHeader(t *testing.T) {

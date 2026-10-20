@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 // Outcome 是一道题在被测上游与基线账号上的结果。

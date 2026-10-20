@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/redis/go-redis/v9"
 )
 

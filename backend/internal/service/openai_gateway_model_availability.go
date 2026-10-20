@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/yx-token/token-market/internal/config"
 )
 
 // DiagnoseModelAvailabilityForPlatform reports whether the requested model

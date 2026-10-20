@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	sharedhttp "github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
-	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	sharedhttp "github.com/yx-token/token-market/internal/pkg/httpclient"
+	"github.com/yx-token/token-market/internal/pkg/xai"
+	"github.com/yx-token/token-market/internal/service"
+	"github.com/yx-token/token-market/internal/util/logredact"
 	"github.com/imroc/req/v3"
 )
 

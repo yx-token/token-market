@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Wei-Shaw/sub2api/ent"
+	"github.com/yx-token/token-market/ent"
 )
 
 // The APIKeyFunc type is an adapter to allow the use of ordinary

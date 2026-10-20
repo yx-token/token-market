@@ -8,16 +8,16 @@ package main
 
 import (
 	"context"
-	"github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/handler"
-	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
-	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
-	"github.com/Wei-Shaw/sub2api/internal/server"
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/handler"
+	"github.com/yx-token/token-market/internal/handler/admin"
+	"github.com/yx-token/token-market/internal/payment"
+	"github.com/yx-token/token-market/internal/repository"
+	"github.com/yx-token/token-market/internal/securityaudit"
+	"github.com/yx-token/token-market/internal/server"
+	"github.com/yx-token/token-market/internal/server/middleware"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/redis/go-redis/v9"
 	"log"
 	"net/http"
@@ -27,7 +27,7 @@ import (
 
 import (
 	_ "embed"
-	_ "github.com/Wei-Shaw/sub2api/ent/runtime"
+	_ "github.com/yx-token/token-market/ent/runtime"
 )
 
 // Injectors from wire.go:

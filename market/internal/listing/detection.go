@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 // ModelDetection 仅向买家披露检测状态，不暴露分数、阈值、提示词或内部模型证据。

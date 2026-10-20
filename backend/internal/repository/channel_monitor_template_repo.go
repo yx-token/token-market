@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
-	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/channelmonitor"
+	"github.com/yx-token/token-market/ent/channelmonitorrequesttemplate"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/lib/pq"
 )
 

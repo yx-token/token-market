@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/edgecfg"
-	"github.com/yx-token/idlicat/market/internal/listing"
-	"github.com/yx-token/idlicat/market/internal/platform/crypto"
+	"github.com/yx-token/token-market/market/internal/edgecfg"
+	"github.com/yx-token/token-market/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/platform/crypto"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

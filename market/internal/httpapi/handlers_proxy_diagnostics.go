@@ -3,7 +3,7 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 func (s *Server) checkProxy(sellerOnly, quality bool) httpx.Handler {

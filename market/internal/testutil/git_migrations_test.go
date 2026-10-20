@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/compat"
+	"github.com/yx-token/token-market/market/internal/compat"
 )
 
 func TestMigrationCacheConcurrentCopiesAndRefs(t *testing.T) {

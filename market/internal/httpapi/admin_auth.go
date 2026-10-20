@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/platform/auth"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/platform/auth"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // authenticateAdmin 接受闲猫 JWT，或已登录的 sub2api 管理员 Bearer（同一身份，不再二次登录）。

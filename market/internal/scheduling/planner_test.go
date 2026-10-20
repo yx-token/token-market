@@ -3,8 +3,8 @@ package scheduling
 import (
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/sub2api/opshandlers"
-	"github.com/yx-token/idlicat/market/internal/sub2api/replica"
+	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
+	"github.com/yx-token/token-market/market/internal/sub2api/replica"
 )
 
 func i64(v int64) *int64     { return &v }

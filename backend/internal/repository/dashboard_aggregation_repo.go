@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/pkg/timezone"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/lib/pq"
 )
 

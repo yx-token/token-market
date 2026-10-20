@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/edgecfg"
+	"github.com/yx-token/token-market/market/internal/edgecfg"
 )
 
 func TestAttemptHTTPErrorClasses(t *testing.T) {

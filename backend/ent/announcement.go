@@ -10,8 +10,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/Wei-Shaw/sub2api/ent/announcement"
-	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/yx-token/token-market/ent/announcement"
+	"github.com/yx-token/token-market/internal/domain"
 )
 
 // Announcement is the model entity for the Announcement schema.

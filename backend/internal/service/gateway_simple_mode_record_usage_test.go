@@ -5,7 +5,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/yx-token/token-market/internal/config"
 	"github.com/stretchr/testify/require"
 	"testing"
 )

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/model"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/model"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/redis/go-redis/v9"
 )
 

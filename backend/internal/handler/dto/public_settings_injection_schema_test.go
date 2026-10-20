@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 // TestPublicSettingsInjectionPayload_SchemaDoesNotDrift guarantees the SSR

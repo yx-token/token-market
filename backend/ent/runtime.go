@@ -2,4 +2,4 @@
 
 package ent
 
-// The schema-stitching logic is generated in github.com/Wei-Shaw/sub2api/ent/runtime/runtime.go
+// The schema-stitching logic is generated in github.com/yx-token/token-market/ent/runtime/runtime.go

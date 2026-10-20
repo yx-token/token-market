@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/settings"
+	"github.com/yx-token/token-market/market/internal/settings"
 )
 
 func TestUnobservedRunDoesNotVerifyOrResolve(t *testing.T) {

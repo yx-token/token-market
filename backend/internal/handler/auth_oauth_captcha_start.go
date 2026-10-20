@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/pkg/ip"
+	"github.com/yx-token/token-market/internal/pkg/response"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin"
 )
 

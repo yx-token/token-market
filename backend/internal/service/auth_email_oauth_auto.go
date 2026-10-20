@@ -7,10 +7,10 @@ import (
 	"net/mail"
 	"strings"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/authidentity"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/authidentity"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/pkg/logger"
 )
 
 type EmailOAuthIdentityInput struct {

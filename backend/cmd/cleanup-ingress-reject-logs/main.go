@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/Wei-Shaw/sub2api/ent/runtime"
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
+	_ "github.com/yx-token/token-market/ent/runtime"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/repository"
 	"github.com/lib/pq"
 )
 

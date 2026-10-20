@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yx-token/idlicat/market/contract"
+	"github.com/yx-token/token-market/market/contract"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )

@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/sub2api/adminclient"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 )
 
 // oauthSpec 描述一个厂商在 sub2api 中的授权接口，以及如何把换到的令牌转成账号凭证。

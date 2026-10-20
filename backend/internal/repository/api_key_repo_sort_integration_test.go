@@ -3,8 +3,8 @@
 package repository
 
 import (
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/pkg/pagination"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func (s *APIKeyRepoSuite) TestListByUserID_SortByNameAsc() {

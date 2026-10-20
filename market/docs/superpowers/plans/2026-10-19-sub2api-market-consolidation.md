@@ -58,7 +58,7 @@
 
 ## 宿主仓库与社区同步
 
-产品宿主为 **`idlicat`**（本地 `../idlicat`）。社区上游 URL：`https://github.com/Wei-Shaw/sub2api`。
+产品宿主为 **`idlicat`**（本地 `../idlicat`）。社区上游 URL：`https://github.com/yx-token/token-market`。
 
 - [x] 已用社区树创建 `idlicat`（含 `backend/`/`frontend/` 等全量目录）
 - [x] 已拷入闲置 TOKEN 市场环境：`market/deploy`、`market/scripts`、`market/Dockerfile`、`market/Makefile`、`.github/workflows/market-*.yml`

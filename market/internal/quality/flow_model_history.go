@@ -1,6 +1,6 @@
 package quality
 
-import "github.com/yx-token/idlicat/market/internal/inspection"
+import "github.com/yx-token/token-market/market/internal/inspection"
 
 // 只继承当前挂售模型的有效结果，撤下模型的旧失败不能继续扣价。
 func inheritedModelsCheck(c inspection.Check, models []string) (inspection.Check, bool) {

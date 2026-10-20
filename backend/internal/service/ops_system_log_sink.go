@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
+	"github.com/yx-token/token-market/internal/pkg/logger"
+	"github.com/yx-token/token-market/internal/util/logredact"
 )
 
 type OpsSystemLogSinkHealth struct {

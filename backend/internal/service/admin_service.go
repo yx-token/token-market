@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/internal/config"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 // AdminService interface defines admin management operations

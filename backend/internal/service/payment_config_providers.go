@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
-	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
-	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/paymentorder"
+	"github.com/yx-token/token-market/ent/paymentproviderinstance"
+	"github.com/yx-token/token-market/internal/payment"
+	"github.com/yx-token/token-market/internal/payment/provider"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 // validateProviderConfig runs the provider's constructor to surface config-level

@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/domain"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/domain"
+	"github.com/yx-token/token-market/internal/pkg/geminicli"
+	"github.com/yx-token/token-market/internal/pkg/openai_compat"
+	"github.com/yx-token/token-market/internal/pkg/typesafe"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 type Account struct {

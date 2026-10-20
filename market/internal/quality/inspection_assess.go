@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 // 总结只统计可用与性能，测智结论由各检测项和模型分别给出。

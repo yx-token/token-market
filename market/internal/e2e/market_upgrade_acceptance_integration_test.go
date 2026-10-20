@@ -7,8 +7,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/billing"
-	"github.com/yx-token/idlicat/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/billing"
+	"github.com/yx-token/token-market/market/internal/listing"
 )
 
 // 通过真实 HTTP、PostgreSQL 与替身上游验收购买快照和资金隔离，

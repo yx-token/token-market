@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/billing"
+	"github.com/yx-token/token-market/market/internal/billing"
 )
 
 // 覆盖全部 HTTP 接口与后台任务：多厂商（Claude OAuth、ChatGPT OAuth、Kimi Coding Plan）、两种挂单模式、

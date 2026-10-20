@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 func TestMarketCreditOffersRequiresSeller(t *testing.T) {

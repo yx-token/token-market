@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 func inspectionScheduling(mode string, enabled bool, minimum string) inspection.Settings {

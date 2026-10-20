@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/sub2api/adminclient"
-	"github.com/yx-token/idlicat/market/internal/sub2api/replica"
-	"github.com/yx-token/idlicat/market/internal/testutil"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
+	"github.com/yx-token/token-market/market/internal/sub2api/replica"
+	"github.com/yx-token/token-market/market/internal/testutil"
 )
 
 func TestCreditShadowDoesNotInheritDefaultSignupBalance(t *testing.T) {

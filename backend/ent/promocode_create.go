@@ -11,8 +11,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/promocode"
-	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
+	"github.com/yx-token/token-market/ent/promocode"
+	"github.com/yx-token/token-market/ent/promocodeusage"
 )
 
 // PromoCodeCreate is the builder for creating a PromoCode entity.

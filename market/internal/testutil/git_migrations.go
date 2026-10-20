@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/yx-token/idlicat/market/internal/compat"
+	"github.com/yx-token/token-market/market/internal/compat"
 )
 
 var processMigrations = newMigrationCache(compat.LoadGitMigrations)

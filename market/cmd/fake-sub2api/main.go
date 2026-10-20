@@ -22,8 +22,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/compat"
-	"github.com/yx-token/idlicat/market/internal/testutil/fakesub2api"
+	"github.com/yx-token/token-market/market/internal/compat"
+	"github.com/yx-token/token-market/market/internal/testutil/fakesub2api"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

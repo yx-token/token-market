@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/yx-token/token-market/internal/pkg/logger"
 )
 
 // IdempotencyMetricsSnapshot 提供幂等核心指标快照（进程内累计）。

@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/handler/quotaview"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
-	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/handler/quotaview"
+	"github.com/yx-token/token-market/internal/pkg/timezone"
+	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/gin-gonic/gin"
 )
 

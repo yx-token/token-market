@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/buyer"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/settings"
-	"github.com/yx-token/idlicat/market/internal/sub2api/replica"
-	"github.com/yx-token/idlicat/market/internal/testutil"
+	"github.com/yx-token/token-market/market/internal/buyer"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/settings"
+	"github.com/yx-token/token-market/market/internal/sub2api/replica"
+	"github.com/yx-token/token-market/market/internal/testutil"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

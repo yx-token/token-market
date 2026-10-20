@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/quality/thirdparty"
-	"github.com/yx-token/idlicat/market/internal/testutil/fakebazaar"
+	"github.com/yx-token/token-market/market/internal/quality/thirdparty"
+	"github.com/yx-token/token-market/market/internal/testutil/fakebazaar"
 )
 
 // target 是一个按 Anthropic Messages 协议作答的被测端点。

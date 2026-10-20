@@ -11,9 +11,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Wei-Shaw/sub2api/internal/idlecat"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/yx-token/token-market/internal/idlecat"
+	"github.com/yx-token/token-market/internal/pkg/response"
+	"github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/yx-token/idlicat/market/enginehost"
 )

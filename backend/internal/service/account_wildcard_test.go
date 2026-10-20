@@ -5,8 +5,8 @@ package service
 import (
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/domain"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"github.com/yx-token/token-market/internal/domain"
+	"github.com/yx-token/token-market/internal/pkg/xai"
 )
 
 func TestGrokAccountModelMappingCacheInvalidatesWithRuntimeSettings(t *testing.T) {

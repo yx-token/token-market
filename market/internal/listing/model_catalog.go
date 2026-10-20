@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/sub2api/adminclient"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 )
 
 // UpstreamModels 保留目录与卖家选择的区别：白名单为空值时，存量账号不限制模型。

@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
-	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/handler/admin"
+	"github.com/yx-token/token-market/internal/securityaudit"
+	"github.com/yx-token/token-market/internal/service"
 
 	"github.com/google/wire"
 )

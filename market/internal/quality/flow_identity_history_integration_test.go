@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 func TestIdentityHistoryRequiresSameModelsAndProviderRules(t *testing.T) {

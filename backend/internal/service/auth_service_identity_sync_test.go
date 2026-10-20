@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/authidentity"
-	"github.com/Wei-Shaw/sub2api/ent/enttest"
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/authidentity"
+	"github.com/yx-token/token-market/ent/enttest"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/repository"
+	"github.com/yx-token/token-market/internal/service"
 	"github.com/stretchr/testify/require"
 
 	"entgo.io/ent/dialect"

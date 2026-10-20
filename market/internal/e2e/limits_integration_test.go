@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/billing"
+	"github.com/yx-token/token-market/market/internal/billing"
 )
 
 // 买家 Key 花费限额，以及风控：买卖双方关联时提现转人工审核。

@@ -3,9 +3,9 @@ package repository
 import (
 	"context"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/compositemodelroute"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 type compositeModelRouteRepository struct {

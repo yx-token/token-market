@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	dbent "github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/paymentproviderinstance"
+	"github.com/yx-token/token-market/internal/payment"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
 const (

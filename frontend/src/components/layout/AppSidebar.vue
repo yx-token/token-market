@@ -853,7 +853,7 @@ const customMenuItemsForAdmin = computed(() => {
     .sort((a, b) => a.sort_order - b.sort_order)
 })
 
-// 底座是 sub2api 管理端。闲猫是同一套登录下的增量分组。
+// 管理端底座 + 侧栏「闲猫」市场增量（同一套管理员登录）。
 const adminNavItems = computed((): NavItem[] => {
   const baseItems: NavItem[] = [
     { path: '/admin/dashboard', label: t('nav.dashboard'), icon: DashboardIcon },

@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/setting"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/ent"
+	"github.com/yx-token/token-market/ent/setting"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 type settingRepository struct {

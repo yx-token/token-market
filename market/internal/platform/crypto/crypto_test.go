@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/platform/config"
+	"github.com/yx-token/token-market/market/internal/platform/config"
 )
 
 func key(ch string) string {

@@ -3,8 +3,8 @@ package gateway_test
 import (
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/sub2api/adminclient"
-	"github.com/yx-token/idlicat/market/internal/sub2api/gateway"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
+	"github.com/yx-token/token-market/market/internal/sub2api/gateway"
 )
 
 func TestHTTPSatisfiesAdmin(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // fromEngine 用已登录的引擎管理员会话换发闲猫 tm_token（兼容旧桥接）。

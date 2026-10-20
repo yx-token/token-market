@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/yx-token/token-market/internal/pkg/apicompat"
 	"github.com/stretchr/testify/require"
 )
 

@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/sub2api/ops"
-	"github.com/yx-token/idlicat/market/internal/sub2api/opshandlers"
+	"github.com/yx-token/token-market/market/internal/sub2api/ops"
+	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
 )
 
 func TestStoreCreditWalletReconciliationIncludesInflightRemainder(t *testing.T) {

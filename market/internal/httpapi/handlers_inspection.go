@@ -5,8 +5,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 func inspectionSettingsView(st inspection.Settings) any {

@@ -3,8 +3,8 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/yx-token/idlicat/market/internal/billing"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/billing"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 func (s *Server) purchaseCreditPack(w http.ResponseWriter, r *http.Request) error {

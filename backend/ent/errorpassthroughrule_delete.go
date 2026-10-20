@@ -8,8 +8,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
-	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/yx-token/token-market/ent/errorpassthroughrule"
+	"github.com/yx-token/token-market/ent/predicate"
 )
 
 // ErrorPassthroughRuleDelete is the builder for deleting a ErrorPassthroughRule entity.

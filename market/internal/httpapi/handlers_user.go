@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/yx-token/idlicat/market/internal/account"
-	"github.com/yx-token/idlicat/market/internal/billing"
-	"github.com/yx-token/idlicat/market/internal/buyer"
-	"github.com/yx-token/idlicat/market/internal/listing"
-	"github.com/yx-token/idlicat/market/internal/market"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/account"
+	"github.com/yx-token/token-market/market/internal/billing"
+	"github.com/yx-token/token-market/market/internal/buyer"
+	"github.com/yx-token/token-market/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/market"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // ---- 账号 ----

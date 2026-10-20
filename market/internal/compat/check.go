@@ -4,7 +4,7 @@ import (
 	"context"
 	"sort"
 
-	"github.com/yx-token/idlicat/market/contract"
+	"github.com/yx-token/token-market/market/contract"
 )
 
 // Report 是一次兼容检查的结果。

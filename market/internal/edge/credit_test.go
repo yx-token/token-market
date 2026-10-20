@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yx-token/idlicat/market/internal/edgecfg"
+	"github.com/yx-token/token-market/market/internal/edgecfg"
 )
 
 type creditSelectFunc func(context.Context, *edgecfg.KeyConfig, edgecfg.Hop, string, int64) (*CreditLease, error)

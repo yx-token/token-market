@@ -17,14 +17,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yx-token/idlicat/market/contract"
-	"github.com/yx-token/idlicat/market/internal/app"
-	"github.com/yx-token/idlicat/market/internal/billing"
-	"github.com/yx-token/idlicat/market/internal/platform/buildinfo"
-	"github.com/yx-token/idlicat/market/internal/platform/config"
-	"github.com/yx-token/idlicat/market/internal/sub2api/compatguard"
-	"github.com/yx-token/idlicat/market/internal/sub2api/ops"
-	"github.com/yx-token/idlicat/market/internal/sub2api/opshandlers"
+	"github.com/yx-token/token-market/market/contract"
+	"github.com/yx-token/token-market/market/internal/app"
+	"github.com/yx-token/token-market/market/internal/billing"
+	"github.com/yx-token/token-market/market/internal/platform/buildinfo"
+	"github.com/yx-token/token-market/market/internal/platform/config"
+	"github.com/yx-token/token-market/market/internal/sub2api/compatguard"
+	"github.com/yx-token/token-market/market/internal/sub2api/ops"
+	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

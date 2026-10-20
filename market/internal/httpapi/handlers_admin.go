@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/billing"
-	"github.com/yx-token/idlicat/market/internal/listing"
-	"github.com/yx-token/idlicat/market/internal/market"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
-	"github.com/yx-token/idlicat/market/internal/quality"
-	"github.com/yx-token/idlicat/market/internal/scheduling"
-	"github.com/yx-token/idlicat/market/internal/settings"
+	"github.com/yx-token/token-market/market/internal/billing"
+	"github.com/yx-token/token-market/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/market"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/quality"
+	"github.com/yx-token/token-market/market/internal/scheduling"
+	"github.com/yx-token/token-market/market/internal/settings"
 	"github.com/jackc/pgx/v5"
 )
 

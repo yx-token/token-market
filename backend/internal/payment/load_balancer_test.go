@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
+	dbent "github.com/yx-token/token-market/ent"
 )
 
 func TestInstanceSupportsType(t *testing.T) {

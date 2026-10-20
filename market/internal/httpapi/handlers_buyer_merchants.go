@@ -3,9 +3,9 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/yx-token/idlicat/market/internal/buyer"
-	"github.com/yx-token/idlicat/market/internal/market"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/buyer"
+	"github.com/yx-token/token-market/market/internal/market"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 func (s *Server) buyerMerchants(w http.ResponseWriter, r *http.Request) error {

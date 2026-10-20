@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
 // bindIdentityShadow 把市场买家绑定到同邮箱的引擎用户，作为 buyer 影子身份。

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/yx-token/idlicat/market/internal/sub2api/adminclient"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 )
 
 // Admin 覆盖出站 handlers 所需的 Admin API 写面。

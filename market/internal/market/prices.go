@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/sub2api/adminclient"
+	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 )
 
 // Price 是一个模型的官方价格（美元 / 百万 token），寄售与回收倍率都相对它计算。

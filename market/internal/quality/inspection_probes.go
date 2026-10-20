@@ -12,7 +12,7 @@ import (
 	"image/png"
 	"strings"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 // 附件由平台自己生成并审阅；无外链、脚本、个人信息或敏感题材。

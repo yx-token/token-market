@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/yx-token/token-market/internal/pkg/antigravity"
+	"github.com/yx-token/token-market/internal/pkg/apicompat"
+	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
 

@@ -4,7 +4,7 @@ package repository
 
 import (
 	"encoding/json"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/yx-token/token-market/internal/service"
 )
 
 func (s *ProxyExpirySuite) TestRevertClearsBillingProbe() {

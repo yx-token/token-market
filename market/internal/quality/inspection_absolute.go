@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 type InspectOptions struct {

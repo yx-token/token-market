@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/quality"
-	"github.com/yx-token/idlicat/market/internal/testutil/fakesub2api"
+	"github.com/yx-token/token-market/market/internal/quality"
+	"github.com/yx-token/token-market/market/internal/testutil/fakesub2api"
 )
 
 // inspectionProbeAccount 通过现有管理与卖家接口创建实际并发为 1 的被测账号。

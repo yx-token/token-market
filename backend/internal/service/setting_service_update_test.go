@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/antigravity"
+	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 

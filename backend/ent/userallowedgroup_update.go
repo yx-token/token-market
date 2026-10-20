@@ -10,10 +10,10 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/group"
-	"github.com/Wei-Shaw/sub2api/ent/predicate"
-	"github.com/Wei-Shaw/sub2api/ent/user"
-	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
+	"github.com/yx-token/token-market/ent/group"
+	"github.com/yx-token/token-market/ent/predicate"
+	"github.com/yx-token/token-market/ent/user"
+	"github.com/yx-token/token-market/ent/userallowedgroup"
 )
 
 // UserAllowedGroupUpdate is the builder for updating UserAllowedGroup entities.

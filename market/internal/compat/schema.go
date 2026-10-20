@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/yx-token/idlicat/market/internal/sub2api/replica"
+	"github.com/yx-token/token-market/market/internal/sub2api/replica"
 	"github.com/jackc/pgx/v5"
 )
 

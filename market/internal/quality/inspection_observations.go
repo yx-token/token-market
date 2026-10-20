@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 func fmtInspectionKey(id int64, idx int) string { return fmt.Sprintf("%d/%d", id, idx) }

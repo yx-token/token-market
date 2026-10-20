@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/yx-token/token-market/internal/payment"
 )
 
 // EasyPay constants.

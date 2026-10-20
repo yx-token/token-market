@@ -28,9 +28,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/payment"
-	"github.com/yx-token/idlicat/market/internal/payment/alipay"
-	"github.com/yx-token/idlicat/market/internal/platform/randx"
+	"github.com/yx-token/token-market/market/internal/payment"
+	"github.com/yx-token/token-market/market/internal/payment/alipay"
+	"github.com/yx-token/token-market/market/internal/platform/randx"
 )
 
 // Keys 是替身与商户两侧的密钥。替身持有平台私钥，用商户公钥验签。

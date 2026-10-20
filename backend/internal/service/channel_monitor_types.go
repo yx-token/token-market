@@ -3,7 +3,7 @@ package service
 import (
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/yx-token/token-market/internal/domain"
 )
 
 // MonitorBodyOverrideMode 自定义请求体处理模式。

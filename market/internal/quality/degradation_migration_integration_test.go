@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/platform/db"
-	"github.com/yx-token/idlicat/market/internal/testutil"
+	"github.com/yx-token/token-market/market/internal/platform/db"
+	"github.com/yx-token/token-market/market/internal/testutil"
 )
 
 // 0033 为存量策略补降智流程、新增冻结列，并把限定厂商/型号的旧测智题迁到独立的降智套件。

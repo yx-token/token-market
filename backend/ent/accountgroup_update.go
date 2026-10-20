@@ -10,10 +10,10 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/account"
-	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
-	"github.com/Wei-Shaw/sub2api/ent/group"
-	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/yx-token/token-market/ent/account"
+	"github.com/yx-token/token-market/ent/accountgroup"
+	"github.com/yx-token/token-market/ent/group"
+	"github.com/yx-token/token-market/ent/predicate"
 )
 
 // AccountGroupUpdate is the builder for updating AccountGroup entities.

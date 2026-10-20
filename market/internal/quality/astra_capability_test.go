@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/inspection"
 )
 
 // 迁移前原定义的独立夹具，防止移动时题面或 regex 悄悄改变。

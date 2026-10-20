@@ -3,9 +3,9 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/yx-token/idlicat/market/internal/listing"
-	"github.com/yx-token/idlicat/market/internal/scheduling"
-	"github.com/yx-token/idlicat/market/internal/sub2api/replica"
+	"github.com/yx-token/token-market/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/scheduling"
+	"github.com/yx-token/token-market/market/internal/sub2api/replica"
 )
 
 // fusedAccount 是一条供给：闲猫上游与 sub2api 账号是同一资源。

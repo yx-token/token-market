@@ -9,8 +9,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/yx-token/idlicat/market/internal/inspection"
-	"github.com/yx-token/idlicat/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/jackc/pgx/v5"
 )
 

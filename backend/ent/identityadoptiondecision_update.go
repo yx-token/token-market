@@ -11,10 +11,10 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/Wei-Shaw/sub2api/ent/authidentity"
-	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
-	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
-	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/yx-token/token-market/ent/authidentity"
+	"github.com/yx-token/token-market/ent/identityadoptiondecision"
+	"github.com/yx-token/token-market/ent/pendingauthsession"
+	"github.com/yx-token/token-market/ent/predicate"
 )
 
 // IdentityAdoptionDecisionUpdate is the builder for updating IdentityAdoptionDecision entities.
