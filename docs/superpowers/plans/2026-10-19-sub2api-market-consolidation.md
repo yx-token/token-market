@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go、PostgreSQL、Redis、sub2api v0.2.14 全树、token-market 迁入模块、Vue 3（本产品风格）。
 
-**宿主路径：** 本仓 `idlicat/`（产品名 Idlicat；完整 sub2api + `market/`；已提交到 GitHub）  
+**宿主路径：** 本仓库根目录（原 idlicat 宿主）（产品名 Idlicat；完整 sub2api + `market/`；已提交到 GitHub）  
 **过渡仓：** 本仓库根目录市场实现（满足退役条件前仍可发版）
 
 **ADR:** [docs/adr/0001-sub2api-market-consolidation.md](../../adr/0001-sub2api-market-consolidation.md)  
@@ -62,11 +62,11 @@
 
 ## 宿主仓库与社区同步
 
-产品宿主为 **`idlicat/`**（已纳入本仓并推送）。社区上游 URL：`https://github.com/Wei-Shaw/sub2api`。
+产品宿主为 **本仓库根目录**（由 idlicat 覆盖旧过渡实现）。社区上游 URL：`https://github.com/Wei-Shaw/sub2api`。
 
 - [x] 已用社区树创建 `idlicat`（含 `backend/`/`frontend/` 等全量目录）
 - [x] 已拷入闲置 TOKEN 市场环境：`market/deploy`、`market/scripts`、`market/Dockerfile`、`market/Makefile`、`.github/workflows/market-*.yml`
-- [x] 宿主树已提交到本仓 `idlicat/`（单管理端壳、闲猫增量、`/shop`、返回 C 端入口）
+- [x] 宿主树已提交到本仓库根目录（原 idlicat 宿主）（单管理端壳、闲猫增量、`/shop`、返回 C 端入口）
 - [ ] 升级社区版本：在 `idlicat` 上 fetch 社区 tag → merge → `s2a-compat` + market e2e → 再改 `market/`
 - [ ] 闲猫功能写进 `backend/` 与 `frontend/`；升级社区时再解决冲突。不另维护一套用户和后台
 

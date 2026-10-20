@@ -1,48 +1,161 @@
-# token-market 镜像：同一镜像包含 market-api（含前端页面）、market-worker、market-edge 与 s2a-compat，
-# 用不同的启动命令运行不同组件（见 deploy/docker-compose.yml）。
-#
-# 无法直连 Docker Hub 时可指定镜像源，例如：docker build --build-arg REGISTRY=docker.m.daocloud.io/ .
-# 多架构：前端与 Go 都在构建机的架构上编译（Go 交叉编译），只有最后一层按目标架构组装，
-# 所以 docker buildx build --platform linux/amd64,linux/arm64 不需要在模拟器里跑编译。
-ARG REGISTRY=
+# syntax=docker/dockerfile:1.7
+# =============================================================================
+# Sub2API Multi-Stage Dockerfile
+# =============================================================================
+# Stage 1: Build frontend
+# Stage 2: Build Go backend with embedded frontend
+# Stage 3: Final minimal image
+# =============================================================================
 
-FROM --platform=$BUILDPLATFORM ${REGISTRY}library/node:22-alpine AS web
-WORKDIR /src/web
-RUN corepack enable
-COPY web/package.json web/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-COPY web/ ./
+ARG NODE_IMAGE=node:24-alpine
+ARG GOLANG_IMAGE=golang:1.27.0-alpine
+ARG ALPINE_IMAGE=alpine:3.21
+ARG POSTGRES_IMAGE=postgres:18-alpine
+ARG GOPROXY=https://goproxy.cn,direct
+ARG GOSUMDB=sum.golang.google.cn
+ARG NPM_CONFIG_REGISTRY=
+
+# -----------------------------------------------------------------------------
+# Stage 1: Frontend Builder
+# -----------------------------------------------------------------------------
+# --platform=$BUILDPLATFORM: the frontend output is JS (arch-neutral), so build
+# it on the native host arch instead of under QEMU emulation for the target.
+FROM --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS frontend-builder
+ARG NPM_CONFIG_REGISTRY
+
+WORKDIR /app/frontend
+
+# Install pnpm (pinned to v9 to match CI and keep builds reproducible)
+RUN corepack enable && corepack prepare pnpm@9 --activate
+
+# Install dependencies first (better caching)
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/store \
+    if [ -n "${NPM_CONFIG_REGISTRY}" ]; then pnpm config set registry "${NPM_CONFIG_REGISTRY}"; fi && \
+    pnpm install --frozen-lockfile --prefer-offline
+
+# Copy frontend source and build.
+# LegalDocumentView.vue (admin-compliance gate) build-time imports
+# ../../../../docs/legal/*.md?raw, so docs/legal/ must sit beside frontend/
+# in the image (WORKDIR /app/frontend -> resolves to /app/docs/legal/*.md).
+# Copy only that subtree to keep the build dependency minimal.
+COPY frontend/ ./
+COPY docs/legal/ /app/docs/legal/
 RUN pnpm run build
 
-FROM --platform=$BUILDPLATFORM ${REGISTRY}library/golang:1.26-alpine AS go
-WORKDIR /src
-ENV CGO_ENABLED=0 GOFLAGS=-trimpath
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
+# -----------------------------------------------------------------------------
+# Stage 2: Backend Builder
+# -----------------------------------------------------------------------------
+# --platform=$BUILDPLATFORM: run the Go toolchain on the native host arch and
+# cross-compile to the target arch below. The binary is CGO_ENABLED=0, so this
+# is a clean pure-Go cross-compile — no QEMU emulation of go mod download / go
+# build (emulated networking here was dropping module fetches with EOF).
+FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS backend-builder
+
+# Build arguments for version info (set by CI)
+ARG VERSION=
+ARG COMMIT=docker
+ARG DATE
+ARG GOPROXY
+ARG GOSUMDB
+# Populated by buildx from the --platform target (e.g. linux/amd64).
 ARG TARGETOS
 ARG TARGETARCH
-ARG VERSION=dev
-ARG COMMIT=
-RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
-      -ldflags="-s -w -X github.com/DueGin/token-market/internal/platform/buildinfo.Version=${VERSION} -X github.com/DueGin/token-market/internal/platform/buildinfo.Commit=${COMMIT}" \
-      -o /out/ ./cmd/api ./cmd/worker ./cmd/edge ./cmd/s2a-compat ./cmd/market-runner
-RUN printf '{"schema":1,"version":"%s","commit":"%s","os":"%s","arch":"%s"}\n' \
-      "$VERSION" "$COMMIT" "$TARGETOS" "$TARGETARCH" > /manifest.json
 
-# Release 更新包直接导出此阶段，复用镜像里的二进制和前端，不运行目标架构程序。
-FROM scratch AS release
-COPY --from=go /out/ /bin/
-COPY --from=web /src/web/dist /web/
-COPY --from=go /manifest.json /manifest.json
+ENV GOPROXY=${GOPROXY}
+ENV GOSUMDB=${GOSUMDB}
 
-FROM ${REGISTRY}library/alpine:3.21
-RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 market
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /app/backend
+
+# Copy go mod files first (better caching)
+COPY backend/go.mod backend/go.sum ./
+# Cache mount keeps the module cache across builds so a transient CDN blip on
+# retry resumes instead of re-fetching every zip from scratch.
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
+    go mod download
+
+# Copy backend source first
+COPY backend/ ./
+
+# Copy frontend dist from previous stage (must be after backend copy to avoid being overwritten)
+COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
+
+# Build the binary (BuildType=release for CI builds, embed frontend)
+# Version precedence: build arg VERSION > exact git tag > cmd/server/VERSION
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
+    VERSION_VALUE="${VERSION}" && \
+    if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
+    DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
+    -tags embed \
+    -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
+    -trimpath \
+    -o /app/sub2api \
+    ./cmd/server
+
+# -----------------------------------------------------------------------------
+# Stage 3: PostgreSQL Client (version-matched with docker-compose)
+# -----------------------------------------------------------------------------
+FROM ${POSTGRES_IMAGE} AS pg-client
+
+# -----------------------------------------------------------------------------
+# Stage 4: Final Runtime Image
+# -----------------------------------------------------------------------------
+FROM ${ALPINE_IMAGE}
+
+# Labels
+LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
+LABEL description="Sub2API - AI API Gateway Platform"
+LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    su-exec \
+    libpq \
+    zstd-libs \
+    lz4-libs \
+    krb5-libs \
+    libldap \
+    libedit \
+    && rm -rf /var/cache/apk/*
+
+# Copy pg_dump and psql from the same postgres image used in docker-compose
+# This ensures version consistency between backup tools and the database server
+COPY --from=pg-client /usr/local/bin/pg_dump /usr/local/bin/pg_dump
+COPY --from=pg-client /usr/local/bin/psql /usr/local/bin/psql
+COPY --from=pg-client /usr/local/lib/libpq.so.5* /usr/local/lib/
+
+# Create non-root user
+RUN addgroup -g 1000 sub2api && \
+    adduser -u 1000 -G sub2api -s /bin/sh -D sub2api
+
+# Set working directory
 WORKDIR /app
-COPY --from=release / /app/
-ENV TM_HTTP_WEB_DIR=/app/web TM_EDGE_SPOOL_DIR=/app/data/edge-spool TM_UPDATE_RUNTIME_DIR=/app/runtime TZ=Asia/Shanghai
-RUN mkdir -p /app/data /app/runtime && chown market /app/data /app/runtime
-USER market
-EXPOSE 8080 8090 8091 8092
-ENTRYPOINT ["/app/bin/market-runner"]
-CMD ["api"]
+
+# Copy binary/resources with ownership to avoid extra full-layer chown copy
+COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
+COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
+
+# Create data directory
+RUN mkdir -p /app/data && chown sub2api:sub2api /app/data
+
+# Copy entrypoint script (fixes volume permissions then drops to sub2api)
+COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Expose port (can be overridden by SERVER_PORT env var)
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget -q -T 5 -O /dev/null http://localhost:${SERVER_PORT:-8080}/health || exit 1
+
+# Run the application (entrypoint fixes /app/data ownership then execs as sub2api)
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["/app/sub2api"]
