@@ -11,7 +11,7 @@
 3. 使用新 Compose 执行 `pull`、`up -d`。三个服务均以 `market-runner` 启动，并挂载同一个 `runtime:/app/runtime` 卷。
 4. 管理员访问 `/admin/system-update`。未来正式 Release 提供当前架构更新包后，可以在此检查并确认更新。
 
-Release 工作流从镜像的 `release` 构建阶段导出 `token-market_linux_amd64.tar.gz`、`token-market_linux_arm64.tar.gz` 和 `checksums.txt`，无需运行另一种架构的程序。预发布版本不会作为站内更新目标。旧 Release 缺少更新附件时，界面禁用更新并提示通过镜像升级。
+Release 工作流从镜像的 `release` 构建阶段导出 `token-market_linux_amd64.tar.gz`、`token-market_linux_arm64.tar.gz` 和 `token-market_checksums.txt`（与宿主二进制的 `checksums.txt` 同在一个 Release，单独命名；旧 Release 只有 `checksums.txt` 时仍可识别），无需运行另一种架构的程序。预发布版本不会作为站内更新目标。旧 Release 缺少更新附件时，界面禁用更新并提示通过镜像升级。
 
 ## 更新与恢复流程
 

@@ -93,3 +93,14 @@ func TestRejectsUntrustedRedirectAndIncompleteDownload(t *testing.T) {
 		t.Fatal("accepted untrusted redirect")
 	}
 }
+
+func TestChecksumAssetPrefersMarketFile(t *testing.T) {
+	r := &Release{Assets: []Asset{{ID: 1, Name: "checksums.txt", Size: 10}, {ID: 2, Name: ChecksumName, Size: 10}}}
+	if a := checksumAsset(r); a == nil || a.Name != ChecksumName {
+		t.Fatalf("market checksum file should win: %+v", a)
+	}
+	r.Assets = r.Assets[:1]
+	if a := checksumAsset(r); a == nil || a.Name != "checksums.txt" {
+		t.Fatalf("old releases fall back to checksums.txt: %+v", a)
+	}
+}

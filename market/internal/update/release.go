@@ -167,9 +167,20 @@ func (g *GitHub) Latest(ctx context.Context, force bool) (*Release, error) {
 	}
 	r := &Release{Version: remote.Tag, Name: remote.Name, Notes: remote.Body, PublishedAt: remote.PublishedAt,
 		URL: "https://github.com/" + g.Repository + "/releases/tag/" + remote.Tag, Assets: remote.Assets}
-	r.Compatible = findAsset(r, ArchiveName()) != nil && findAsset(r, "checksums.txt") != nil
+	r.Compatible = findAsset(r, ArchiveName()) != nil && checksumAsset(r) != nil
 	g.cached, g.cachedAt = r, time.Now()
 	return r, nil
+}
+
+// ChecksumName 是更新包的校验文件。它与宿主二进制的 checksums.txt 发布在同一个 Release，单独命名避免互相覆盖。
+const ChecksumName = "token-market_checksums.txt"
+
+// checksumAsset 优先使用市场专用校验文件，兼容只有 checksums.txt 的旧 Release。
+func checksumAsset(r *Release) *Asset {
+	if a := findAsset(r, ChecksumName); a != nil {
+		return a
+	}
+	return findAsset(r, "checksums.txt")
 }
 
 func findAsset(r *Release, name string) *Asset {

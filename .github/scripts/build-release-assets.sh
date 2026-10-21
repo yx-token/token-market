@@ -25,4 +25,5 @@ for arch in amd64 arm64; do
     manifest.json bin/api bin/worker bin/edge bin/s2a-compat web
 done
 cd release-assets
-sha256sum token-market_linux_amd64.tar.gz token-market_linux_arm64.tar.gz > checksums.txt
+# 宿主二进制的 checksums.txt 在同一个 Release，市场单独命名避免互相覆盖
+sha256sum token-market_linux_amd64.tar.gz token-market_linux_arm64.tar.gz > token-market_checksums.txt

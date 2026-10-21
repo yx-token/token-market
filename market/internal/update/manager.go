@@ -171,7 +171,7 @@ func (m *Manager) perform(ctx context.Context, r *Release, s *state) error {
 	if err := m.phase(s, "downloading", "正在下载更新包"); err != nil {
 		return err
 	}
-	a, c := findAsset(r, ArchiveName()), findAsset(r, "checksums.txt")
+	a, c := findAsset(r, ArchiveName()), checksumAsset(r)
 	if a == nil || c == nil {
 		return errors.New("更新附件不完整")
 	}
