@@ -1,0 +1,7 @@
+interface:
+  display_name: "IdleCat Admin"
+  short_description: "Manage 闲猫 admin accounts and settings"
+  default_prompt: "Use $xianmao-admin to inspect and manage 闲猫 backend accounts safely."
+
+policy:
+  allow_implicit_invocation: true

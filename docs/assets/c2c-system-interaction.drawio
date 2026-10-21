@@ -1,0 +1,276 @@
+<mxfile host="65bd71144e">
+    <diagram name="C2C业务流" id="c2c1">
+        <mxGraphModel dx="1339" dy="577" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="3600" background="#FFFFFF" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="t" value="C2C 业务流程（两种商品 + 平台回收）" style="text;html=1;align=left;fontSize=22;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="16" width="560" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="core" value="钱先进平台托管；卖家只拿实际用量。买家可购商品只有 A 通道 / B 订阅套餐。平台回收不是商品，是卖家把产能包销进保障池，与 A/B 互斥、不能同时挂市场。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3CD;strokeColor=#856404;fontColor=#000000;fontSize=13;align=left;spacingLeft=12;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="52" width="1000" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="laneB" value="买家" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#0D47A1;fontColor=#000000;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="104" width="100" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="laneS" value="卖家" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontColor=#000000;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+                    <mxGeometry x="160" y="104" width="100" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="laneP" value="平台" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;fontColor=#000000;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+                    <mxGeometry x="280" y="104" width="100" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="laneU" value="上游服务" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#1B5E20;fontColor=#000000;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+                    <mxGeometry x="400" y="104" width="120" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="lanePay" value="支付" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#B71C1C;fontColor=#000000;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+                    <mxGeometry x="540" y="104" width="100" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1" value="① 上架：接入 →（可选）平台质检 → 二选一：挂商品 A/B，或走平台回收" style="swimlane;fontStyle=1;horizontal=1;startSize=36;fillColor=#FFE082;strokeColor=#F57F17;fontColor=#000000;fontSize=15;rounded=1;" vertex="1" parent="1">
+                    <mxGeometry x="50" y="180" width="1000" height="500" as="geometry"/>
+                </mxCell>
+                <mxCell id="a1" value="卖家接入上游&#10;声明可卖模型" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontColor=#000000;fontSize=13;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;" vertex="1" parent="p1">
+                    <mxGeometry x="20" y="52" width="160" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="aFork" value="是否走&#10;平台质检" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F57F17;fontColor=#000000;fontSize=13;align=center;fontStyle=1;" vertex="1" parent="p1">
+                    <mxGeometry x="220" y="52" width="140" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="a2y" value="走：打「平台质检」&#10;+ 质检报告（买家可看）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p1">
+                    <mxGeometry x="430" y="110" width="170" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="a2n" value="不走：无质检标签&#10;仍可上架" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#546E7A;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p1">
+                    <mxGeometry x="435" y="44" width="170" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="a3" value="处置选择&#10;挂 A/B 或 走回收" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p1">
+                    <mxGeometry x="750" y="60" width="160" height="56" as="geometry"/>
+                </mxCell>
+                <mxCell id="ae1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p1" source="a1" target="aFork">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ae2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6A1B9A;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p1" source="aFork" target="a2y">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ae3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#546E7A;strokeWidth=2;endArrow=block;endFill=1;dashed=1;" edge="1" parent="p1" source="aFork" target="a2n">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ae4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p1" source="a2y" target="a3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ae5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;dashed=1;" edge="1" parent="p1" source="a2n" target="a3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="tags" value="服务标签（卖家勾选即承诺）：七天无理由全退 · 用完才退 · 仅质量问题可退 · ……；「平台质检」只能平台打，不可自贴" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3CD;strokeColor=#856404;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="p1">
+                    <mxGeometry x="40" y="164" width="960" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="pathTitle" value="接入后二选一（互斥）" style="text;html=1;align=left;fontSize=13;fontStyle=1;fontColor=#000000;" vertex="1" parent="p1">
+                    <mxGeometry x="40" y="204" width="200" height="24" as="geometry"/>
+                </mxCell>
+                <mxCell id="skuA" value="商品 A. 按量通道&lt;br&gt;卖家自定倍率+最低额度 M&lt;br&gt;进市场；可选再进保障池&lt;br&gt;可勾选服务标签" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;" vertex="1" parent="p1">
+                    <mxGeometry x="40" y="232" width="300" height="96" as="geometry"/>
+                </mxCell>
+                <mxCell id="skuB" value="商品 B. 订阅套餐&lt;br&gt;周期+售价+期内额度&lt;br&gt;进市场；不进保障池&lt;br&gt;可勾选服务标签" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;" vertex="1" parent="p1">
+                    <mxGeometry x="360" y="232" width="300" height="96" as="geometry"/>
+                </mxCell>
+                <mxCell id="skuC" value="非商品 · 平台回收&#10;不是挂给买家买的 SKU&#10;接受平台报价 → 只进保障池&#10;不能同时发成 A 或 B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;" vertex="1" parent="p1">
+                    <mxGeometry x="680" y="232" width="320" height="96" as="geometry"/>
+                </mxCell>
+                <mxCell id="a4" value="A/B 市场展示：价格 + 质检标签/报告 + 服务标签。回收单不进市场目录，买家看不见「回收商品」。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="p1">
+                    <mxGeometry x="40" y="348" width="960" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="n1" value="商品 = 买家可购的 A/B。回收 = 卖家↔平台的产能包销，用来喂保障池，不是第三种商品。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#FF8F00;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="p1">
+                    <mxGeometry x="40" y="404" width="960" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="n1b" value="同一上游同时只能一条有效处置；要从回收改挂 A/B（或反过来）须先关掉当前处置。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6A1B9A;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="p1">
+                    <mxGeometry x="40" y="452" width="960" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="pc" value="平台回收（非商品）：怎么收、收多少、控本，又让卖家觉得「在被回收」" style="swimlane;fontStyle=1;horizontal=1;startSize=36;fillColor=#A5D6A7;strokeColor=#1B5E20;fontColor=#000000;fontSize=15;rounded=1;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="680" width="1000" height="740" as="geometry"/>
+                </mxCell>
+                <mxCell id="cDef" value="定位：卖家产能处置，不是市场 SKU&#10;&#10;按量包销、不买断账号；用不完不预付；只对成功用量按 m_b 结算。&#10;与 A/B 互斥：走回收就不能再发成通道或订阅套餐；买家买的是保障池服务，不是「回收商品」。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;" vertex="1" parent="pc">
+                    <mxGeometry x="20" y="48" width="960" height="96" as="geometry"/>
+                </mxCell>
+                <mxCell id="cFlow" value="回收流程（不产生市场商品）" style="text;html=1;align=left;fontSize=13;fontStyle=1;fontColor=#000000;" vertex="1" parent="pc">
+                    <mxGeometry x="20" y="156" width="280" height="24" as="geometry"/>
+                </mxCell>
+                <mxCell id="cf1" value="1. 卖家放弃&#10;挂 A/B，改走回收" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontColor=#000000;fontSize=12;align=center;" vertex="1" parent="pc">
+                    <mxGeometry x="20" y="188" width="130" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="cf2" value="2. 平台出价&lt;br&gt;（待定：自动出价策略）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;fontColor=#000000;fontSize=12;align=center;" vertex="1" parent="pc">
+                    <mxGeometry x="170" y="188" width="140" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="cf3" value="3. 卖家&#10;接受 / 放弃" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontColor=#000000;fontSize=12;align=center;" vertex="1" parent="pc">
+                    <mxGeometry x="330" y="188" width="120" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="cf4" value="4. 调度分配（都可卖）&lt;br&gt;（待定：调度策略）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#1B5E20;fontColor=#000000;fontSize=12;align=center;" vertex="1" parent="pc">
+                    <mxGeometry x="470" y="188" width="120" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="cf5" value="5. 按成功用量&#10;× m_b 结算" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;fontColor=#000000;fontSize=12;align=center;" vertex="1" parent="pc">
+                    <mxGeometry x="610" y="188" width="140" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="cf6" value="6. 到期重报&#10;降价需再确认" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F57F17;fontColor=#000000;fontSize=12;align=center;" vertex="1" parent="pc">
+                    <mxGeometry x="770" y="188" width="140" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="cfe1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="pc" source="cf1" target="cf2">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="cfe2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="pc" source="cf2" target="cf3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="cfe3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="pc" source="cf3" target="cf4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="cfe4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="pc" source="cf4" target="cf5">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="cfe5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="pc" source="cf5" target="cf6">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="cPrice" value="回收定价（平台配置，卖家只能接受/拒绝）&#10;&#10;m_b = min( 回收基础倍率(厂商/档位) × 等级系数 , 池子成本上限 )&#10;池子成本上限 = 保障池售价 D × (1 − 最低毛利 − 安全缓冲)  → 保证平台不亏&#10;&#10;管理员配：buyback_base、等级系数、最低毛利、安全缓冲、报价有效期。等级越高 m_b 越高；降智/不可用不收。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#1B5E20;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;" vertex="1" parent="pc">
+                    <mxGeometry x="20" y="276" width="960" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="cFeel" value="让卖家觉得「在被回收」（体验设计）&#10;&#10;① 对标展示：回收价 vs 自己寄售可能价 vs「预计日消化」——强调稳量，不假装最高价&#10;② 优先吃量：回收号在保障池最前，额度先被用掉（这是回收的核心兑现）&#10;③ 包销承诺语言：稳定消化 / 按量结算 / 账号仍归你，不是贱卖账号&#10;④ 进度可见：今日已回收用量、本周预估收益、排队/满负荷提示&#10;⑤ 报价透明：等级→系数→封顶，卖家看懂为什么是这个价" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F57F17;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;" vertex="1" parent="pc">
+                    <mxGeometry x="20" y="408" width="460" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="cCost" value="控本策略（平台侧）&#10;&#10;① 硬封顶：m_b 永不超过池子成本上限&#10;② 需求闸门：保障池产能够用时收缩新收/降速；缺货时提价或扩收&#10;③ 质量门槛：仅达标等级可回收；降智立即踢出&#10;④ 同质低价优先：同等级先调度更低 m_b&#10;⑤ 结算预算：日/周回收支出上限，满则减速或暂停新收&#10;⑥ 到期重报：等级掉了降价须卖家确认，不自动亏本续&#10;⑦ 不预付买断：只用多少付多少" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;" vertex="1" parent="pc">
+                    <mxGeometry x="500" y="408" width="480" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="cBal" value="平衡口诀：用「优先吃量 + 透明报价 + 进度可见」换「略低于寄售的 m_b」；卖家卖确定性，平台买毛利与产能弹性。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="pc">
+                    <mxGeometry x="20" y="608" width="960" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="cMutex" value="互斥提醒：回收生效期间不可再挂 A/B；退出回收后才可重新发通道或订阅套餐。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2E7D32;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="pc">
+                    <mxGeometry x="20" y="660" width="960" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2" value="② 下单：买家只买商品 A/B，或开通保障池（池子背后含回收产能）" style="swimlane;fontStyle=1;horizontal=1;startSize=36;fillColor=#90CAF9;strokeColor=#0D47A1;fontColor=#000000;fontSize=15;rounded=1;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="1448" width="1000" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="b1" value="买家看标签/报告&#10;选商品 A 或 B&#10;或开通保障池" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#0D47A1;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p2">
+                    <mxGeometry x="20" y="52" width="220" height="72" as="geometry"/>
+                </mxCell>
+                <mxCell id="b2" value="支付进托管&#10;A 付 M / B 付套餐价&#10;/ 保障池充余额" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#B71C1C;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p2">
+                    <mxGeometry x="270" y="52" width="200" height="72" as="geometry"/>
+                </mxCell>
+                <mxCell id="b3" value="平台托管&#10;暂不给卖家" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p2">
+                    <mxGeometry x="500" y="52" width="160" height="72" as="geometry"/>
+                </mxCell>
+                <mxCell id="b4" value="获得使用资格&#10;回收卖家：等池子吃量" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#0D47A1;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p2">
+                    <mxGeometry x="690" y="52" width="270" height="72" as="geometry"/>
+                </mxCell>
+                <mxCell id="be1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p2" source="b1" target="b2">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="be2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p2" source="b2" target="b3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="be3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p2" source="b3" target="b4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="n2" value="买家只对 A/B（及保障池）下单；不存在「购买回收商品」。回收卖家收益只来自池子吃量。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" parent="p2" vertex="1">
+                    <mxGeometry x="20" y="144" width="940" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3" value="③ 使用：调用扣费；保障池优先吃回收产能（非商品侧）" style="swimlane;fontStyle=1;horizontal=1;startSize=36;fillColor=#CE93D8;strokeColor=#6A1B9A;fontColor=#000000;fontSize=15;rounded=1;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="1668" width="1000" height="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="c1" value="买家调用&#10;指定卖家或保障池" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#0D47A1;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p3">
+                    <mxGeometry x="20" y="52" width="180" height="56" as="geometry"/>
+                </mxCell>
+                <mxCell id="c2" value="平台转发上游&#10;成功则扣费结算" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p3">
+                    <mxGeometry x="230" y="52" width="180" height="56" as="geometry"/>
+                </mxCell>
+                <mxCell id="cA" value="A：先扣 M，超了扣余额" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;" vertex="1" parent="p3">
+                    <mxGeometry x="440" y="48" width="240" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="cB" value="B：扣期内额度；到期或用尽即止" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;" vertex="1" parent="p3">
+                    <mxGeometry x="440" y="84" width="240" height="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="cC" value="回收产能：池子流量优先落回收号&#10;卖家按 m_b；买家付池子价 D" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p3">
+                    <mxGeometry x="700" y="48" width="260" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="ce1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p3" source="c1" target="c2">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="n3" value="平台毛利来自：买家侧 D（或 A/B 抽佣）− 卖家侧 m_b/m_s。回收控本靠 m_b 封顶 + 吃量节奏。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="p3">
+                    <mxGeometry x="20" y="132" width="940" height="48" as="geometry"/>
+                </mxCell>
+                <mxCell id="p4" value="④ 退货（只针对商品 A/B；回收无买家退货单）" style="swimlane;fontStyle=1;horizontal=1;startSize=36;fillColor=#EF9A9A;strokeColor=#B71C1C;fontColor=#000000;fontSize=15;rounded=1;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="1908" width="1000" height="480" as="geometry"/>
+                </mxCell>
+                <mxCell id="std" value="商品 A/B：平台底线 + 服务标签；可退上限 A=未用 M、B=期内未用额度（且须在周期/标签允许内）。买卖协商环，买家可申请平台介入。&#10;平台回收：无买家订单可退；卖家退出回收即停新流量，已用量按当时 m_b 结算不回溯。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;spacingTop=6;verticalAlign=top;" vertex="1" parent="p4">
+                    <mxGeometry x="20" y="48" width="960" height="72" as="geometry"/>
+                </mxCell>
+                <mxCell id="d1" value="买家申请" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#0D47A1;fontColor=#000000;fontSize=12;align=center;" vertex="1" parent="p4">
+                    <mxGeometry x="20" y="144" width="120" height="56" as="geometry"/>
+                </mxCell>
+                <mxCell id="d2" value="卖家&#10;同意/还价/拒绝" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontColor=#000000;fontSize=12;align=center;" vertex="1" parent="p4">
+                    <mxGeometry x="170" y="144" width="140" height="56" as="geometry"/>
+                </mxCell>
+                <mxCell id="d3" value="买家回应" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#0D47A1;fontColor=#000000;fontSize=12;align=center;" vertex="1" parent="p4">
+                    <mxGeometry x="340" y="144" width="120" height="56" as="geometry"/>
+                </mxCell>
+                <mxCell id="dLoop" value="协商环&#10;可多次" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3CD;strokeColor=#856404;fontColor=#000000;fontSize=12;align=center;fontStyle=1;" vertex="1" parent="p4">
+                    <mxGeometry x="490" y="144" width="120" height="56" as="geometry"/>
+                </mxCell>
+                <mxCell id="dOk" value="谈拢→打款" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#1B5E20;fontColor=#000000;fontSize=12;align=center;" vertex="1" parent="p4">
+                    <mxGeometry x="640" y="144" width="120" height="56" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" value="买家申请介入→平台按标签+证据裁定→执行退款" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="p4">
+                    <mxGeometry x="20" y="228" width="960" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="de1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p4" source="d1" target="d2">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="de2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p4" source="d2" target="d3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="de3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#856404;strokeWidth=2;endArrow=block;endFill=1;dashed=1;" edge="1" parent="p4" source="d3" target="dLoop">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="de4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#856404;strokeWidth=2;endArrow=block;endFill=1;dashed=1;" edge="1" parent="p4" source="dLoop" target="d1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="550" y="220"/>
+                            <mxPoint x="80" y="220"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="de5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2E7D32;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p4" source="dLoop" target="dOk">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="who" value="争议款托管不解冻。有质检报告时质量纠纷更好裁。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#37474F;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="p4">
+                    <mxGeometry x="20" y="292" width="960" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="n4" value="平台介入仅当买家主动申请，不是卖家一拒绝就自动进。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" parent="p4" vertex="1">
+                    <mxGeometry x="20" y="348" width="960" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="n4c" value="回收退出：卖家关处置即停新流量；已用量照结。平台可因降智/超预算停收。退出后才能再挂 A/B。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontColor=#000000;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="p4">
+                    <mxGeometry x="20" y="396" width="960" height="32" as="geometry"/>
+                </mxCell>
+                <mxCell id="p5" value="⑤ 结算：只结无争议的已用量（商品与回收同一套托管→解冻→提现）" style="swimlane;fontStyle=1;horizontal=1;startSize=36;fillColor=#A5D6A7;strokeColor=#1B5E20;fontColor=#000000;fontSize=15;rounded=1;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="2408" width="1000" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="w1" value="按成功用量入账&#10;A/B用m_s · 回收用m_b" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#1B5E20;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" parent="p5" vertex="1">
+                    <mxGeometry x="20" y="52" width="240" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="w2" value="冻结观察期&#10;争议款不解冻" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#1B5E20;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p5">
+                    <mxGeometry x="270" y="52" width="180" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="w3" value="卖家申请提现" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p5">
+                    <mxGeometry x="480" y="52" width="160" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="w4" value="平台审核打款" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#6A1B9A;fontColor=#000000;fontSize=12;align=left;spacingLeft=8;spacingTop=4;verticalAlign=top;" vertex="1" parent="p5">
+                    <mxGeometry x="670" y="52" width="280" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="we1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p5" source="w1" target="w2">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="we2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p5" source="w2" target="w3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="we3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#000000;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="p5" source="w3" target="w4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="sum" value="总览：商品只有 A/B。上架后要么挂 A/B 进市场，要么走平台回收进保障池（互斥，发不成 A/B）。&#10;买家下单只对 A/B/保障池 → 使用扣费（池子优先吃回收产能）→ A/B 协商退货 → 结算。&#10;回收：非商品·按量包销·控本封顶·优先吃量换确定性。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#37474F;fontColor=#000000;fontSize=13;align=left;spacingLeft=12;spacingTop=8;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="2568" width="1000" height="100" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

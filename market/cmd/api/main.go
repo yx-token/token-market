@@ -1,0 +1,97 @@
+// market-api：控制面 HTTP 接口（账号、市场、买家、卖家、管理后台）。
+package main
+
+import (
+	"context"
+	"flag"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/yx-token/token-market/market/internal/app"
+	"github.com/yx-token/token-market/market/internal/httpapi"
+	"github.com/yx-token/token-market/market/internal/platform/buildinfo"
+	"github.com/yx-token/token-market/market/internal/platform/config"
+	"github.com/yx-token/token-market/market/internal/quality"
+	"github.com/yx-token/token-market/market/internal/update"
+)
+
+func main() {
+	configPath := flag.String("config", "", "配置文件路径（可选，敏感项建议用环境变量）")
+	flag.Parse()
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(*configPath, log); err != nil {
+		log.Error("api exited", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run(configPath string, log *slog.Logger) error {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	a, err := app.Build(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer a.Close()
+
+	if cfg.Auth.BootstrapAdminEmail != "" {
+		created, err := a.Accounts.EnsureBootstrapAdmin(ctx, cfg.Auth.BootstrapAdminEmail, cfg.Auth.BootstrapAdminPassword)
+		if err != nil {
+			return err
+		}
+		if created {
+			log.Info("bootstrap admin created", "email", cfg.Auth.BootstrapAdminEmail)
+		}
+	}
+	if n, err := quality.SeedDefaultItems(ctx, a.DB); err != nil {
+		return err
+	} else if n > 0 {
+		log.Info("seeded default probe items", "count", n)
+	}
+
+	updater := &update.Manager{
+		Runtime: update.Runtime{Root: cfg.Update.RuntimeDir},
+		Source:  update.NewGitHub(cfg.Update.Repository, cfg.Update.GitHubToken),
+		Version: buildinfo.Version, Commit: buildinfo.Commit, Repository: cfg.Update.Repository,
+		Managed: os.Getenv("TM_UPDATE_MANAGED") == "1", Context: ctx, Log: log,
+	}
+	if err := updater.RecoverInterrupted(); err != nil {
+		return err
+	}
+	api := &httpapi.Server{
+		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, IAM: a.IAM, Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools,
+		Keys: a.Keys, Funds: a.Funds, Payments: a.Payments, Market: a.Market, Quality: a.Quality, Replica: a.Replica, Risk: a.Risk, Kicker: a.Kicker, Log: log,
+		TrustedProxies: cfg.HTTP.TrustedProxies, WebDir: cfg.HTTP.WebDir, AdminWebDir: cfg.HTTP.AdminWebDir,
+		EngineProxyURL: cfg.Sub2API.BaseURL, EngineAdminKey: cfg.Sub2API.AdminAPIKey,
+		EngineLoginPassword: cfg.Auth.BootstrapAdminPassword, EdgeURL: cfg.Edge.PublicURL,
+		Updater: updater,
+	}
+	srv := &http.Server{
+		Addr:              cfg.HTTP.Addr,
+		Handler:           api.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.ListenAndServe() }()
+	log.Info("api listening", "addr", cfg.HTTP.Addr, "version", buildinfo.Version, "commit", buildinfo.Commit)
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return srv.Shutdown(shutdownCtx)
+}

@@ -1,8 +1,24 @@
-/bin/
+# 本地构建与依赖
+**/node_modules/
+frontend/dist/
+frontend/data/
+market/engine-dist/
+market/admin-dist/
+market/bin/
+market/data/
+backend/bin/
+/data/
+.bin/
 *.out
 *.test
 .env
+.env.*
+!.env.example
+!**/.env.example
 config.yaml
 .DS_Store
-data/
-deploy/.env
+**/*.local
+backend/.gocache/
+vendor/
+coverage.html
+*.tsbuildinfo
