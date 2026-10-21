@@ -1,0 +1,14 @@
+# market/Dockerfile 的构建上下文是仓库根目录，只放入构建需要的目录。
+*
+!market/
+!frontend/
+!docs/legal/
+
+market/web/node_modules
+market/web/dist
+market/engine-dist
+market/bin
+market/data
+frontend/node_modules
+frontend/dist
+**/.DS_Store

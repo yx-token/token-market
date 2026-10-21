@@ -1,17 +1,17 @@
 # 站内更新
 
-管理后台「系统更新」提供当前版本、最新正式 Release、发布说明、确认更新和任务进度。更新包包含 api、worker、edge、s2a-compat 与前端，三个运行服务切换至同一版本；不会更新 sub2api。
+管理后台「系统更新」提供当前版本、最新正式 Release、发布说明、确认更新和任务进度。更新包包含 api、worker、edge、s2a-compat 与前端（C 端和 `web/admin-spa` 管理端），三个运行服务切换至同一版本；不会更新闲猫宿主（sub2api）。
 
 ## 现有部署接入
 
-旧版本没有更新包及启动器，需要先通过镜像部署一次包含本功能的版本，并采用新的 `deploy/docker-compose.yml`。单机部署同步更新 `market-src/deploy/docker-compose.yml`，保留现有 `market.override.yml` 和密钥。
+旧版本没有更新包及启动器，需要先通过镜像部署一次包含本功能的版本，并采用新的 `deploy/docker-compose.yml`。单机部署同步更新部署目录中的 `docker-compose.market.yml`（见 [单机部署](single-host/README.md)），保留现有 `market.override.yml` 和密钥。
 
 1. 固定 `TM_IMAGE` 为新版本，按原流程登录镜像仓库。
 2. 在 `.env`（单机部署为 `market.env`）设置 `UPDATE_REPOSITORY=yx-token/token-market`。私有仓库设置 `UPDATE_GITHUB_TOKEN`，使用该仓库 Contents 读取权限的 fine-grained PAT，或具有私有仓库读取权限的 classic PAT。`docker login` 的凭据不能代替此令牌。
 3. 使用新 Compose 执行 `pull`、`up -d`。三个服务均以 `market-runner` 启动，并挂载同一个 `runtime:/app/runtime` 卷。
 4. 管理员访问 `/admin/system-update`。未来正式 Release 提供当前架构更新包后，可以在此检查并确认更新。
 
-Release 工作流从镜像的 `release` 构建阶段导出 `token-market_linux_amd64.tar.gz`、`token-market_linux_arm64.tar.gz` 和 `checksums.txt`，无需运行另一种架构的程序。预发布版本不会作为站内更新目标。旧 Release 缺少更新附件时，界面禁用更新并提示通过镜像升级。
+Release 工作流从镜像的 `release` 构建阶段导出 `token-market_linux_amd64.tar.gz`、`token-market_linux_arm64.tar.gz` 和 `token-market_checksums.txt`（与宿主二进制的 `checksums.txt` 同在一个 Release，单独命名；旧 Release 只有 `checksums.txt` 时仍可识别），无需运行另一种架构的程序。预发布版本不会作为站内更新目标。旧 Release 缺少更新附件时，界面禁用更新并提示通过镜像升级。
 
 ## 更新与恢复流程
 

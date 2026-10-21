@@ -1,13 +1,14 @@
-# sub2api 0.2.14（token-market 的底层网关）。改编自 sub2api 官方 deploy/docker-compose.yml：
-#   - 镜像固定版本：升级必须先过 token-market 的 s2a-compat 兼容检查（market-src/scripts/upgrade-sub2api.sh）
-#   - 对外入口是 sub2api-admin（nginx，公网端口 ${SUB2API_PUBLIC_PORT:-8081}）：禁用在线升级 / 回滚接口，
-#     sub2api 本身不映射端口；token-market 经共享网络 token-market 直连 sub2api:8080
+# 闲猫宿主（引擎：网关 + 管理 API，镜像 ghcr.io/yx-token/sub2api，同仓与 token-market 一起发布）。
+#   - 镜像版本固定在 .env 的 ENGINE_IMAGE，与 market.env 的 TM_IMAGE 使用同一个发布版本，两边一起升级
+#   - 闲猫运营接口（/api/v1/admin/market/*）直连市场库：经共享网络 token-market 访问 market-postgres
+#   - 对外入口 sub2api-admin（nginx，公网端口 ${SUB2API_PUBLIC_PORT:-8081}）只作网关 / 备用管理入口，
+#     并禁用在线升级 / 回滚接口（宿主自带的在线升级会换成上游社区版本）；日常管理走 token-market 的 /admin
 #   - 服务改名 sub2api-postgres / sub2api-redis，避免在共享网络上与 token-market 自己的 postgres / redis 重名
 name: sub2api
 
 services:
   sub2api:
-    image: weishaw/sub2api:0.2.14
+    image: ${ENGINE_IMAGE:?ENGINE_IMAGE is required}
     container_name: sub2api
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
@@ -40,6 +41,9 @@ services:
       # token-market 基线配置（token-market docs/02 第 6 节）
       GATEWAY_SCHEDULING_PREFER_SOONEST_RESET: "true"
       GATEWAY_USAGE_RECORD_OVERFLOW_POLICY: sync
+      # 闲猫运营接口直连市场库（读写）与本机引擎库（供给融合）；市场库晚于引擎启动时按需重连
+      MARKET_DATABASE_DSN: postgres://market:${MARKET_DB_PASSWORD:?MARKET_DB_PASSWORD is required}@market-postgres:5432/token_market?sslmode=disable
+      MARKET_ENGINE_DSN: postgres://sub2api:${POSTGRES_PASSWORD}@sub2api-postgres:5432/sub2api?sslmode=disable
     depends_on:
       sub2api-postgres: { condition: service_healthy }
       sub2api-redis: { condition: service_healthy }
@@ -89,7 +93,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # 对外入口：管理后台与网关 http://<服务器>:8081
+  # 对外入口：网关与备用管理入口 http://<服务器>:8081
   sub2api-admin:
     image: nginx:1.29-alpine
     container_name: sub2api-admin

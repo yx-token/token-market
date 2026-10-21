@@ -15,6 +15,10 @@ sub2api:
     - version: "0.2.14"
       migration_fingerprints:
         - "sha256:c0a0ae745bf4cffd3eddf893b621fa6c37ee0f470138cb38df85c624ede77358"   # 全新安装，291 个迁移
+  # 同仓闲猫宿主（backend/migrations）的迁移指纹。宿主版本号随发布变化（例如 0.17.2），运行时自检
+  # 对未登记的版本按此判定；新增宿主迁移时同步更新（contract_test 会校验与 backend/migrations 一致）。
+  host_migration_fingerprints:
+    - "sha256:c0a0ae745bf4cffd3eddf893b621fa6c37ee0f470138cb38df85c624ede77358"
 
 # 只读库用到的表与列。large 表示大表，涉及它的锁表迁移会被提示。
 tables:

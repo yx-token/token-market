@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -70,7 +71,7 @@ func run(configPath string, log *slog.Logger) error {
 	api := &httpapi.Server{
 		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, IAM: a.IAM, Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools,
 		Keys: a.Keys, Funds: a.Funds, Payments: a.Payments, Market: a.Market, Quality: a.Quality, Replica: a.Replica, Risk: a.Risk, Kicker: a.Kicker, Log: log,
-		TrustedProxies: cfg.HTTP.TrustedProxies, WebDir: cfg.HTTP.WebDir, AdminWebDir: cfg.HTTP.AdminWebDir,
+		TrustedProxies: cfg.HTTP.TrustedProxies, WebDir: cfg.HTTP.WebDir, AdminWebDir: adminWebDir(cfg.HTTP.WebDir, cfg.HTTP.AdminWebDir),
 		EngineProxyURL: cfg.Sub2API.BaseURL, EngineAdminKey: cfg.Sub2API.AdminAPIKey,
 		EngineLoginPassword: cfg.Auth.BootstrapAdminPassword, EdgeURL: cfg.Edge.PublicURL,
 		Updater: updater,
@@ -94,4 +95,17 @@ func run(configPath string, log *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// adminWebDir 优先使用显式配置；否则使用随 C 端一起打包的管理端（web/admin-spa），
+// 站内更新切换 web 目录时管理端随之切换。
+func adminWebDir(webDir, configured string) string {
+	if configured != "" || webDir == "" {
+		return configured
+	}
+	dir := filepath.Join(webDir, "admin-spa")
+	if _, err := os.Stat(filepath.Join(dir, "index.html")); err != nil {
+		return ""
+	}
+	return dir
 }

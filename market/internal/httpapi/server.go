@@ -335,6 +335,14 @@ func (s *Server) Handler() http.Handler {
 	if s.EngineProxyURL != "" {
 		if target, err := url.Parse(s.EngineProxyURL); err == nil {
 			proxy := httputil.NewSingleHostReverseProxy(target)
+			// 宿主的在线升级 / 回滚会用上游社区版本替换二进制；宿主只能随发布镜像升级（同 sub2api-admin nginx）。
+			engineUpdateDisabled := httpx.Handler(func(http.ResponseWriter, *http.Request) error {
+				return httpx.Forbidden("ENGINE_UPDATE_DISABLED", "online update is disabled; upgrade the engine image")
+			})
+			for _, p := range []string{"/api/v1/admin/system/update", "/api/v1/admin/system/rollback"} {
+				mux.Handle(p, engineUpdateDisabled)
+				mux.Handle(p+"/", engineUpdateDisabled)
+			}
 			mux.Handle("/api/v1/", proxy)
 		}
 	}

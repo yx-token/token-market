@@ -32,6 +32,9 @@ type Spec struct {
 
 type Sub2APISpec struct {
 	VerifiedVersions []VerifiedVersion `yaml:"verified_versions"`
+	// HostMigrationFingerprints 是同仓闲猫宿主（backend/migrations）的迁移指纹。宿主与本系统同仓同版本发布，
+	// 版本号每次发版都会变化，因此只按迁移集合判定；测试保证它与 backend/migrations 保持一致。
+	HostMigrationFingerprints []string `yaml:"host_migration_fingerprints"`
 }
 
 type VerifiedVersion struct {
@@ -113,6 +116,16 @@ func (s *Spec) Verified(version string) (VerifiedVersion, bool) {
 		}
 	}
 	return VerifiedVersion{}, false
+}
+
+// HostMigrations 判断迁移指纹是否为同仓闲猫宿主的迁移集合。
+func (s *Spec) HostMigrations(fingerprint string) bool {
+	for _, fp := range s.Sub2API.HostMigrationFingerprints {
+		if fp == fingerprint {
+			return true
+		}
+	}
+	return false
 }
 
 // Queries 返回内嵌的只读查询，键为文件名去掉 .sql。

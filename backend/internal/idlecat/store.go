@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -31,9 +32,10 @@ func OpenFromEnv() (*Store, error) {
 	}
 	db.SetMaxOpenConns(8)
 	db.SetConnMaxLifetime(30 * time.Minute)
+	// 市场库可能晚于引擎启动（单机部署两套 compose 开机顺序不定）。连接按需建立，
+	// 不可达时只记录日志，路由照常挂载，库恢复后请求自动成功。
 	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		return nil, err
+		log.Printf("idlecat: market database not reachable yet: %v", err)
 	}
 	s.Market = db
 	engineDSN := strings.TrimSpace(os.Getenv("MARKET_ENGINE_DSN"))
@@ -45,9 +47,7 @@ func OpenFromEnv() (*Store, error) {
 		}
 		edb.SetMaxOpenConns(8)
 		if err := edb.Ping(); err != nil {
-			_ = edb.Close()
-			_ = db.Close()
-			return nil, err
+			log.Printf("idlecat: engine database not reachable yet: %v", err)
 		}
 		s.Engine = edb
 	}
