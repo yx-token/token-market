@@ -1,10 +1,10 @@
-# token-market 部署示例。sub2api 单独部署（不在本文件中），本系统通过内网访问它的 Admin API、网关与只读库。
+# token-market 部署示例。闲猫宿主（sub2api）单独部署（不在本文件中，单机部署见 single-host/），本系统通过内网访问它的 Admin API、网关与只读库。
 #
 # 使用（镜像由发布流程推送到 GHCR，见 README"发布与部署"）：
 #   cp deploy/.env.example deploy/.env   # 填写镜像版本、密钥与 sub2api 连接信息
 #   docker compose -f deploy/docker-compose.yml --env-file deploy/.env pull
 #   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
-# 不用发布的镜像、在服务器上自己构建时：docker build -t token-market:local . 后把 TM_IMAGE 设为 token-market:local。
+# 不用发布的镜像、自己构建时：在仓库根目录 docker build -f market/Dockerfile -t token-market:local . 后把 TM_IMAGE 设为 token-market:local。
 #
 # 对外只需暴露 api（控制面与前端）和 edge（买家调用模型）；worker 与各管理端口只在内网。
 name: token-market

@@ -56,13 +56,18 @@ func New(spec *contract.Spec, versions VersionSource, migrations MigrationSource
 	return g
 }
 
-// Evaluate 纯判定：版本必须在已验证列表中，且迁移指纹是该版本接受的指纹之一。
+// Evaluate 纯判定：版本在已验证列表中且迁移指纹是该版本接受的指纹之一；
+// 或迁移指纹与同仓闲猫宿主一致（宿主版本号随发布变化，不再逐个登记）。
 func Evaluate(spec *contract.Spec, version string, migrations []string) Result {
 	fp := contract.MigrationFingerprint(migrations)
 	r := Result{State: StateSafeMode, Version: version, Fingerprint: fp}
+	if spec.HostMigrations(fp) {
+		r.State = StateNormal
+		return r
+	}
 	v, ok := spec.Verified(version)
 	if !ok {
-		r.Reason = fmt.Sprintf("sub2api version %q is not in contract verified_versions", version)
+		r.Reason = fmt.Sprintf("sub2api version %q is not in contract verified_versions and migration fingerprint %s is not the bundled host's", version, fp)
 		return r
 	}
 	for _, accepted := range v.MigrationFingerprints {

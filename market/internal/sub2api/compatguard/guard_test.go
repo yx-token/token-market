@@ -54,6 +54,27 @@ func TestEvaluate(t *testing.T) {
 	}
 }
 
+func TestEvaluateAcceptsBundledHostMigrations(t *testing.T) {
+	host := []string{"001_init.sql", "002_x.sql", "003_host.sql"}
+	spec, err := contract.Parse([]byte(`
+version: 1
+sub2api:
+  verified_versions:
+    - version: "0.2.14"
+      migration_fingerprints: ["sha256:other"]
+  host_migration_fingerprints: ["` + contract.MigrationFingerprint(host) + `"]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := Evaluate(spec, "0.17.2", host); r.State != StateNormal {
+		t.Fatalf("host release with bundled migrations should be normal: %+v", r)
+	}
+	if r := Evaluate(spec, "0.17.2", host[:2]); r.State != StateSafeMode || r.Reason == "" {
+		t.Fatalf("host release with different migrations should be safe mode: %+v", r)
+	}
+}
+
 func TestGuardStartsInSafeModeAndKeepsStateOnReadError(t *testing.T) {
 	names := []string{"001_init.sql"}
 	spec := specWith(t, contract.MigrationFingerprint(names))

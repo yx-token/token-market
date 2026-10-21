@@ -23,6 +23,9 @@ func TestStoreAgainstLocalDemo(t *testing.T) {
 	}
 	defer s.Close()
 	ctx := context.Background()
+	if err := s.Market.PingContext(ctx); err != nil {
+		t.Skip("demo db unavailable:", err)
+	}
 	st, err := s.Status(ctx)
 	if err != nil {
 		t.Fatal(err)

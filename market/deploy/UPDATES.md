@@ -1,10 +1,10 @@
 # 站内更新
 
-管理后台「系统更新」提供当前版本、最新正式 Release、发布说明、确认更新和任务进度。更新包包含 api、worker、edge、s2a-compat 与前端，三个运行服务切换至同一版本；不会更新 sub2api。
+管理后台「系统更新」提供当前版本、最新正式 Release、发布说明、确认更新和任务进度。更新包包含 api、worker、edge、s2a-compat 与前端（C 端和 `web/admin-spa` 管理端），三个运行服务切换至同一版本；不会更新闲猫宿主（sub2api）。
 
 ## 现有部署接入
 
-旧版本没有更新包及启动器，需要先通过镜像部署一次包含本功能的版本，并采用新的 `deploy/docker-compose.yml`。单机部署同步更新 `market-src/deploy/docker-compose.yml`，保留现有 `market.override.yml` 和密钥。
+旧版本没有更新包及启动器，需要先通过镜像部署一次包含本功能的版本，并采用新的 `deploy/docker-compose.yml`。单机部署同步更新部署目录中的 `docker-compose.market.yml`（见 [单机部署](single-host/README.md)），保留现有 `market.override.yml` 和密钥。
 
 1. 固定 `TM_IMAGE` 为新版本，按原流程登录镜像仓库。
 2. 在 `.env`（单机部署为 `market.env`）设置 `UPDATE_REPOSITORY=yx-token/token-market`。私有仓库设置 `UPDATE_GITHUB_TOKEN`，使用该仓库 Contents 读取权限的 fine-grained PAT，或具有私有仓库读取权限的 classic PAT。`docker login` 的凭据不能代替此令牌。
