@@ -1,12 +1,18 @@
 # token-market 在本机的部署覆盖：api / worker / edge 加入共享网络 token-market（由宿主的 compose 创建），
 # 经 sub2api:8080 访问闲猫宿主、经 sub2api-postgres 只读访问宿主库；
-# 市场库以 market-postgres 加入共享网络，供宿主的闲猫运营接口直连。
+# 市场库以 market-postgres、市场 redis 以 market-redis 加入共享网络，
+# 供宿主的闲猫运营接口直连、宿主进程内经 enginehost 构建市场应用（relay 路由）。
 services:
   postgres:
     networks:
       default: {}
       shared:
         aliases: [market-postgres]
+  redis:
+    networks:
+      default: {}
+      shared:
+        aliases: [market-redis]
   api:
     networks: [default, shared]
   worker:

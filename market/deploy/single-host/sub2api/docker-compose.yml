@@ -45,6 +45,18 @@ services:
       # 闲猫运营接口直连市场库（读写）与本机引擎库（供给融合）；市场库晚于引擎启动时按需重连
       MARKET_DATABASE_DSN: postgres://market:${MARKET_DB_PASSWORD:?MARKET_DB_PASSWORD is required}@market-postgres:5432/token_market?sslmode=disable
       MARKET_ENGINE_DSN: postgres://sub2api:${POSTGRES_PASSWORD}@sub2api-postgres:5432/sub2api?sslmode=disable
+      # 宿主进程内经 enginehost 构建市场应用（/api/v1/admin/market/* 的 relay 路由，如 inspection/checks、
+      # org/*、ledger 等），需要与市场 api 一致的运行配置；下列密钥须与 market.env 保持一致
+      TM_ENV: prod
+      TM_DATABASE_DSN: postgres://market:${MARKET_DB_PASSWORD:?MARKET_DB_PASSWORD is required}@market-postgres:5432/token_market?sslmode=disable
+      TM_SUB2API_REPLICA_DSN: postgres://tm_readonly:${READONLY_PASSWORD:?READONLY_PASSWORD is required}@sub2api-postgres:5432/sub2api?sslmode=disable
+      TM_REDIS_ADDR: market-redis:6379
+      TM_SUB2API_BASE_URL: http://sub2api:8080
+      TM_SUB2API_ADMIN_API_KEY: ${SUB2API_ADMIN_API_KEY:?SUB2API_ADMIN_API_KEY is required}
+      TM_CRYPTO_ACTIVE_KEY_ID: ${CRYPTO_ACTIVE_KEY_ID:-k1}
+      TM_CRYPTO_KEYS: ${CRYPTO_KEYS:?CRYPTO_KEYS is required}
+      TM_CRYPTO_HASH_PEPPER: ${CRYPTO_HASH_PEPPER:?CRYPTO_HASH_PEPPER is required}
+      TM_AUTH_JWT_SECRET: ${MARKET_JWT_SECRET:?MARKET_JWT_SECRET is required}
     depends_on:
       sub2api-postgres: { condition: service_healthy }
       sub2api-redis: { condition: service_healthy }
