@@ -21,7 +21,7 @@
 |---|---|---|
 | 8080 | token-market api | C 端 `/`；管理端 `/admin`（同端口，管理接口经 `/api/v1` 反代到宿主） |
 | 8090 | token-market edge | 买家调用模型 |
-| 8081 | 宿主（经 nginx） | 网关与备用管理入口；`/api/v1/admin/system/update`、`/rollback` 返回 403 |
+| 8081 | 宿主（经 nginx，仅绑定 127.0.0.1） | 备用管理入口，不对公网开放，经 SSH 隧道访问（`ssh -L 8081:127.0.0.1:8081 root@<服务器>`）；`/api/v1/admin/system/update`、`/rollback` 返回 403 |
 
 管理端打包在市场镜像的 `web/admin-spa`，随站内更新一起切换。`/admin` 用当前管理员邮箱和 `BOOTSTRAP_ADMIN_PASSWORD`
 登录宿主换发会话，所以宿主管理员（`sub2api/.env` 的 `ADMIN_EMAIL` / `ADMIN_PASSWORD`）必须与市场的
@@ -63,7 +63,8 @@ cd /root/idlecat
    ALTER ROLE tm_readonly SET default_transaction_read_only = on;
    ```
 
-4. 管理员经 `http://<服务器>:8081` 登录宿主后台，**本人**阅读并确认《部署与运营合规承诺》，然后生成 Admin API Key，
+4. 管理员经 SSH 隧道（`ssh -L 8081:127.0.0.1:8081 root@<服务器>`，然后访问 `http://127.0.0.1:8081`）登录宿主后台，
+   **本人**阅读并确认《部署与运营合规承诺》，然后生成 Admin API Key，
    填入 `market.env` 的 `SUB2API_ADMIN_API_KEY`。
 5. `./tm.sh market up -d`。数据库迁移在 api 启动时自动执行；worker 完成兼容自检后
    （`GET /api/admin/sub2api/status` 的 `guard_state` 为 `normal`）才允许写入宿主。
