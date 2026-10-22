@@ -1,0 +1,7 @@
+# P4 管理端市场 API 收敛 Implementation Plan
+
+**Goal:** Drop IdleCat bridge route aliases; document canonical `/api/v1/admin/market/*` paths used by market-admin.
+
+**Done:**
+- [x] Remove alias GET binds in `backend/internal/server/routes/market.go`
+- [x] `docs/dev/admin-market-api-canonical.md`
