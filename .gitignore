@@ -7,6 +7,8 @@ market/admin-dist/
 market/bin/
 market/data/
 backend/bin/
+/bin/
+/web/
 /data/
 .bin/
 *.out
