@@ -22,8 +22,8 @@
 
 | Policy ID | 含义 | 阶段 |
 |-----------|------|------|
-| `ordered-failover` | 按买家 Key 上 hops 顺序尝试；跳过 skip-list / 熔断；可重试失败则下一跳 | **当前默认（P1）** |
-| `pool-buyback-first` | 保障池流量优先落回收产能（再落到其它池内供给） | P2 |
+| `ordered-failover` | 按买家 Key 上 hops 顺序尝试；跳过 skip-list / 熔断；可重试失败则下一跳 | 无 pool hop 时 |
+| `pool-buyback-first` | 路由含保障池 hop 时声明此策略；**账号级**回收优先由引擎 `scheduling.Plan`（buyback priority 1–19）执行，Edge 不拆池内账号 | **P2 已接线** |
 
 Edge 在成功进入转发循环前设置响应头（若尚未写 body）：
 
@@ -49,14 +49,14 @@ Edge 在成功进入转发循环前设置响应头（若尚未写 body）：
 
 Edge **不在**请求返回前写人民币账本。
 
-## 5. 扩展点（P2）
+## 5. 扩展点
 
-- `BuildSchedulePlan(...)`（`market/internal/edge/scheduler.go`）是唯一计划入口；新策略加 Policy ID + 实现，禁止在 `ServeHTTP` 里散落 if。
-- 回收优先：在计划阶段重排/过滤 pool hops，不把业务 SQL 打进 forward 热路径（除现有活动包选包）。
+- `BuildSchedulePlan` / `SelectSchedulePolicy` 是唯一计划入口。
+- 池内回收优先依赖引擎调度写入账号优先级，而非 Edge 多 hop 展开（买家不可见回收商品）。
 
-## 6. 验收（P1）
+## 6. 验收
 
 - [x] 本文档入库
 - [x] `ordered-failover` 经 `BuildSchedulePlan` 产出，行为与改造前一致
 - [x] 响应带 `X-TM-Schedule-Policy`
-- [ ] P2：`pool-buyback-first` 有测试与开关
+- [x] P2：含 pool hop 时 `X-TM-Schedule-Policy=pool-buyback-first`；处置互斥 `DISPOSITION_ACTIVE`

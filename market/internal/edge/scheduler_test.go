@@ -41,3 +41,26 @@ func TestBuildSchedulePlanEmptyPolicyDefaults(t *testing.T) {
 		t.Fatalf("policy=%s", plan.Policy)
 	}
 }
+
+func TestSelectSchedulePolicyPoolBuybackFirst(t *testing.T) {
+	if p := SelectSchedulePolicy([]edgecfg.Hop{{ListingID: 1}}); p != PolicyOrderedFailover {
+		t.Fatalf("listings only: %s", p)
+	}
+	if p := SelectSchedulePolicy([]edgecfg.Hop{{ListingID: 1}, {PoolID: 3, Label: "pool:x"}}); p != PolicyPoolBuybackFirst {
+		t.Fatalf("with pool: %s", p)
+	}
+}
+
+func TestBuildSchedulePlanKeepsOrderUnderBuybackFirst(t *testing.T) {
+	hops := []edgecfg.Hop{
+		{ListingID: 1, Label: "listing:1"},
+		{PoolID: 3, Label: "pool:3"},
+	}
+	plan := BuildSchedulePlan(PolicyPoolBuybackFirst, hops, nil, func(string) bool { return true })
+	if plan.Policy != PolicyPoolBuybackFirst {
+		t.Fatalf("policy=%s", plan.Policy)
+	}
+	if len(plan.Steps) != 2 || plan.Steps[0].Hop.ListingID != 1 || plan.Steps[1].Hop.PoolID != 3 {
+		t.Fatalf("steps=%+v", plan.Steps)
+	}
+}

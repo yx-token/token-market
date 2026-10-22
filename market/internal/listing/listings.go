@@ -127,6 +127,10 @@ func (s *Service) CreateListing(ctx context.Context, sellerID, upstreamID int64,
 	if err := s.requireAuthorizedAccount(ctx, u); err != nil {
 		return nil, nil, err
 	}
+	// A/B 与平台回收互斥：同一上游同时只能有一条未关闭处置（DB 亦有 listings_one_open_idx）。
+	if err := s.requireNoOpenDisposition(ctx, u.ID); err != nil {
+		return nil, nil, err
+	}
 	join := true
 	if in.JoinDefaultPool != nil {
 		join = *in.JoinDefaultPool
@@ -269,9 +273,36 @@ func (s *Service) CreateListing(ctx context.Context, sellerID, upstreamID int64,
 
 func mapListingErr(err error) error {
 	if err != nil && isUnique(err) {
-		return httpx.Conflict("LISTING_EXISTS", "this upstream already has an open listing")
+		return httpx.Conflict("DISPOSITION_ACTIVE", "该上游已有进行中的处置，请先关闭后再改挂通道、套餐或回收")
 	}
 	return err
+}
+
+// requireNoOpenDisposition 落实 C2C：寄售/套餐/回收互斥，切换须先关闭当前处置。
+func (s *Service) requireNoOpenDisposition(ctx context.Context, upstreamID int64) error {
+	var mode string
+	err := s.DB.QueryRow(ctx, `SELECT mode FROM listings WHERE upstream_id = $1 AND closed_at IS NULL LIMIT 1`, upstreamID).Scan(&mode)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return DispositionActiveErr(mode)
+}
+
+// DispositionActiveErr 返回互斥冲突（单测与 mapListingErr 文案对齐）。
+func DispositionActiveErr(openMode string) error {
+	label := openMode
+	switch openMode {
+	case ModeBuyback:
+		label = "平台回收"
+	case ModeConsignment:
+		label = "按量通道"
+	case ModePack:
+		label = "订阅套餐"
+	}
+	return httpx.Conflict("DISPOSITION_ACTIVE", fmt.Sprintf("该上游已有进行中的处置（%s），请先关闭后再改挂通道、套餐或回收", label))
 }
 
 func (s *Service) validateConsignment(ctx context.Context, platform string, m float64) error {

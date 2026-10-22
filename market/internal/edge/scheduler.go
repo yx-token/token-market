@@ -26,13 +26,22 @@ type SchedulePlan struct {
 	Steps  []ScheduleStep
 }
 
-// BuildSchedulePlan 产出转发顺序。P1 仅实现 ordered-failover；P2 在此分支其它 Policy。
+// SelectSchedulePolicy 按路由形态选策略：含保障池 hop 时声明 pool-buyback-first
+//（账号级回收优先由引擎 scheduling.Plan 执行；Edge 仍按 hop 有序故障转移）。
+func SelectSchedulePolicy(hops []edgecfg.Hop) SchedulePolicy {
+	for _, h := range hops {
+		if h.PoolID > 0 {
+			return PolicyPoolBuybackFirst
+		}
+	}
+	return PolicyOrderedFailover
+}
+
+// BuildSchedulePlan 产出转发顺序。hop 顺序保持买家配置；Policy 字段标明契约策略。
 func BuildSchedulePlan(policy SchedulePolicy, hops []edgecfg.Hop, skipped func(listingID int64) bool, allow func(label string) bool) SchedulePlan {
 	if policy == "" {
-		policy = PolicyOrderedFailover
+		policy = SelectSchedulePolicy(hops)
 	}
-	// P2：policy == PolicyPoolBuybackFirst 时重排/过滤；现回落到有序故障转移以保持安全默认。
-	_ = PolicyPoolBuybackFirst
 	steps := make([]ScheduleStep, 0, len(hops))
 	for i, hop := range hops {
 		st := ScheduleStep{Index: i, Hop: hop}
@@ -44,5 +53,10 @@ func BuildSchedulePlan(policy SchedulePolicy, hops []edgecfg.Hop, skipped func(l
 		}
 		steps = append(steps, st)
 	}
-	return SchedulePlan{Policy: PolicyOrderedFailover, Steps: steps}
+	// pool-buyback-first：不拆池内账号为多 hop（单内部 Key）；顺序与 ordered-failover 相同，
+	// 引擎侧 buyback priority band 负责「优先吃回收」。见 edge-engine-contract.md。
+	if policy != PolicyPoolBuybackFirst && policy != PolicyOrderedFailover {
+		policy = PolicyOrderedFailover
+	}
+	return SchedulePlan{Policy: policy, Steps: steps}
 }

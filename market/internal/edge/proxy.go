@@ -212,7 +212,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	reqID := newRequestID()
 	w.Header().Set("X-TM-Request-ID", reqID)
-	plan := BuildSchedulePlan(PolicyOrderedFailover, cfg.Hops, s.cache.Skipped, s.breaker.Allow)
+	plan := BuildSchedulePlan(SelectSchedulePolicy(cfg.Hops), cfg.Hops, s.cache.Skipped, s.breaker.Allow)
 	w.Header().Set("X-TM-Schedule-Policy", string(plan.Policy))
 	if isWebSocket(r) {
 		s.serveWebSocket(w, r, cfg, key, loc, reqID, plan)
