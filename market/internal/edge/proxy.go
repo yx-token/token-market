@@ -212,8 +212,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	reqID := newRequestID()
 	w.Header().Set("X-TM-Request-ID", reqID)
+	plan := BuildSchedulePlan(PolicyOrderedFailover, cfg.Hops, s.cache.Skipped, s.breaker.Allow)
+	w.Header().Set("X-TM-Schedule-Policy", string(plan.Policy))
 	if isWebSocket(r) {
-		s.serveWebSocket(w, r, cfg, key, loc, reqID)
+		s.serveWebSocket(w, r, cfg, key, loc, reqID, plan)
 		return
 	}
 
@@ -231,10 +233,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var last *failedResponse
 	tried := 0
 hops:
-	for i, hop := range cfg.Hops {
+	for _, step := range plan.Steps {
+		i, hop := step.Index, step.Hop
 		a := Attempt{EdgeRequestID: reqID, BuyerKeyID: cfg.BuyerKeyID, Hop: i + 1, ListingID: hop.ListingID, PoolID: hop.PoolID,
 			Billable: billable, StartedAt: s.now()}
-		if (hop.ListingID > 0 && s.cache.Skipped(hop.ListingID)) || !s.breaker.Allow(hop.Label) {
+		if step.SkipReason != "" {
 			a.EndReason, a.EndedAt = "skipped", a.StartedAt
 			s.record(a)
 			continue
@@ -512,16 +515,17 @@ func isWebSocket(r *http.Request) bool {
 }
 
 // serveWebSocket 只在握手阶段做故障转移，握手成功后双向透传。
-func (s *Server) serveWebSocket(w http.ResponseWriter, r *http.Request, cfg *edgecfg.KeyConfig, key string, loc keyLocation, reqID string) {
+func (s *Server) serveWebSocket(w http.ResponseWriter, r *http.Request, cfg *edgecfg.KeyConfig, key string, loc keyLocation, reqID string, plan SchedulePlan) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "api_error", "websocket not supported")
 		return
 	}
-	for i, hop := range cfg.Hops {
+	for _, step := range plan.Steps {
+		i, hop := step.Index, step.Hop
 		a := Attempt{EdgeRequestID: reqID, BuyerKeyID: cfg.BuyerKeyID, Hop: i + 1, ListingID: hop.ListingID, PoolID: hop.PoolID,
 			Billable: true, StartedAt: s.now()}
-		if (hop.ListingID > 0 && s.cache.Skipped(hop.ListingID)) || !s.breaker.Allow(hop.Label) {
+		if step.SkipReason != "" {
 			a.EndReason, a.EndedAt = "skipped", a.StartedAt
 			s.record(a)
 			continue
@@ -556,6 +560,7 @@ func (s *Server) serveWebSocket(w http.ResponseWriter, r *http.Request, cfg *edg
 		}
 		resp.Header.Set("X-TM-Listing", hop.Label)
 		resp.Header.Set("X-TM-Request-ID", reqID)
+		resp.Header.Set("X-TM-Schedule-Policy", string(plan.Policy))
 		var errorBody attemptErrorCapture
 		if resp.StatusCode >= http.StatusBadRequest {
 			resp.Body = &attemptCapturedBody{ReadCloser: resp.Body, capture: &errorBody}

@@ -1,5 +1,9 @@
-// Package edge 是买家 API 的入口：鉴权买家 Key、按卖家链依次转发到 sub2api、故障转移。
-// Edge 只做"转发 + 失败重试"，不做计费和调度，热路径不访问数据库。
+// Package edge 是买家 API 的入口：鉴权买家 Key、调度选跳、转发到引擎 Gateway。
+//
+// 分工（方案 1）：Edge = 调度脑；引擎 = 协议/上游/组内选号与额度。
+// 人民币账本不在热路径入账，由 worker 消费 usage_logs 与 edge_attempts。
+// 调度入口见 BuildSchedulePlan；契约见 docs/dev/edge-engine-contract.md。
+// 热路径除活动包选包外不访问市场库。
 package edge
 
 import (
