@@ -1,8 +1,9 @@
 # 闲猫宿主（引擎：网关 + 管理 API，镜像 ghcr.io/yx-token/sub2api，同仓与 token-market 一起发布）。
 #   - 镜像版本固定在 .env 的 ENGINE_IMAGE，与 market.env 的 TM_IMAGE 使用同一个发布版本，两边一起升级
 #   - 闲猫运营接口（/api/v1/admin/market/*）直连市场库：经共享网络 token-market 访问 market-postgres
-#   - 对外入口 sub2api-admin（nginx，公网端口 ${SUB2API_PUBLIC_PORT:-8081}）只作网关 / 备用管理入口，
-#     并禁用在线升级 / 回滚接口（宿主自带的在线升级会换成上游社区版本）；日常管理走 token-market 的 /admin
+#   - 备用入口 sub2api-admin（nginx）只绑定 127.0.0.1:${SUB2API_PUBLIC_PORT:-8081}，不对公网开放，
+#     经 SSH 隧道访问（ssh -L 8081:127.0.0.1:8081 root@<服务器>）；日常管理走 token-market 的 /admin，
+#     并禁用在线升级 / 回滚接口（宿主自带的在线升级会换成上游社区版本）
 #   - 服务改名 sub2api-postgres / sub2api-redis，避免在共享网络上与 token-market 自己的 postgres / redis 重名
 name: sub2api
 
@@ -93,12 +94,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # 对外入口：网关与备用管理入口 http://<服务器>:8081
+  # 备用管理入口：只绑定本机回环，公网不开放；用 SSH 隧道访问 http://127.0.0.1:8081
   sub2api-admin:
     image: nginx:1.29-alpine
     container_name: sub2api-admin
     restart: unless-stopped
-    ports: ["${SUB2API_PUBLIC_PORT:-8081}:80"]
+    ports: ["127.0.0.1:${SUB2API_PUBLIC_PORT:-8081}:80"]
     volumes:
       - ./nginx-admin.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on: [sub2api]
