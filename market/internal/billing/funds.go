@@ -164,6 +164,9 @@ func (f *Funds) activeRefund(ctx context.Context, userID int64) (*Refund, error)
 
 // RequestRefund 申请退还全部剩余余额：先暂停买家全部 Key，等进行中的请求结束后再扣减 sub2api 余额。
 func (f *Funds) RequestRefund(ctx context.Context, userID int64, note string) (*Refund, error) {
+	if err := DenyBuyerRefund(); err != nil {
+		return nil, err
+	}
 	st, err := f.Settings(ctx)
 	if err != nil {
 		return nil, err

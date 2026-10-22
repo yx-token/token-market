@@ -21,9 +21,7 @@ const packsLoading = ref(false)
 const offersError = ref(false)
 const packsError = ref(false)
 const selectedOffer = ref<CreditOffer | null>(null)
-const refundPack = ref<CreditPack | null>(null)
 const purchaseOpen = ref(false)
-const refundOpen = ref(false)
 // A failed response may follow a successful debit. Retain the key for a retry.
 const purchaseKeys = new Map<number, string>()
 
@@ -85,14 +83,6 @@ async function purchase() {
   if (result) {
     purchaseKeys.delete(offer.id)
     purchaseOpen.value = false
-    await loadPacks()
-  }
-}
-async function refund() {
-  const pack = refundPack.value
-  if (!pack) return
-  if (await run(() => storeCreditsBuyer.refund(pack.id), '退还申请已受理')) {
-    refundOpen.value = false
     await loadPacks()
   }
 }
@@ -165,7 +155,6 @@ onMounted(async () => {
           </div>
           <div class="credit-owned-actions">
             <button class="xm-btn xm-btn-ghost" @click="router.push({ query: { seller_id: String(pack.seller_id) } })">查看本店活动</button>
-            <button v-if="pack.status === 'active' && pack.prepaid_remaining_cny > 0" class="credit-refund" :disabled="busy" @click="refundPack = pack; refundOpen = true">退还未用部分</button>
           </div>
         </article>
       </div>
@@ -176,14 +165,9 @@ onMounted(async () => {
         <h3>{{ selectedOffer.title }}</h3>
         <p>从平台余额支付 <strong>{{ money(selectedOffer.price_cny) }}</strong>，获得 <strong>{{ usd(selectedOffer.face_value_usd) }}</strong> 店铺额度。</p>
         <p>仅限商家 #{{ selectedOffer.seller_id }}：{{ scope(selectedOffer.allowed_platforms, selectedOffer.allowed_models) }}。</p>
-        <p class="hint">符合范围的调用优先扣此包，额度用完后自动扣平台余额。美元额度不能转到其他店铺；退款按剩余额度对应的实付款计算。</p>
+        <p class="hint">符合范围的调用优先扣此包，额度用完后自动扣平台余额。美元额度不能转到其他店铺；购买后不可退款。</p>
       </template>
       <template #footer><button class="btn-secondary" :disabled="busy" @click="purchaseOpen = false">取消</button><button class="btn-primary" :disabled="busy" @click="purchase">{{ busy ? '正在购买…' : '确认支付' }}</button></template>
-    </ModalDialog>
-    <ModalDialog v-model:open="refundOpen" title="退还未使用的活动额度">
-      <p v-if="refundPack">将剩余 {{ usd(refundPack.remaining_usd) }} 对应的实付款退回平台余额，当前预计 {{ money(refundPack.prepaid_remaining_cny) }}，以结算结果为准。赠送额度不能兑现。</p>
-      <p class="hint">有进行中的调用时，需要等待用量结算完成后再退还。</p>
-      <template #footer><button class="btn-secondary" :disabled="busy" @click="refundOpen = false">取消</button><button class="btn-danger" :disabled="busy" @click="refund">确认退还</button></template>
     </ModalDialog>
   </div>
 </template>

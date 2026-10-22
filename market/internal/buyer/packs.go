@@ -271,79 +271,9 @@ func (s *KeyService) fulfillOne(ctx context.Context, checkoutID, rechargeID, lis
 	return 0, nil
 }
 
-func (s *KeyService) RefundPack(ctx context.Context, userID, packID int64, dest string) (*listing.QuotaPack, error) {
-	if dest == "" {
-		dest = "balance"
-	}
-	if dest != "balance" && dest != "original" {
-		return nil, httpx.BadRequest("DEST_UNSUPPORTED", "dest must be balance or original")
-	}
-	p, err := listing.GetQuotaPack(ctx, s.DB, packID)
-	if err != nil {
-		return nil, err
-	}
-	if p.BuyerID != userID {
-		return nil, httpx.NotFound("PACK_NOT_FOUND", "quota pack not found")
-	}
-	refundAmt := listing.RefundableAmount(p)
-	if refundAmt <= 0 {
-		return nil, httpx.Conflict("NOT_REFUNDABLE", "this pack has no remaining quota to refund")
-	}
-	rechargeID, payCh := listing.PackPayMeta(ctx, s.DB, packID)
-	if dest == "original" {
-		if payCh == "" || payCh == "balance" {
-			return nil, httpx.BadRequest("NO_ORIGINAL_ROUTE", "this pack was paid with balance; use dest=balance")
-		}
-		if s.PackFunds == nil {
-			return nil, httpx.Unavailable("PAYMENTS_UNAVAILABLE", "payment service is not configured")
-		}
-	}
-	tx, err := s.DB.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	tag, err := tx.Exec(ctx, `UPDATE quota_packs SET status = 'refunded', remaining = 0, refunded_at = now()
-		WHERE id = $1 AND status = 'active'`, packID)
-	if err != nil {
-		return nil, err
-	}
-	if tag.RowsAffected() == 0 {
-		return nil, httpx.Conflict("NOT_REFUNDABLE", "this pack is not active")
-	}
-	if err := listing.ReleasePackStock(ctx, tx, p.ListingID); err != nil {
-		return nil, err
-	}
-	if p.BuyerKeyID != nil {
-		if _, err := tx.Exec(ctx, `UPDATE buyer_keys SET status = 'disabled', disabled_reason = 'pack_refunded', updated_at = now()
-			WHERE id = $1 AND user_id = $2 AND status <> 'deleted'`, *p.BuyerKeyID, userID); err != nil {
-			return nil, err
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	if s.PackFunds != nil {
-		if dest == "original" {
-			if err := s.PackFunds.PostPackRefundOriginal(ctx, userID, packID, refundAmt, rechargeID, payCh); err != nil {
-				if s.Log != nil {
-					s.Log.Warn("pack original refund failed, falling back to balance", "pack_id", packID, "err", err)
-				}
-				if err2 := s.PackFunds.PostPackRefund(ctx, userID, packID, refundAmt); err2 != nil {
-					return nil, err2
-				}
-			}
-		} else if err := s.PackFunds.PostPackRefund(ctx, userID, packID, refundAmt); err != nil {
-			if s.Log != nil {
-				s.Log.Error("pack refund ledger", "pack_id", packID, "err", err)
-			}
-			return nil, err
-		}
-	}
-	if p.BuyerKeyID != nil {
-		_ = s.Publish(ctx, *p.BuyerKeyID)
-	}
-	return listing.GetQuotaPack(ctx, s.DB, packID)
+func (s *KeyService) RefundPack(context.Context, int64, int64, string) (*listing.QuotaPack, error) {
+	// 与 billing.DenyBuyerRefund 同政策：买家侧不支持退款（含额度包）。
+	return nil, httpx.Forbidden("BUYER_REFUNDS_DISABLED", "买家侧不支持退款")
 }
 
 func truncateErr(err error, n int) string {

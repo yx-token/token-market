@@ -196,6 +196,9 @@ func (f *Funds) PurchaseCreditPack(ctx context.Context, userID int64, in Purchas
 // RefundCreditPack 先停止新调用；已在途请求由同包 advisory 锁等待结束。
 // worker 追平用量后才退按实付款摊算的余额，赠送美元不能提现。
 func (f *Funds) RefundCreditPack(ctx context.Context, userID, packID int64) (*CreditPack, error) {
+	if err := DenyBuyerRefund(); err != nil {
+		return nil, err
+	}
 	tx, err := f.DB.Begin(ctx)
 	if err != nil {
 		return nil, err

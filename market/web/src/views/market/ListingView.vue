@@ -68,7 +68,7 @@ const desc = computed(() => {
   if (!it) return ''
   if (it.description) return it.description
   if (isPack.value) {
-    return `订阅套餐：付 ¥${it.face_value} 获得周期内调用权，期内按 ${it.price.toFixed(2)}× 抵扣额度。到期或用尽即止；退货按卖家服务标签。`
+    return `订阅套餐：付 ¥${it.face_value} 获得周期内调用权，期内按 ${it.price.toFixed(2)}× 抵扣额度。到期或用尽即止；充值与购买不可退款。`
   }
   return `按量通道，按官方价 × ${it.price.toFixed(2)} 计费。先加入商家清单，再在 API Key 页面选择挂单并调整调用顺序。`
 })

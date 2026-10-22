@@ -49,19 +49,6 @@ const revealing = ref(0)
 
 const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
 
-async function refundPack(p: QuotaPack) {
-  if (!confirm(`按未用量退货 ¥${p.remaining.toFixed(2)}？Key 将停用，卖家库存加回。`)) return
-  const online = !!(p.pay_channel && p.pay_channel !== 'balance' && p.pay_channel !== 'manual')
-  const dest =
-    online && confirm(`该包通过 ${p.pay_channel} 购买。确定 = 原路退回支付渠道；取消 = 退到平台余额。`)
-      ? 'original'
-      : 'balance'
-  if (await run(() => buyer.refundPack(p.id, dest), dest === 'original' ? '已申请原路退款' : '已退货到余额')) {
-    packs.load()
-    keys.load()
-  }
-}
-
 onMounted(async () => {
   keys.load()
   packs.load()
@@ -239,7 +226,7 @@ const createdSample = computed(() =>
 
 <template>
   <div>
-    <PageHeader title="API Key" description="先在市场把商家加入清单，再选择清单内的挂单创建 Key。挂单按排列顺序优先调用，也可添加平台默认分组兜底。订阅套餐从期内额度扣，未用完可按标签退货。">
+    <PageHeader title="API Key" description="先在市场把商家加入清单，再选择清单内的挂单创建 Key。挂单按排列顺序优先调用，也可添加平台默认分组兜底。订阅套餐从期内额度扣；购买与充值不可退款。">
       <RouterLink to="/buyer/merchants" class="xm-btn xm-btn-ghost">商家清单</RouterLink>
       <button type="button" class="xm-btn xm-btn-primary" @click="openCreate">创建 Key</button>
     </PageHeader>
@@ -251,15 +238,6 @@ const createdSample = computed(() =>
         <span class="font-semibold">#{{ p.listing_id }}</span>
         <span>面额 ¥{{ p.face_value.toFixed(0) }} · 剩余 <b style="color:#ff5000">¥{{ p.remaining.toFixed(2) }}</b></span>
         <span style="color:#888">{{ p.status }}</span>
-        <button
-          v-if="p.status === 'active' && p.remaining > 0"
-          type="button"
-          class="xm-btn xm-btn-dark xm-btn-sm"
-          :disabled="busy"
-          @click="refundPack(p)"
-        >
-          退货
-        </button>
       </div>
     </div>
 
@@ -271,7 +249,7 @@ const createdSample = computed(() =>
     </div>
 
     <div class="xm-yellow-callout">
-      店铺活动包自动抵扣已有 Key 的适用调用，额度不足的部分扣平台余额。订阅套餐购买会账面预付套餐价；调用从期内额度扣，未用完可退货。
+      店铺活动包自动抵扣已有 Key 的适用调用，额度不足的部分扣平台余额。订阅套餐购买会账面预付套餐价；调用从期内额度扣，未用完不可退款。
     </div>
 
     <div v-if="keys.loading.value && !keys.data.value?.length" class="py-10 text-center text-[#888]">加载中…</div>

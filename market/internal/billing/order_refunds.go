@@ -20,6 +20,9 @@ import (
 // 不暂停 Key：直接扣减 sub2api 余额，扣减成功后记账并原路退回这笔订单；人工充值、超过退款期限或渠道不可用时人工打款。
 // 期间余额被用掉导致扣减失败时，退款失败并释放订单的可退金额。
 func (f *Funds) RefundRechargeOrder(ctx context.Context, userID, orderID int64, amount float64, note string) (*Refund, error) {
+	if err := DenyBuyerRefund(); err != nil {
+		return nil, err
+	}
 	amt, err := ValidAmount(amount)
 	if err != nil {
 		return nil, err
