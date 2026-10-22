@@ -51,7 +51,10 @@ cd /root/idlecat
 2. 按 `sub2api/.env.example` 生成 `sub2api/.env`，按 `market/deploy/.env.example` 生成 `market.env`（均为权限 600）：
    - `ENGINE_IMAGE` 与 `TM_IMAGE` 使用同一个发布版本（宿主标签不带 `v`，例如 `0.17.2` 与 `v0.17.2`）；
    - 两边的 `MARKET_DB_PASSWORD` 相同，管理员邮箱和密码相同；
-   - `SUB2API_BASE_URL=http://sub2api:8080`，`SUB2API_REPLICA_DSN` 指向 `sub2api-postgres` 的 `tm_readonly`。
+   - `SUB2API_BASE_URL=http://sub2api:8080`，`SUB2API_REPLICA_DSN` 指向 `sub2api-postgres` 的 `tm_readonly`；
+   - `sub2api/.env` 的 `SUB2API_ADMIN_API_KEY`、`CRYPTO_*`、`MARKET_JWT_SECRET` 必须与 `market.env` 的对应值一致：
+     宿主进程要经 enginehost 在进程内构建市场应用，承接 `/api/v1/admin/market/*` 的 relay 路由
+     （inspection/checks、org/*、ledger 等）；缺了这些值，relay 路由会返回 503 `market ledger unavailable`。
 3. `./tm.sh sub2api up -d`（同时创建共享网络）。在宿主库中创建只读账号：
 
    ```sql
