@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -161,6 +162,83 @@ func (s *Store) ListMerchants(ctx context.Context) ([]map[string]any, error) {
 }
 
 func (s *Store) GetSettings(ctx context.Context) (map[string]any, error) {
+	keys, err := s.loadSettingsKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return flattenAdminSettings(keys)
+}
+
+func (s *Store) PutSettings(ctx context.Context, patch map[string]any) error {
+	if len(patch) == 0 {
+		return nil
+	}
+	platFields := platformFieldNames()
+	platPatch := map[string]any{}
+	other := map[string]any{}
+	for k, v := range patch {
+		if k == "platform" {
+			m, ok := v.(map[string]any)
+			if !ok {
+				return fmt.Errorf("settings platform must be an object")
+			}
+			for pk, pv := range m {
+				platPatch[pk] = pv
+			}
+			continue
+		}
+		if _, ok := platFields[k]; ok {
+			platPatch[k] = v
+			continue
+		}
+		other[k] = v
+	}
+
+	tx, err := s.Market.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if len(platPatch) > 0 {
+		var stored []byte
+		err := tx.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'platform'`).Scan(&stored)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			stored = nil
+		}
+		patchRaw, err := json.Marshal(platPatch)
+		if err != nil {
+			return err
+		}
+		out, err := overlayPlatformJSON(stored, patchRaw)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO settings(key, value, updated_at) VALUES ('platform', $1::jsonb, now())
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, string(out)); err != nil {
+			return fmt.Errorf("settings platform: %w", err)
+		}
+	}
+
+	for k, v := range other {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO settings(key, value, updated_at) VALUES ($1, $2::jsonb, now())
+			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, k, string(b)); err != nil {
+			return fmt.Errorf("settings %s: %w", k, err)
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) loadSettingsKeys(ctx context.Context) (map[string]any, error) {
 	rows, err := s.Market.QueryContext(ctx, `SELECT key, value FROM settings ORDER BY key`)
 	if err != nil {
 		return nil, err
@@ -180,38 +258,7 @@ func (s *Store) GetSettings(ctx context.Context) (map[string]any, error) {
 		}
 		out[key] = v
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	// 前端设置页读扁平字段；若落在 platform 包里则摊开
-	if plat, ok := out["platform"].(map[string]any); ok {
-		for k, v := range plat {
-			if _, exists := out[k]; !exists {
-				out[k] = v
-			}
-		}
-	}
-	return out, nil
-}
-
-func (s *Store) PutSettings(ctx context.Context, patch map[string]any) error {
-	tx, err := s.Market.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	for k, v := range patch {
-		b, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO settings(key, value, updated_at) VALUES ($1, $2::jsonb, now())
-			ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, k, string(b)); err != nil {
-			return fmt.Errorf("settings %s: %w", k, err)
-		}
-	}
-	return tx.Commit()
+	return out, rows.Err()
 }
 
 func (s *Store) MarketDiscovery(ctx context.Context) (map[string]any, error) {
