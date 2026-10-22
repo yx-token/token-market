@@ -15,12 +15,33 @@ const query = ref({ ...initQuery })
 const title = computed(() =>
   props.kind === 'accounts' ? t('nav.marketSupplyAccounts') : t('nav.marketSupplyGroups'),
 )
+const hint = computed(() =>
+  props.kind === 'accounts' ? t('nav.marketSupplyAccountsHint') : t('nav.marketSupplyGroupsHint'),
+)
 const path = computed(() => (props.kind === 'accounts' ? '/api/admin/supply/accounts' : '/api/admin/supply/groups'))
 const columns = computed(() =>
   props.kind === 'accounts'
     ? ['upstream_id', 'engine_account_id', 'engine_name', 'platform', 'market_status', 'engine_status', 'health', 'schedulable', 'rate_multiplier', 'linked']
     : ['pool_id', 'engine_group_id', 'name', 'engine_name', 'platform', 'market_status', 'enabled', 'sell_multiplier', 'engine_rate', 'linked']
 )
+const columnLabel: Record<string, string> = {
+  upstream_id: '市场上游',
+  engine_account_id: '引擎账号',
+  engine_name: '引擎名称',
+  platform: '厂商',
+  market_status: '市场状态',
+  engine_status: '引擎状态',
+  health: '健康',
+  schedulable: '可调度',
+  rate_multiplier: '引擎倍率',
+  linked: '已关联',
+  pool_id: '保障池',
+  engine_group_id: '引擎分组',
+  name: '名称',
+  enabled: '启用',
+  sell_multiplier: '池售价倍率',
+  engine_rate: '引擎倍率',
+}
 
 const filtered = computed(() => {
   const keyword = query.value.keyword.trim().toLowerCase()
@@ -73,7 +94,10 @@ watch(() => props.kind, load)
 <template>
   <section id="market-supply-page" class="y-page">
     <header class="y-header">
-      <h2 class="y-title">{{ title }}</h2>
+      <div>
+        <h2 class="y-title">{{ title }}</h2>
+        <p class="y-page-desc">{{ hint }}</p>
+      </div>
       <button type="button" class="y-btn" :disabled="loading" @click="load">{{ t('nav.refresh') }}</button>
     </header>
     <div class="y-container--tight">
@@ -89,7 +113,7 @@ watch(() => props.kind, load)
         <thead>
           <tr>
             <th>{{ t('nav.serialNo') }}</th>
-            <th v-for="col in columns" :key="col">{{ col }}</th>
+            <th v-for="col in columns" :key="col">{{ columnLabel[col] || col }}</th>
           </tr>
         </thead>
         <tbody>

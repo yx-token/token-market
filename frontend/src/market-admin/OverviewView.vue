@@ -18,8 +18,8 @@ onMounted(async () => {
   <section class="y-page">
     <header class="y-header">
       <div>
-        <h2 class="y-title">市场概览</h2>
-        <p class="y-page-desc">引擎兼容状态与迁移指纹</p>
+        <h2 class="y-title">市场状态</h2>
+        <p class="y-page-desc">二手 TOKEN 市场与引擎执行层的联通状态（非独立外挂模块）</p>
       </div>
     </header>
     <div class="y-container--tight">
@@ -30,11 +30,19 @@ onMounted(async () => {
           <dd class="mt-1 font-medium">{{ status.sub2api_version || '—' }}</dd>
         </div>
         <div class="card p-4">
+          <dt class="text-xs text-gray-500">运行模式</dt>
+          <dd class="mt-1 font-medium">{{ status.mode || '—' }}</dd>
+        </div>
+        <div class="card p-4">
           <dt class="text-xs text-gray-500">写保护</dt>
           <dd class="mt-1 font-medium">{{ status.guard_state || '—' }}</dd>
         </div>
+        <div class="card p-4">
+          <dt class="text-xs text-gray-500">宿主</dt>
+          <dd class="mt-1 font-medium">{{ status.host || '—' }}</dd>
+        </div>
         <div class="card col-span-2 p-4">
-          <dt class="text-xs text-gray-500">迁移指纹</dt>
+          <dt class="text-xs text-gray-500">兼容指纹</dt>
           <dd class="mt-1 break-all font-mono text-xs">{{ status.migration_fingerprint || '—' }}</dd>
         </div>
       </dl>

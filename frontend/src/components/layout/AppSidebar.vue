@@ -853,7 +853,7 @@ const customMenuItemsForAdmin = computed(() => {
     .sort((a, b) => a.sort_order - b.sort_order)
 })
 
-// 管理端底座 + 侧栏「闲猫」市场增量（同一套管理员登录）。
+// 管理端：网关运维 + 闲置 TOKEN 市场（同一产品、同一管理员会话）。
 const adminNavItems = computed((): NavItem[] => {
   const baseItems: NavItem[] = [
     { path: '/admin/dashboard', label: t('nav.dashboard'), icon: DashboardIcon },
@@ -919,7 +919,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true },
     {
       path: '/admin/market',
-      label: t('nav.marketBrand'),
+      label: t('nav.idleMarket'),
       icon: GlobeIcon,
       expandOnly: true,
       children: [

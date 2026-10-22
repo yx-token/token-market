@@ -433,7 +433,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/admin/market',
     component: () => import('@/market-admin/MarketShell.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: '闲猫', titleKey: 'nav.marketBrand' },
+    meta: { requiresAuth: true, requiresAdmin: true, title: '闲置市场', titleKey: 'nav.idleMarket' },
     children: [
       { path: '', redirect: '/admin/market/overview' },
       {
