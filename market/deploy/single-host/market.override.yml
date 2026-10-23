@@ -20,10 +20,6 @@ services:
     networks: [default, shared]
   edge:
     networks: [default, shared]
-    # 单进程下无独立 api；edge 只依赖库与 redis
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_started }
 
 networks:
   shared:

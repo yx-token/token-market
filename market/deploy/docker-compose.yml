@@ -87,7 +87,10 @@ services:
       TM_EDGE_ADDR: ":8090"
     ports: ["${EDGE_PORT:-8090}:8090"]
     volumes: [edgespool:/app/data, runtime:/app/runtime]
-    depends_on: [api]
+    # 不依赖 api：单进程 MARKET_EMBED 时无独立 api；edge 只需要库与 redis
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
     restart: unless-stopped
 
 volumes:
