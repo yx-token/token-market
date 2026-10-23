@@ -27,7 +27,7 @@ type SchedulePlan struct {
 }
 
 // SelectSchedulePolicy 按路由形态选策略：含保障池 hop 时声明 pool-buyback-first
-//（账号级回收优先由引擎 scheduling.Plan 执行；Edge 仍按 hop 有序故障转移）。
+// （账号级回收优先由引擎 scheduling.Plan 执行；Edge 仍按 hop 有序故障转移）。
 func SelectSchedulePolicy(hops []edgecfg.Hop) SchedulePolicy {
 	for _, h := range hops {
 		if h.PoolID > 0 {
