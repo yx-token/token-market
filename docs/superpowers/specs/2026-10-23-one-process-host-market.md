@@ -22,7 +22,7 @@ Edge（买家模型流量，另端口）可暂时同镜像独立进程；后续�
 - 管理端市场运营仍走已有 `/api/v1/admin/market/*`（idlecat + relay）。
 - 环境：宿主已有 `MARKET_DATABASE_DSN` + 与 market 一致的 `TM_*` / `CRYPTO_*` / `JWT` 等（见 single-host README）。
 
-## 非目标（本片）
+## 非目标（本片） / 后续
 
-- 不把 Edge 并进同端口。
-- 不物理删除 `market/cmd/api`（standalone 部署仍可用）。
+- ~~不把 Edge 并进同端口~~ → **已做**：`enginehost.StartEdge`，宿主另开 `:8090`（非 8080 同 mux）。
+- 不物理删除 `market/cmd/api|edge`（standalone / `legacy-split` 仍可用）。

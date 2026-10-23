@@ -15,10 +15,13 @@ services:
     security_opt: ["no-new-privileges:true"]
     ulimits:
       nofile: { soft: 100000, hard: 100000 }
-    # 单进程公网入口：C 端 + 管理端 + 网关（MARKET_EMBED=1）
-    ports: ["${PUBLIC_PORT:-8080}:8080"]
+    # 单进程公网入口：控制面 8080 + 买家 Edge 8090（MARKET_EMBED=1）
+    ports:
+      - "${PUBLIC_PORT:-8080}:8080"
+      - "${EDGE_PORT:-8090}:8090"
     volumes:
       - sub2api_data:/app/data
+      - edge_spool:/app/data/edge-spool
     environment:
       AUTO_SETUP: "true"
       SERVER_HOST: 0.0.0.0
@@ -59,10 +62,13 @@ services:
       TM_CRYPTO_KEYS: ${CRYPTO_KEYS:?CRYPTO_KEYS is required}
       TM_CRYPTO_HASH_PEPPER: ${CRYPTO_HASH_PEPPER:?CRYPTO_HASH_PEPPER is required}
       TM_AUTH_JWT_SECRET: ${MARKET_JWT_SECRET:?MARKET_JWT_SECRET is required}
-      # 单进程：宿主内嵌市场 C 端 HTTP + worker；公网 8080 可直打宿主（见 single-host README）
+      # 单进程：宿主内嵌市场 C 端 HTTP + worker + edge
       MARKET_EMBED: "1"
       TM_HTTP_WEB_DIR: /app/market-web
+      TM_EDGE_ADDR: ":8090"
+      TM_EDGE_SPOOL_DIR: /app/data/edge-spool
       TM_EDGE_PUBLIC_URL: ${EDGE_PUBLIC_URL:-}
+      TM_SUB2API_GATEWAY_URL: http://127.0.0.1:8080
       # 站内更新拉取本仓 Release（勿指向上游社区仓库）
       UPDATE_GITHUB_REPO: ${UPDATE_GITHUB_REPO:-yx-token/token-market}
     depends_on:
@@ -135,5 +141,6 @@ networks:
 
 volumes:
   sub2api_data:
+  edge_spool:
   postgres_data:
   redis_data:

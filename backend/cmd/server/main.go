@@ -168,10 +168,11 @@ func runMainServer() {
 		}
 	}
 
-	// 宿主生命周期：HTTP 与内嵌市场 worker 共用同一 cancel
+	// 宿主生命周期：HTTP、内嵌市场 worker / edge 共用同一 cancel
 	runCtx, stopRun := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopRun()
 	enginehost.StartWorker(runCtx)
+	enginehost.StartEdge(runCtx)
 
 	// 启动服务器
 	go func() {

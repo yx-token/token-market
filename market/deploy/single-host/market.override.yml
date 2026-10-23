@@ -19,6 +19,7 @@ services:
     profiles: ["legacy-split"]
     networks: [default, shared]
   edge:
+    profiles: ["legacy-split"]
     networks: [default, shared]
 
 networks:
