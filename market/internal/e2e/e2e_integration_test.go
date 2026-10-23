@@ -836,6 +836,7 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 	if !approx(*wallet.Balance, left) || !approx(wallet.LedgerCash, left) {
 		t.Fatalf("wallet after denied refund: %+v want %v", wallet, left)
 	}
+	ed.waitKey(key.Key, "active")
 	if status, _ := call(); status != 200 {
 		t.Fatalf("keys must remain usable when refund is denied, got %d", status)
 	}
