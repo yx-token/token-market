@@ -147,20 +147,6 @@ func (s *Store) QualityOverview(ctx context.Context) (map[string]any, error) {
 	}, nil
 }
 
-func (s *Store) PaymentStatus(ctx context.Context) (map[string]any, error) {
-	rows, err := s.ListMerchants(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"merchants": rows, "mode": "native"}, nil
-}
-
-func (s *Store) ListMerchants(ctx context.Context) ([]map[string]any, error) {
-	return s.queryMaps(ctx, `
-		SELECT provider, enabled, updated_at
-		FROM payment_merchants ORDER BY provider`)
-}
-
 func (s *Store) GetSettings(ctx context.Context) (map[string]any, error) {
 	keys, err := s.loadSettingsKeys(ctx)
 	if err != nil {

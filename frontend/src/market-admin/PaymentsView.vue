@@ -9,12 +9,30 @@ const loading = ref(false)
 
 const rows = computed(() => merchants.value || [])
 
+/** relay 返回 `{ alipay: View, wechat: View }`；兼容旧数组形。 */
+function merchantsToRows(mc: unknown): Record<string, unknown>[] {
+  if (Array.isArray(mc)) return mc as Record<string, unknown>[]
+  if (mc && typeof mc === 'object') {
+    return Object.values(mc as Record<string, Record<string, unknown>>)
+      .filter((v) => v && typeof v === 'object')
+      .map((v) => ({
+        provider: v.provider,
+        enabled: v.enabled,
+        updated_at: v.updated_at,
+        ready: v.ready,
+        problem: v.problem,
+      }))
+      .sort((a, b) => String(a.provider || '').localeCompare(String(b.provider || '')))
+  }
+  return []
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
     const mc = await marketGet<unknown>(`${MARKET_API_PREFIX}/payments/merchants`)
-    merchants.value = Array.isArray(mc) ? (mc as Record<string, unknown>[]) : []
+    merchants.value = merchantsToRows(mc)
   } catch (e) {
     error.value = e instanceof Error ? e.message : '加载失败'
     merchants.value = []

@@ -83,8 +83,7 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 	bind("probe-runs", func(c *gin.Context) (any, error) { return store.ListProbeRuns(c.Request.Context()) })
 	bind("market-categories", func(c *gin.Context) (any, error) { return store.ListCategories(c.Request.Context()) })
 	bind("quality/overview", func(c *gin.Context) (any, error) { return store.QualityOverview(c.Request.Context()) })
-	bind("payments/status", func(c *gin.Context) (any, error) { return store.PaymentStatus(c.Request.Context()) })
-	bind("payments/merchants", func(c *gin.Context) (any, error) { return store.ListMerchants(c.Request.Context()) })
+	// payments/* 读走 relay，与 PUT merchants 同形（merchants.View map），避免 native 数组分裂。
 	bind("settings", func(c *gin.Context) (any, error) { return store.GetSettings(c.Request.Context()) })
 	bind("market-discovery", func(c *gin.Context) (any, error) { return store.MarketDiscovery(c.Request.Context()) })
 	bind("identities", func(c *gin.Context) (any, error) { return store.ListIdentities(c.Request.Context()) })
@@ -240,6 +239,8 @@ func registerIdleCatRelay(admin *gin.RouterGroup) {
 		"POST kyc/:id/review",
 		"POST users/:id/status",
 		"POST recharges/:id/sync",
+		"GET payments/status",
+		"GET payments/merchants",
 		"PUT payments/merchants/:provider",
 		"POST payments/merchants/:provider/test",
 		"POST refund-payouts/:id/retry",
