@@ -285,55 +285,25 @@ func TestStoreCreditsRefundOnlyUnusedPaidAmountAndRetry(t *testing.T) {
 	f.post(t, 1)
 	ctx := context.Background()
 	for range 2 {
-		p, err := f.funds.RefundCreditPack(ctx, f.buyerID, f.packID)
-		if err != nil || p.Status != "refunding" {
-			t.Fatalf("request refund should freeze once: %+v %v", p, err)
+		_, err := f.funds.RefundCreditPack(ctx, f.buyerID, f.packID)
+		var he *httpx.Error
+		if !errors.As(err, &he) || he.Status != 403 || he.Code != "BUYER_REFUNDS_DISABLED" {
+			t.Fatalf("buyer credit-pack refund must be disabled: %v", err)
 		}
 	}
-	// 实时余额尚未追平时禁止退款，不能把未入账用量转为返现。
-	if err := f.funds.AdvanceCreditPacks(ctx); err != nil {
-		t.Fatal(err)
-	}
-	var operations int
-	if err := f.db.QueryRow(ctx, `SELECT count(*) FROM sub2api_ops WHERE idempotency_key LIKE 'tm-credit-refund-%'`).Scan(&operations); err != nil || operations != 0 {
-		t.Fatalf("unsettled pack should not enqueue refund: operations=%d err=%v", operations, err)
-	}
-	creditExec(t, f.replicaDB, `UPDATE users SET balance=66.5 WHERE id=201`)
-	for range 2 {
-		if err := f.funds.AdvanceCreditPacks(ctx); err != nil {
-			t.Fatal(err)
-		}
-	}
-	f.assertOp(t, fmt.Sprintf("tm-credit-refund-debit-%d", f.packID), "user.balance_subtract", "user:201", "66.5")
+	f.assertPack(t, "9.5", "66.5", "28.5", "active")
 	f.assertBalances(t, 70, 28.5, 1.2, 0.3)
-	creditExec(t, f.db, `UPDATE sub2api_ops SET status='done' WHERE id=(SELECT refund_op_id FROM store_credit_packs WHERE id=$1)`, f.packID)
-	creditExec(t, f.replicaDB, `UPDATE users SET balance=0 WHERE id=201`)
-	for range 2 {
-		if err := f.funds.AdvanceCreditPacks(ctx); err != nil {
-			t.Fatal(err)
-		}
+	var operations, refunds int
+	if err := f.db.QueryRow(ctx, `SELECT count(*) FROM sub2api_ops WHERE idempotency_key LIKE 'tm-credit-refund-%'`).Scan(&operations); err != nil || operations != 0 {
+		t.Fatalf("disabled refund must not enqueue ops: operations=%d err=%v", operations, err)
 	}
-	f.assertOp(t, fmt.Sprintf("tm-credit-refund-credit-%d", f.packID), "user.balance_add", "user:101", "28.5")
-	f.assertPack(t, "0", "0", "0", "refunding")
-	f.assertBalances(t, 98.5, 0, 1.2, 0.3)
-	creditExec(t, f.db, `UPDATE sub2api_ops SET status='done' WHERE id=(SELECT refund_credit_op_id FROM store_credit_packs WHERE id=$1)`, f.packID)
-	for range 2 {
-		if err := f.funds.AdvanceCreditPacks(ctx); err != nil {
-			t.Fatal(err)
-		}
-		p, err := f.funds.RefundCreditPack(ctx, f.buyerID, f.packID)
-		if err != nil || p.Status != "refunded" {
-			t.Fatalf("completed refund retry should retain final result: %+v %v", p, err)
-		}
-	}
-	f.assertBalances(t, 98.5, 0, 1.2, 0.3)
-	var refunds int
-	if err := f.db.QueryRow(ctx, `SELECT count(*) FROM ledger_txns WHERE ref=$1`, fmt.Sprintf("store-credit-refund:%d", f.packID)).Scan(&refunds); err != nil || refunds != 1 {
-		t.Fatalf("refund should create exactly one ledger transaction: %d %v", refunds, err)
+	if err := f.db.QueryRow(ctx, `SELECT count(*) FROM ledger_txns WHERE ref=$1`, fmt.Sprintf("store-credit-refund:%d", f.packID)).Scan(&refunds); err != nil || refunds != 0 {
+		t.Fatalf("disabled refund must not post ledger: %d %v", refunds, err)
 	}
 }
 
 // 与真实 sub2api 一致，fixture 余额仅保留8位；消费日志仍保留10位。
+// 买家不可退款政策下，精度追回路径不再执行，仅断言各余额形态下入口均被拒绝。
 func TestStoreCreditsRefundReclaimsRemotePrecision(t *testing.T) {
 	for _, mode := range []string{"legacy", "quantized", "unexplained"} {
 		t.Run(mode, func(t *testing.T) {
@@ -351,40 +321,14 @@ func TestStoreCreditsRefundReclaimsRemotePrecision(t *testing.T) {
 			if mode == "unexplained" {
 				creditExec(t, f.replicaDB, `UPDATE users SET balance=balance-0.001 WHERE id=201`)
 			}
-			if _, err := f.funds.RefundCreditPack(ctx, f.buyerID, f.packID); err != nil {
-				t.Fatal(err)
+			_, err := f.funds.RefundCreditPack(ctx, f.buyerID, f.packID)
+			var he *httpx.Error
+			if !errors.As(err, &he) || he.Status != 403 || he.Code != "BUYER_REFUNDS_DISABLED" {
+				t.Fatalf("buyer credit-pack refund must be disabled: %v", err)
 			}
-			if err := f.funds.AdvanceCreditPacks(ctx); err != nil {
-				t.Fatal(err)
-			}
-			if mode == "unexplained" {
-				var count int
-				if err := f.db.QueryRow(ctx, `SELECT count(*) FROM sub2api_ops WHERE idempotency_key=$1`, fmt.Sprintf("tm-credit-refund-debit-%d", f.packID)).Scan(&count); err != nil || count != 0 {
-					t.Fatalf("unexplained difference must block refund: count=%d err=%v", count, err)
-				}
-				return
-			}
-			var amount, remaining float64
-			if err := f.db.QueryRow(ctx, `SELECT (o.payload->>'amount')::float8,p.remaining_balance_units::float8
- FROM store_credit_packs p JOIN sub2api_ops o ON o.id=p.refund_op_id WHERE p.id=$1`, f.packID).Scan(&amount, &remaining); err != nil {
-				t.Fatal(err)
-			}
-			if math.Abs(amount-remaining) <= 1e-9 {
-				t.Fatal("test must exercise accumulated8/10-digit difference")
-			}
-			// 使用真实 numeric(20,8) 执行上游的非负扣款条件，不能只断言payload字符串。
-			var remote float64
-			if err := f.replicaDB.QueryRow(ctx, `UPDATE users SET balance=balance-$1::numeric
- WHERE id=201 AND balance-$1::numeric>=0 RETURNING balance::float8`, amount).Scan(&remote); err != nil || remote != 0 {
-				t.Fatalf("refund must reclaim exact remote balance: remaining=%v err=%v", remote, err)
-			}
-			creditExec(t, f.db, `UPDATE sub2api_ops SET status='done' WHERE id=(SELECT refund_op_id FROM store_credit_packs WHERE id=$1)`, f.packID)
-			if err := f.funds.AdvanceCreditPacks(ctx); err != nil {
-				t.Fatal(err)
-			}
-			var credits int
-			if err := f.db.QueryRow(ctx, `SELECT count(*) FROM sub2api_ops WHERE idempotency_key=$1`, fmt.Sprintf("tm-credit-refund-credit-%d", f.packID)).Scan(&credits); err != nil || credits != 1 {
-				t.Fatalf("paid refund should progress exactly once: count=%d err=%v", credits, err)
+			var count int
+			if err := f.db.QueryRow(ctx, `SELECT count(*) FROM sub2api_ops WHERE idempotency_key=$1`, fmt.Sprintf("tm-credit-refund-debit-%d", f.packID)).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("disabled refund must not enqueue debit: count=%d err=%v", count, err)
 			}
 		})
 	}

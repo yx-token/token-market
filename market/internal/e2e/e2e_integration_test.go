@@ -675,7 +675,6 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 	// Edge
 	ed := e.startEdge()
 	call := func() (int, http.Header) { return ed.call(key.Key) }
-	waitKey := func(want string) { ed.waitKey(key.Key, want) }
 	// 1) 指定卖家正常 → 第一跳成功
 	if status, h := call(); status != 200 || h.Get("X-TM-Listing") != fmt.Sprintf("listing:%d", listing1) {
 		t.Fatalf("first call should be served by listing %d: %d %v", listing1, status, h)
@@ -820,35 +819,25 @@ func TestMarketplaceEndToEnd(t *testing.T) {
 		t.Fatalf("withdrawal: %+v", wd)
 	}
 
-	// 退款：锁定 Key → 扣减 sub2api 余额 → 记账 → 管理员打款
-	var refund idOnly
-	buyer.must("POST", "/api/buyer/refunds", map[string]string{"note": "done"}, &refund)
-	waitKey("disabled")
-	if status, _ := call(); status != 403 {
-		t.Fatalf("keys must be locked during refund, got %d", status)
-	}
-	for i := 0; i < 3; i++ {
-		if err := e.app.Funds.AdvanceRefunds(ctx); err != nil {
-			t.Fatal(err)
-		}
-		e.drain()
+	// 买家侧不可退款：入口拒绝，Key 与余额保持不变
+	if raw := buyer.expect(403, "POST", "/api/buyer/refunds", map[string]string{"note": "done"}); !strings.Contains(raw, "BUYER_REFUNDS_DISABLED") {
+		t.Fatalf("buyer refund must be disabled: %s", raw)
 	}
 	var refunds []struct {
 		Status string  `json:"status"`
 		Amount float64 `json:"amount"`
 	}
 	buyer.must("GET", "/api/buyer/refunds", nil, &refunds)
-	if len(refunds) != 1 || refunds[0].Status != "paying" || !approx(refunds[0].Amount, math.Floor((10-spent)*100+1e-6)/100) {
-		t.Fatalf("refund: %+v", refunds)
+	if len(refunds) != 0 {
+		t.Fatalf("disabled refund must not create rows: %+v", refunds)
 	}
-	admin.must("POST", fmt.Sprintf("/api/admin/refunds/%d/paid", refund.ID), map[string]string{"payout_ref": "back-1"}, nil)
 	buyer.must("GET", "/api/buyer/wallet", nil, &wallet)
-	left := 10 - spent - refunds[0].Amount
+	left := 10 - spent
 	if !approx(*wallet.Balance, left) || !approx(wallet.LedgerCash, left) {
-		t.Fatalf("wallet after refund: %+v want %v", wallet, left)
+		t.Fatalf("wallet after denied refund: %+v want %v", wallet, left)
 	}
-	if n, err := e.app.Reconciler.RunBalances(ctx); err != nil || n != 0 {
-		t.Fatalf("balance reconciliation after refund: %d %v", n, err)
+	if status, _ := call(); status != 200 {
+		t.Fatalf("keys must remain usable when refund is denied, got %d", status)
 	}
 
 	// 下架：删除上游后调度器移除 sub2api 账号（宽限期之后）

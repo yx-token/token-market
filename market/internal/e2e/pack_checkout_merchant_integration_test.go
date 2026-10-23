@@ -244,26 +244,26 @@ func TestPackCheckoutMerchantInvalidation(t *testing.T) {
 			if ordinaryView.PackCheckoutStatus != nil {
 				t.Fatalf("ordinary recharge must omit pack_checkout_status: %+v", ordinaryView)
 			}
-			// 旧包正常购入和退款均须真实入账，数据库约束不能拒绝既有交易类型。
-			var refunded listing.QuotaPack
+			// 买家侧不可退款：额度包退款入口拒绝，已履约库存与购入记账保持不变。
 			refundPath := "/api/buyer/packs/" + itoa(packs[0].ID) + "/refund"
-			rawMarketCall(t, owner, http.StatusOK, "POST", refundPath, map[string]string{"dest": "balance"}, &refunded)
-			if refunded.Status != "refunded" || refunded.Remaining != 0 {
-				t.Fatalf("normal unused pack must refund: %+v", refunded)
+			if raw := rawMarketCall(t, owner, http.StatusForbidden, "POST", refundPath, map[string]string{"dest": "balance"}, nil); !strings.Contains(raw, "BUYER_REFUNDS_DISABLED") {
+				t.Fatalf("pack refund must be disabled: %s", raw)
 			}
-			rawMarketCall(t, owner, http.StatusConflict, "POST", refundPath, map[string]string{"dest": "balance"}, nil)
-			stockSold(0)
-			var refundedWallet billing.Wallet
-			rawMarketCall(t, owner, http.StatusOK, "GET", "/api/buyer/wallet", nil, &refundedWallet)
-			if refundedWallet.Balance == nil || !approx(*refundedWallet.Balance, 10) || !approx(refundedWallet.LedgerCash, 10) {
-				t.Fatalf("normal pack refund must restore prepayment exactly once: %+v", refundedWallet)
+			stockSold(1)
+			var deniedWallet billing.Wallet
+			rawMarketCall(t, owner, http.StatusOK, "GET", "/api/buyer/wallet", nil, &deniedWallet)
+			if deniedWallet.Balance == nil || !approx(*deniedWallet.Balance, 10) || !approx(deniedWallet.LedgerCash, 0) {
+				t.Fatalf("denied pack refund must leave prepayment untouched: %+v", deniedWallet)
 			}
-			for _, typ := range []string{"pack_purchase", "pack_refund"} {
-				var count int
-				mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT count(*) FROM ledger_txns WHERE type=$1", typ), &count)
-				if count != 1 {
-					t.Fatalf("normal pack must post %s once: %d", typ, count)
-				}
+			var purchaseCount, refundCount int
+			mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT count(*) FROM ledger_txns WHERE type=$1", "pack_purchase"), &purchaseCount)
+			mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT count(*) FROM ledger_txns WHERE type=$1", "pack_refund"), &refundCount)
+			if purchaseCount != 1 || refundCount != 0 {
+				t.Fatalf("normal pack must post purchase once and never refund: purchase=%d refund=%d", purchaseCount, refundCount)
+			}
+			rawMarketCall(t, owner, http.StatusOK, "GET", "/api/buyer/packs", nil, &packs)
+			if len(packs) != 1 || packs[0].Status != "active" || !approx(packs[0].Remaining, 10) {
+				t.Fatalf("denied pack refund must keep active pack: %+v", packs)
 			}
 		})
 	}

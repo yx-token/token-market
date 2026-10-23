@@ -5,6 +5,7 @@ package e2e
 import (
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/yx-token/token-market/market/internal/billing"
@@ -42,7 +43,13 @@ func TestCreditPackPurchaseIsolationAndSnapshot(t *testing.T) {
 	if pack.ID != replay.ID || pack.SellerID != offer.SellerID || pack.FaceValueUSD != 100 || pack.PriceCNY != 80 || pack.USDToBalanceRate != 2 {
 		t.Fatalf("purchase snapshot or idempotency mismatch: first=%+v replay=%+v", pack, replay)
 	}
-	other.expect(404, "POST", fmt.Sprintf("/api/buyer/credit-packs/%d/refund", pack.ID), nil)
+	refundPath := fmt.Sprintf("/api/buyer/credit-packs/%d/refund", pack.ID)
+	if raw := other.expect(403, "POST", refundPath, nil); !strings.Contains(raw, "BUYER_REFUNDS_DISABLED") {
+		t.Fatalf("other buyer credit-pack refund must be disabled: %s", raw)
+	}
+	if raw := buyer.expect(403, "POST", refundPath, nil); !strings.Contains(raw, "BUYER_REFUNDS_DISABLED") {
+		t.Fatalf("owner credit-pack refund must be disabled: %s", raw)
+	}
 	other.expect(404, "PUT", fmt.Sprintf("/api/seller/credit-offers/%d", offer.ID), map[string]any{
 		"title": "不属于此卖家", "price_cny": 1, "face_value_usd": 999,
 	})
