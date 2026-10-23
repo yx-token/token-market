@@ -297,7 +297,7 @@ func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []
 	}
 
 	// 单进程：若包内有 market-web/ 且配置了 TM_HTTP_WEB_DIR，同步 C 端静态
-	if webDir := strings.TrimSpace(os.Getenv("TM_HTTP_WEB_DIR")); webDir != "" {
+	if webDir, ok := trustedMarketWebDir(os.Getenv("TM_HTTP_WEB_DIR")); ok {
 		if err := s.extractMarketWeb(archivePath, webDir); err != nil {
 			// 二进制已换成功；静态失败只返回错误提示人工拉镜像，不回滚二进制
 			return fmt.Errorf("binary updated but market-web extract failed: %w", err)
@@ -623,6 +623,16 @@ func (s *UpdateService) extractBinary(archivePath, destPath string) error {
 	return out.Close()
 }
 
+// trustedMarketWebDir 只允许部署约定目录，返回字面量以切断 Getenv 污点（gosec G703）。
+func trustedMarketWebDir(raw string) (string, bool) {
+	switch filepath.Clean(strings.TrimSpace(raw)) {
+	case "/app/market-web":
+		return "/app/market-web", true
+	default:
+		return "", false
+	}
+}
+
 // extractMarketWeb 从宿主更新包中解压 market-web/ 到 destDir（C 端静态）。
 // 包内无该目录时视为旧包，跳过（nil）。
 func (s *UpdateService) extractMarketWeb(archivePath, destDir string) error {
@@ -653,6 +663,24 @@ func (s *UpdateService) extractMarketWeb(archivePath, destDir string) error {
 
 	found := false
 	const maxFile = 32 << 20 // 32MiB per asset
+	stagingClean := filepath.Clean(staging)
+	safeUnderStaging := func(rel string) (string, error) {
+		rel = filepath.Clean(rel)
+		if rel == "." || rel == "" || strings.HasPrefix(rel, "..") {
+			return "", fmt.Errorf("invalid market-web path: %q", rel)
+		}
+		// 禁止绝对路径（Clean 后仍可能以分隔符开头）
+		if filepath.IsAbs(rel) {
+			return "", fmt.Errorf("absolute market-web path rejected: %q", rel)
+		}
+		target := filepath.Join(stagingClean, rel)
+		// 确认落在 staging 目录内，堵住 path traversal
+		prefix := stagingClean + string(os.PathSeparator)
+		if target != stagingClean && !strings.HasPrefix(target, prefix) {
+			return "", fmt.Errorf("path escapes staging: %q", rel)
+		}
+		return target, nil
+	}
 	tr := tar.NewReader(reader)
 	for {
 		hdr, err := tr.Next()
@@ -667,11 +695,15 @@ func (s *UpdateService) extractMarketWeb(archivePath, destDir string) error {
 			continue
 		}
 		rel := strings.TrimPrefix(name, "market-web/")
-		if rel == "" || strings.Contains(rel, "..") {
+		if rel == "" {
 			continue
 		}
+		target, err := safeUnderStaging(rel)
+		if err != nil {
+			return err
+		}
 		if hdr.Typeflag == tar.TypeDir {
-			if err := os.MkdirAll(filepath.Join(staging, rel), 0755); err != nil {
+			if err := os.MkdirAll(target, 0755); err != nil {
 				return err
 			}
 			found = true
@@ -683,7 +715,6 @@ func (s *UpdateService) extractMarketWeb(archivePath, destDir string) error {
 		if hdr.Size > maxFile {
 			return fmt.Errorf("market-web file too large: %s", rel)
 		}
-		target := filepath.Join(staging, rel)
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			return err
 		}
