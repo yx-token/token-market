@@ -76,8 +76,3 @@ func (s *Store) RetireProbeItem(ctx context.Context, id int64) error {
 	}
 	return rowsChanged(res)
 }
-
-// PutDiscovery 整包写回市场发现配置（含热搜开关）。
-func (s *Store) PutDiscovery(ctx context.Context, body map[string]any) error {
-	return s.PutSettings(ctx, map[string]any{"market_discovery": body})
-}

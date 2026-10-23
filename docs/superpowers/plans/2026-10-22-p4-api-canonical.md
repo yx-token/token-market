@@ -7,3 +7,4 @@
 - [x] `docs/dev/admin-market-api-canonical.md`
 - [x] `market-admin` views use `MARKET_API_PREFIX` (no `/api/admin/*` literals)
 - [x] payments GET via relay; drop idlecat `ListMerchants`/`PaymentStatus`; PaymentsView normalizes map→rows
+- [x] settings + market-discovery via relay; drop idlecat platform_settings / PutSettings / PutDiscovery duplicate

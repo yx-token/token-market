@@ -19,7 +19,7 @@
 | 分类 | `market-categories` |
 | 质量 | `quality/overview` |
 | 支付 | `payments/status`, `payments/merchants`（读/写均 relay → market `merchants.View`） |
-| 设置 / 热搜 | `settings`, `market-discovery` |
+| 设置 / 热搜 | `settings`, `market-discovery`（读/写均 relay → market `settings.Load`/`Update`、`LoadDiscovery`/`SaveDiscovery`） |
 | 身份 | `identities` |
 | 质检项 | `inspection/checks`（relay） |
 

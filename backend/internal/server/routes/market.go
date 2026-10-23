@@ -83,23 +83,8 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 	bind("probe-runs", func(c *gin.Context) (any, error) { return store.ListProbeRuns(c.Request.Context()) })
 	bind("market-categories", func(c *gin.Context) (any, error) { return store.ListCategories(c.Request.Context()) })
 	bind("quality/overview", func(c *gin.Context) (any, error) { return store.QualityOverview(c.Request.Context()) })
-	// payments/* 读走 relay，与 PUT merchants 同形（merchants.View map），避免 native 数组分裂。
-	bind("settings", func(c *gin.Context) (any, error) { return store.GetSettings(c.Request.Context()) })
-	bind("market-discovery", func(c *gin.Context) (any, error) { return store.MarketDiscovery(c.Request.Context()) })
+	// payments/*、settings、market-discovery 读/写均走 relay（market 已扁平 Defaults）。
 	bind("identities", func(c *gin.Context) (any, error) { return store.ListIdentities(c.Request.Context()) })
-
-	admin.PUT("/market/settings", func(c *gin.Context) {
-		var patch map[string]any
-		if err := c.ShouldBindJSON(&patch); err != nil {
-			response.BadRequest(c, "invalid json")
-			return
-		}
-		if err := store.PutSettings(c.Request.Context(), patch); err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		idleCatOK(c, func() (any, error) { return store.GetSettings(c.Request.Context()) })
-	})
 
 	admin.PUT("/market/vendors/:platform", func(c *gin.Context) {
 		var in struct {
@@ -159,18 +144,6 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 			return
 		}
 		response.Success(c, gin.H{"id": id, "status": "retired"})
-	})
-	admin.PUT("/market/market-discovery", func(c *gin.Context) {
-		var body map[string]any
-		if err := c.ShouldBindJSON(&body); err != nil {
-			response.BadRequest(c, "invalid json")
-			return
-		}
-		if err := store.PutDiscovery(c.Request.Context(), body); err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		idleCatOK(c, func() (any, error) { return store.MarketDiscovery(c.Request.Context()) })
 	})
 	admin.POST("/market/identities/ensure", func(c *gin.Context) {
 		var in struct {
@@ -243,6 +216,10 @@ func registerIdleCatRelay(admin *gin.RouterGroup) {
 		"GET payments/merchants",
 		"PUT payments/merchants/:provider",
 		"POST payments/merchants/:provider/test",
+		"GET settings",
+		"PUT settings",
+		"GET market-discovery",
+		"PUT market-discovery",
 		"POST refund-payouts/:id/retry",
 		"POST refund-payouts/:id/manual",
 		"GET anomalies",
