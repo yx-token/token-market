@@ -157,14 +157,19 @@
   padding: 10px 14px !important;
 }
 
+/* 二级：整块相对一级缩进，文字不再与一级标题齐平 */
 .console-app .sidebar-link--l2 {
   min-height: 36px !important;
-  padding: 8px 14px 8px 42px !important;
+  padding: 8px 12px 8px 14px !important;
+  font-size: 13px !important;
 }
 
+/* 三级：再缩进一级 */
 .console-app .sidebar-link--l3 {
   min-height: 34px !important;
-  padding: 8px 14px 8px 56px !important;
+  padding: 7px 12px 7px 14px !important;
+  font-size: 13px !important;
+  font-weight: 450 !important;
 }
 
 .console-app .sidebar-ico,
@@ -211,16 +216,34 @@
   background: rgba(5, 85, 206, 0.14) !important;
 }
 
+/* 仅二级「分组标题」按钮：有子路由激活时只改字色，不用一级同款蓝底 */
+.console-app .sidebar-group > .sidebar-link--l2.sidebar-link-active {
+  color: #0555ce !important;
+  background: transparent !important;
+  font-weight: 600 !important;
+}
+
+.console-app .sidebar-group > .sidebar-link--l2.sidebar-link-active:hover {
+  color: #0555ce !important;
+  background: rgba(15, 23, 42, 0.04) !important;
+}
+
 .console-app .sidebar-submenu {
   margin: 0;
   padding: 0;
   border: none;
 }
 
-.console-app .sidebar-submenu--l2,
+.console-app .sidebar-submenu--l2 {
+  margin: 0 0 4px;
+  padding: 2px 0 2px 18px;
+  border: none;
+  border-left: none;
+}
+
 .console-app .sidebar-submenu--l3 {
   margin: 0;
-  padding: 0;
+  padding: 2px 0 2px 14px;
   border: none;
   border-left: none;
 }

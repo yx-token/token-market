@@ -86,54 +86,9 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 	// payments/*、settings、market-discovery 读/写均走 relay（market 已扁平 Defaults）。
 	bind("identities", func(c *gin.Context) (any, error) { return store.ListIdentities(c.Request.Context()) })
 
-	admin.PUT("/market/vendors/:platform", func(c *gin.Context) {
-		var in struct {
-			Enabled *bool `json:"enabled"`
-		}
-		if err := c.ShouldBindJSON(&in); err != nil || in.Enabled == nil {
-			response.BadRequest(c, "enabled required")
-			return
-		}
-		if err := store.SetVendorEnabled(c.Request.Context(), c.Param("platform"), *in.Enabled); err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		idleCatOK(c, func() (any, error) { return store.ListVendors(c.Request.Context()) })
-	})
+	// PUT vendors/:platform、PUT pools/:id、PUT detection-policies/:platform 走 relay；见 registerIdleCatRelay。
 	admin.POST("/market/proxies/:id/disable", func(c *gin.Context) { idleCatProxy(c, store, true) })
 	admin.POST("/market/proxies/:id/enable", func(c *gin.Context) { idleCatProxy(c, store, false) })
-	admin.PUT("/market/pools/:id", func(c *gin.Context) {
-		id, ok := idleCatID(c)
-		if !ok {
-			return
-		}
-		var in struct {
-			Enabled *bool `json:"enabled"`
-		}
-		if err := c.ShouldBindJSON(&in); err != nil || in.Enabled == nil {
-			response.BadRequest(c, "enabled required")
-			return
-		}
-		if err := store.SetPoolEnabled(c.Request.Context(), id, *in.Enabled); err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		response.Success(c, gin.H{"id": id, "enabled": *in.Enabled})
-	})
-	admin.PUT("/market/detection-policies/:platform", func(c *gin.Context) {
-		var in struct {
-			Enabled *bool `json:"enabled"`
-		}
-		if err := c.ShouldBindJSON(&in); err != nil || in.Enabled == nil {
-			response.BadRequest(c, "enabled required")
-			return
-		}
-		if err := store.SetPolicyEnabled(c.Request.Context(), c.Param("platform"), c.Query("auth_type"), *in.Enabled); err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		idleCatOK(c, func() (any, error) { return store.ListPolicies(c.Request.Context()) })
-	})
 	admin.POST("/market/probe-items/:id/retire", func(c *gin.Context) {
 		id, ok := idleCatID(c)
 		if !ok {
@@ -184,13 +139,16 @@ func registerIdleCatRelay(admin *gin.RouterGroup) {
 		"POST market-categories",
 		"PUT market-categories/:id",
 		"DELETE market-categories/:id",
+		"PUT vendors/:platform",
 		"POST proxies",
 		"POST proxies/:id/sync",
 		"POST proxies/:id/test",
 		"POST proxies/:id/quality-check",
 		"POST pools",
+		"PUT pools/:id",
 		"POST pools/:id/sync",
 		"PUT detection-providers/:name",
+		"PUT detection-policies/:platform",
 		"GET third-party-checks",
 		"PUT upstreams/:id/detection-override",
 		"DELETE upstreams/:id/detection-override",

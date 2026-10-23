@@ -8,6 +8,11 @@ const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppSi
 const componentSource = readFileSync(componentPath, 'utf8')
 const stylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../style.css')
 const styleSource = readFileSync(stylePath, 'utf8')
+const bridgeStylePath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../styles/xianmao-admin-bridge.css',
+)
+const bridgeStyleSource = readFileSync(bridgeStylePath, 'utf8')
 
 describe('AppSidebar custom SVG styles', () => {
   it('does not override uploaded SVG fill or stroke colors', () => {
@@ -60,6 +65,41 @@ describe('AppSidebar header styles', () => {
     expect(sidebarBrandBlockMatch).not.toBeNull()
     expect(sidebarHeaderBlockMatch?.[0]).not.toContain('@apply overflow-hidden;')
     expect(sidebarBrandBlockMatch?.[0]).not.toContain('overflow: hidden;')
+  })
+})
+
+describe('AppSidebar market menu hierarchy', () => {
+  it('does not nest buyer entry as a fake L2 group under idle market', () => {
+    expect(componentSource).not.toContain("path: '/admin/market/section-front'")
+    expect(componentSource).not.toContain("label: t('nav.marketFront')")
+    // buyer leaves hang directly under idle market (L2)
+    expect(componentSource).toMatch(/path: '\/admin\/market'[\s\S]*?path: '\/'[\s\S]*?nav\.backToMarket/)
+    expect(componentSource).toMatch(/path: '\/shop'[\s\S]*?nav\.marketShelf/)
+    expect(componentSource).toMatch(/path: '\/shop\/center'[\s\S]*?nav\.marketCenter/)
+  })
+
+  it('keeps supply / funds / quality / ops as L2 groups with L3 children', () => {
+    for (const section of [
+      'section-supply',
+      'section-funds',
+      'section-quality',
+      'section-ops',
+    ]) {
+      expect(componentSource).toContain(`path: '/admin/market/${section}'`)
+    }
+  })
+})
+
+describe('AppSidebar level indent styles', () => {
+  it('indents L2/L3 via submenu padding so they are not flush with L1', () => {
+    expect(bridgeStyleSource).toMatch(/\.sidebar-submenu--l2\s*\{[\s\S]*?padding:\s*2px 0 2px 18px/)
+    expect(bridgeStyleSource).toMatch(/\.sidebar-submenu--l3\s*\{[\s\S]*?padding:\s*2px 0 2px 14px/)
+  })
+
+  it('does not paint L2 group headers with the same active pill as L1', () => {
+    expect(bridgeStyleSource).toMatch(
+      /\.sidebar-group\s*>\s*\.sidebar-link--l2\.sidebar-link-active\s*\{[\s\S]*?background:\s*transparent/,
+    )
   })
 })
 

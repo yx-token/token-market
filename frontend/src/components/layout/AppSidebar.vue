@@ -923,21 +923,15 @@ const adminNavItems = computed((): NavItem[] => {
       icon: GlobeIcon,
       expandOnly: true,
       children: [
+        // 买家入口不再套一层分组：二级直接挂叶子，避免与一级同视觉权重
         {
-          path: '/admin/market/section-front',
-          label: t('nav.marketFront'),
+          path: '/',
+          label: t('nav.backToMarket'),
           icon: GlobeIcon,
-          children: [
-            {
-              path: '/',
-              label: t('nav.backToMarket'),
-              icon: GlobeIcon,
-              external: true,
-            },
-            { path: '/shop', label: t('nav.marketShelf'), icon: GlobeIcon },
-            { path: '/shop/center', label: t('nav.marketCenter'), icon: CreditCardIcon },
-          ],
+          external: true,
         },
+        { path: '/shop', label: t('nav.marketShelf'), icon: GlobeIcon },
+        { path: '/shop/center', label: t('nav.marketCenter'), icon: CreditCardIcon },
         {
           path: '/admin/market/section-supply',
           label: t('nav.marketSupply'),
@@ -984,8 +978,14 @@ const adminNavItems = computed((): NavItem[] => {
           children: [
             { path: '/admin/market/hot-searches', label: t('nav.marketHotSearches'), icon: ChartIcon },
             { path: '/admin/market/categories', label: t('nav.marketCategories'), icon: FolderIcon },
+            { path: '/admin/market/extras', label: t('nav.marketExtras'), icon: CogIcon },
+            { path: '/admin/market/users', label: t('nav.marketUsers'), icon: ShieldIcon },
+            { path: '/admin/market/org', label: t('nav.marketOrg'), icon: FolderIcon },
+            { path: '/admin/market/risk', label: t('nav.marketRisk'), icon: ShieldIcon },
+            { path: '/admin/market/audit', label: t('nav.marketAudit'), icon: ChartIcon },
             { path: '/admin/market/identities', label: t('nav.marketIdentities'), icon: ShieldIcon },
             { path: '/admin/market/settings', label: t('nav.marketSettings'), icon: CogIcon },
+            { path: '/admin/market/system-update', label: t('nav.marketSystemUpdate'), icon: CogIcon },
           ],
         },
       ],

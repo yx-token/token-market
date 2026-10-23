@@ -4,52 +4,24 @@ import { useI18n } from 'vue-i18n'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
 
 type Kind =
-  | 'vendors'
-  | 'pools'
-  | 'proxies'
-  | 'categories'
-  | 'upstreams'
-  | 'probe-items'
   | 'probe-runs'
-  | 'policies'
-  | 'providers'
   | 'appeals'
   | 'recharges'
   | 'refunds'
   | 'withdrawals'
-  | 'hot-searches'
-  | 'checks'
 
 const props = defineProps<{ kind: Kind }>()
 const { t } = useI18n()
 
 const catalog = computed<Record<Kind, { title: string; path: string; pick?: (data: unknown) => unknown[] }>>(() => ({
-  vendors: { title: t('nav.marketVendors'), path: `${MARKET_API_PREFIX}/vendors` },
-  pools: { title: t('nav.marketPools'), path: `${MARKET_API_PREFIX}/pools` },
-  proxies: { title: t('nav.marketProxies'), path: `${MARKET_API_PREFIX}/proxies` },
-  categories: { title: t('nav.marketCategoriesFull'), path: `${MARKET_API_PREFIX}/market-categories` },
-  upstreams: { title: t('nav.marketUpstreams'), path: `${MARKET_API_PREFIX}/upstreams` },
-  'probe-items': { title: t('nav.marketProbeItems'), path: `${MARKET_API_PREFIX}/probe-items` },
   'probe-runs': { title: t('nav.marketProbeRuns'), path: `${MARKET_API_PREFIX}/probe-runs` },
-  policies: { title: t('nav.marketPolicies'), path: `${MARKET_API_PREFIX}/detection-policies` },
-  providers: { title: t('nav.marketProviders'), path: `${MARKET_API_PREFIX}/detection-providers` },
   appeals: { title: t('nav.marketAppeals'), path: `${MARKET_API_PREFIX}/appeals` },
   recharges: { title: t('nav.marketFundsRecharge'), path: `${MARKET_API_PREFIX}/recharges` },
   refunds: { title: t('nav.marketFundsRefund'), path: `${MARKET_API_PREFIX}/refunds` },
   withdrawals: { title: t('nav.marketFundsWithdraw'), path: `${MARKET_API_PREFIX}/withdrawals` },
-  'hot-searches': {
-    title: t('nav.marketHotSearches'),
-    path: `${MARKET_API_PREFIX}/market-discovery`,
-    pick: (data) =>
-      data && typeof data === 'object' && Array.isArray((data as { hot_searches?: unknown }).hot_searches)
-        ? (data as { hot_searches: unknown[] }).hot_searches
-        : [],
-  },
-  checks: { title: t('nav.marketChecks'), path: `${MARKET_API_PREFIX}/inspection/checks` },
 }))
 
 const rows = ref<Record<string, unknown>[]>([])
-const discovery = ref<Record<string, unknown> | null>(null)
 const error = ref('')
 const loading = ref(false)
 const actionMsg = ref('')
@@ -62,27 +34,11 @@ const columns = computed(() => {
   const first = rows.value[0]
   if (!first) return [] as string[]
   const preferred =
-    props.kind === 'vendors'
-      ? ['platform', 'enabled', 'consignment_min', 'consignment_max', 'default_concurrency']
-      : props.kind === 'pools'
-        ? ['id', 'name', 'platform', 'sell_multiplier', 'enabled', 'market_published']
-        : props.kind === 'proxies'
-          ? ['id', 'name', 'protocol', 'host', 'port', 'status']
-          : props.kind === 'probe-items'
-            ? ['id', 'suite', 'check_key', 'status', 'weight']
-            : props.kind === 'policies'
-              ? ['id', 'platform', 'auth_type', 'enabled']
-              : props.kind === 'providers'
-                ? ['name', 'label', 'enabled', 'base_url']
-                : props.kind === 'hot-searches'
-                  ? ['id', 'label', 'sort', 'enabled']
-                  : props.kind === 'checks'
-                    ? ['key', 'name', 'flow', 'enabled', 'pricing', 'calibrated']
-                    : props.kind === 'recharges' || props.kind === 'refunds' || props.kind === 'withdrawals'
-                      ? ['id', 'status', 'amount', 'user_id']
-                      : props.kind === 'appeals'
-                        ? ['id', 'status', 'report_id', 'seller_id']
-                        : null
+    props.kind === 'recharges' || props.kind === 'refunds' || props.kind === 'withdrawals'
+      ? ['id', 'status', 'amount', 'user_id', 'channel']
+      : props.kind === 'appeals'
+        ? ['id', 'status', 'report_id', 'seller_id']
+        : null
   if (preferred) return preferred.filter((k) => k in first)
   return Object.keys(first).filter((k) => typeof first[k] !== 'object').slice(0, 6)
 })
@@ -118,25 +74,14 @@ async function load() {
   error.value = ''
   try {
     const data = await marketGet<unknown>(meta.value.path)
-    discovery.value = props.kind === 'hot-searches' && data && typeof data === 'object' ? (data as Record<string, unknown>) : null
     const picked = meta.value.pick ? meta.value.pick(data) : Array.isArray(data) ? data : data == null ? [] : [data]
-    const list = (picked as Record<string, unknown>[]) || []
-    rows.value = props.kind === 'categories' ? flatten(list) : list
+    rows.value = (picked as Record<string, unknown>[]) || []
   } catch (e) {
     error.value = e instanceof Error ? e.message : t('common.loadFailed')
     rows.value = []
   } finally {
     loading.value = false
   }
-}
-
-function flatten(nodes: Record<string, unknown>[], out: Record<string, unknown>[] = []): Record<string, unknown>[] {
-  for (const n of nodes) {
-    const { children, ...rest } = n
-    out.push(rest)
-    if (Array.isArray(children)) flatten(children as Record<string, unknown>[], out)
-  }
-  return out
 }
 
 const colLabel: Record<string, string> = {
@@ -147,11 +92,6 @@ const colLabel: Record<string, string> = {
   consignment_max: '寄售上限',
   default_concurrency: '默认并发',
   name: '名称',
-  sell_multiplier: '售价倍率',
-  market_published: '市场上架',
-  protocol: '协议',
-  host: '主机',
-  port: '端口',
   status: '状态',
   suite: '套件',
   check_key: '检查项',
@@ -166,6 +106,7 @@ const colLabel: Record<string, string> = {
   calibrated: '已校准',
   amount: '金额',
   user_id: '用户',
+  channel: '渠道',
   upstream_id: '上游',
   seller_id: '卖家',
   report_id: '报告',
@@ -203,7 +144,7 @@ const showFundsTabs = computed(() =>
 )
 
 const hasActions = computed(() =>
-  ['vendors', 'proxies', 'pools', 'policies', 'probe-items', 'hot-searches', 'checks', 'appeals', 'recharges', 'refunds', 'withdrawals'].includes(props.kind)
+  ['appeals', 'recharges', 'refunds', 'withdrawals'].includes(props.kind)
 )
 
 async function run(label: string, fn: () => Promise<unknown>) {
@@ -217,60 +158,6 @@ async function run(label: string, fn: () => Promise<unknown>) {
   }
 }
 
-function toggleVendor(row: Record<string, unknown>) {
-  const platform = String(row.platform || '')
-  if (!platform) return
-  return run(`${platform} 已${row.enabled ? '关闭' : '开启'}`, () =>
-    marketSend('PUT', `${MARKET_API_PREFIX}/vendors/${platform}`, { enabled: !row.enabled })
-  )
-}
-
-function toggleProxy(row: Record<string, unknown>) {
-  const id = row.id
-  const off = row.status === 'disabled'
-  return run(`代理 ${id} 已${off ? '启用' : '停用'}`, () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/proxies/${id}/${off ? 'enable' : 'disable'}`)
-  )
-}
-
-function togglePool(row: Record<string, unknown>) {
-  return run(`分组 ${row.name} 已${row.enabled ? '关闭' : '开启'}`, () =>
-    marketSend('PUT', `${MARKET_API_PREFIX}/pools/${row.id}`, {
-      name: row.name,
-      platform: row.platform,
-      enabled: !row.enabled,
-    })
-  )
-}
-
-function togglePolicy(row: Record<string, unknown>) {
-  const q = row.auth_type ? `?auth_type=${encodeURIComponent(String(row.auth_type))}` : ''
-  return run(`${row.platform} 策略已${row.enabled ? '关闭' : '开启'}`, () =>
-    marketSend('PUT', `${MARKET_API_PREFIX}/detection-policies/${row.platform}${q}`, { enabled: !row.enabled })
-  )
-}
-
-function retireItem(row: Record<string, unknown>) {
-  return run(`题目 ${row.id} 已下线`, () => marketSend('POST', `${MARKET_API_PREFIX}/probe-items/${row.id}/retire`))
-}
-
-function toggleHot(row: Record<string, unknown>) {
-  const cfg = discovery.value
-  if (!cfg) return
-  const list = ((cfg.hot_searches as Record<string, unknown>[]) || []).map((item) =>
-    item.id === row.id ? { ...item, enabled: !row.enabled } : item
-  )
-  return run(`${row.label || row.id} 已${row.enabled ? '下架' : '上架'}`, () =>
-    marketSend('PUT', `${MARKET_API_PREFIX}/market-discovery`, { ...cfg, hot_searches: list })
-  )
-}
-
-function toggleCheck(row: Record<string, unknown>) {
-  return run(`${row.key} 已${row.enabled ? '关闭' : '开启'}`, () =>
-    marketSend('PUT', `${MARKET_API_PREFIX}/inspection/checks/${row.key}`, { enabled: !row.enabled })
-  )
-}
-
 function confirmRecharge(row: Record<string, unknown>) {
   if (row.status !== 'pending') return
   if (!window.confirm(`确认充值单 ${row.id} 已到账？在线支付单只能由支付渠道确认。`)) return
@@ -278,6 +165,13 @@ function confirmRecharge(row: Record<string, unknown>) {
   if (providerRef == null || !providerRef.trim()) return
   return run(`充值 ${row.id} 已确认`, () =>
     marketSend('POST', `${MARKET_API_PREFIX}/recharges/${row.id}/confirm`, { provider_ref: providerRef.trim() })
+  )
+}
+
+function syncRecharge(row: Record<string, unknown>) {
+  if (row.status !== 'pending') return
+  return run(`充值 ${row.id} 已同步查单`, () =>
+    marketSend('POST', `${MARKET_API_PREFIX}/recharges/${row.id}/sync`)
   )
 }
 
@@ -302,6 +196,19 @@ function reviewWithdrawal(row: Record<string, unknown>, approve: boolean) {
   }
   return run(`提现 ${row.id} 已${approve ? '通过' : '拒绝'}`, () =>
     marketSend('POST', `${MARKET_API_PREFIX}/withdrawals/${row.id}/review`, { approve, reason })
+  )
+}
+
+function markWithdrawalPaid(row: Record<string, unknown>, failed: boolean) {
+  if (row.status !== 'approved' && row.status !== 'paying') return
+  const payoutRef = failed ? '' : window.prompt(`提现 ${row.id} 的打款流水号`)
+  if (!failed && (payoutRef == null || !payoutRef.trim())) return
+  if (failed && !window.confirm(`标记提现 ${row.id} 打款失败？`)) return
+  return run(`提现 ${row.id} 已${failed ? '标记失败' : '登记打款'}`, () =>
+    marketSend('POST', `${MARKET_API_PREFIX}/withdrawals/${row.id}/paid`, {
+      failed,
+      payout_ref: failed ? undefined : payoutRef!.trim(),
+    })
   )
 }
 
@@ -367,40 +274,17 @@ watch(() => props.kind, load)
               <template v-else>{{ cell(row[col]) }}</template>
             </td>
             <td v-if="hasActions" class="y-col-op">
-              <button v-if="kind === 'vendors'" type="button" class="y-link" @click="toggleVendor(row)">
-                {{ row.enabled ? '关闭' : '开启' }}
-              </button>
-              <button v-else-if="kind === 'proxies'" type="button" class="y-link" @click="toggleProxy(row)">
-                {{ row.status === 'disabled' ? '启用' : '停用' }}
-              </button>
-              <button v-else-if="kind === 'pools'" type="button" class="y-link" @click="togglePool(row)">
-                {{ row.enabled ? '关闭' : '开启' }}
-              </button>
-              <button v-else-if="kind === 'policies'" type="button" class="y-link" @click="togglePolicy(row)">
-                {{ row.enabled ? '关闭' : '开启' }}
-              </button>
-              <button
-                v-else-if="kind === 'probe-items' && row.status !== 'retired'"
-                type="button"
-                class="y-link"
-                @click="retireItem(row)"
-              >
-                下线
-              </button>
-              <button v-else-if="kind === 'hot-searches'" type="button" class="y-link" @click="toggleHot(row)">
-                {{ row.enabled ? '下架' : '上架' }}
-              </button>
-              <button v-else-if="kind === 'checks'" type="button" class="y-link" @click="toggleCheck(row)">
-                {{ row.enabled ? '关闭' : '开启' }}
-              </button>
-              <button
-                v-else-if="kind === 'recharges' && row.status === 'pending'"
-                type="button"
-                class="y-link"
-                @click="confirmRecharge(row)"
-              >
-                确认到账
-              </button>
+              <template v-if="kind === 'recharges' && row.status === 'pending'">
+                <button
+                  v-if="row.channel === 'manual' || !row.channel"
+                  type="button"
+                  class="y-link"
+                  @click="confirmRecharge(row)"
+                >
+                  确认到账
+                </button>
+                <button v-else type="button" class="y-link" @click="syncRecharge(row)">同步查单</button>
+              </template>
               <button
                 v-else-if="kind === 'refunds' && row.status === 'paying'"
                 type="button"
@@ -412,6 +296,10 @@ watch(() => props.kind, load)
               <template v-else-if="kind === 'withdrawals' && row.status === 'pending_review'">
                 <button type="button" class="y-link" @click="reviewWithdrawal(row, true)">通过</button>
                 <button type="button" class="y-link" @click="reviewWithdrawal(row, false)">拒绝</button>
+              </template>
+              <template v-else-if="kind === 'withdrawals' && (row.status === 'approved' || row.status === 'paying')">
+                <button type="button" class="y-link" @click="markWithdrawalPaid(row, false)">登记已打款</button>
+                <button type="button" class="y-link" @click="markWithdrawalPaid(row, true)">打款失败</button>
               </template>
               <template v-else-if="kind === 'appeals' && row.status === 'open'">
                 <button type="button" class="y-link" @click="resolveAppeal(row, 'uphold')">维持</button>

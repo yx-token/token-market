@@ -445,8 +445,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'vendors',
         name: 'MarketAdminVendors',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'vendors' },
+        component: () => import('@/market-admin/VendorsView.vue'),
         meta: { title: '厂商', titleKey: 'nav.marketVendors' }
       },
       {
@@ -466,29 +465,25 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'pools',
         name: 'MarketAdminPools',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'pools' },
+        component: () => import('@/market-admin/PoolsView.vue'),
         meta: { title: '默认分组', titleKey: 'nav.marketPools' }
       },
       {
         path: 'proxies',
         name: 'MarketAdminProxies',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'proxies' },
+        component: () => import('@/market-admin/ProxiesView.vue'),
         meta: { title: '代理', titleKey: 'nav.marketProxies' }
       },
       {
         path: 'categories',
         name: 'MarketAdminCategories',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'categories' },
+        component: () => import('@/market-admin/CategoriesView.vue'),
         meta: { title: '市场分类', titleKey: 'nav.marketCategoriesFull' }
       },
       {
         path: 'upstreams',
         name: 'MarketAdminUpstreams',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'upstreams' },
+        component: () => import('@/market-admin/UpstreamsView.vue'),
         meta: { title: '上游', titleKey: 'nav.marketUpstreams' }
       },
       {
@@ -500,36 +495,31 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'checks',
         name: 'MarketAdminChecks',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'checks' },
+        component: () => import('@/market-admin/ChecksView.vue'),
         meta: { title: '质检项', titleKey: 'nav.marketChecks' }
       },
       {
         path: 'probe-items',
         name: 'MarketAdminProbeItems',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'probe-items' },
+        component: () => import('@/market-admin/ProbeItemsView.vue'),
         meta: { title: '题库', titleKey: 'nav.marketProbeItems' }
       },
       {
         path: 'probe-runs',
         name: 'MarketAdminProbeRuns',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'probe-runs' },
+        component: () => import('@/market-admin/ProbeRunsView.vue'),
         meta: { title: '检测记录', titleKey: 'nav.marketProbeRuns' }
       },
       {
         path: 'policies',
         name: 'MarketAdminPolicies',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'policies' },
+        component: () => import('@/market-admin/PoliciesView.vue'),
         meta: { title: '检测策略', titleKey: 'nav.marketPolicies' }
       },
       {
         path: 'providers',
         name: 'MarketAdminProviders',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'providers' },
+        component: () => import('@/market-admin/ProvidersView.vue'),
         meta: { title: '第三方检测', titleKey: 'nav.marketProviders' }
       },
       {
@@ -542,8 +532,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'hot-searches',
         name: 'MarketAdminHotSearches',
-        component: () => import('@/market-admin/ResourceView.vue'),
-        props: { kind: 'hot-searches' },
+        component: () => import('@/market-admin/HotSearchesView.vue'),
         meta: { title: '热搜', titleKey: 'nav.marketHotSearches' }
       },
       {
@@ -580,10 +569,46 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '平台设置', titleKey: 'nav.marketPlatformSettings' }
       },
       {
+        path: 'extras',
+        name: 'MarketAdminExtras',
+        component: () => import('@/market-admin/ExtrasView.vue'),
+        meta: { title: '货架开关', titleKey: 'nav.marketExtras' }
+      },
+      {
+        path: 'system-update',
+        name: 'MarketAdminSystemUpdate',
+        component: () => import('@/market-admin/SystemUpdateView.vue'),
+        meta: { title: '系统更新', titleKey: 'nav.marketSystemUpdate' }
+      },
+      {
         path: 'identities',
         name: 'MarketAdminIdentities',
         component: () => import('@/market-admin/IdentitiesView.vue'),
         meta: { title: '身份对照', titleKey: 'nav.marketIdentities' }
+      },
+      {
+        path: 'users',
+        name: 'MarketAdminUsers',
+        component: () => import('@/market-admin/UsersView.vue'),
+        meta: { title: '用户与实名', titleKey: 'nav.marketUsers' }
+      },
+      {
+        path: 'risk',
+        name: 'MarketAdminRisk',
+        component: () => import('@/market-admin/RiskView.vue'),
+        meta: { title: '风控', titleKey: 'nav.marketRisk' }
+      },
+      {
+        path: 'audit',
+        name: 'MarketAdminAudit',
+        component: () => import('@/market-admin/AuditView.vue'),
+        meta: { title: '账本审计', titleKey: 'nav.marketAudit' }
+      },
+      {
+        path: 'org',
+        name: 'MarketAdminOrg',
+        component: () => import('@/market-admin/OrgView.vue'),
+        meta: { title: '组织管理', titleKey: 'nav.marketOrg' }
       }
     ]
   },
