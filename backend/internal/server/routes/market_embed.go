@@ -21,9 +21,10 @@ func RegisterMarketEmbed(r *gin.Engine) {
 		return
 	}
 	wrap := gin.WrapH(h)
-	// 控制面 API
+	// 控制面 API（含 /open-admin 换宿主会话的 /api/admin/engine/*）
 	for _, p := range []string{
-		"/api/auth", "/api/me", "/api/buyer", "/api/seller", "/api/market", "/api/payments", "/healthz",
+		"/api/auth", "/api/me", "/api/buyer", "/api/seller", "/api/market", "/api/payments",
+		"/api/admin/engine", "/healthz",
 	} {
 		r.Any(p, wrap)
 		r.Any(p+"/*filepath", wrap)

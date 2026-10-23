@@ -49,9 +49,14 @@ func PublicHandler() http.Handler {
 			Market: m.Market, Quality: m.Quality, Replica: m.Replica, Risk: m.Risk, Kicker: m.Kicker,
 			Log: slog.Default(), TrustedProxies: cfg.HTTP.TrustedProxies, WebDir: cfg.HTTP.WebDir,
 			EdgeURL: cfg.Edge.PublicURL,
+			// 供 /open-admin → POST /api/admin/engine/session 向本进程换宿主 JWT
+			EngineProxyURL:      cfg.Sub2API.BaseURL,
+			EngineAdminKey:      cfg.Sub2API.AdminAPIKey,
+			EngineLoginPassword: cfg.Auth.BootstrapAdminPassword,
 		}
 		publicH = api.HandlerEmbed()
-		slog.Info("enginehost: market public handler embedded", "web_dir", cfg.HTTP.WebDir)
+		slog.Info("enginehost: market public handler embedded", "web_dir", cfg.HTTP.WebDir,
+			"engine_proxy", cfg.Sub2API.BaseURL != "", "engine_login", cfg.Auth.BootstrapAdminPassword != "")
 	})
 	if publicErr != nil {
 		return nil

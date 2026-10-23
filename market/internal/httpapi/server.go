@@ -328,7 +328,12 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 	for _, r := range user {
 		mux.Handle(r.pattern, httpx.Authenticate(s.Issuer, s.Accounts.CheckActive, r.h))
 	}
-	if !opts.EmbedInHost {
+	if opts.EmbedInHost {
+		// 单进程：C 端「控制台」经 /open-admin 换宿主 JWT；其余管理 API 走宿主 /api/v1/admin/market/*。
+		h := http.Handler(httpx.Handler(s.engineSession))
+		h = httpx.RequireConsoleStaff(s.consoleStaffOK, h)
+		mux.Handle("POST /api/admin/engine/session", s.authenticateAdmin(h))
+	} else {
 		for _, r := range s.adminRoutes() {
 			h := http.Handler(r.h)
 			// 组织写操作仅超管；其余按菜单资源码细粒度鉴权，未映射则退回「有控制台权限即可」

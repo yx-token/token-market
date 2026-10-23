@@ -56,8 +56,10 @@ services:
       TM_DATABASE_DSN: postgres://market:${MARKET_DB_PASSWORD:?MARKET_DB_PASSWORD is required}@market-postgres:5432/token_market?sslmode=disable
       TM_SUB2API_REPLICA_DSN: postgres://tm_readonly:${READONLY_PASSWORD:?READONLY_PASSWORD is required}@sub2api-postgres:5432/sub2api?sslmode=disable
       TM_REDIS_ADDR: market-redis:6379
-      TM_SUB2API_BASE_URL: http://sub2api:8080
+      TM_SUB2API_BASE_URL: http://127.0.0.1:8080
       TM_SUB2API_ADMIN_API_KEY: ${SUB2API_ADMIN_API_KEY:?SUB2API_ADMIN_API_KEY is required}
+      # 与 ADMIN_PASSWORD 一致：C 端「控制台」用同邮箱向本进程 /api/v1/auth/login 换宿主 JWT
+      TM_BOOTSTRAP_ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
       TM_CRYPTO_ACTIVE_KEY_ID: ${CRYPTO_ACTIVE_KEY_ID:-k1}
       TM_CRYPTO_KEYS: ${CRYPTO_KEYS:?CRYPTO_KEYS is required}
       TM_CRYPTO_HASH_PEPPER: ${CRYPTO_HASH_PEPPER:?CRYPTO_HASH_PEPPER is required}
