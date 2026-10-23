@@ -152,6 +152,10 @@ def contexts(args):
         (dest / 'deploy').mkdir(exist_ok=True)
         shutil.copy2('deploy/docker-entrypoint.sh', dest / 'deploy/docker-entrypoint.sh')
         shutil.copytree('backend/resources', dest / 'backend/resources', dirs_exist_ok=True)
+        market_web = Path('market-web')
+        if not market_web.is_dir() or not any(market_web.iterdir()):
+            raise ValueError('market-web/ is required for one-process host images (C-end static)')
+        shutil.copytree(market_web, dest / 'market-web', dirs_exist_ok=True)
 
 
 def main():

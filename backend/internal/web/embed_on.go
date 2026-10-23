@@ -354,6 +354,13 @@ func tryServeOverrideFile(c *gin.Context, overrideDir, cleanPath string) bool {
 
 func shouldBypassEmbeddedFrontend(path string) bool {
 	trimmed := strings.TrimSpace(path)
+	// 宿主内嵌市场时：管理端 SPA 只服务 /admin*；其余交给市场 Handler（C 端 /assets 与 /）。
+	if marketEmbedFrontend() {
+		if trimmed == "/admin" || strings.HasPrefix(trimmed, "/admin/") || strings.HasPrefix(trimmed, "/admin-assets/") {
+			return false
+		}
+		return true
+	}
 	return strings.HasPrefix(trimmed, "/api/") ||
 		strings.HasPrefix(trimmed, "/v1/") ||
 		strings.HasPrefix(trimmed, "/v1beta/") ||
@@ -367,6 +374,11 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 		trimmed == "/alpha/search" ||
 		strings.HasPrefix(trimmed, "/images/") ||
 		strings.HasPrefix(trimmed, "/videos/")
+}
+
+func marketEmbedFrontend() bool {
+	v := strings.TrimSpace(os.Getenv("MARKET_EMBED"))
+	return v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
 }
 
 func serveIndexHTML(c *gin.Context, fsys fs.FS) {

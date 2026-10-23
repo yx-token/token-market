@@ -45,9 +45,12 @@ WORKDIR /app
 # Copy the pre-built binary and runtime fallback resources from GoReleaser
 COPY sub2api /app/sub2api
 COPY --chown=sub2api:sub2api backend/resources /app/resources
+# 市场 C 端静态（MARKET_EMBED=1）；构建上下文由 release_matrix contexts 注入
+COPY --chown=sub2api:sub2api market-web /app/market-web
 
 # Create data directory
 RUN mkdir -p /app/data && chown -R sub2api:sub2api /app
+ENV TM_HTTP_WEB_DIR=/app/market-web
 
 # Copy entrypoint script (fixes volume permissions then drops to sub2api)
 COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh

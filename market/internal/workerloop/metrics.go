@@ -1,4 +1,4 @@
-package main
+package workerloop
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// 运行指标通过 expvar 暴露在管理端口的 /debug/vars，可由 Prometheus 的 json exporter 或巡检脚本采集。
+// 运行指标通过 expvar 暴露在管理端口的 /debug/vars。
 var (
 	jobRuns     = expvar.NewMap("job_runs")
 	jobFailures = expvar.NewMap("job_failures")
@@ -33,7 +33,6 @@ func recordJob(name string, err error) {
 	jobLastOK.Set(name, v)
 }
 
-// marketGauges 在采集时查询数据库，返回需要告警的积压与异常数量。
 func marketGauges(pool *pgxpool.Pool) func() any {
 	return func() any {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -69,6 +68,9 @@ func marketGauges(pool *pgxpool.Pool) func() any {
 }
 
 func serveAdmin(ctx context.Context, addr string, pool *pgxpool.Pool, log *slog.Logger) {
+	if addr == "" {
+		return
+	}
 	expvar.Publish("market", expvar.Func(marketGauges(pool)))
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

@@ -41,6 +41,22 @@ RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/stor
 # Copy only that subtree to keep the build dependency minimal.
 COPY frontend/ ./
 COPY docs/legal/ /app/docs/legal/
+# 同端口模式：管理端静态进 /admin-assets，输出仍写入 backend embed 目录（覆盖 vite 默认的 market/engine-dist）
+RUN VITE_ENGINE_HOST=1 VITE_API_BASE_URL=/api/v1 \
+    pnpm exec vite build --outDir ../backend/internal/web/dist
+
+# -----------------------------------------------------------------------------
+# Stage 1b: Market C-end web (served when MARKET_EMBED=1)
+# -----------------------------------------------------------------------------
+FROM --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS market-web-builder
+ARG NPM_CONFIG_REGISTRY
+WORKDIR /app/market/web
+RUN corepack enable && corepack prepare pnpm@9 --activate
+COPY market/web/package.json market/web/pnpm-lock.yaml ./
+RUN --mount=type=cache,id=market-pnpm-store,target=/root/.local/share/pnpm/store \
+    if [ -n "${NPM_CONFIG_REGISTRY}" ]; then pnpm config set registry "${NPM_CONFIG_REGISTRY}"; fi && \
+    pnpm install --frozen-lockfile --prefer-offline
+COPY market/web/ ./
 RUN pnpm run build
 
 # -----------------------------------------------------------------------------
@@ -70,15 +86,17 @@ RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /app/backend
 
-# Copy go mod files first (better caching)
+# market 以 replace ../market 链入；必须与 backend 并列存在才能编译 enginehost
+COPY market/go.mod market/go.sum /app/market/
 COPY backend/go.mod backend/go.sum ./
 # Cache mount keeps the module cache across builds so a transient CDN blip on
 # retry resumes instead of re-fetching every zip from scratch.
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     go mod download
 
-# Copy backend source first
+# Copy backend + market source
 COPY backend/ ./
+COPY market/ /app/market/
 
 # Copy frontend dist from previous stage (must be after backend copy to avoid being overwritten)
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
@@ -141,9 +159,12 @@ WORKDIR /app
 # Copy binary/resources with ownership to avoid extra full-layer chown copy
 COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
+# 市场 C 端静态（MARKET_EMBED=1 时由 TM_HTTP_WEB_DIR 指向）
+COPY --from=market-web-builder --chown=sub2api:sub2api /app/market/web/dist /app/market-web
 
 # Create data directory
 RUN mkdir -p /app/data && chown sub2api:sub2api /app/data
+ENV TM_HTTP_WEB_DIR=/app/market-web
 
 # Copy entrypoint script (fixes volume permissions then drops to sub2api)
 COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh

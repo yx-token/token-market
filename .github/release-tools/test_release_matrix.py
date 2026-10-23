@@ -115,11 +115,14 @@ class ReleaseMatrixTest(unittest.TestCase):
         Path('deploy/docker-entrypoint.sh').write_text('#!/bin/sh\nexec /app/sub2api\n')
         Path('backend/resources').mkdir()
         Path('backend/resources/data').write_text('fixture')
+        Path('market-web').mkdir()
+        Path('market-web/index.html').write_text('<html></html>')
         release.contexts(args)
         for arch in ('amd64', 'arm64'):
             binary = Path('contexts') / arch / 'sub2api'
             self.assertEqual(binary.read_bytes(), b'fixture')
             self.assertEqual(binary.stat().st_mode & 0o777, 0o755)
+            self.assertTrue((Path('contexts') / arch / 'market-web' / 'index.html').is_file())
 
     def test_plan_requires_a_tag_for_publication(self):
         args = argparse.Namespace(ref='main', dry_run=False, simple=False)

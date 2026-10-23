@@ -97,7 +97,8 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: frontend
-      - run: pnpm run build
+      # 同端口管理端：/admin-assets，写入 backend embed 目录（覆盖 vite 默认 market/engine-dist）
+      - run: VITE_ENGINE_HOST=1 VITE_API_BASE_URL=/api/v1 pnpm exec vite build --outDir ../backend/internal/web/dist
         working-directory: frontend
       - uses: actions/upload-artifact@v7
         with:
@@ -105,8 +106,33 @@ jobs:
           path: backend/internal/web/dist/
           retention-days: 1
 
+  build-market-web:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: market/web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: market/web
+      - run: pnpm run build
+        working-directory: market/web
+      - uses: actions/upload-artifact@v7
+        with:
+          name: market-web-dist
+          path: market/web/dist/
+          retention-days: 1
+
   build-binaries:
-    needs: [prepare, build-frontend]
+    needs: [prepare, build-frontend, build-market-web]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -131,6 +157,10 @@ jobs:
         with:
           name: frontend-dist
           path: backend/internal/web/dist/
+      - uses: actions/download-artifact@v8
+        with:
+          name: market-web-dist
+          path: market-web/
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
@@ -216,6 +246,10 @@ jobs:
           pattern: release-binary-*
           path: release-input
           merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: market-web-dist
+          path: market-web/
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'

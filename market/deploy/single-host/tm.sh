@@ -15,7 +15,7 @@ case "${1:-}" in
 用法：
   $0 status                 两套服务的运行状态
   $0 sub2api <compose 命令>  例如：$0 sub2api logs -f sub2api
-  $0 market <compose 命令>   例如：$0 market up -d、$0 market logs -f api worker edge
+  $0 market <compose 命令>   例如：$0 market up -d、$0 market logs -f edge
 USAGE
     ;;
 esac

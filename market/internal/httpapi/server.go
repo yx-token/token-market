@@ -194,7 +194,21 @@ func (s *Server) adminRoutes() []route {
 }
 
 // Handler 组装全部路由。
+// Handler 独立 market-api 进程：C 端 + 市场管理 API + 反代宿主 /api/v1 + 双前端。
 func (s *Server) Handler() http.Handler {
+	return s.buildHandler(handlerOpts{})
+}
+
+// HandlerEmbed 挂进闲猫宿主进程：只挂 C 端/买卖 API 与 C 端静态；管理端与 /api/v1 由宿主自己提供。
+func (s *Server) HandlerEmbed() http.Handler {
+	return s.buildHandler(handlerOpts{EmbedInHost: true})
+}
+
+type handlerOpts struct {
+	EmbedInHost bool
+}
+
+func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 	s.loginFailsByIP = ratelimit.NewFailures(30, 15*time.Minute)
 	s.loginFailsByEmail = ratelimit.NewFailures(10, 15*time.Minute)
 	s.registersByIP = ratelimit.NewFailures(20, time.Hour)
@@ -306,7 +320,6 @@ func (s *Server) Handler() http.Handler {
 		{"POST /api/seller/withdrawals", s.requestWithdrawal},
 		{"GET /api/seller/withdrawals", s.listWithdrawals},
 	}
-	admin := s.adminRoutes()
 	for _, r := range public {
 		mux.Handle(r.pattern, r.h)
 	}
@@ -315,42 +328,44 @@ func (s *Server) Handler() http.Handler {
 	for _, r := range user {
 		mux.Handle(r.pattern, httpx.Authenticate(s.Issuer, s.Accounts.CheckActive, r.h))
 	}
-	for _, r := range admin {
-		h := http.Handler(r.h)
-		// 组织写操作仅超管；其余按菜单资源码细粒度鉴权，未映射则退回「有控制台权限即可」
-		if isOrgMutating(r.pattern) {
-			h = httpx.RequireAdmin(h)
-		} else if ids := adminRouteResources(r.pattern); len(ids) > 0 {
-			h = httpx.RequireAnyResource(s.resourceOK, ids, h)
-		} else {
-			h = httpx.RequireConsoleStaff(s.consoleStaffOK, h)
-		}
-		mux.Handle(r.pattern, s.authenticateAdmin(h))
-		// 二开命名空间：同一套闲猫管理接口挂到 /api/v1/admin/market/*
-		if v1 := marketV1Pattern(r.pattern); v1 != "" {
-			mux.Handle(v1, s.authenticateAdmin(h))
-		}
-	}
-	// 闲猫增量路由必须在 /api/v1/ 反代之前注册（更具体的 pattern 优先生效）
-	if s.EngineProxyURL != "" {
-		if target, err := url.Parse(s.EngineProxyURL); err == nil {
-			proxy := httputil.NewSingleHostReverseProxy(target)
-			// 宿主的在线升级 / 回滚会用上游社区版本替换二进制；宿主只能随发布镜像升级（同 sub2api-admin nginx）。
-			engineUpdateDisabled := httpx.Handler(func(http.ResponseWriter, *http.Request) error {
-				return httpx.Forbidden("ENGINE_UPDATE_DISABLED", "online update is disabled; upgrade the engine image")
-			})
-			for _, p := range []string{"/api/v1/admin/system/update", "/api/v1/admin/system/rollback"} {
-				mux.Handle(p, engineUpdateDisabled)
-				mux.Handle(p+"/", engineUpdateDisabled)
+	if !opts.EmbedInHost {
+		for _, r := range s.adminRoutes() {
+			h := http.Handler(r.h)
+			// 组织写操作仅超管；其余按菜单资源码细粒度鉴权，未映射则退回「有控制台权限即可」
+			if isOrgMutating(r.pattern) {
+				h = httpx.RequireAdmin(h)
+			} else if ids := adminRouteResources(r.pattern); len(ids) > 0 {
+				h = httpx.RequireAnyResource(s.resourceOK, ids, h)
+			} else {
+				h = httpx.RequireConsoleStaff(s.consoleStaffOK, h)
 			}
-			mux.Handle("/api/v1/", proxy)
+			mux.Handle(r.pattern, s.authenticateAdmin(h))
+			// 二开命名空间：同一套闲猫管理接口挂到 /api/v1/admin/market/*
+			if v1 := marketV1Pattern(r.pattern); v1 != "" {
+				mux.Handle(v1, s.authenticateAdmin(h))
+			}
+		}
+		// 闲猫增量路由必须在 /api/v1/ 反代之前注册（更具体的 pattern 优先生效）
+		if s.EngineProxyURL != "" {
+			if target, err := url.Parse(s.EngineProxyURL); err == nil {
+				proxy := httputil.NewSingleHostReverseProxy(target)
+				// 宿主的在线升级 / 回滚会用上游社区版本替换二进制；宿主只能随发布镜像升级（同 sub2api-admin nginx）。
+				engineUpdateDisabled := httpx.Handler(func(http.ResponseWriter, *http.Request) error {
+					return httpx.Forbidden("ENGINE_UPDATE_DISABLED", "online update is disabled; upgrade the engine image")
+				})
+				for _, p := range []string{"/api/v1/admin/system/update", "/api/v1/admin/system/rollback"} {
+					mux.Handle(p, engineUpdateDisabled)
+					mux.Handle(p+"/", engineUpdateDisabled)
+				}
+				mux.Handle("/api/v1/", proxy)
+			}
 		}
 	}
 	mux.Handle("/api/", httpx.Handler(func(http.ResponseWriter, *http.Request) error {
 		return httpx.NotFound("NOT_FOUND", "endpoint not found")
 	}))
 	adminHome := "/admin/dashboard"
-	if s.AdminWebDir != "" {
+	if !opts.EmbedInHost && s.AdminWebDir != "" {
 		mux.Handle("/admin-assets/", adminAssetHandler(s.AdminWebDir))
 		adminIndex := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-cache")
@@ -362,20 +377,32 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/shop", adminIndex)
 		mux.Handle("/shop/", adminIndex)
 	}
-	// 旧 /engine 书签、会话桥（闲猫 SPA，不占用 /admin）
-	mux.Handle("/engine", http.RedirectHandler(adminHome, http.StatusFound))
-	mux.Handle("/engine/", http.RedirectHandler(adminHome, http.StatusFound))
-	mux.Handle("/admin/open-engine", http.RedirectHandler("/open-admin", http.StatusFound))
-	if s.WebDir != "" {
-		mux.HandleFunc("GET /open-admin", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Cache-Control", "no-cache")
-			http.ServeFile(w, r, filepath.Join(s.WebDir, "index.html"))
-		})
+	if !opts.EmbedInHost {
+		// 旧 /engine 书签、会话桥（闲猫 SPA，不占用 /admin）
+		mux.Handle("/engine", http.RedirectHandler(adminHome, http.StatusFound))
+		mux.Handle("/engine/", http.RedirectHandler(adminHome, http.StatusFound))
+		mux.Handle("/admin/open-engine", http.RedirectHandler("/open-admin", http.StatusFound))
+		if s.WebDir != "" {
+			mux.HandleFunc("GET /open-admin", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-cache")
+				http.ServeFile(w, r, filepath.Join(s.WebDir, "index.html"))
+			})
+		}
+		mux.Handle("/console", http.RedirectHandler(adminHome, http.StatusFound))
+		mux.Handle("/console/", http.RedirectHandler(adminHome, http.StatusFound))
 	}
-	mux.Handle("/console", http.RedirectHandler(adminHome, http.StatusFound))
-	mux.Handle("/console/", http.RedirectHandler(adminHome, http.StatusFound))
 	if s.WebDir != "" {
-		mux.Handle("/", spaHandler(s.WebDir))
+		if opts.EmbedInHost {
+			// 宿主已有 /admin SPA；此处只挂 C 端常见前缀，避免吞掉管理端。
+			for _, p := range []string{"/buyer", "/seller", "/login", "/register", "/shop", "/open-admin"} {
+				mux.Handle(p, spaHandler(s.WebDir))
+				mux.Handle(p+"/", spaHandler(s.WebDir))
+			}
+			mux.Handle("/assets/", spaHandler(s.WebDir))
+			mux.Handle("/", spaHandler(s.WebDir))
+		} else {
+			mux.Handle("/", spaHandler(s.WebDir))
+		}
 	}
 	return httpx.Recover(httpx.RealIP(clientip.New(s.TrustedProxies), httpx.AccessLog(s.Log, mux)))
 }

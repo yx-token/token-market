@@ -43,6 +43,8 @@ archives:
       - LICENSE*
       - README*
       - deploy/*
+      # 单进程 C 端静态（release 流水线在打包前写入）；缺省时 GoReleaser 忽略不存在的 glob
+      - market-web/**
 
 checksum:
   name_template: 'checksums.txt'

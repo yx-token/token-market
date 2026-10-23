@@ -9,7 +9,6 @@ import (
 	"flag"
 	"log"
 	"net/http"
-	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -22,6 +21,7 @@ import (
 	"github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/setup"
 	"github.com/yx-token/token-market/internal/web"
+	"github.com/yx-token/token-market/market/enginehost"
 
 	"github.com/gin-gonic/gin"
 )
@@ -168,6 +168,11 @@ func runMainServer() {
 		}
 	}
 
+	// 宿主生命周期：HTTP 与内嵌市场 worker 共用同一 cancel
+	runCtx, stopRun := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopRun()
+	enginehost.StartWorker(runCtx)
+
 	// 启动服务器
 	go func() {
 		if err := app.Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -177,11 +182,7 @@ func runMainServer() {
 
 	log.Printf("Server started on %s", app.Server.Addr)
 
-	// 等待中断信号
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
+	<-runCtx.Done()
 	log.Println("Shutting down server...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

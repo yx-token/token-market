@@ -132,4 +132,7 @@ func registerRoutes(
 	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter, redisClient)
 
 	handler.RegisterPageRoutes(v1, cfg.Pricing.DataDir, gin.HandlerFunc(jwtAuth), gin.HandlerFunc(adminAuth), settingService)
+
+	// 单进程：MARKET_EMBED=1 时挂载市场 C 端 API/静态（管理端仍走宿主 frontend）
+	routes.RegisterMarketEmbed(r)
 }

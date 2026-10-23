@@ -1,7 +1,6 @@
-# token-market 在本机的部署覆盖：api / worker / edge 加入共享网络 token-market（由宿主的 compose 创建），
-# 经 sub2api:8080 访问闲猫宿主、经 sub2api-postgres 只读访问宿主库；
-# 市场库以 market-postgres、市场 redis 以 market-redis 加入共享网络，
-# 供宿主的闲猫运营接口直连、宿主进程内经 enginehost 构建市场应用（relay 路由）。
+# token-market 在本机的部署覆盖（单进程模式 P5c）：
+# - 市场库 / redis 入共享网络，供宿主 MARKET_EMBED 直连
+# - 停掉独立 api / worker（已由宿主进程承接）；只保留 edge（买家模型流量）
 services:
   postgres:
     networks:
@@ -14,11 +13,17 @@ services:
       shared:
         aliases: [market-redis]
   api:
+    profiles: ["legacy-split"]
     networks: [default, shared]
   worker:
+    profiles: ["legacy-split"]
     networks: [default, shared]
   edge:
     networks: [default, shared]
+    # 单进程下无独立 api；edge 只依赖库与 redis
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
 
 networks:
   shared:

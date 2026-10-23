@@ -30,7 +30,8 @@ var (
 const (
 	updateCacheKey = "update_check_cache"
 	updateCacheTTL = 1200 // 20 minutes
-	githubRepo     = "Wei-Shaw/sub2api"
+	// 默认本仓；社区上游 Wei-Shaw/sub2api 会装错二进制。可用 UPDATE_GITHUB_REPO 覆盖。
+	defaultUpdateGitHubRepo = "yx-token/token-market"
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"
@@ -44,6 +45,13 @@ const (
 	// Fetch a few extra releases so filtering (current/newer/prerelease) still leaves enough candidates
 	rollbackFetchPageSize = 15
 )
+
+func updateGitHubRepo() string {
+	if v := strings.TrimSpace(os.Getenv("UPDATE_GITHUB_REPO")); v != "" {
+		return v
+	}
+	return defaultUpdateGitHubRepo
+}
 
 // UpdateCache defines cache operations for update service
 type UpdateCache interface {
@@ -179,18 +187,32 @@ func (s *UpdateService) PerformUpdate(ctx context.Context) error {
 // verifies its checksum, and atomically swaps the running binary.
 // Shared by PerformUpdate (latest) and RollbackToVersion (specific older version).
 func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []Asset) error {
-	// Find matching archive and checksum for current platform
-	archiveName := s.getArchiveName()
+	// Find matching archive and checksum for current platform.
+	// 同 Release 还有 token-market_linux_*.tar.gz，必须优先 sub2api_ 宿主包。
+	platform := s.getArchiveName()
 	var downloadURL string
 	var checksumURL string
+	var fallbackURL string
 
 	for _, asset := range releaseAssets {
-		if strings.Contains(asset.Name, archiveName) && !strings.HasSuffix(asset.Name, ".txt") {
-			downloadURL = asset.DownloadURL
-		}
-		if asset.Name == "checksums.txt" {
+		name := asset.Name
+		if name == "checksums.txt" {
 			checksumURL = asset.DownloadURL
+			continue
 		}
+		if strings.HasSuffix(name, ".txt") || !strings.Contains(name, platform) {
+			continue
+		}
+		if strings.HasPrefix(name, "sub2api_") {
+			downloadURL = asset.DownloadURL
+			continue
+		}
+		if fallbackURL == "" && !strings.HasPrefix(name, "token-market_") {
+			fallbackURL = asset.DownloadURL
+		}
+	}
+	if downloadURL == "" {
+		downloadURL = fallbackURL
 	}
 
 	if downloadURL == "" {
@@ -272,6 +294,14 @@ func (s *UpdateService) applyReleaseAssets(ctx context.Context, releaseAssets []
 			return fmt.Errorf("replace failed and restore failed: %w (restore error: %v)", err, restoreErr)
 		}
 		return fmt.Errorf("replace failed (restored backup): %w", err)
+	}
+
+	// 单进程：若包内有 market-web/ 且配置了 TM_HTTP_WEB_DIR，同步 C 端静态
+	if webDir := strings.TrimSpace(os.Getenv("TM_HTTP_WEB_DIR")); webDir != "" {
+		if err := s.extractMarketWeb(archivePath, webDir); err != nil {
+			// 二进制已换成功；静态失败只返回错误提示人工拉镜像，不回滚二进制
+			return fmt.Errorf("binary updated but market-web extract failed: %w", err)
+		}
 	}
 
 	// Success - backup file is kept for rollback capability
@@ -363,7 +393,7 @@ func (s *UpdateService) RollbackToVersion(ctx context.Context, version string) e
 // fetchRollbackCandidates fetches recent releases and keeps the newest
 // maxRollbackVersions entries strictly older than the current version.
 func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubRelease, error) {
-	releases, err := s.githubClient.FetchRecentReleases(ctx, githubRepo, rollbackFetchPageSize)
+	releases, err := s.githubClient.FetchRecentReleases(ctx, updateGitHubRepo(), rollbackFetchPageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +430,7 @@ func (s *UpdateService) fetchRollbackCandidates(ctx context.Context) ([]*GitHubR
 }
 
 func (s *UpdateService) fetchLatestRelease(ctx context.Context) (*UpdateInfo, error) {
-	release, err := s.githubClient.FetchLatestRelease(ctx, githubRepo)
+	release, err := s.githubClient.FetchLatestRelease(ctx, updateGitHubRepo())
 	if err != nil {
 		return nil, err
 	}
@@ -591,6 +621,101 @@ func (s *UpdateService) extractBinary(archivePath, destPath string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// extractMarketWeb 从宿主更新包中解压 market-web/ 到 destDir（C 端静态）。
+// 包内无该目录时视为旧包，跳过（nil）。
+func (s *UpdateService) extractMarketWeb(archivePath, destDir string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+
+	var reader io.Reader = f
+	if strings.HasSuffix(archivePath, ".gz") || strings.HasSuffix(archivePath, ".tar.gz") || strings.HasSuffix(archivePath, ".tgz") {
+		gzr, err := gzip.NewReader(f)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = gzr.Close() }()
+		reader = gzr
+	}
+	if !strings.Contains(archivePath, ".tar") {
+		return nil
+	}
+
+	staging, err := os.MkdirTemp(filepath.Dir(destDir), ".market-web-update-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(staging) }()
+
+	found := false
+	const maxFile = 32 << 20 // 32MiB per asset
+	tr := tar.NewReader(reader)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		name := strings.TrimPrefix(hdr.Name, "./")
+		if !strings.HasPrefix(name, "market-web/") {
+			continue
+		}
+		rel := strings.TrimPrefix(name, "market-web/")
+		if rel == "" || strings.Contains(rel, "..") {
+			continue
+		}
+		if hdr.Typeflag == tar.TypeDir {
+			if err := os.MkdirAll(filepath.Join(staging, rel), 0755); err != nil {
+				return err
+			}
+			found = true
+			continue
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		if hdr.Size > maxFile {
+			return fmt.Errorf("market-web file too large: %s", rel)
+		}
+		target := filepath.Join(staging, rel)
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		out, err := os.Create(target)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(out, io.LimitReader(tr, maxFile)); err != nil {
+			_ = out.Close()
+			return err
+		}
+		if err := out.Close(); err != nil {
+			return err
+		}
+		found = true
+	}
+	if !found {
+		return nil
+	}
+	backup := destDir + ".bak"
+	_ = os.RemoveAll(backup)
+	if _, err := os.Stat(destDir); err == nil {
+		if err := os.Rename(destDir, backup); err != nil {
+			return err
+		}
+	}
+	if err := os.Rename(staging, destDir); err != nil {
+		_ = os.Rename(backup, destDir)
+		return err
+	}
+	_ = os.RemoveAll(backup)
+	return nil
 }
 
 func (s *UpdateService) getFromCache(ctx context.Context) (*UpdateInfo, error) {
