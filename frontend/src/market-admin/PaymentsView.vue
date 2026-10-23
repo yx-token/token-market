@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { marketGet, marketSend } from './api'
+import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
 
 const merchants = ref<Record<string, unknown>[]>([])
 const error = ref('')
@@ -13,7 +13,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const mc = await marketGet<unknown>('/api/admin/payments/merchants')
+    const mc = await marketGet<unknown>(`${MARKET_API_PREFIX}/payments/merchants`)
     merchants.value = Array.isArray(mc) ? (mc as Record<string, unknown>[]) : []
   } catch (e) {
     error.value = e instanceof Error ? e.message : '加载失败'
@@ -31,7 +31,7 @@ async function toggle(row: Record<string, unknown>) {
   msg.value = ''
   error.value = ''
   try {
-    await marketSend('PUT', `/api/admin/payments/merchants/${provider}`, { enabled: next })
+    await marketSend('PUT', `${MARKET_API_PREFIX}/payments/merchants/${provider}`, { enabled: next })
     msg.value = `${provider} 已${next ? '启用' : '停用'}`
     await load()
   } catch (e) {

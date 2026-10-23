@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { marketGet } from './api'
+import { MARKET_API_PREFIX, marketGet } from './api'
 
 const overview = ref<Record<string, unknown> | null>(null)
 const error = ref('')
@@ -14,7 +14,7 @@ const appeals = computed(() =>
 
 onMounted(async () => {
   try {
-    overview.value = await marketGet<Record<string, unknown>>('/api/admin/quality/overview')
+    overview.value = await marketGet<Record<string, unknown>>(`${MARKET_API_PREFIX}/quality/overview`)
   } catch (e) {
     error.value = e instanceof Error ? e.message : '加载失败'
   }

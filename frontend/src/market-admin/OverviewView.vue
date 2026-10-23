@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { marketGet } from './api'
+import { MARKET_API_PREFIX, marketGet } from './api'
 
 const status = ref<Record<string, unknown> | null>(null)
 const error = ref('')
 
 onMounted(async () => {
   try {
-    status.value = await marketGet('/api/v1/admin/market/status')
+    status.value = await marketGet(`${MARKET_API_PREFIX}/status`)
   } catch (e) {
     error.value = e instanceof Error ? e.message : '加载失败'
   }

@@ -1,4 +1,4 @@
-/** 闲猫增量接口：走 sub2api 命名空间 /api/v1/admin/market/*，用当前管理员会话。 */
+/** 管理端市场 API：规范前缀 `/api/v1/admin/market/*`（见 docs/dev/admin-market-api-canonical.md）。 */
 
 export const MARKET_API_PREFIX = '/api/v1/admin/market'
 
@@ -15,8 +15,9 @@ export function marketToken(): string {
   return sessionToken()
 }
 
+/** 接受相对后缀或完整规范路径；`/api/admin/*` 仅作兼容 shim。 */
 function resolvePath(path: string): string {
-  if (path.startsWith('/api/v1/admin/market')) return path
+  if (path.startsWith(MARKET_API_PREFIX)) return path
   if (path.startsWith('/api/admin/')) {
     const rest = path.slice('/api/admin/'.length)
     if (rest === 'sub2api/status') return `${MARKET_API_PREFIX}/status`

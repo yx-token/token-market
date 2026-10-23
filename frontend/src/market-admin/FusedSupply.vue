@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { marketGet } from './api'
+import { MARKET_API_PREFIX, marketGet } from './api'
 
 const props = defineProps<{ kind: 'accounts' | 'groups' }>()
 const { t } = useI18n()
@@ -18,7 +18,9 @@ const title = computed(() =>
 const hint = computed(() =>
   props.kind === 'accounts' ? t('nav.marketSupplyAccountsHint') : t('nav.marketSupplyGroupsHint'),
 )
-const path = computed(() => (props.kind === 'accounts' ? '/api/admin/supply/accounts' : '/api/admin/supply/groups'))
+const path = computed(() =>
+  props.kind === 'accounts' ? `${MARKET_API_PREFIX}/supply/accounts` : `${MARKET_API_PREFIX}/supply/groups`,
+)
 const columns = computed(() =>
   props.kind === 'accounts'
     ? ['upstream_id', 'engine_account_id', 'engine_name', 'platform', 'market_status', 'engine_status', 'health', 'schedulable', 'rate_multiplier', 'linked']

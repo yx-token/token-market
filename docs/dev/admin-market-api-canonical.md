@@ -1,6 +1,7 @@
 # 管理端市场 API 规范路径（P4）
 
-> 前端 `market-admin` 经 `resolvePath`：`/api/admin/X` → `/api/v1/admin/market/X`。  
+> 前端 `market-admin` 视图一律使用 `MARKET_API_PREFIX`（`/api/v1/admin/market`）。  
+> `api.ts` 的 `resolvePath` 仅保留 `/api/admin/*` 兼容 shim（含 `sub2api/status` → `status`）。  
 > Native IdleCat（`backend/internal/idlecat` + `routes/market.go`）只挂**规范路径**，不再注册同义别名。
 
 ## 读接口（规范）

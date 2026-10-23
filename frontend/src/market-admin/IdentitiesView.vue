@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { marketGet, marketSend } from './api'
+import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
 
 type IdentityRow = {
   market_user_id: number
@@ -26,7 +26,7 @@ const linkedCount = computed(() => rows.value.filter((r) => r.linked).length)
 
 async function load() {
   error.value = ''
-  rows.value = await marketGet<IdentityRow[]>('/api/admin/identities')
+  rows.value = await marketGet<IdentityRow[]>(`${MARKET_API_PREFIX}/identities`)
 }
 
 function needsPassword(row: IdentityRow) {
@@ -47,14 +47,14 @@ async function ensure(row: IdentityRow) {
   }
   busyEmail.value = row.email
   try {
-    const out = await marketSend<{ email: string; engine_user_id: number }>('POST', '/api/admin/identities/ensure', {
+    const out = await marketSend<{ email: string; engine_user_id: number }>('POST', `${MARKET_API_PREFIX}/identities/ensure`, {
       email: row.email,
       password: password || 'noop-already-linked',
       role: row.is_admin ? 'admin' : 'user',
     })
     let note = `${out.email} → 引擎用户 #${out.engine_user_id}`
     if (!row.is_admin) {
-      const bound = await marketSend<{ shadow_status?: string; engine_user_id?: number; token_ready?: boolean }>('POST', '/api/admin/identities/bind', {
+      const bound = await marketSend<{ shadow_status?: string; engine_user_id?: number; token_ready?: boolean }>('POST', `${MARKET_API_PREFIX}/identities/bind`, {
         email: row.email,
         password,
       })

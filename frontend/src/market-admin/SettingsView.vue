@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { marketGet, marketSend } from './api'
+import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
 
 const fields = [
   { key: 'commission_rate', label: '抽佣率' },
@@ -18,7 +18,7 @@ const busy = ref(false)
 
 async function load() {
   error.value = ''
-  const data = await marketGet<Record<string, unknown>>('/api/admin/settings')
+  const data = await marketGet<Record<string, unknown>>(`${MARKET_API_PREFIX}/settings`)
   for (const f of fields) form[f.key] = data[f.key] == null ? '' : String(data[f.key])
 }
 
@@ -33,7 +33,7 @@ async function save() {
       if (!Number.isFinite(n)) throw new Error(`${f.label} 不是数字`)
       patch[f.key] = n
     }
-    await marketSend('PUT', '/api/admin/settings', patch)
+    await marketSend('PUT', `${MARKET_API_PREFIX}/settings`, patch)
     msg.value = '已保存'
     await load()
   } catch (e) {

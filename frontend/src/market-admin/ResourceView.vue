@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { marketGet, marketSend } from './api'
+import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
 
 type Kind =
   | 'vendors'
@@ -24,28 +24,28 @@ const props = defineProps<{ kind: Kind }>()
 const { t } = useI18n()
 
 const catalog = computed<Record<Kind, { title: string; path: string; pick?: (data: unknown) => unknown[] }>>(() => ({
-  vendors: { title: t('nav.marketVendors'), path: '/api/admin/vendors' },
-  pools: { title: t('nav.marketPools'), path: '/api/admin/pools' },
-  proxies: { title: t('nav.marketProxies'), path: '/api/admin/proxies' },
-  categories: { title: t('nav.marketCategoriesFull'), path: '/api/admin/market-categories' },
-  upstreams: { title: t('nav.marketUpstreams'), path: '/api/admin/upstreams' },
-  'probe-items': { title: t('nav.marketProbeItems'), path: '/api/admin/probe-items' },
-  'probe-runs': { title: t('nav.marketProbeRuns'), path: '/api/admin/probe-runs' },
-  policies: { title: t('nav.marketPolicies'), path: '/api/admin/detection-policies' },
-  providers: { title: t('nav.marketProviders'), path: '/api/admin/detection-providers' },
-  appeals: { title: t('nav.marketAppeals'), path: '/api/admin/appeals' },
-  recharges: { title: t('nav.marketFundsRecharge'), path: '/api/admin/recharges' },
-  refunds: { title: t('nav.marketFundsRefund'), path: '/api/admin/refunds' },
-  withdrawals: { title: t('nav.marketFundsWithdraw'), path: '/api/admin/withdrawals' },
+  vendors: { title: t('nav.marketVendors'), path: `${MARKET_API_PREFIX}/vendors` },
+  pools: { title: t('nav.marketPools'), path: `${MARKET_API_PREFIX}/pools` },
+  proxies: { title: t('nav.marketProxies'), path: `${MARKET_API_PREFIX}/proxies` },
+  categories: { title: t('nav.marketCategoriesFull'), path: `${MARKET_API_PREFIX}/market-categories` },
+  upstreams: { title: t('nav.marketUpstreams'), path: `${MARKET_API_PREFIX}/upstreams` },
+  'probe-items': { title: t('nav.marketProbeItems'), path: `${MARKET_API_PREFIX}/probe-items` },
+  'probe-runs': { title: t('nav.marketProbeRuns'), path: `${MARKET_API_PREFIX}/probe-runs` },
+  policies: { title: t('nav.marketPolicies'), path: `${MARKET_API_PREFIX}/detection-policies` },
+  providers: { title: t('nav.marketProviders'), path: `${MARKET_API_PREFIX}/detection-providers` },
+  appeals: { title: t('nav.marketAppeals'), path: `${MARKET_API_PREFIX}/appeals` },
+  recharges: { title: t('nav.marketFundsRecharge'), path: `${MARKET_API_PREFIX}/recharges` },
+  refunds: { title: t('nav.marketFundsRefund'), path: `${MARKET_API_PREFIX}/refunds` },
+  withdrawals: { title: t('nav.marketFundsWithdraw'), path: `${MARKET_API_PREFIX}/withdrawals` },
   'hot-searches': {
     title: t('nav.marketHotSearches'),
-    path: '/api/admin/market-discovery',
+    path: `${MARKET_API_PREFIX}/market-discovery`,
     pick: (data) =>
       data && typeof data === 'object' && Array.isArray((data as { hot_searches?: unknown }).hot_searches)
         ? (data as { hot_searches: unknown[] }).hot_searches
         : [],
   },
-  checks: { title: t('nav.marketChecks'), path: '/api/admin/inspection/checks' },
+  checks: { title: t('nav.marketChecks'), path: `${MARKET_API_PREFIX}/inspection/checks` },
 }))
 
 const rows = ref<Record<string, unknown>[]>([])
@@ -221,7 +221,7 @@ function toggleVendor(row: Record<string, unknown>) {
   const platform = String(row.platform || '')
   if (!platform) return
   return run(`${platform} 已${row.enabled ? '关闭' : '开启'}`, () =>
-    marketSend('PUT', `/api/admin/vendors/${platform}`, { enabled: !row.enabled })
+    marketSend('PUT', `${MARKET_API_PREFIX}/vendors/${platform}`, { enabled: !row.enabled })
   )
 }
 
@@ -229,13 +229,13 @@ function toggleProxy(row: Record<string, unknown>) {
   const id = row.id
   const off = row.status === 'disabled'
   return run(`代理 ${id} 已${off ? '启用' : '停用'}`, () =>
-    marketSend('POST', `/api/admin/proxies/${id}/${off ? 'enable' : 'disable'}`)
+    marketSend('POST', `${MARKET_API_PREFIX}/proxies/${id}/${off ? 'enable' : 'disable'}`)
   )
 }
 
 function togglePool(row: Record<string, unknown>) {
   return run(`分组 ${row.name} 已${row.enabled ? '关闭' : '开启'}`, () =>
-    marketSend('PUT', `/api/admin/pools/${row.id}`, {
+    marketSend('PUT', `${MARKET_API_PREFIX}/pools/${row.id}`, {
       name: row.name,
       platform: row.platform,
       enabled: !row.enabled,
@@ -246,12 +246,12 @@ function togglePool(row: Record<string, unknown>) {
 function togglePolicy(row: Record<string, unknown>) {
   const q = row.auth_type ? `?auth_type=${encodeURIComponent(String(row.auth_type))}` : ''
   return run(`${row.platform} 策略已${row.enabled ? '关闭' : '开启'}`, () =>
-    marketSend('PUT', `/api/admin/detection-policies/${row.platform}${q}`, { enabled: !row.enabled })
+    marketSend('PUT', `${MARKET_API_PREFIX}/detection-policies/${row.platform}${q}`, { enabled: !row.enabled })
   )
 }
 
 function retireItem(row: Record<string, unknown>) {
-  return run(`题目 ${row.id} 已下线`, () => marketSend('POST', `/api/admin/probe-items/${row.id}/retire`))
+  return run(`题目 ${row.id} 已下线`, () => marketSend('POST', `${MARKET_API_PREFIX}/probe-items/${row.id}/retire`))
 }
 
 function toggleHot(row: Record<string, unknown>) {
@@ -261,13 +261,13 @@ function toggleHot(row: Record<string, unknown>) {
     item.id === row.id ? { ...item, enabled: !row.enabled } : item
   )
   return run(`${row.label || row.id} 已${row.enabled ? '下架' : '上架'}`, () =>
-    marketSend('PUT', '/api/admin/market-discovery', { ...cfg, hot_searches: list })
+    marketSend('PUT', `${MARKET_API_PREFIX}/market-discovery`, { ...cfg, hot_searches: list })
   )
 }
 
 function toggleCheck(row: Record<string, unknown>) {
   return run(`${row.key} 已${row.enabled ? '关闭' : '开启'}`, () =>
-    marketSend('PUT', `/api/admin/inspection/checks/${row.key}`, { enabled: !row.enabled })
+    marketSend('PUT', `${MARKET_API_PREFIX}/inspection/checks/${row.key}`, { enabled: !row.enabled })
   )
 }
 
@@ -277,7 +277,7 @@ function confirmRecharge(row: Record<string, unknown>) {
   const providerRef = window.prompt('到账流水号', 'manual')
   if (providerRef == null || !providerRef.trim()) return
   return run(`充值 ${row.id} 已确认`, () =>
-    marketSend('POST', `/api/admin/recharges/${row.id}/confirm`, { provider_ref: providerRef.trim() })
+    marketSend('POST', `${MARKET_API_PREFIX}/recharges/${row.id}/confirm`, { provider_ref: providerRef.trim() })
   )
 }
 
@@ -286,7 +286,7 @@ function markRefundPaid(row: Record<string, unknown>) {
   const payoutRef = window.prompt(`退款 ${row.id} 的打款流水号`)
   if (payoutRef == null || !payoutRef.trim()) return
   return run(`退款 ${row.id} 已标记打款`, () =>
-    marketSend('POST', `/api/admin/refunds/${row.id}/paid`, { payout_ref: payoutRef.trim() })
+    marketSend('POST', `${MARKET_API_PREFIX}/refunds/${row.id}/paid`, { payout_ref: payoutRef.trim() })
   )
 }
 
@@ -301,7 +301,7 @@ function reviewWithdrawal(row: Record<string, unknown>, approve: boolean) {
     reason = input.trim()
   }
   return run(`提现 ${row.id} 已${approve ? '通过' : '拒绝'}`, () =>
-    marketSend('POST', `/api/admin/withdrawals/${row.id}/review`, { approve, reason })
+    marketSend('POST', `${MARKET_API_PREFIX}/withdrawals/${row.id}/review`, { approve, reason })
   )
 }
 
@@ -311,7 +311,7 @@ function resolveAppeal(row: Record<string, unknown>, action: 'uphold' | 'overtur
   if (!window.confirm(`申诉 ${row.id}：${label}？`)) return
   const note = window.prompt('处理说明，可留空', '') ?? ''
   return run(`申诉 ${row.id}：${label}`, () =>
-    marketSend('POST', `/api/admin/appeals/${row.id}/resolve`, { action, note })
+    marketSend('POST', `${MARKET_API_PREFIX}/appeals/${row.id}/resolve`, { action, note })
   )
 }
 
