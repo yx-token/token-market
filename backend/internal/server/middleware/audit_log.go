@@ -147,9 +147,12 @@ var auditActionOverrides = map[string]string{
 // auditBodyOmittedRoutes 请求体几乎整体由凭证构成的路由（如整块粘贴 auth JSON 的导入接口）。
 // 这类 body 的凭证内嵌在普通字符串值里，键级脱敏无法覆盖，整体不入库。
 var auditBodyOmittedRoutes = map[string]struct{}{
-	"POST /api/v1/auth/passkey/login/finish":                    {},
-	"POST /api/v1/user/passkeys/register/finish":                {},
-	"POST /api/v1/admin/accounts/import/codex-session":          {},
+	"POST /api/v1/auth/passkey/login/finish":           {},
+	"POST /api/v1/user/passkeys/register/finish":       {},
+	"POST /api/v1/admin/accounts/import/codex-session": {},
+	// GLM flow IDs can retrieve a successful OAuth result until flow expiry.
+	"POST /api/v1/admin/zhipu/oauth/poll":                       {},
+	"POST /api/v1/admin/zhipu/oauth/exchange-code":              {},
 	"PUT /api/v1/admin/accounts/:id/ollama-cloud-usage/session": {},
 	"PUT /api/v1/admin/prompt-audit/config":                     {},
 	"POST /api/v1/admin/prompt-audit/endpoints/probe":           {},

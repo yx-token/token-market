@@ -13,8 +13,10 @@ import (
 	"github.com/yx-token/token-market/internal/payment"
 	"github.com/yx-token/token-market/internal/pkg/antigravity"
 	"github.com/yx-token/token-market/internal/pkg/claude"
+	"github.com/yx-token/token-market/internal/pkg/kimi"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/pkg/xai"
+	"github.com/yx-token/token-market/internal/pkg/zhipu"
 	"go.uber.org/zap"
 )
 
@@ -25,6 +27,22 @@ func ProvideGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthCli
 		svc = svc.WithSessionStore(xai.NewRedisSessionStore(redisClient))
 	}
 	return svc
+}
+
+func ProvideKimiOAuthService(proxyRepo ProxyRepository, oauthClient KimiOAuthClient, redisClient *redis.Client) *KimiOAuthService {
+	svc := NewKimiOAuthService(proxyRepo, oauthClient)
+	if redisClient != nil {
+		svc = svc.WithSessionStore(kimi.NewRedisSessionStore(redisClient))
+	}
+	return svc
+}
+
+func ProvideKimiTokenProvider(accountRepo AccountRepository, tokenCache GeminiTokenCache, oauthService *KimiOAuthService, refreshAPI *OAuthRefreshAPI, tempUnschedCache TempUnschedCache) *KimiTokenProvider {
+	p := NewKimiTokenProvider(accountRepo, tokenCache)
+	p.SetRefreshAPI(refreshAPI, NewKimiTokenRefresher(oauthService))
+	oauthService.tokenProvider = p
+	p.tempUnschedCache = tempUnschedCache
+	return p
 }
 
 // BuildInfo contains build information
@@ -126,6 +144,8 @@ func ProvideTokenRefreshService(
 	geminiOAuthService *GeminiOAuthService,
 	antigravityOAuthService *AntigravityOAuthService,
 	grokOAuthService *GrokOAuthService,
+	kimiOAuthService *KimiOAuthService,
+	zhipuOAuthService *ZhipuOAuthService,
 	cacheInvalidator TokenCacheInvalidator,
 	schedulerCache SchedulerCache,
 	cfg *config.Config,
@@ -136,6 +156,8 @@ func ProvideTokenRefreshService(
 	runtimeBlocker AccountRuntimeBlocker,
 ) *TokenRefreshService {
 	svc := NewTokenRefreshService(accountRepo, oauthService, openaiOAuthService, geminiOAuthService, antigravityOAuthService, cacheInvalidator, schedulerCache, cfg, tempUnschedCache, grokOAuthService)
+	svc.SetKimiOAuthService(kimiOAuthService)
+	svc.SetZhipuOAuthService(zhipuOAuthService)
 	// 注入 OpenAI privacy opt-out 依赖
 	svc.SetPrivacyDeps(privacyClientFactory, proxyRepo)
 	// 注入统一 OAuth 刷新 API（消除 TokenRefreshService 与 TokenProvider 之间的竞争条件）
@@ -298,12 +320,17 @@ func ProvideGrokQuotaService(
 
 // ProvideCNProviderQuotaService 构造国产供应商 Coding Plan 额度探测服务。
 func ProvideCNProviderQuotaService(
+	kimiTokens *KimiTokenProvider,
+	zhipuTokens *ZhipuTokenProvider,
 	accountRepo AccountRepository,
 	proxyRepo ProxyRepository,
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
 ) *CNProviderQuotaService {
-	return NewCNProviderQuotaService(accountRepo, proxyRepo, httpUpstream, cfg)
+	s := NewCNProviderQuotaService(accountRepo, proxyRepo, httpUpstream, cfg)
+	s.zhipuTokens = zhipuTokens
+	s.kimiTokens = kimiTokens
+	return s
 }
 
 // ProvideCNProviderBalanceService 构造国产供应商余额探测服务。
@@ -870,7 +897,10 @@ var ProviderSet = wire.NewSet(
 	NewAnnouncementService,
 	NewAdminService,
 	NewGatewayService,
-	NewOpenAIGatewayService,
+	ProvideOpenAIGatewayService,
+	ProvideZhipuOAuthService,
+	NewZhipuTokenProvider,
+	NewZhipuGateway,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
 	ProvideBatchImageModelPricingResolver,
@@ -883,6 +913,8 @@ var ProviderSet = wire.NewSet(
 	ProvideClaudeResetCreditService,
 	ProvideOpenAIOAuthService,
 	ProvideGrokOAuthService,
+	ProvideKimiOAuthService,
+	ProvideKimiTokenProvider,
 	wire.Bind(new(GrokOAuthTokenService), new(*GrokOAuthService)),
 	NewGeminiOAuthService,
 	NewGeminiQuotaService,
@@ -1077,5 +1109,44 @@ func ProvideChannelMonitorV2Aggregator(repo ChannelMonitorV2Repository, db *sql.
 func ProvideClaudeResetCreditService(accounts AccountRepository, tokens *ClaudeTokenProvider, proxies ProxyRepository, settings *SettingService, idem *IdempotencyCoordinator, locks LeaderLockCache) *ClaudeResetCreditService {
 	s := NewClaudeResetCreditService(accounts, tokens, proxies, settings)
 	s.ConfigureRedemption(idem, locks)
+	return s
+}
+
+func ProvideZhipuOAuthService(proxyRepo ProxyRepository, factory ZhipuClientFactory, redisClient *redis.Client, cfg *config.Config) *ZhipuOAuthService {
+	return NewZhipuOAuthService(proxyRepo, factory, zhipu.NewRedisOAuthSessionStore(redisClient), cfg.Gateway.Zhipu.ClientVersion)
+}
+
+func ProvideOpenAIGatewayService(
+	accountRepo AccountRepository,
+	usageLogRepo UsageLogRepository,
+	usageBillingRepo UsageBillingRepository,
+	userRepo UserRepository,
+	userSubRepo UserSubscriptionRepository,
+	userGroupRateRepo UserGroupRateRepository,
+	cache GatewayCache,
+	cfg *config.Config,
+	schedulerSnapshot *SchedulerSnapshotService,
+	concurrencyService *ConcurrencyService,
+	billingService *BillingService,
+	rateLimitService *RateLimitService,
+	billingCacheService *BillingCacheService,
+	httpUpstream HTTPUpstream,
+	deferredService *DeferredService,
+	openAITokenProvider *OpenAITokenProvider,
+	grokTokenProvider *GrokTokenProvider,
+	resolver *ModelPricingResolver,
+	channelService *ChannelService,
+	balanceNotifyService *BalanceNotifyService,
+	settingService *SettingService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
+
+	kimiProvider *KimiTokenProvider,
+	zhipuProvider *ZhipuTokenProvider,
+	zhipuGateway *ZhipuGateway,
+) *OpenAIGatewayService {
+	s := NewOpenAIGatewayService(accountRepo, usageLogRepo, usageBillingRepo, userRepo, userSubRepo, userGroupRateRepo, cache, cfg, schedulerSnapshot, concurrencyService, billingService, rateLimitService, billingCacheService, httpUpstream, deferredService, openAITokenProvider, grokTokenProvider, resolver, channelService, balanceNotifyService, settingService, userPlatformQuotaRepo)
+	s.SetKimiTokenProvider(kimiProvider)
+	s.zhipuTokenProvider = zhipuProvider
+	s.zhipuGateway = zhipuGateway
 	return s
 }

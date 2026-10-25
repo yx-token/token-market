@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	"github.com/yx-token/token-market/internal/pkg/claude"
 	"github.com/yx-token/token-market/internal/pkg/openai"
 	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
@@ -914,15 +913,35 @@ func TestGatewayModels_CompositeUnmappedCNAccountsContributeNoDefaults(t *testin
 	require.NotContains(t, ids, "claude-sonnet-4-6")
 }
 
-// 独立 CN 分组沿用 default 分支的 Claude 默认列表（Claude Code 客户端请求的
-// 就是这些模型名并经账号 model_mapping 转换），composite 支持不得改变该回退。
-func TestDefaultModelIDsForPlatform_CNProvidersKeepClaudeDefaults(t *testing.T) {
-	want := make([]string, 0, len(claude.DefaultModels))
-	for _, model := range claude.DefaultModels {
-		want = append(want, model.ID)
-	}
+func TestDefaultModelIDsForPlatform_CNProvidersUseNativeDefaults(t *testing.T) {
 	for _, platform := range []string{service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax} {
-		require.Equal(t, want, defaultModelIDsForPlatform(platform), "platform=%s", platform)
+		ids := defaultModelIDsForPlatform(platform)
+		require.NotEmpty(t, ids)
+		require.Equal(t, service.DefaultCNModelIDs(platform), ids, "platform=%s", platform)
+		for _, id := range ids {
+			require.NotContains(t, strings.ToLower(id), "claude")
+		}
+	}
+}
+
+func TestGatewayModels_CNProvidersWithoutMappingUseNativeDefaults(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, platform := range []string{service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax} {
+		t.Run(platform, func(t *testing.T) {
+			const groupID int64 = 92
+			h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
+				groupID: {{ID: 1, Platform: platform, Status: service.StatusActive, Schedulable: true}},
+			}})
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+			c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{Group: &service.Group{ID: groupID, Platform: platform}})
+			h.Models(c)
+			require.Equal(t, http.StatusOK, rec.Code)
+			var got gatewayModelsResponseForTest
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+			require.Equal(t, service.DefaultCNModelIDs(platform), modelIDsForTest(got.Data))
+		})
 	}
 }
 

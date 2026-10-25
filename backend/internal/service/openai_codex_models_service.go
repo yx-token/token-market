@@ -1926,7 +1926,11 @@ func (s *OpenAIGatewayService) fetchOpenAIModelsUpstream(ctx context.Context, re
 			return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_UPSTREAM_NOT_CONFIGURED", "Codex models upstream HTTP client is not configured")
 		}
 		req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
-		resp, err = s.httpUpstream.Do(req, request.proxyURL, request.accountID, request.accountConcurrency)
+		if request.credentialAccount != nil && (request.credentialAccount.isKimiOAuth() || request.credentialAccount.IsZhipuOAuth()) {
+			resp, err = s.doOpenAIUpstream(req, request.proxyURL, request.credentialAccount)
+		} else {
+			resp, err = s.httpUpstream.Do(req, request.proxyURL, request.accountID, request.accountConcurrency)
+		}
 	} else {
 		handled := false
 		if s.pluginManager != nil {

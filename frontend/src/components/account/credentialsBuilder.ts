@@ -1,4 +1,61 @@
 import { openAIPlanTypeKey, openAIPlanTypeLabel, openAIPlanTypes } from '@/utils/planType'
+import type { KimiTokenInfo } from '@/api/admin/kimi'
+import type { ZhipuOAuthProvider, ZhipuOAuthResult } from '@/api/admin/zhipu'
+
+/** Same expires_at representation as Grok: preserve the backend's number/string value. */
+export function buildKimiOAuthCredentials(
+  token: KimiTokenInfo,
+  existing: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const credentials: Record<string, unknown> = {
+    ...existing,
+    access_token: token.access_token,
+    refresh_token: token.refresh_token,
+    expires_at: token.expires_at,
+    token_type: token.token_type,
+    scope: token.scope,
+    device_id: token.device_id,
+    base_url: existing.api_protocol === 'anthropic' && (!existing.base_url || String(existing.base_url).replace(/\/+$/, '') === 'https://api.kimi.com/coding/v1')
+      ? 'https://api.kimi.com/coding'
+      : existing.base_url || token.base_url,
+    account_mode: 'coding'
+  }
+  delete credentials.api_key
+  return credentials
+}
+
+/** Replace the OAuth lifecycle and preserve only administrator configuration. */
+export function buildZhipuOAuthCredentials(
+  result: ZhipuOAuthResult,
+  existing: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const credentials: Record<string, unknown> = {
+    // Explicit clearing also handles responses from older servers that omitted unknown values.
+    refresh_token: null,
+    zai_oauth_access_token: null,
+    zcode_jwt_expires_at: null,
+    business_expires_at: null,
+    oauth_expires_at: null,
+    ...result.credentials,
+    business_expiry_unknown: result.provider === 'zai' && (
+      result.credentials.business_expiry_unknown === true || !result.credentials.business_expires_at
+    ),
+    account_mode: 'coding'
+  }
+  // Reauthorization replaces lifecycle secrets, while retaining the administrator's routing settings.
+  for (const key of ['api_protocol', 'base_url', 'api_base_urls', 'model_mapping', 'compact_model_mapping',
+    'pool_mode', 'pool_mode_retry_count', 'pool_mode_retry_status_codes', 'custom_error_codes_enabled',
+    'custom_error_codes', 'temp_unschedulable_enabled', 'temp_unschedulable_rules',
+    'intercept_warmup_requests']) {
+    if (Object.prototype.hasOwnProperty.call(existing, key)) credentials[key] = existing[key]
+  }
+  return credentials
+}
+
+export function defaultZhipuOAuthBaseUrl(provider: ZhipuOAuthProvider, protocol: CnApiProtocol): string {
+  const host = provider === 'zai' ? 'https://api.z.ai' : 'https://open.bigmodel.cn'
+  return `${host}/api/${protocol === 'anthropic' ? 'anthropic' : 'coding/paas/v4'}`
+}
 
 export function applyInterceptWarmup(
   credentials: Record<string, unknown>,
@@ -383,7 +440,9 @@ export const CN_BASE_URL_PRESETS: Record<CnProviderPlatform, CnBaseUrlPreset[]> 
     { mode: 'payg', protocol: 'chat_completions', label: 'GLM PaaS', url: 'https://open.bigmodel.cn/api/paas/v4' },
     { mode: 'payg', protocol: 'anthropic', label: 'GLM Anthropic', url: 'https://open.bigmodel.cn/api/anthropic' },
     { mode: 'coding', protocol: 'chat_completions', label: 'GLM Coding', url: 'https://open.bigmodel.cn/api/coding/paas/v4' },
-    { mode: 'coding', protocol: 'anthropic', label: 'GLM Coding Anthropic', url: 'https://open.bigmodel.cn/api/anthropic' }
+    { mode: 'coding', protocol: 'anthropic', label: 'GLM Coding Anthropic', url: 'https://open.bigmodel.cn/api/anthropic' },
+    { mode: 'coding', protocol: 'chat_completions', label: 'Z.ai Coding', url: 'https://api.z.ai/api/coding/paas/v4' },
+    { mode: 'coding', protocol: 'anthropic', label: 'Z.ai Coding Anthropic', url: 'https://api.z.ai/api/anthropic' }
   ],
   deepseek: [
     { mode: 'payg', protocol: 'chat_completions', label: 'DeepSeek', url: 'https://api.deepseek.com' },

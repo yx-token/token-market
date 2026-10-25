@@ -61,6 +61,10 @@ func RegisterAdminRoutes(
 		// Grok OAuth
 		registerGrokOAuthRoutes(admin, h)
 
+		// Kimi OAuth
+		registerKimiOAuthRoutes(admin, h)
+		registerZhipuOAuthRoutes(admin, h)
+
 		// 国产供应商（kimi/zhipu/deepseek）额度与余额
 		registerCNProviderRoutes(admin, h)
 
@@ -507,6 +511,16 @@ func registerGrokOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
+func registerKimiOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	kimi := admin.Group("/kimi")
+	{
+		kimi.POST("/oauth/device-code", h.Admin.KimiOAuth.DeviceCode)
+		kimi.POST("/oauth/poll", h.Admin.KimiOAuth.Poll)
+		kimi.POST("/oauth/refresh-token", h.Admin.KimiOAuth.RefreshToken)
+		kimi.POST("/accounts/:id/refresh", h.Admin.KimiOAuth.RefreshAccountToken)
+	}
+}
+
 // registerCNProviderRoutes 注册国产供应商（kimi/zhipu/deepseek）的额度与余额查询端点。
 func registerCNProviderRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	cn := admin.Group("/cn-providers")
@@ -900,4 +914,12 @@ func channelMonitorModeV2Guard(settingService *service.SettingService) gin.Handl
 		}
 		c.Next()
 	}
+}
+
+func registerZhipuOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	z := admin.Group("/zhipu")
+	z.POST("/oauth/init", h.Admin.ZhipuOAuth.Init)
+	z.POST("/oauth/poll", h.Admin.ZhipuOAuth.Poll)
+	z.POST("/oauth/exchange-code", h.Admin.ZhipuOAuth.ExchangeCode)
+	z.POST("/accounts/:id/refresh", h.Admin.ZhipuOAuth.RefreshAccountToken)
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/yx-token/token-market/internal/pkg/antigravity"
 	"github.com/yx-token/token-market/internal/pkg/claude"
 	"github.com/yx-token/token-market/internal/pkg/geminicli"
+	"github.com/yx-token/token-market/internal/pkg/kimi"
 )
 
 const (
@@ -1004,18 +1005,28 @@ func (s *AccountTestService) buildOpenAIUpstreamModelsRequest(ctx context.Contex
 	if account.IsOpenAIOAuth() {
 		return s.buildOpenAIOAuthUpstreamModelsRequest(ctx, account)
 	}
+	if account.isKimiOAuth() {
+		token, err := s.protocolCredential(ctx, account)
+		if err != nil {
+			return nil, err
+		}
+		return buildOpenAIAPIKeyModelsRequest(ctx, account, s.validateUpstreamBaseURL, token)
+	}
 	return buildOpenAIAPIKeyModelsRequest(ctx, account, s.validateUpstreamBaseURL)
 }
 
 // buildOpenAIAPIKeyModelsRequest is shared by admin discovery and public model
 // listing. Codex content negotiation is intentionally absent from this request.
-func buildOpenAIAPIKeyModelsRequest(ctx context.Context, account *Account, validateBaseURL func(string) (string, error)) (*http.Request, error) {
-	if account.Type != AccountTypeAPIKey {
+func buildOpenAIAPIKeyModelsRequest(ctx context.Context, account *Account, validateBaseURL func(string) (string, error), tokens ...string) (*http.Request, error) {
+	if account.Type != AccountTypeAPIKey && !account.isKimiOAuth() && !account.IsZhipuOAuth() {
 		return nil, newUpstreamModelSyncUnsupportedError(
 			fmt.Sprintf("Unsupported OpenAI account type for upstream model sync: %s", account.Type), nil,
 		)
 	}
 	apiKey := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	if (account.isKimiOAuth() || account.IsZhipuOAuth()) && len(tokens) > 0 {
+		apiKey = tokens[0]
+	}
 	if apiKey == "" {
 		return nil, newUpstreamModelSyncConfigError("No OpenAI API key is available", nil)
 	}
@@ -1037,6 +1048,10 @@ func buildOpenAIAPIKeyModelsRequest(ctx context.Context, account *Account, valid
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
+	if account.isKimiOAuth() {
+		kimi.ApplyDeviceHeaders(req.Header, account.GetCredential("device_id"))
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 	// 账号级请求头覆写：模型列表探测与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
 	return req, nil
@@ -1191,6 +1206,9 @@ func (s *AccountTestService) fetchAntigravityOAuthUpstreamModels(ctx context.Con
 }
 
 func (s *AccountTestService) doUpstreamModelsRequest(req *http.Request, proxyURL string, account *Account) (*http.Response, error) {
+	if account.isKimiOAuth() {
+		return s.doAccountTestUpstream(req, proxyURL, account)
+	}
 	if s.tlsFPProfileService == nil {
 		return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
 	}

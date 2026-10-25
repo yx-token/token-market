@@ -38,6 +38,14 @@ func (s *Store) dataKey(id string) string { return s.prefix + strings.TrimSpace(
 func (s *Store) usedKey(id string) string { return s.prefix + "used:" + strings.TrimSpace(id) }
 
 func (s *Store) Set(ctx context.Context, id string, value any) error {
+	if s == nil {
+		return ErrNotConfigured
+	}
+	return s.SetWithTTL(ctx, id, value, s.ttl)
+}
+
+// SetWithTTL allows an OAuth provider's actual device-code lifetime to be kept.
+func (s *Store) SetWithTTL(ctx context.Context, id string, value any, ttl time.Duration) error {
 	if s == nil || s.rdb == nil {
 		return ErrNotConfigured
 	}
@@ -52,7 +60,18 @@ func (s *Store) Set(ctx context.Context, id string, value any) error {
 	if err != nil {
 		return err
 	}
-	return s.rdb.Set(ctx, s.dataKey(id), raw, s.ttl).Err()
+	if ttl <= 0 {
+		return s.Delete(ctx, id)
+	}
+	return s.rdb.Set(ctx, s.dataKey(id), raw, ttl).Err()
+}
+
+// ReleaseClaim permits another poll after a non-terminal device grant response.
+func (s *Store) ReleaseClaim(ctx context.Context, id string) error {
+	if s == nil || s.rdb == nil {
+		return ErrNotConfigured
+	}
+	return s.rdb.Del(ctx, s.usedKey(id)).Err()
 }
 
 func (s *Store) Get(ctx context.Context, id string, dest any) (bool, error) {

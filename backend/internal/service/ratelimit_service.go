@@ -419,6 +419,13 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		}
 		// 其他 400 错误（如参数问题）不处理，不禁用账号
 	case 401:
+		if account.isKimiOAuth() {
+			// HTTP/WS Kimi transport already attempts a controlled rotation.
+			// Never let a legacy unconditional cooldown overwrite reauthorization.
+			s.handleKimiOAuthUnauthorized(ctx, account)
+			shouldDisable = true
+			break
+		}
 		// 外审第9轮:Spark 影子无独立凭据,401 是母账号 token 问题——失效缓存 / refresh_token 判断 /
 		// 永久禁用 / 临时不可调度都必须落到凭据 owner(母账号),否则影子(无 refresh_token)必中
 		// "refresh_token missing"永久禁用分支、母账号 token cache 也不会被清,把母账号可恢复的 token

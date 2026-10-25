@@ -175,6 +175,15 @@ func (s *TokenRefreshService) SetRefreshAPI(api *OAuthRefreshAPI) {
 	s.refreshAPI = api
 }
 
+// SetKimiOAuthService registers the short-lived Kimi Coding OAuth refresher.
+func (s *TokenRefreshService) SetKimiOAuthService(oauthService *KimiOAuthService) {
+	if s == nil || oauthService == nil {
+		return
+	}
+	r := NewKimiTokenRefresher(oauthService)
+	s.registrations = append(s.registrations, tokenRefreshRegistration{platform: PlatformKimi, refresher: r, executor: r})
+}
+
 // SetRefreshPolicy 注入后台刷新调用侧策略（用于显式化平台/场景差异行为）。
 func (s *TokenRefreshService) SetRefreshPolicy(policy BackgroundRefreshPolicy) {
 	s.refreshPolicy = policy
@@ -892,6 +901,8 @@ func (s *TokenRefreshService) refreshWithRetryWithRateGate(
 				credentialsPersisted = result.NewCredentials != nil
 				_ = result.NewCredentials // 统一 API 已设置 _token_version 并更新 DB，无需重复操作
 			}
+		} else if account.isKimiOAuth() {
+			err = errKimiOAuthRefreshNotConfigured
 		} else {
 			// 降级：直接调用 refresher（兼容旧路径）
 			releaseRate := func() {}
@@ -957,6 +968,11 @@ func (s *TokenRefreshService) refreshWithRetryWithRateGate(
 			}
 			return ctxErr
 		}
+		if account.isKimiOAuth() {
+			// Kimi's refresh API already persisted a credential-CAS failure.
+			// Never follow with the legacy unconditional status mutations.
+			return err
+		}
 		if errors.Is(err, errRefreshSkipped) {
 			return errRefreshSkipped
 		}
@@ -983,6 +999,17 @@ func (s *TokenRefreshService) refreshWithRetryWithRateGate(
 		}
 
 		// 不可重试错误（invalid_grant/invalid_client 等）直接标记 error 状态并返回
+		if account.IsZhipuOAuth() && errors.Is(err, ErrZhipuReauthorizationRequired) {
+			repo, ok := s.accountRepo.(ZhipuOAuthRefreshRepository)
+			if !ok {
+				return errors.New("zhipu OAuth CAS repository is not configured")
+			}
+			_, setErr := repo.SetZhipuOAuthReauthorizationRequiredIfUnchanged(ctx, account.ID, account.Credentials, account.ProxyID, zhipuReauthorizationMessage)
+			if setErr != nil {
+				return setErr
+			}
+			return err
+		}
 		if isNonRetryableRefreshError(err) {
 			errorMsg := "Token refresh failed (non-retryable): " + logredact.RedactText(err.Error())
 			isGrokOAuth := account.IsGrokOAuth()
@@ -1158,6 +1185,10 @@ func (s *TokenRefreshService) retryBackoff(accountID int64, attempt int) time.Du
 
 // postRefreshActions 刷新成功后的后续动作（清除错误状态、缓存失效、调度器同步等）
 func (s *TokenRefreshService) postRefreshActions(ctx context.Context, account *Account) {
+	if account.isKimiOAuth() {
+		s.postRefreshStateSync(ctx, account)
+		return
+	}
 	s.clearAntigravityForceTokenRefresh(ctx, account, "success")
 
 	// Antigravity 账户：如果之前是因为缺少 project_id 而标记为 error，现在成功获取到了，清除错误状态
@@ -1217,6 +1248,13 @@ func (s *TokenRefreshService) postRefreshStateSyncWithCleanup(parent context.Con
 }
 
 func (s *TokenRefreshService) postRefreshStateSync(ctx context.Context, account *Account) {
+	if account.isKimiOAuth() {
+		latest, err := s.accountRepo.GetByID(ctx, account.ID)
+		if err != nil || latest == nil {
+			return
+		}
+		account = latest
+	}
 	// 对所有 OAuth 账号调用缓存失效（InvalidateToken 内部根据平台判断是否需要处理）
 	if s.cacheInvalidator != nil && account.Type == AccountTypeOAuth {
 		if err := s.cacheInvalidator.InvalidateToken(ctx, account); err != nil {
@@ -1525,4 +1563,12 @@ func (s *TokenRefreshService) ensureAntigravityPrivacy(ctx context.Context, acco
 			"privacy_mode", mode,
 		)
 	}
+}
+
+func (s *TokenRefreshService) SetZhipuOAuthService(oauth *ZhipuOAuthService) {
+	if s == nil || oauth == nil {
+		return
+	}
+	r := NewZhipuTokenRefresher(oauth)
+	s.registrations = append(s.registrations, tokenRefreshRegistration{platform: PlatformZhipu, refresher: r, executor: r})
 }

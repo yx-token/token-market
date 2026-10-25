@@ -847,7 +847,8 @@ type openAIWSPoolMetrics struct {
 }
 
 type openAIWSConnPool struct {
-	cfg *config.Config
+	kimiTokenProvider *KimiTokenProvider
+	cfg               *config.Config
 	// 通过接口解耦底层 WS 客户端实现，默认使用 coder/websocket。
 	clientDialer openAIWSClientDialer
 
@@ -2126,7 +2127,14 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 			return nil, err
 		}
 	}
-	conn, status, handshakeHeaders, err := p.clientDialer.Dial(ctx, req.WSURL, headers, req.ProxyURL)
+	var conn openAIWSClientConn
+	var status int
+	var handshakeHeaders http.Header
+	if req.Account.isKimiOAuth() {
+		conn, status, handshakeHeaders, err = p.kimiTokenProvider.Dial(ctx, req.Account, req.WSURL, headers, req.ProxyURL, p.clientDialer)
+	} else {
+		conn, status, handshakeHeaders, err = p.clientDialer.Dial(ctx, req.WSURL, headers, req.ProxyURL)
+	}
 	if err != nil {
 		var handshakeErr *openAIWSHandshakeError
 		var responseBody []byte

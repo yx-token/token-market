@@ -38,7 +38,23 @@ func (s *OpenAIGatewayService) FetchOpenAIModelsList(ctx context.Context, accoun
 		}
 		return &OpenAIModelsResponse{Body: body, ETag: codexModelsManifestBodyETag(body)}, nil
 	}
-	req, err := buildOpenAIAPIKeyModelsRequest(ctx, credentialAccount, s.validateUpstreamBaseURL)
+	var protocolToken string
+	if credentialAccount.isKimiOAuth() {
+		protocolToken, err = protocolCredential(ctx, credentialAccount, s.kimiTokenProvider)
+		if err != nil {
+			return nil, err
+		}
+	} else if credentialAccount.IsZhipuOAuth() {
+		if s.zhipuTokenProvider == nil {
+			return nil, fmt.Errorf("zhipu OAuth model discovery provider is not configured")
+		}
+		credentialAccount, err = s.zhipuTokenProvider.Account(ctx, credentialAccount, false)
+		if err != nil {
+			return nil, err
+		}
+		protocolToken = credentialAccount.GetOpenAIProtocolAPIKey()
+	}
+	req, err := buildOpenAIAPIKeyModelsRequest(ctx, credentialAccount, s.validateUpstreamBaseURL, protocolToken)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_MODELS_REQUEST_INVALID", "cannot build upstream model list request: %v", err)
 	}

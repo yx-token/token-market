@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import AccountTestModal from '../AccountTestModal.vue'
+import AdminAccountTestModal from '@/components/admin/account/AccountTestModal.vue'
 
 const { getAvailableModelsMock } = vi.hoisted(() => ({
   getAvailableModelsMock: vi.fn()
@@ -188,5 +189,88 @@ describe('AccountTestModal', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('已通过 /v1/chat/completions 验证')
+  })
+})
+
+describe.each([
+  ['account', AccountTestModal],
+  ['admin account', AdminAccountTestModal]
+] as const)('%s test model selection', (_name, component) => {
+  const originalFetch = globalThis.fetch
+
+  beforeEach(() => {
+    getAvailableModelsMock.mockReset()
+    getAvailableModelsMock.mockResolvedValue([
+      { id: 'native-first', display_name: 'First Model' },
+      { id: 'custom-sonnet', display_name: 'Sonnet Alias' },
+      { id: 'native-selected', display_name: 'Selected Model' }
+    ])
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: { getReader: () => ({ read: vi.fn().mockResolvedValue({ done: true }) }) }
+    })
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const openModal = async (platform = 'kimi') => {
+    const wrapper = mount(component, {
+      props: { show: false, account: { ...buildAccount(), platform } },
+      global: {
+        stubs: { BaseDialog: BaseDialogStub, Select: SelectStub, TextArea: TextAreaStub, Icon: true }
+      }
+    })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    return wrapper
+  }
+
+  it.each(['kimi', 'zhipu', 'deepseek', 'minimax', 'openai', 'gemini', 'antigravity'])(
+    'selects the first model for %s instead of a Sonnet lookalike', async (platform) => {
+      const wrapper = await openModal(platform)
+      expect(wrapper.get('select').element.value).toBe('native-first')
+      wrapper.unmount()
+    }
+  )
+
+  it('keeps Sonnet as the Anthropic default', async () => {
+    const wrapper = await openModal('anthropic')
+    expect(wrapper.get('select').element.value).toBe('custom-sonnet')
+    wrapper.unmount()
+  })
+
+  it.each(['kimi', 'zhipu'])('sends the selected %s model in the test request', async (platform) => {
+    const wrapper = await openModal(platform)
+    await wrapper.get('select').setValue('native-selected')
+    const startButton = wrapper.findAll('button').find(button => button.text().includes('admin.accounts.startTest'))!
+    await startButton.trigger('click')
+    await flushPromises()
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    const [url, options] = vi.mocked(globalThis.fetch).mock.calls[0]
+    expect(String(url)).toContain('/admin/accounts/1/test')
+    expect(JSON.parse(String(options?.body))).toMatchObject({ model_id: 'native-selected' })
+    wrapper.unmount()
+  })
+
+  it('explains an empty model list and disables the test', async () => {
+    getAvailableModelsMock.mockResolvedValue([])
+    const wrapper = await openModal()
+    expect(wrapper.get('[role="alert"]').text()).toBe('admin.accounts.noAvailableTestModels')
+    const startButton = wrapper.findAll('button').find(button => button.text().includes('admin.accounts.startTest'))!
+    expect(startButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('select').element.value).toBe('')
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('explains a model loading failure', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    getAvailableModelsMock.mockRejectedValue(new Error('unavailable'))
+    const wrapper = await openModal()
+    expect(wrapper.get('[role="alert"]').text()).toBe('admin.accounts.failedToLoadTestModels')
+    wrapper.unmount()
+    consoleError.mockRestore()
   })
 })

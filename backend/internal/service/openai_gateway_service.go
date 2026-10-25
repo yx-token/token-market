@@ -461,6 +461,9 @@ type OpenAIGatewayService struct {
 	deferredService       *DeferredService
 	openAITokenProvider   *OpenAITokenProvider
 	grokTokenProvider     *GrokTokenProvider
+	kimiTokenProvider     *KimiTokenProvider
+	zhipuTokenProvider    *ZhipuTokenProvider
+	zhipuGateway          *ZhipuGateway
 	toolCorrector         *CodexToolCorrector
 	openaiWSResolver      OpenAIWSProtocolResolver
 	resolver              *ModelPricingResolver
@@ -508,6 +511,15 @@ type OpenAIGatewayService struct {
 	// 剥离跨账号回带（openai_codex_turn_state.go）。
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
+}
+
+func (s *OpenAIGatewayService) SetKimiTokenProvider(provider *KimiTokenProvider) {
+	if s != nil {
+		s.kimiTokenProvider = provider
+		if provider != nil {
+			provider.runtimeBlocker = s
+		}
+	}
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
@@ -1210,6 +1222,21 @@ func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Acco
 	}
 	switch account.Type {
 	case AccountTypeOAuth:
+		if account.IsZhipuOAuth() {
+			if s.zhipuTokenProvider != nil {
+				token, err := s.zhipuTokenProvider.GetAccessToken(ctx, account)
+				return token, "oauth", err
+			}
+			token := account.GetCredential("api_key")
+			if token == "" {
+				return "", "", errors.New("derived api_key not found in zhipu credentials")
+			}
+			return token, "oauth", nil
+		}
+		if account.Platform == PlatformKimi {
+			token, err := protocolCredential(ctx, account, s.kimiTokenProvider)
+			return token, "oauth", err
+		}
 		if account.IsOpenAIAgentIdentity() {
 			return "", OpenAIAuthModeAgentIdentity, nil
 		}

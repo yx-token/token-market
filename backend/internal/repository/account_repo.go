@@ -1329,8 +1329,9 @@ func (r *accountRepository) ListOAuthRefreshCandidatePage(ctx context.Context, o
 	}
 	if options.RequireRefreshToken {
 		query += `
-			AND credentials ? 'refresh_token'
-			AND btrim(credentials->>'refresh_token') <> ''`
+			AND ((credentials ? 'refresh_token'
+			AND btrim(credentials->>'refresh_token') <> '')
+			OR (platform = 'zhipu' AND type = 'oauth'))`
 	}
 	if options.ExcludeRetryCooldown {
 		query += `
@@ -3767,7 +3768,7 @@ func (r *accountRepository) ListDueUpstreamBillingProbeAccounts(ctx context.Cont
 			FROM accounts
 			WHERE deleted_at IS NULL
 				AND status = 'active'
-				AND type = 'apikey'
+				AND (type = 'apikey' OR (platform = 'zhipu' AND type = 'oauth'))
 				AND extra @> '{"upstream_billing_probe_enabled": true}'::jsonb
 		), parsed AS MATERIALIZED (
 			SELECT
@@ -4050,7 +4051,7 @@ func (r *accountRepository) RevertProxyFallback(ctx context.Context, accountID i
 	// Probe snapshots belong to the network identity; invalidate only on a real proxy change.
 	res, err := r.sql.ExecContext(ctx, `
 		UPDATE accounts SET
-			extra=CASE WHEN type='apikey' AND proxy_id IS DISTINCT FROM proxy_fallback_origin_id
+			extra=CASE WHEN (type='apikey' OR (platform='zhipu' AND type='oauth')) AND proxy_id IS DISTINCT FROM proxy_fallback_origin_id
 				THEN extra - 'upstream_billing_probe' ELSE extra END,
 			proxy_id=proxy_fallback_origin_id, proxy_fallback_origin_id=NULL, updated_at=NOW()
 		WHERE id=$1 AND proxy_fallback_origin_id IS NOT NULL AND deleted_at IS NULL`, accountID)

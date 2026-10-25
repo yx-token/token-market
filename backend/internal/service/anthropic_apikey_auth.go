@@ -18,7 +18,16 @@ const (
 // (api_protocol=anthropic) share the same override knob — Kimi/DeepSeek default
 // to x-api-key, Zhipu can opt into Authorization: Bearer.
 func (a *Account) GetAnthropicAPIKeyAuthScheme() string {
-	if a == nil || a.Type != AccountTypeAPIKey {
+	if a == nil {
+		return AnthropicAPIKeyAuthSchemeXAPIKey
+	}
+	// Kimi Coding OAuth access tokens are bearer credentials. The native
+	// Anthropic endpoint must receive Authorization: Bearer, even though Kimi
+	// API-key accounts retain the historical x-api-key default.
+	if a.Platform == PlatformKimi && a.Type == AccountTypeOAuth {
+		return AnthropicAPIKeyAuthSchemeAuthorizationBearer
+	}
+	if a.Type != AccountTypeAPIKey {
 		return AnthropicAPIKeyAuthSchemeXAPIKey
 	}
 	if a.Platform != PlatformAnthropic && !a.IsCNProvider() {
@@ -49,6 +58,11 @@ func isOllamaCloudAnthropicAuthBaseURL(baseURL string) bool {
 // 其它上游保持历史 extra/default 行为。baseURL 为该请求实际选用的 Anthropic
 // 上游 base（GetBaseURL / GetAnthropicProtocolBaseURL 等），默认官方端点时传空。
 func setAnthropicAPIKeyAuthHeader(header http.Header, account *Account, token, baseURL string) {
+	if account.IsZhipuOAuth() {
+		header.Set("Authorization", "Bearer "+token)
+		header.Set("x-api-key", token)
+		return
+	}
 	if account.Type == AccountTypeAPIKey && isOllamaCloudAnthropicAuthBaseURL(baseURL) {
 		header.Set("Authorization", "Bearer "+token)
 		return

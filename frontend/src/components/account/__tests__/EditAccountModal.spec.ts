@@ -1731,3 +1731,70 @@ describe('EditAccountModal OpenAI 自动使用重置卡', () => {
     wrapper.unmount()
   })
 })
+
+
+describe('EditAccountModal Kimi OAuth', () => {
+  it.each(['adaptive', 'anthropic', 'chat_completions'])('keeps %s credentials and a custom endpoint without requiring API key', async protocol => {
+    const account = { ...buildAccount(), platform: 'kimi', type: 'oauth', credentials: {
+      access_token: 'existing-access', refresh_token: 'existing-refresh', account_mode: 'coding', api_protocol: protocol,
+      base_url: 'https://relay.example/coding', model_mapping: { 'kimi-latest': 'kimi-k2.5' },
+      ...(protocol === 'adaptive' ? { api_base_urls: {
+        chat_completions: 'https://relay.example/coding', anthropic: 'https://relay.example/anthropic', responses: 'https://relay.example/responses'
+      } } : {})
+    } }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('input[type="password"]').exists()).toBe(false)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await wrapper.vm.$nextTick()
+    expect(updateAccountMock).toHaveBeenCalledWith(account.id, expect.objectContaining({
+      credentials: expect.objectContaining(account.credentials)
+    }))
+    wrapper.unmount()
+  })
+})
+
+
+describe('EditAccountModal GLM OAuth', () => {
+  it.each(['adaptive', 'anthropic', 'chat_completions'])('preserves %s, custom endpoints and derived credentials without displaying API key', async protocol => {
+    const account = { ...buildAccount(), platform: 'zhipu', type: 'oauth', credentials: {
+      api_key: 'derived-id.derived-secret', access_token: 'business-token', zcode_jwt: 'jwt',
+      oauth_provider: 'zai', account_mode: 'coding', api_protocol: protocol,
+      base_url: 'https://relay.example/coding', model_mapping: { 'public-glm': 'glm-5' },
+      ...(protocol === 'adaptive' ? { api_base_urls: {
+        chat_completions: 'https://relay.example/coding', anthropic: 'https://relay.example/anthropic'
+      } } : {})
+    } }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('input[type="password"]').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('derived-secret')
+    expect(wrapper.text()).not.toContain('business-token')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await wrapper.vm.$nextTick()
+    expect(updateAccountMock).toHaveBeenCalledWith(account.id, expect.objectContaining({ credentials: expect.objectContaining(account.credentials) }))
+    wrapper.unmount()
+  })
+  it('keeps international defaults when changing the protocol and tolerates masked keys', async () => {
+    const account = { ...buildAccount(), platform: 'zhipu', type: 'oauth', credentials: {
+      oauth_provider: 'zai', account_mode: 'coding', api_protocol: 'chat_completions',
+      base_url: 'https://api.z.ai/api/coding/paas/v4'
+    } }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await wrapper.vm.$nextTick()
+    const button = wrapper.findAll('button').find(b => b.text() === 'admin.accounts.cnProviders.apiProtocol.anthropic')!
+    await button.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await wrapper.vm.$nextTick()
+    expect(updateAccountMock).toHaveBeenCalledWith(account.id, expect.objectContaining({ credentials: expect.objectContaining({
+      base_url: 'https://api.z.ai/api/anthropic', api_protocol: 'anthropic'
+    }) }))
+    expect(updateAccountMock.mock.calls[0][1].credentials).not.toHaveProperty('api_key')
+    wrapper.unmount()
+  })
+})

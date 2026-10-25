@@ -2804,6 +2804,34 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	// CN accounts share standard OpenAI model discovery, with their own local
+	// fallback. They must never fall through to the Claude catalog below.
+	if service.IsCNProvider(account.Platform) {
+		if h.accountTestService != nil {
+			if models, fetchErr := h.accountTestService.FetchOpenAIAccountModels(c.Request.Context(), account); fetchErr == nil {
+				response.Success(c, models)
+				return
+			}
+		}
+		mapping := account.GetModelMapping()
+		ids := make([]string, 0, len(mapping))
+		for id := range mapping {
+			if strings.TrimSpace(id) != "" && !strings.Contains(id, "*") {
+				ids = append(ids, id)
+			}
+		}
+		sort.Strings(ids)
+		models := make([]openai.Model, 0, len(ids))
+		for _, id := range ids {
+			models = append(models, openai.Model{ID: id, Object: "model", Type: "model", OwnedBy: account.Platform, DisplayName: id})
+		}
+		if len(models) == 0 {
+			models = service.DefaultCNAccountModels(account)
+		}
+		response.Success(c, models)
+		return
+	}
+
 	// Handle OpenAI accounts
 	if account.IsOpenAI() {
 		// Prefer the shared, account-keyed upstream catalog. If discovery fails,

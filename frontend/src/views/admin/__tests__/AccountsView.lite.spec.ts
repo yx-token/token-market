@@ -14,6 +14,8 @@ const {
   getAllProxies,
   getAllGroups,
   refreshCredentials,
+  refreshZhipuAccount,
+  refreshKimiAccount,
   showError,
   showWarning
 } = vi.hoisted(() => ({
@@ -25,6 +27,8 @@ const {
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
   refreshCredentials: vi.fn(),
+  refreshZhipuAccount: vi.fn(),
+  refreshKimiAccount: vi.fn(),
   showError: vi.fn(),
   showWarning: vi.fn()
 }))
@@ -43,6 +47,8 @@ vi.mock('@/api/admin', () => ({
       toggleSchedulable: vi.fn(),
       refreshCredentials
     },
+    zhipu: { refreshAccount: refreshZhipuAccount },
+    kimi: { refreshAccount: refreshKimiAccount },
     proxies: { getAll: getAllProxies },
     groups: { getAll: getAllGroups }
   }
@@ -167,6 +173,7 @@ describe('admin AccountsView lite account list', () => {
     getAllProxies.mockReset().mockResolvedValue([])
     getAllGroups.mockReset().mockResolvedValue([{ id: 7, name: 'codex', platform: 'openai' }])
     refreshCredentials.mockReset()
+    refreshZhipuAccount.mockReset()
     showError.mockReset()
     showWarning.mockReset()
   })
@@ -276,6 +283,38 @@ describe('admin AccountsView lite account list', () => {
     expect(refreshCredentials).toHaveBeenCalledWith(42)
     expect(wrapper.get('[data-account-name]').attributes('data-account-name')).toBe('refreshed account')
     expect(showWarning).toHaveBeenCalledWith('Token refreshed, but project_id is temporarily unavailable')
+    wrapper.unmount()
+  })
+
+  it('coalesces repeated Kimi manual refresh clicks per account', async () => {
+    const account = { ...listRow, platform: 'kimi', type: 'oauth' }
+    listAccounts.mockResolvedValue({ items: [account], total: 1, page: 1, page_size: 20, pages: 1 })
+    let resolve!: (account: unknown) => void
+    refreshKimiAccount.mockImplementationOnce(() => new Promise(r => { resolve = r }))
+    const wrapper = mountView(false)
+    await flushPromises()
+    const menu = wrapper.findComponent(AccountActionMenu)
+    menu.vm.$emit('refresh-token', account)
+    menu.vm.$emit('refresh-token', account)
+    await flushPromises()
+    expect(refreshKimiAccount).toHaveBeenCalledTimes(1)
+    resolve({ ...account, name: 'Kimi refreshed' })
+    await flushPromises()
+    expect(wrapper.get('[data-account-name]').attributes('data-account-name')).toBe('Kimi refreshed')
+    wrapper.unmount()
+  })
+
+  it('refreshes GLM OAuth through its dedicated endpoint and patches the row', async () => {
+    const account = { ...listRow, platform: 'zhipu', type: 'oauth' }
+    listAccounts.mockResolvedValue({ items: [account], total: 1, page: 1, page_size: 20, pages: 1 })
+    refreshZhipuAccount.mockResolvedValue({ ...account, name: 'GLM refreshed' })
+    const wrapper = mountView(false)
+    await flushPromises()
+    wrapper.findComponent(AccountActionMenu).vm.$emit('refresh-token', account)
+    await flushPromises()
+    expect(refreshZhipuAccount).toHaveBeenCalledWith(42)
+    expect(refreshCredentials).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-account-name]').attributes('data-account-name')).toBe('GLM refreshed')
     wrapper.unmount()
   })
 

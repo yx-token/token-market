@@ -2355,14 +2355,25 @@ const handleDuplicateAccount = async (a: Account) => {
     duplicatingAccountIDs.delete(a.id)
   }
 }
+const refreshingKimiAccountIDs = new Set<number>()
 const handleRefresh = async (a: Account) => {
+  const isKimiOAuth = a.platform === 'kimi' && a.type === 'oauth'
+  if (isKimiOAuth && refreshingKimiAccountIDs.has(a.id)) return
+  if (isKimiOAuth) refreshingKimiAccountIDs.add(a.id)
   try {
-    const result = await adminAPI.accounts.refreshCredentials(a.id)
+    const result = a.platform === 'kimi' && a.type === 'oauth'
+      ? { account: await adminAPI.kimi.refreshAccount(a.id) }
+      : a.platform === 'zhipu' && a.type === 'oauth'
+        ? { account: await adminAPI.zhipu.refreshAccount(a.id) }
+        : await adminAPI.accounts.refreshCredentials(a.id)
     patchAccountInList(result.account)
     enterAutoRefreshSilentWindow()
     if (result.warning) appStore.showWarning(result.message)
   } catch (error) {
     console.error('Failed to refresh credentials:', error)
+    appStore.showError(extractApiErrorMessage(error, t('common.error')))
+  } finally {
+    if (isKimiOAuth) refreshingKimiAccountIDs.delete(a.id)
   }
 }
 const handleRecoverState = async (a: Account) => {

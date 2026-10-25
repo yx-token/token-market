@@ -277,6 +277,9 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 }
 
 func defaultModelsListCandidateIDs(platform string) []string {
+	if IsCNProvider(platform) {
+		return DefaultCNModelIDs(platform)
+	}
 	switch platform {
 	case PlatformOpenAI:
 		return openai.DefaultModelIDs()

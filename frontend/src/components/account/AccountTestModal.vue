@@ -53,6 +53,9 @@
           label-key="display_name"
           :placeholder="loadingModels ? t('common.loading') + '...' : t('admin.accounts.selectTestModel')"
         />
+        <p v-if="modelsMessage" role="alert" class="text-sm text-amber-600 dark:text-amber-400">
+          {{ modelsMessage }}
+        </p>
       </div>
 
       <div v-if="isOpenAIAccount" class="space-y-1.5">
@@ -284,6 +287,7 @@ const availableModels = ref<ClaudeModel[]>([])
 const selectedModelId = ref('')
 const testPrompt = ref('')
 const loadingModels = ref(false)
+const modelsMessage = ref('')
 let abortController: AbortController | null = null
 const generatedImages = ref<PreviewImage[]>([])
 const testMode = ref<'default' | 'compact'>('default')
@@ -346,6 +350,8 @@ const loadAvailableModels = async () => {
 
   loadingModels.value = true
   selectedModelId.value = '' // Reset selection before loading
+  availableModels.value = []
+  modelsMessage.value = ''
   try {
     const models = await adminAPI.accounts.getAvailableModels(props.account.id)
     availableModels.value = props.account.platform === 'gemini' || props.account.platform === 'antigravity'
@@ -353,19 +359,22 @@ const loadAvailableModels = async () => {
       : models
     // Default selection by platform
     if (availableModels.value.length > 0) {
-      if (props.account.platform === 'gemini') {
-        selectedModelId.value = availableModels.value[0].id
-      } else {
+      if (props.account.platform === 'anthropic') {
         // Try to select Sonnet as default, otherwise use first model
         const sonnetModel = availableModels.value.find((m) => m.id.includes('sonnet'))
         selectedModelId.value = sonnetModel?.id || availableModels.value[0].id
+      } else {
+        selectedModelId.value = availableModels.value[0].id
       }
+    } else {
+      modelsMessage.value = t('admin.accounts.noAvailableTestModels')
     }
   } catch (error) {
     console.error('Failed to load available models:', error)
     // Fallback to empty list
     availableModels.value = []
     selectedModelId.value = ''
+    modelsMessage.value = t('admin.accounts.failedToLoadTestModels')
   } finally {
     loadingModels.value = false
   }

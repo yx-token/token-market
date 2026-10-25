@@ -605,6 +605,30 @@
         </div>
       </div>
 
+      <fieldset v-if="(form.platform === 'kimi' || form.platform === 'zhipu') && accountMode === 'coding'" class="border-0 p-0">
+        <legend class="input-label">{{ t('admin.accounts.oauth.authMethod') }}</legend>
+        <div class="mt-2 flex flex-wrap gap-4">
+          <label class="flex cursor-pointer items-center gap-2">
+            <input v-model="accountCategory" type="radio" :name="`${form.platform}-auth-method`" value="apikey" class="text-primary-600 focus:ring-primary-500" :data-testid="`${form.platform}-auth-apikey`" />
+            <span class="text-sm">API Key</span>
+          </label>
+          <label class="flex cursor-pointer items-center gap-2">
+            <input v-model="accountCategory" type="radio" :name="`${form.platform}-auth-method`" value="oauth-based" class="text-primary-600 focus:ring-primary-500" :data-testid="`${form.platform}-auth-oauth`" />
+            <span class="text-sm">{{ t(`admin.accounts.oauth.${form.platform}.authOption`) }}</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div v-if="isZhipuOAuth">
+        <label class="input-label">
+          {{ t('admin.accounts.oauth.zhipu.provider') }}
+          <select v-model="zhipuProvider" class="input mt-1" data-testid="zhipu-provider">
+            <option value="bigmodel">{{ t('admin.accounts.oauth.zhipu.providers.bigmodel') }}</option>
+            <option value="zai">{{ t('admin.accounts.oauth.zhipu.providers.zai') }}</option>
+          </select>
+        </label>
+      </div>
+
       <!-- API Protocol Selection (Kimi / Zhipu / DeepSeek / OpenCode) -->
       <div v-if="isMultiProtocolPlatform" class="mt-4">
         <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
@@ -3552,7 +3576,23 @@
 
     <!-- Step 2: OAuth Authorization -->
     <div v-else class="space-y-5">
+      <KimiDeviceAuthorizationFlow
+        ref="kimiFlowRef"
+        v-if="show && isKimiOAuth"
+        :proxy-id="form.proxy_id"
+        :saving="submitting"
+        @authorized="handleKimiAuthorized"
+      />
+      <ZhipuAuthorizationFlow
+        v-else-if="show && isZhipuOAuth"
+        ref="zhipuFlowRef"
+        :provider="zhipuProvider"
+        :proxy-id="form.proxy_id"
+        :saving="submitting"
+        @authorized="handleZhipuAuthorized"
+      />
       <OAuthAuthorizationFlow
+        v-else-if="!isKimiOAuth && !isZhipuOAuth"
         ref="oauthFlowRef"
         :add-method="form.platform === 'anthropic' ? addMethod : 'oauth'"
         :auth-url="currentAuthUrl"
@@ -3957,6 +3997,7 @@ import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtoc
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import {
+  buildKimiOAuthCredentials,
   applyAntigravityProjectID,
   applyHeaderOverride,
   applyInterceptWarmup,
@@ -3995,6 +4036,11 @@ import {
   type OpenAIWSMode
 } from '@/utils/openaiWsMode'
 import OAuthAuthorizationFlow from './OAuthAuthorizationFlow.vue'
+import KimiDeviceAuthorizationFlow from './KimiDeviceAuthorizationFlow.vue'
+import type { KimiTokenInfo } from '@/api/admin/kimi'
+import type { ZhipuOAuthProvider, ZhipuOAuthResult } from '@/api/admin/zhipu'
+import ZhipuAuthorizationFlow from './ZhipuAuthorizationFlow.vue'
+import { buildZhipuOAuthCredentials, defaultZhipuOAuthBaseUrl } from './credentialsBuilder'
 
 // Type for exposed OAuthAuthorizationFlow component
 // Note: defineExpose automatically unwraps refs, so we use the unwrapped types
@@ -4020,6 +4066,8 @@ const oauthStepTitle = computed(() => {
   if (form.platform === 'gemini') return t('admin.accounts.oauth.gemini.title')
   if (form.platform === 'antigravity') return t('admin.accounts.oauth.antigravity.title')
   if (form.platform === 'grok') return t('admin.accounts.oauth.grok.title')
+  if (form.platform === 'kimi') return t('admin.accounts.oauth.kimi.title')
+  if (form.platform === 'zhipu') return t('admin.accounts.oauth.zhipu.title')
   return t('admin.accounts.oauth.title')
 })
 
@@ -4150,6 +4198,9 @@ const currentOAuthError = computed(() => {
 
 // Refs
 const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
+const kimiFlowRef = ref<{ reset: () => void } | null>(null)
+const zhipuFlowRef = ref<{ reset: () => void } | null>(null)
+const zhipuProvider = ref<ZhipuOAuthProvider>('bigmodel')
 
 // Model mapping type
 interface ModelMapping {
@@ -4319,6 +4370,7 @@ watch(openCodeAccountMode, (mode, previousMode) => {
   }
 })
 watch(accountMode, (mode, previousMode) => {
+  if ((form.platform === 'kimi' || form.platform === 'zhipu') && mode !== 'coding') accountCategory.value = 'apikey'
   if (!isMultiProtocolPlatform.value || isOpenCodeGoPlatform.value) return
   if (apiProtocol.value === 'adaptive') {
     const previousDefaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, previousMode)
@@ -4759,6 +4811,9 @@ const form = reactive({
 })
 
 // Helper to check if current type needs OAuth flow
+const isZhipuOAuth = computed(() => form.platform === 'zhipu' && accountMode.value === 'coding' && accountCategory.value === 'oauth-based')
+const isKimiOAuth = computed(() => form.platform === 'kimi' && accountMode.value === 'coding' && accountCategory.value === 'oauth-based')
+
 const isOAuthFlow = computed(() => {
   // Antigravity upstream 类型不需要 OAuth 流程
   if (form.platform === 'antigravity' && antigravityAccountType.value === 'upstream') {
@@ -5445,6 +5500,8 @@ const resetForm = () => {
 }
 
 const handleClose = () => {
+  kimiFlowRef.value?.reset()
+  zhipuFlowRef.value?.reset()
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
   emit('close')
@@ -6043,6 +6100,54 @@ const createAccountAndFinish = async (
     upstream_billing_probe_enabled: type === 'apikey' ? upstreamBillingAutoProbeEnabled.value : undefined,
     auto_pause_on_expired: autoPauseOnExpired.value
   })
+}
+
+const handleKimiAuthorized = async (tokenInfo: KimiTokenInfo) => {
+  if (!props.show || !isKimiOAuth.value || submitting.value) return
+  const credentials = buildKimiOAuthCredentials(tokenInfo, { api_protocol: apiProtocol.value })
+  credentials.api_protocol = apiProtocol.value
+  if (apiProtocol.value === 'adaptive') {
+    credentials.api_base_urls = { ...adaptiveBaseUrls.value }
+  }
+  const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+  if (modelMapping) credentials.model_mapping = modelMapping
+  if (poolModeEnabled.value) {
+    credentials.pool_mode = true
+    credentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
+    credentials.pool_mode_retry_status_codes = parsePoolModeRetryStatusCodes(poolModeRetryStatusCodesInput.value)
+  }
+  if (customErrorCodesEnabled.value) {
+    credentials.custom_error_codes_enabled = true
+    credentials.custom_error_codes = [...selectedErrorCodes.value]
+  }
+  await createAccountAndFinish('kimi', 'oauth', credentials)
+}
+
+const handleZhipuAuthorized = async (result: ZhipuOAuthResult) => {
+  if (!props.show || !isZhipuOAuth.value || submitting.value) return
+  const credentials = buildZhipuOAuthCredentials(result)
+  credentials.api_protocol = apiProtocol.value
+  credentials.base_url = defaultZhipuOAuthBaseUrl(result.provider, apiProtocol.value)
+  if (apiProtocol.value === 'adaptive') {
+    credentials.api_base_urls = {
+      chat_completions: defaultZhipuOAuthBaseUrl(result.provider, 'chat_completions'),
+      anthropic: defaultZhipuOAuthBaseUrl(result.provider, 'anthropic')
+    }
+  }
+  if (zhipuOrganization.value.trim()) credentials.zhipu_organization = zhipuOrganization.value.trim()
+  if (zhipuProject.value.trim()) credentials.zhipu_project = zhipuProject.value.trim()
+  const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+  if (modelMapping) credentials.model_mapping = modelMapping
+  if (poolModeEnabled.value) {
+    credentials.pool_mode = true
+    credentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
+    credentials.pool_mode_retry_status_codes = parsePoolModeRetryStatusCodes(poolModeRetryStatusCodesInput.value)
+  }
+  if (customErrorCodesEnabled.value) {
+    credentials.custom_error_codes_enabled = true
+    credentials.custom_error_codes = [...selectedErrorCodes.value]
+  }
+  await createAccountAndFinish('zhipu', 'oauth', credentials)
 }
 
 // Grok 手动 RT 批量验证和创建

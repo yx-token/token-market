@@ -876,7 +876,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			return fmt.Errorf("refresh ws authentication headers: %w", err)
 		}
 		dialCtx, cancelDial := context.WithTimeout(ctx, s.openAIWSDialTimeout())
-		upstreamConn, statusCode, handshakeHeaders, err = dialer.Dial(dialCtx, wsURL, headers, proxyURL)
+		if account.isKimiOAuth() {
+			upstreamConn, statusCode, handshakeHeaders, err = s.kimiTokenProvider.Dial(dialCtx, account, wsURL, headers, proxyURL, dialer)
+		} else {
+			upstreamConn, statusCode, handshakeHeaders, err = dialer.Dial(dialCtx, wsURL, headers, proxyURL)
+		}
 		cancelDial()
 		if err == nil {
 			break

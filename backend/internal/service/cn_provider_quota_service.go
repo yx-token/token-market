@@ -15,12 +15,13 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/yx-token/token-market/internal/config"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/internal/pkg/kimi"
 	"golang.org/x/sync/singleflight"
 )
 
 // 国产供应商 Coding Plan 滚动窗口额度探测服务（Kimi For Coding / 智谱 GLM Coding Plan）。
 //
-// 与 grok_quota_service 不同：CN 供应商走数据面 API Key（无 OAuth token provider），
+// CN 供应商额度查询使用数据面 key；GLM OAuth 会先通过 token provider 检查续期，
 // 额度端点为只读 GET，解析 5h + weekly 两档滚动窗口并落 account.Extra 快照，
 // 供账号调度阈值评估（account_scheduling_threshold_eval.go）做主动停调。
 //
@@ -71,6 +72,8 @@ type CNProviderQuotaService struct {
 	httpUpstream HTTPUpstream
 	cfg          *config.Config
 	flight       singleflight.Group
+	zhipuTokens  *ZhipuTokenProvider
+	kimiTokens   *KimiTokenProvider
 }
 
 // NewCNProviderQuotaService 构造 Coding Plan 额度探测服务。
@@ -135,7 +138,21 @@ func (s *CNProviderQuotaService) queryUsageForAccount(ctx context.Context, accou
 		return nil, infraerrors.New(http.StatusBadRequest, "CN_QUOTA_NOT_CODING_PLAN", "account is not a kimi/zhipu/minimax coding plan or opencode go account")
 	}
 
+	if account.IsZhipuOAuth() && s.zhipuTokens != nil {
+		latest, err := s.zhipuTokens.Account(ctx, account, false)
+		if err != nil {
+			return nil, err
+		}
+		account = latest
+	}
 	apiKey := strings.TrimSpace(account.GetCNAPIKey())
+	if account.isKimiOAuth() {
+		var tokenErr error
+		apiKey, tokenErr = protocolCredential(ctx, account, s.kimiTokens)
+		if tokenErr != nil {
+			return nil, tokenErr
+		}
+	}
 	if apiKey == "" {
 		return nil, infraerrors.New(http.StatusBadRequest, "CN_QUOTA_NO_APIKEY", "account api_key is empty")
 	}
@@ -156,11 +173,10 @@ func (s *CNProviderQuotaService) queryUsageForAccount(ctx context.Context, accou
 	case PlatformZhipu:
 		targetURL = zhipuQuotaURL(baseURL)
 		authHeader = apiKey // 智谱额度端点鉴权不加 Bearer 前缀
-		// 团队版 GLM Coding Plan：额度端点需 ?type=2 + 组织/项目请求头，
-		// 否则官方 API 回「当前用户不存在coding plan」。组织 ID 存在即视为
-		// 团队版（个人版凭据不含该字段，走原个人版查询路径）。
+		// 手工 API-key 账号用组织字段区分团队额度。OAuth 派生个人 key
+		// 也总有组织/项目，不能据此把 OAuth 账号改成团队查询。
 		zhipuOrg = strings.TrimSpace(account.GetCredential("zhipu_organization"))
-		if zhipuOrg != "" {
+		if zhipuOrg != "" && !account.IsZhipuOAuth() {
 			targetURL += "?type=2"
 		}
 	case PlatformMiniMax:
@@ -185,6 +201,10 @@ func (s *CNProviderQuotaService) queryUsageForAccount(ctx context.Context, accou
 	}
 	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
+	if provider == PlatformKimi && account.Type == AccountTypeOAuth {
+		kimi.ApplyDeviceHeaders(req.Header, account.GetCredential("device_id"))
+		req.Header.Set("Authorization", authHeader)
+	}
 	if provider == PlatformZhipu || provider == PlatformMiniMax {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept-Language", "en-US,en")
@@ -198,7 +218,15 @@ func (s *CNProviderQuotaService) queryUsageForAccount(ctx context.Context, accou
 	// 探测与真实转发保持同一套账号级请求头覆写，避免探测通过但转发失败。
 	account.ApplyHeaderOverrides(req.Header)
 
-	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, maxInt(account.Concurrency, 1))
+	send := func(r *http.Request) (*http.Response, error) {
+		return s.httpUpstream.Do(r, proxyURL, account.ID, maxInt(account.Concurrency, 1))
+	}
+	var resp *http.Response
+	if account.isKimiOAuth() {
+		resp, err = s.kimiTokens.Do(req, account, send)
+	} else {
+		resp, err = send(req)
+	}
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadGateway, "CN_QUOTA_REQUEST_FAILED", "upstream request failed: %v", err)
 	}

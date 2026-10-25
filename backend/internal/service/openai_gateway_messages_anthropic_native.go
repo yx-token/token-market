@@ -26,6 +26,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/yx-token/token-market/internal/pkg/kimi"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 )
 
@@ -79,7 +80,10 @@ func (s *OpenAIGatewayService) forwardAnthropicViaNativeAnthropicEndpoint(
 	logger.LegacyPrintf("service.gateway", "[CN Anthropic 直通] account=%d(%s) platform=%s model=%s upstream=%s stream=%v",
 		account.ID, account.Name, account.Platform, originalModel, upstreamModel, clientStream)
 
-	apiKey := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	apiKey, credentialErr := protocolCredential(ctx, account, s.kimiTokenProvider)
+	if credentialErr != nil {
+		return nil, credentialErr
+	}
 	if apiKey == "" {
 		return nil, fmt.Errorf("account %d missing api_key", account.ID)
 	}
@@ -200,6 +204,11 @@ func (s *OpenAIGatewayService) buildNativeAnthropicUpstreamRequest(
 	req.Header.Del("x-goog-api-key")
 	req.Header.Del("cookie")
 	setAnthropicAPIKeyAuthHeader(req.Header, account, apiKey, account.GetAnthropicProtocolBaseURL())
+	if account != nil && account.Platform == PlatformKimi && account.Type == AccountTypeOAuth {
+		kimi.ApplyDeviceHeaders(req.Header, account.GetCredential("device_id"))
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		req.Header.Del("x-api-key")
+	}
 
 	if getHeaderRaw(req.Header, "content-type") == "" {
 		setHeaderRaw(req.Header, "content-type", "application/json")
@@ -218,6 +227,9 @@ func (s *OpenAIGatewayService) buildNativeAnthropicUpstreamRequest(
 	payloads := append([][]byte{body}, sessionBodies...)
 	applyOpenCodeSessionHeader(c, account, targetURL, req.Header, payloads...)
 
+	if account.IsZhipuOAuth() {
+		req = withZhipuRequestSession(req, c, body)
+	}
 	return req, body, nil
 }
 

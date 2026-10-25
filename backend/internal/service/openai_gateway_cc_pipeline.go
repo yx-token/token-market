@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yx-token/token-market/internal/pkg/apicompat"
+	"github.com/yx-token/token-market/internal/pkg/kimi"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/util/responseheaders"
 	"go.uber.org/zap"
@@ -153,8 +154,11 @@ func (s *OpenAIGatewayService) openAIChatCompletionsTargetURL(account *Account) 
 
 // resolveCCFallbackTarget 解析两条 CC 回退路径共用的账号凭证与上游端点
 // （回退路径仅面向 APIKey 账号，凭证恒为 openai api_key）。
-func (s *OpenAIGatewayService) resolveCCFallbackTarget(account *Account) (apiKey string, targetURL string, err error) {
-	apiKey = strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+func (s *OpenAIGatewayService) resolveCCFallbackTarget(ctx context.Context, account *Account) (apiKey string, targetURL string, err error) {
+	apiKey, err = protocolCredential(ctx, account, s.kimiTokenProvider)
+	if err != nil {
+		return "", "", err
+	}
 	if apiKey == "" {
 		return "", "", fmt.Errorf("account %d missing api_key", account.ID)
 	}
@@ -200,6 +204,10 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Authorization", "Bearer "+bearerToken)
+	if account != nil && account.Platform == PlatformKimi && account.Type == AccountTypeOAuth {
+		kimi.ApplyDeviceHeaders(upstreamReq.Header, account.GetCredential("device_id"))
+		upstreamReq.Header.Set("Authorization", "Bearer "+bearerToken)
+	}
 	if stream {
 		upstreamReq.Header.Set("Accept", "text/event-stream")
 	} else {
@@ -237,6 +245,9 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
+	}
+	if account.IsZhipuOAuth() {
+		upstreamReq = withZhipuRequestSession(upstreamReq, c, body)
 	}
 	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
 	if err != nil {

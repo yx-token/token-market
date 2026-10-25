@@ -585,6 +585,15 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	targetURL := openaiPlatformAPIURL
 	switch account.Type {
 	case AccountTypeOAuth:
+		if account.Platform == PlatformKimi {
+			baseURL := account.GetCNProtocolBaseURL(APIProtocolResponses)
+			validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+			if err != nil {
+				return nil, err
+			}
+			targetURL = buildOpenAIResponsesURLForPlatform(account.Platform, validatedURL)
+			break
+		}
 		targetURL = chatgptCodexURL
 	case AccountTypeSetupToken:
 		if account.IsOpenAIOAuthLike() {

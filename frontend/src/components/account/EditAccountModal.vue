@@ -26,9 +26,9 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
-      <!-- API Key fields (only for apikey type) -->
-      <div v-if="account.type === 'apikey'" class="space-y-4">
-        <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
+      <!-- Shared upstream settings for API keys and Coding OAuth. -->
+      <div v-if="account.type === 'apikey' || isCNCodingOAuth" class="space-y-4">
+        <div v-if="!isCNProtocolAccount || editApiProtocol !== 'adaptive'">
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
             v-model="editBaseUrl"
@@ -43,7 +43,9 @@
                     ? 'https://cloudcode-pa.googleapis.com'
                     : account.platform === 'grok'
                       ? 'https://api.x.ai/v1'
-                      : 'https://api.anthropic.com'
+                      : account.platform === 'kimi'
+                        ? defaultBaseUrl
+                        : 'https://api.anthropic.com'
             "
           />
           <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
@@ -53,7 +55,7 @@
             @select="editBaseUrl = $event"
           />
           <CnBaseUrlPresets
-            v-if="isCNApiKeyAccount && account.platform !== 'opencode_go'"
+            v-if="isCNProtocolAccount && account.platform !== 'opencode_go' && !isCNCodingOAuth"
             class="mt-2"
             :platform="cnPresetPlatform"
             :mode="editAccountMode"
@@ -77,7 +79,7 @@
           </p>
         </div>
         <!-- OpenCode Zen vs GO -->
-        <div v-if="isCNApiKeyAccount && account.platform === 'opencode_go'">
+        <div v-if="isCNProtocolAccount && account.platform === 'opencode_go'">
           <label class="input-label">{{ t('admin.accounts.cnProviders.accountMode.title') }}</label>
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <button
@@ -129,7 +131,7 @@
           </div>
         </div>
         <!-- Account Mode Selection (CN providers) -->
-        <div v-if="isCNApiKeyAccount && account.platform !== 'opencode_go'">
+        <div v-if="isCNProtocolAccount && account.platform !== 'opencode_go' && !isCNCodingOAuth">
           <label class="input-label">{{ t('admin.accounts.cnProviders.accountMode.title') }}</label>
           <div class="mt-2 flex flex-wrap gap-2">
             <button
@@ -150,7 +152,7 @@
           <p class="input-hint">{{ t(`admin.accounts.cnProviders.accountMode.${editAccountMode}Desc`) }}</p>
         </div>
         <!-- API Protocol Selection (CN providers / OpenCode) -->
-        <div v-if="isCNApiKeyAccount">
+        <div v-if="isCNProtocolAccount">
           <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
           <div class="mt-2 flex flex-wrap gap-2">
             <button
@@ -204,7 +206,7 @@
           </div>
           <p class="input-hint mt-2">{{ t('admin.accounts.cnProviders.zhipuTeam.hint') }}</p>
         </div>
-        <div>
+        <div v-if="account.type === 'apikey'">
           <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
           <input
             v-model="editApiKey"
@@ -3110,6 +3112,7 @@ import { useAppStore } from '@/stores/app'
 
 import { adminAPI } from '@/api/admin'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
+import { defaultZhipuOAuthBaseUrl } from './credentialsBuilder'
 import type {
   Account,
   Proxy,
@@ -3356,10 +3359,12 @@ const editApiKey = ref('')
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）account_mode / api_protocol 编辑 ──
 // account_mode 决定额度/余额监控路径，api_protocol 决定转发端点与格式；
 // 二者均可修正（早期创建的账号可能存错默认值），切换时重置 base_url 预置。
-const isCNApiKeyAccount = computed(
-  () =>
+const isCNCodingOAuth = computed(() => (props.account?.platform === 'kimi' || props.account?.platform === 'zhipu') && props.account.type === 'oauth')
+const isCNProtocolAccount = computed(
+  () => isCNCodingOAuth.value || (
     props.account?.type === 'apikey' &&
     (isCNProviderPlatform(props.account.platform) || props.account.platform === 'opencode_go')
+  )
 )
 // CnBaseUrlPresets 的 platform prop 是平台字面量联合类型，模板里不能写
 // `as` 断言（其中的 `|` 会被 eslint 误判为 Vue2 filter 语法），经此 computed 传递。
@@ -3425,8 +3430,14 @@ const editAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol;
   if (cnSupportsNativeResponses(props.account?.platform ?? '')) opts.push({ value: 'responses', labelKey: 'responses' })
   return opts
 })
+function currentCNBaseUrl(protocol: CnApiProtocol): string {
+  if (props.account?.platform === 'zhipu' && isCNCodingOAuth.value) {
+    return defaultZhipuOAuthBaseUrl(props.account.credentials?.oauth_provider === 'zai' ? 'zai' : 'bigmodel', protocol)
+  }
+  return defaultCNBaseUrl(props.account!.platform, currentOpenCodeOrCNMode(), protocol)
+}
 watch(editApiProtocol, (protocol, previousProtocol) => {
-  if (!isCNApiKeyAccount.value || syncingForm.value) return
+  if (!isCNProtocolAccount.value || syncingForm.value) return
   if (protocol === 'adaptive') {
     const defaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
     for (const item of editAdaptiveProtocolOptions.value) {
@@ -3440,13 +3451,13 @@ watch(editApiProtocol, (protocol, previousProtocol) => {
   }
   if (previousProtocol === 'adaptive') {
     editBaseUrl.value = editAdaptiveBaseUrls.value[protocol] ||
-      defaultCNBaseUrl(props.account!.platform, currentOpenCodeOrCNMode(), protocol)
+      currentCNBaseUrl(protocol)
     return
   }
-  editBaseUrl.value = defaultCNBaseUrl(props.account!.platform, currentOpenCodeOrCNMode(), protocol)
+  editBaseUrl.value = currentCNBaseUrl(protocol)
 })
 watch(editAccountMode, (mode, previousMode) => {
-  if (!isCNApiKeyAccount.value || syncingForm.value) return
+  if (!isCNProtocolAccount.value || syncingForm.value) return
   if (props.account?.platform === 'opencode_go') return
   // deepseek 无 coding 套餐：防御性回退（UI 已隐藏该选项）。
   const effectiveMode = props.account!.platform === 'deepseek' && mode === 'coding' ? 'payg' : mode
@@ -3468,7 +3479,7 @@ watch(editAccountMode, (mode, previousMode) => {
   editBaseUrl.value = defaultCNBaseUrl(props.account!.platform, mode, editApiProtocol.value)
 })
 watch(editOpenCodeAccountMode, (mode, previousMode) => {
-  if (!isCNApiKeyAccount.value || props.account?.platform !== 'opencode_go' || syncingForm.value) return
+  if (!isCNProtocolAccount.value || props.account?.platform !== 'opencode_go' || syncingForm.value) return
   if (editApiProtocol.value === 'adaptive') {
     const previousDefaults = defaultCNAdaptiveBaseUrls('opencode_go', previousMode)
     const nextDefaults = defaultCNAdaptiveBaseUrls('opencode_go', mode)
@@ -3992,6 +4003,7 @@ const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   if (props.account?.platform === 'grok') return 'https://api.x.ai/v1'
   if (props.account?.platform === 'typesafe') return 'https://api.typesafe.ai'
+  if (props.account?.platform === 'zhipu' && isCNCodingOAuth.value) return currentCNBaseUrl(editApiProtocol.value)
   // CN 供应商：按当前模式/协议回落到官方预设（清空输入框提交时使用），
   // 不能落到 anthropic 默认值（会被当 CC base 拼出错误端点）。
   if (
@@ -4370,8 +4382,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     }
   }
 
-  // Initialize API Key fields for apikey type
-  if (newAccount.type === 'apikey' && newAccount.credentials) {
+  // Initialize shared upstream settings for API keys and Coding OAuth.
+  if ((newAccount.type === 'apikey' || isCNCodingOAuth.value) && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
     // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
     // （编辑弹窗允许修正两者，用于修复早期存错默认值的账号）。
@@ -4379,7 +4391,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       if (newAccount.platform === 'opencode_go') {
         editOpenCodeAccountMode.value = resolveOpenCodeAccountMode(credentials.account_mode)
       } else {
-        editAccountMode.value = credentials.account_mode === 'coding' ? 'coding' : 'payg'
+        editAccountMode.value = isCNCodingOAuth.value || credentials.account_mode === 'coding' ? 'coding' : 'payg'
       }
       const storedProtocol = credentials.api_protocol
       editApiProtocol.value =
@@ -4393,6 +4405,11 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         editApiProtocol.value = 'chat_completions'
       }
       const adaptiveDefaults = defaultCNAdaptiveBaseUrls(newAccount.platform, currentOpenCodeOrCNMode())
+      if (newAccount.platform === 'zhipu' && isCNCodingOAuth.value) {
+        const provider = credentials.oauth_provider === 'zai' ? 'zai' : 'bigmodel'
+        adaptiveDefaults.chat_completions = defaultZhipuOAuthBaseUrl(provider, 'chat_completions')
+        adaptiveDefaults.anthropic = defaultZhipuOAuthBaseUrl(provider, 'anthropic')
+      }
       const storedBaseUrls = (credentials.api_base_urls as Record<string, unknown> | undefined) || {}
       const legacyBaseUrl = typeof credentials.base_url === 'string' ? credentials.base_url.trim() : ''
       const storedChatBaseUrl = typeof storedBaseUrls.chat_completions === 'string'
@@ -4447,9 +4464,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
                 newAccount.platform === 'zhipu' ||
                 newAccount.platform === 'deepseek' ||
                 newAccount.platform === 'opencode_go'
-              ? defaultCNBaseUrl(newAccount.platform, currentOpenCodeOrCNMode(), editApiProtocol.value)
+              ? currentCNBaseUrl(editApiProtocol.value)
               : 'https://api.anthropic.com'
-    editBaseUrl.value = isCNApiKeyAccount.value && editApiProtocol.value === 'adaptive'
+    editBaseUrl.value = isCNProtocolAccount.value && editApiProtocol.value === 'adaptive'
       ? editAdaptiveBaseUrls.value.chat_completions
       : (credentials.base_url as string) || platformDefaultUrl
 
@@ -5166,8 +5183,8 @@ const handleSubmit = async () => {
       }
     }
 
-    // For apikey type, handle credentials update
-    if (props.account.type === 'apikey') {
+    // Shared upstream settings; Coding OAuth never requires an API key.
+    if (props.account.type === 'apikey' || isCNCodingOAuth.value) {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
       const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
@@ -5179,7 +5196,7 @@ const handleSubmit = async () => {
       }
 
       // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。
-      if (isCNApiKeyAccount.value) {
+      if (isCNProtocolAccount.value) {
         newCredentials.account_mode = currentOpenCodeOrCNMode()
         newCredentials.api_protocol = editApiProtocol.value
         if (editApiProtocol.value === 'adaptive') {
@@ -5220,7 +5237,7 @@ const handleSubmit = async () => {
         props.account.credentials_status?.has_api_key ?? Boolean(currentCredentials.api_key)
       if (editApiKey.value.trim()) {
         newCredentials.api_key = editApiKey.value.trim()
-      } else if (!hasExistingApiKey) {
+      } else if (props.account.type === 'apikey' && !hasExistingApiKey) {
         appStore.showError(t('admin.accounts.apiKeyIsRequired'))
         return
       }
@@ -5272,7 +5289,7 @@ const handleSubmit = async () => {
       }
 
       // Add header override if enabled for this API-key platform
-      if (isHeaderOverrideCapable(props.account.platform, 'apikey')) {
+      if (isHeaderOverrideCapable(props.account.platform, props.account.type)) {
         if (headerOverrideEnabled.value) {
           const headerError = validateHeaderOverrideRows(headerOverrideRows.value)
           if (headerError) {

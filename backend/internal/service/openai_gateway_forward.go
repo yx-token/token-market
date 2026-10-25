@@ -1344,7 +1344,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 }
 
 func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
-	if account == nil || account.Type != AccountTypeAPIKey {
+	if account == nil {
+		return false
+	}
+	if account.Type != AccountTypeAPIKey && !account.isKimiOAuth() && !account.IsZhipuOAuth() {
 		return false
 	}
 	if account.IsOpenCodeGo() {
@@ -1372,6 +1375,18 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	var targetURL string
 	switch account.Type {
 	case AccountTypeOAuth:
+		if account.Platform == PlatformKimi || account.IsZhipuOAuth() {
+			baseURL := account.GetOpenAIBaseURL()
+			if account.isKimiOAuth() {
+				baseURL = account.GetCNProtocolBaseURL(APIProtocolResponses)
+			}
+			validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+			if err != nil {
+				return nil, err
+			}
+			targetURL = buildOpenAIResponsesURLForPlatform(account.Platform, validatedURL)
+			break
+		}
 		// OAuth accounts use ChatGPT internal API
 		targetURL = chatgptCodexURL
 	case AccountTypeSetupToken:

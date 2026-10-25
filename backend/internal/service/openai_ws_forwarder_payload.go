@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"github.com/yx-token/token-market/internal/pkg/kimi"
 )
 
 func validateOpenAIWSBearerToken(account *Account, token string) error {
@@ -33,7 +34,16 @@ func (s *OpenAIGatewayService) buildOpenAIResponsesWSURL(account *Account) (stri
 	var targetURL string
 	switch account.Type {
 	case AccountTypeOAuth:
-		targetURL = chatgptCodexURL
+		if account.Platform == PlatformKimi {
+			baseURL := account.GetCNProtocolBaseURL(APIProtocolResponses)
+			validatedURL, err := s.validateUpstreamBaseURL(baseURL)
+			if err != nil {
+				return "", err
+			}
+			targetURL = buildOpenAIResponsesURLForPlatform(account.Platform, validatedURL)
+		} else {
+			targetURL = chatgptCodexURL
+		}
 	case AccountTypeSetupToken:
 		if account.IsOpenAIOAuthLike() {
 			targetURL = chatgptCodexURL
@@ -90,6 +100,10 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 ) (http.Header, openAIWSSessionHeaderResolution, error) {
 	headers := make(http.Header)
 	if account == nil || !account.IsOpenAIAgentIdentity() {
+		headers.Set("authorization", "Bearer "+token)
+	}
+	if account != nil && account.Platform == PlatformKimi && account.Type == AccountTypeOAuth {
+		kimi.ApplyDeviceHeaders(headers, account.GetCredential("device_id"))
 		headers.Set("authorization", "Bearer "+token)
 	}
 

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/yx-token/token-market/internal/pkg/httpclient"
+	"github.com/yx-token/token-market/internal/pkg/kimi"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/box"
 )
@@ -389,6 +390,10 @@ func (s *OpenAIGatewayService) buildOpenAIAuthenticationHeaders(ctx context.Cont
 		return agentHeaders, nil
 	}
 	headers.Set("Authorization", "Bearer "+token)
+	if credAccount != nil && credAccount.Platform == PlatformKimi {
+		kimi.ApplyDeviceHeaders(headers, credAccount.GetCredential("device_id"))
+		headers.Set("Authorization", "Bearer "+token)
+	}
 	return headers, nil
 }
 

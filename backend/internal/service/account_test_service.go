@@ -32,6 +32,7 @@ import (
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/claude"
 	"github.com/yx-token/token-market/internal/pkg/geminicli"
+	"github.com/yx-token/token-market/internal/pkg/kimi"
 	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/yx-token/token-market/internal/pkg/openai_compat"
 	"github.com/yx-token/token-market/internal/pkg/xai"
@@ -142,6 +143,7 @@ type AccountTestService struct {
 	geminiTokenProvider       *GeminiTokenProvider
 	claudeTokenProvider       *ClaudeTokenProvider
 	grokTokenProvider         *GrokTokenProvider
+	kimiTokenProvider         *KimiTokenProvider
 	antigravityGatewayService *AntigravityGatewayService
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
@@ -174,6 +176,9 @@ func (s *AccountTestService) SetPluginManager(pluginManager *PluginManager) {
 func (s *AccountTestService) SetOpenAIGatewayService(gateway *OpenAIGatewayService) {
 	if s != nil {
 		s.openaiGatewayService = gateway
+		if gateway != nil {
+			s.kimiTokenProvider = gateway.kimiTokenProvider
+		}
 	}
 }
 
@@ -453,7 +458,11 @@ func (s *AccountTestService) testOpenCodeGoAccountConnection(c *gin.Context, acc
 }
 
 func (s *AccountTestService) testOpenCodeGoResponsesConnection(c *gin.Context, account *Account, testModelID string) error {
-	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	authToken, credentialErr := s.protocolCredential(c.Request.Context(), account)
+	if credentialErr != nil {
+		return s.sendErrorAndEnd(c, credentialErr.Error())
+	}
+	authToken = strings.TrimSpace(authToken)
 	if authToken == "" {
 		return s.sendErrorAndEnd(c, "No API key available")
 	}
@@ -473,7 +482,11 @@ func (s *AccountTestService) testCNProviderChatCompletionsConnection(c *gin.Cont
 	}
 	testModelID = account.GetMappedModel(testModelID)
 
-	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	authToken, credentialErr := s.protocolCredential(c.Request.Context(), account)
+	if credentialErr != nil {
+		return s.sendErrorAndEnd(c, credentialErr.Error())
+	}
+	authToken = strings.TrimSpace(authToken)
 	if authToken == "" {
 		return s.sendErrorAndEnd(c, "No API key available")
 	}
@@ -590,7 +603,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doAccountTestUpstream(req, proxyURL, account)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -662,7 +675,7 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doAccountTestUpstream(req, proxyURL, account)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -826,10 +839,29 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	// Determine authentication method and API URL
 	var authToken string
+	var err error
 	var apiURL string
 	var isOAuth bool
 
-	if credentialAccount.IsOAuth() {
+	if credentialAccount.isKimiOAuth() || credentialAccount.IsZhipuOAuth() {
+		isOAuth = false
+		authToken, err = s.protocolCredential(ctx, credentialAccount)
+		if err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
+		if authToken == "" {
+			return s.sendErrorAndEnd(c, "No access token available")
+		}
+		baseURL := credentialAccount.GetOpenAIBaseURL()
+		if credentialAccount.UsesNativeCNResponses() && credentialAccount.IsAdaptiveAPIProtocol() {
+			baseURL = credentialAccount.GetCNProtocolBaseURL(APIProtocolResponses)
+		}
+		normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
+		if err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
+		}
+		apiURL = buildOpenAIResponsesURLForPlatform(credentialAccount.Platform, normalizedBaseURL)
+	} else if credentialAccount.IsOAuth() {
 		isOAuth = true
 		// Agent Identity signs each request and does not retain the OAuth token.
 		if !credentialAccount.IsOpenAIAgentIdentity() {
@@ -843,7 +875,10 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		apiURL = chatgptCodexAPIURL
 	} else if credentialAccount.Type == "apikey" {
 		// API Key - use Platform API
-		authToken = credentialAccount.GetOpenAIProtocolAPIKey()
+		authToken, err = s.protocolCredential(ctx, credentialAccount)
+		if err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
 		if authToken == "" {
 			return s.sendErrorAndEnd(c, "No API key available")
 		}
@@ -910,6 +945,10 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	} else {
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	}
+	if credentialAccount.isKimiOAuth() {
+		kimi.ApplyDeviceHeaders(req.Header, credentialAccount.GetCredential("device_id"))
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
 
 	// Set OAuth-specific headers for ChatGPT internal API
 	if isOAuth {
@@ -966,7 +1005,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
 		// 401 Unauthorized: 标记账号为永久错误
-		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil && !account.isKimiOAuth() {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -2133,6 +2172,10 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+authToken)
+	if account.Platform == PlatformKimi && account.Type == AccountTypeOAuth {
+		kimi.ApplyDeviceHeaders(req.Header, account.GetCredential("device_id"))
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
 
 	// 官方 OpenCode / Command Code 上游收敛为规范客户端 UA，与真实转发路径一致。
 	applyOpenCodeUpstreamUserAgent(account, apiURL, req.Header)
@@ -2146,7 +2189,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doAccountTestUpstream(req, proxyURL, account)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions API (/v1/chat/completions) request failed: %s", err.Error()))
 	}
@@ -2157,7 +2200,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 		if resp.StatusCode == http.StatusTooManyRequests {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
-		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil && !account.isKimiOAuth() {
 			errMsg := fmt.Sprintf("Chat Completions authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -2183,6 +2226,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	}
 
 	authToken := ""
+	var err error
 	apiURL := ""
 	isOAuth := false
 
@@ -2197,7 +2241,10 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		}
 		apiURL = chatgptCodexAPIURL
 	case account.Type == AccountTypeAPIKey:
-		authToken = account.GetOpenAIProtocolAPIKey()
+		authToken, err = s.protocolCredential(c.Request.Context(), account)
+		if err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
 		if authToken == "" {
 			return s.sendErrorAndEnd(c, "No API key available")
 		}
@@ -2318,7 +2365,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil && !account.isKimiOAuth() {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -2427,7 +2474,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doAccountTestUpstream(req, proxyURL, account)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -3055,7 +3102,7 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.doAccountTestUpstream(req, proxyURL, account)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}

@@ -154,6 +154,10 @@ security:
       - "api.moonshot.ai"
       - "api.moonshot.cn"
       - "open.bigmodel.cn"
+      - "bigmodel.cn"
+      - "zcode.z.ai"
+      - "api.z.ai"
+      - "chat.z.ai"
       - "api.minimaxi.com"
       - "opencode.ai"
       - "generativelanguage.googleapis.com"
@@ -445,6 +449,11 @@ gateway:
     failure_threshold: 2
     window_seconds: 60
     ttl_seconds: 600
+  # GLM Coding Plan OAuth: sign by default; auto follows the remote feature gate.
+  zhipu:
+    signature_mode: always # auto / always / never
+    client_version: "3.11.2"
+    config_headers: {}     # Optional runtime codingPlanSignature.headers
   # Grok free-tier local soft gate (scheduler filter only; admin QueryQuota/import probe bypasses it).
   # Enabled by default because free detection requires an explicit subscription_tier/plan_type of "free".
   # Stats/query failures fail open so DB issues do not block all Grok traffic.

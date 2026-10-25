@@ -146,7 +146,7 @@ func BuildUpstreamBillingRateSnapshotItems(accounts []Account) []UpstreamBilling
 		// The billing endpoint is supported by every API-key platform; limiting
 		// this projection to OpenAI would make the background refresh erase the
 		// other platforms' persisted snapshots from the table.
-		if account.Type == AccountTypeAPIKey {
+		if IsUpstreamBillingProbeIdentity(account.Platform, account.Type) {
 			snapshot = decodeUpstreamBillingProbeSnapshot(account.Extra)
 		}
 		items = append(items, UpstreamBillingRateSnapshotItem{
@@ -1001,13 +1001,17 @@ func decodeUpstreamBillingProbeSnapshot(extra map[string]any) *UpstreamBillingPr
 // CN providers, whose official-domain accounts are short-circuited to
 // "unsupported" by upstreamBillingProbeTargetIsOfficialAPI).
 // Non-sub2api upstreams return 404 and the snapshot records "unsupported".
-// Only AccountTypeAPIKey is in scope. OAuth/Bedrock hold no static API key to
-// present at all; AccountTypeUpstream (antigravity relay accounts) does carry
+// API-key accounts and Zhipu OAuth accounts with derived api_key are in scope.
+// Other OAuth/Bedrock accounts hold no compatible API key;
+// AccountTypeUpstream (antigravity relay accounts) does carry
 // a base_url plus a static api_key, but it is deliberately left out of the
 // current supported set. New antigravity relay accounts are created with
 // type=apikey by the admin form, so only pre-existing type=upstream rows
 // cannot turn the probe on.
 func IsUpstreamBillingProbeIdentity(platform, accountType string) bool {
+	if platform == PlatformZhipu && accountType == AccountTypeOAuth {
+		return true
+	}
 	if accountType != AccountTypeAPIKey {
 		return false
 	}

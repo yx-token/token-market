@@ -981,6 +981,9 @@ func (a *Account) ResolveCompactMappedModel(requestedModel string) (mappedModel 
 
 func (a *Account) GetBaseURL() string {
 	if a.Type != AccountTypeAPIKey {
+		if a.isKimiOAuth() || a.IsZhipuOAuth() {
+			return a.GetAnthropicProtocolBaseURL()
+		}
 		return ""
 	}
 	baseURL := a.GetCredential("base_url")
@@ -1353,7 +1356,16 @@ func (a *Account) IsOpenAIOAuthLike() bool {
 // UsesOpenAICodexProtocol preserves legacy OpenAI gateway OAuth routing for
 // accounts whose platform is implicit, while adding OpenAI SetupToken.
 func (a *Account) UsesOpenAICodexProtocol() bool {
-	return a != nil && (a.Type == AccountTypeOAuth || a.IsOpenAIOAuthLike())
+	if a == nil {
+		return false
+	}
+	// Older persisted/test accounts may omit platform for the legacy OAuth
+	// route. Keep that implicit OpenAI meaning, while never treating an
+	// explicitly non-OpenAI OAuth account (such as Kimi) as Codex.
+	if a.Platform == "" {
+		return a.Type == AccountTypeOAuth || a.Type == AccountTypeSetupToken
+	}
+	return a.IsOpenAIOAuthLike()
 }
 
 func (a *Account) IsOpenAIChatGPTSubscription() bool {
@@ -1387,14 +1399,14 @@ func (a *Account) GetOpenAIBaseURL() string {
 	if !a.IsOpenAI() && !a.IsCNProvider() && !a.IsOpenCodeGo() {
 		return ""
 	}
-	if a.IsMultiProtocolAPIKey() && a.IsAdaptiveAPIProtocol() {
+	if (a.IsMultiProtocolAPIKey() || a.isKimiOAuth()) && a.IsAdaptiveAPIProtocol() {
 		if baseURLs, ok := a.Credentials["api_base_urls"].(map[string]any); ok {
 			if baseURL, ok := baseURLs[APIProtocolChatCompletions].(string); ok && strings.TrimSpace(baseURL) != "" {
 				return strings.TrimSpace(baseURL)
 			}
 		}
 	}
-	if a.Type == AccountTypeAPIKey || a.Type == AccountTypeUpstream {
+	if a.Type == AccountTypeAPIKey || a.Type == AccountTypeUpstream || a.isKimiOAuth() || a.IsZhipuOAuth() {
 		if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
 			return baseURL
 		}
@@ -1445,7 +1457,7 @@ func (a *Account) IsCodingPlan() bool {
 // （与既有行为完全一致）。responses 协议仅 deepseek / kimi / minimax 支持（官方原生
 // Responses 端点，适配 Codex）；zhipu 无此端点。
 func (a *Account) GetAPIProtocol() string {
-	if a == nil || !a.IsMultiProtocolAPIKey() {
+	if a == nil || (!a.IsMultiProtocolAPIKey() && !a.isKimiOAuth()) {
 		return APIProtocolChatCompletions
 	}
 	switch strings.TrimSpace(a.GetCredential("api_protocol")) {
@@ -1504,12 +1516,15 @@ func (a *Account) IsAdaptiveAPIProtocol() bool {
 // adaptive 账号优先使用 api_base_urls 中的分协议地址，缺失时按平台和
 // account_mode 使用官方默认端点。base_url 继续作为 Chat Completions 地址兼容旧字段。
 func (a *Account) GetCNProtocolBaseURL(protocol string) string {
-	if a == nil || !a.IsMultiProtocolAPIKey() {
+	if a == nil || (!a.IsMultiProtocolAPIKey() && !a.isKimiOAuth()) {
 		return ""
 	}
 	if a.IsAdaptiveAPIProtocol() {
 		if baseURLs, ok := a.Credentials["api_base_urls"].(map[string]any); ok {
 			if baseURL, ok := baseURLs[protocol].(string); ok && strings.TrimSpace(baseURL) != "" {
+				if a.isKimiOAuth() && protocol == APIProtocolAnthropic && strings.TrimRight(strings.TrimSpace(baseURL), "/") == DefaultKimiCodingBaseURL {
+					return DefaultKimiCodingAnthropicBaseURL
+				}
 				return strings.TrimSpace(baseURL)
 			}
 		}
@@ -1517,6 +1532,14 @@ func (a *Account) GetCNProtocolBaseURL(protocol string) string {
 			if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
 				return baseURL
 			}
+		}
+	}
+	if a.isKimiOAuth() && !a.IsAdaptiveAPIProtocol() && (protocol == a.GetAPIProtocol() || (protocol != APIProtocolAnthropic && !a.IsAnthropicProtocol())) {
+		if base := strings.TrimSpace(a.GetCredential("base_url")); base != "" {
+			if protocol == APIProtocolAnthropic && strings.TrimRight(base, "/") == DefaultKimiCodingBaseURL {
+				return DefaultKimiCodingAnthropicBaseURL
+			}
+			return base
 		}
 	}
 	return a.defaultCNProtocolBaseURL(protocol)
@@ -1579,8 +1602,11 @@ func (a *Account) GetAnthropicProtocolBaseURL() string {
 	if a.IsAdaptiveAPIProtocol() {
 		return a.GetCNProtocolBaseURL(APIProtocolAnthropic)
 	}
-	if a.Type == AccountTypeAPIKey || a.Type == AccountTypeUpstream {
+	if a.Type == AccountTypeAPIKey || a.Type == AccountTypeUpstream || a.isKimiOAuth() || a.IsZhipuOAuth() {
 		if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
+			if a.isKimiOAuth() && strings.TrimRight(baseURL, "/") == DefaultKimiCodingBaseURL {
+				return DefaultKimiCodingAnthropicBaseURL
+			}
 			return baseURL
 		}
 	}
@@ -1601,6 +1627,16 @@ func (a *Account) GetAnthropicProtocolBaseURL() string {
 	default:
 		return ""
 	}
+}
+
+// IsZhipuOAuth identifies Coding Plan OAuth accounts using a derived inference key.
+func (a *Account) IsZhipuOAuth() bool {
+	return a != nil && a.Platform == PlatformZhipu && a.Type == AccountTypeOAuth
+}
+
+// isKimiOAuth identifies Kimi Coding Plan accounts using an OAuth access token.
+func (a *Account) isKimiOAuth() bool {
+	return a != nil && a.Platform == PlatformKimi && a.Type == AccountTypeOAuth
 }
 
 // GetOpenAIFormatBaseURL 返回供 OpenAI 格式端点（/v1/models、/v1/chat/completions
@@ -1637,7 +1673,13 @@ func (a *Account) GetOpenAIFormatBaseURL() string {
 // GetCNAPIKey 返回国产 OpenAI 兼容供应商账号的 api_key 凭据（kimi/zhipu/deepseek）。
 // 与 openai 的 GetOpenAIApiKey 区分：后者仅对 openai 平台返回。
 func (a *Account) GetCNAPIKey() string {
-	if a == nil || !a.IsMultiProtocolAPIKey() {
+	if a == nil {
+		return ""
+	}
+	if !a.IsMultiProtocolAPIKey() && !a.isKimiOAuth() {
+		return ""
+	}
+	if a.isKimiOAuth() {
 		return ""
 	}
 	return a.GetCredential("api_key")
@@ -1788,6 +1830,12 @@ func (a *Account) GetOpenAIApiKey() string {
 // 继续以其为准，不受本方法影响。
 func (a *Account) GetOpenAIProtocolAPIKey() string {
 	if a == nil {
+		return ""
+	}
+	if a.IsZhipuOAuth() {
+		return a.GetCredential("api_key")
+	}
+	if a.isKimiOAuth() {
 		return ""
 	}
 	if a.IsMultiProtocolAPIKey() {

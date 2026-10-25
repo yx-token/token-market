@@ -10,6 +10,11 @@ const {
   importCodexSessionMock,
   createOpenAICodexPATMock,
   authIsSimpleMode,
+  kimiGenerateMock,
+  kimiPollMock,
+  zhipuInitMock,
+  zhipuPollMock,
+  zhipuExchangeMock,
 } = vi.hoisted(() => ({
   createAccountMock: vi.fn(),
   probeUpstreamBillingMock: vi.fn(),
@@ -18,6 +23,11 @@ const {
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn(),
   authIsSimpleMode: { value: true },
+  kimiGenerateMock: vi.fn(),
+  kimiPollMock: vi.fn(),
+  zhipuInitMock: vi.fn(),
+  zhipuPollMock: vi.fn(),
+  zhipuExchangeMock: vi.fn(),
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -46,6 +56,8 @@ vi.mock('@/api/admin', () => ({
       importCodexSession: importCodexSessionMock,
       createOpenAICodexPAT: createOpenAICodexPATMock,
     },
+    kimi: { generateDeviceCode: kimiGenerateMock, pollDeviceCode: kimiPollMock },
+    zhipu: { initOAuth: zhipuInitMock, pollOAuth: zhipuPollMock, exchangeCode: zhipuExchangeMock },
     settings: {
       getWebSearchEmulationConfig: vi.fn().mockResolvedValue({ enabled: false, providers: [] }),
       getSettings: vi.fn().mockResolvedValue({}),
@@ -69,6 +81,8 @@ vi.mock('vue-i18n', async () => {
 })
 
 import CreateAccountModal from '../CreateAccountModal.vue'
+import { kimiDeviceCode, kimiToken } from '@/__tests__/fixtures/kimiOAuth'
+import { zhipuSession, zhipuResult, zhipuCallback } from '@/__tests__/fixtures/zhipuOAuth'
 
 const BaseDialogStub = defineComponent({
   name: 'BaseDialog',
@@ -710,5 +724,187 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await flushPromises()
 
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
+  })
+})
+
+
+describe('CreateAccountModal Kimi device OAuth', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    createAccountMock.mockReset().mockResolvedValue({ id: 43, platform: 'kimi', type: 'oauth' })
+    kimiGenerateMock.mockReset().mockResolvedValue(kimiDeviceCode)
+    kimiPollMock.mockReset().mockResolvedValue({ status: 'success', token_info: kimiToken })
+  })
+  afterEach(() => vi.useRealTimers())
+
+  async function openKimiOAuth(protocol = 'adaptive') {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Kimi')
+    expect(wrapper.find('[data-testid="kimi-auth-oauth"]').exists()).toBe(false)
+    await selectButtonByText(wrapper, 'admin.accounts.cnProviders.accountMode.coding')
+    await wrapper.get('[data-testid="kimi-auth-oauth"]').setValue(true)
+    if (protocol !== 'adaptive') {
+      const key = protocol === 'anthropic' ? 'anthropic' : protocol === 'responses' ? 'responses' : 'chatCompletions'
+      await selectButtonByText(wrapper, `admin.accounts.cnProviders.apiProtocol.${key}`)
+    }
+    expect(wrapper.find('form input[type="password"]').exists()).toBe(false)
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Kimi subscription')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    return wrapper
+  }
+
+  it.each(['adaptive', 'anthropic', 'responses', 'chat_completions'])('creates an OAuth account preserving protocol %s', async protocol => {
+    const wrapper = await openKimiOAuth(protocol)
+    expect(wrapper.findComponent(OAuthAuthorizationFlowStub).exists()).toBe(false)
+    await wrapper.get('[data-testid="kimi-generate-code"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="kimi-user-code"]').text()).toBe('ABCD-EFGH')
+    expect(wrapper.get('[data-testid="kimi-verification-url"]').text()).toBe(kimiDeviceCode.verification_uri_complete)
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledOnce()
+    const payload = createAccountMock.mock.calls[0][0]
+    expect(payload).toMatchObject({
+      platform: 'kimi', type: 'oauth', name: 'Kimi subscription',
+      credentials: { access_token: 'kimi-access', refresh_token: 'kimi-refresh', expires_at: kimiToken.expires_at,
+        base_url: protocol === 'anthropic' ? 'https://api.kimi.com/coding' : kimiToken.base_url, account_mode: 'coding', api_protocol: protocol, device_id: 'kimi-device' }
+    })
+    expect(payload.credentials).not.toHaveProperty('api_key')
+    if (protocol === 'adaptive') expect(payload.credentials.api_base_urls).toMatchObject({
+      chat_completions: kimiToken.base_url, anthropic: 'https://api.kimi.com/coding', responses: kimiToken.base_url
+    })
+    expect(wrapper.emitted('created')).toHaveLength(1)
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('stops on back and close, then allows reopening with a fresh code', async () => {
+    const wrapper = await openKimiOAuth()
+    await wrapper.get('[data-testid="kimi-generate-code"]').trigger('click')
+    await flushPromises()
+    await selectButtonByText(wrapper, 'common.back')
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(kimiPollMock).not.toHaveBeenCalled()
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await wrapper.get('[data-testid="kimi-generate-code"]').trigger('click')
+    await flushPromises()
+    await wrapper.setProps({ show: false })
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(kimiPollMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps API key available and returns to it for payg', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Kimi')
+    await selectButtonByText(wrapper, 'admin.accounts.cnProviders.accountMode.coding')
+    expect(wrapper.find('form input[type="password"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="kimi-auth-oauth"]').setValue(true)
+    await selectButtonByText(wrapper, 'admin.accounts.cnProviders.accountMode.payg')
+    expect(wrapper.find('form input[type="password"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="kimi-auth-oauth"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('allows saving again after an account-create failure without reauthorizing', async () => {
+    createAccountMock.mockRejectedValueOnce(new Error('save failed'))
+    const wrapper = await openKimiOAuth()
+    await wrapper.get('[data-testid="kimi-generate-code"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(wrapper.emitted('created')).toBeUndefined()
+    await wrapper.get('[data-testid="kimi-save-account"]').trigger('click')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(2)
+    expect(kimiGenerateMock).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+})
+
+
+describe('CreateAccountModal GLM OAuth', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    createAccountMock.mockReset().mockResolvedValue({ id: 44, platform: 'zhipu', type: 'oauth' })
+    zhipuInitMock.mockReset().mockImplementation(({ provider }) => Promise.resolve({ ...zhipuSession, provider }))
+    zhipuPollMock.mockReset().mockImplementation(() => Promise.resolve({ status: 'success', result: zhipuResult }))
+    zhipuExchangeMock.mockReset().mockResolvedValue(zhipuResult)
+  })
+  afterEach(() => vi.useRealTimers())
+  async function openGLM(provider = 'bigmodel', protocol = 'adaptive') {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Zhipu GLM')
+    expect(wrapper.find('[data-testid="zhipu-auth-oauth"]').exists()).toBe(false)
+    await selectButtonByText(wrapper, 'admin.accounts.cnProviders.accountMode.coding')
+    expect(wrapper.find('form input[type="password"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="zhipu-auth-oauth"]').setValue(true)
+    await wrapper.get('[data-testid="zhipu-provider"]').setValue(provider)
+    if (protocol !== 'adaptive') await selectButtonByText(wrapper, `admin.accounts.cnProviders.apiProtocol.${protocol === 'anthropic' ? 'anthropic' : 'chatCompletions'}`)
+    expect(wrapper.find('form input[type="password"]').exists()).toBe(false)
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('GLM subscription')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    return wrapper
+  }
+  it.each([
+    ['bigmodel', 'adaptive'], ['bigmodel', 'anthropic'], ['bigmodel', 'chat_completions'],
+    ['zai', 'adaptive'], ['zai', 'anthropic'], ['zai', 'chat_completions']
+  ])('creates %s OAuth with protocol %s and the entire credential package', async (provider, protocol) => {
+    const resultCredentials = { ...zhipuResult.credentials, oauth_provider: provider,
+      business_expiry_unknown: provider === 'zai', zai_oauth_access_token: provider === 'zai' ? 'zai-oauth' : null }
+    zhipuPollMock.mockResolvedValue({ status: 'success', result: { ...zhipuResult, provider, credentials: resultCredentials } })
+    const wrapper = await openGLM(provider, protocol)
+    expect(wrapper.findComponent(OAuthAuthorizationFlowStub).exists()).toBe(false)
+    await wrapper.get('[data-testid="zhipu-init"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    expect(zhipuInitMock).toHaveBeenCalledWith({ provider }, expect.any(AbortSignal))
+    expect(createAccountMock).toHaveBeenCalledOnce()
+    const host = provider === 'zai' ? 'https://api.z.ai' : 'https://open.bigmodel.cn'
+    const credentials = createAccountMock.mock.calls[0][0].credentials
+    expect(createAccountMock.mock.calls[0][0]).toMatchObject({ name: 'GLM subscription', platform: 'zhipu', type: 'oauth' })
+    expect(credentials).toMatchObject({ ...resultCredentials, account_mode: 'coding', api_protocol: protocol,
+      base_url: `${host}/api/${protocol === 'anthropic' ? 'anthropic' : 'coding/paas/v4'}` })
+    if (protocol === 'adaptive') expect(credentials.api_base_urls).toEqual({ chat_completions: `${host}/api/coding/paas/v4`, anthropic: `${host}/api/anthropic` })
+    expect(wrapper.emitted('created')).toHaveLength(1)
+    wrapper.unmount()
+  })
+  it('creates from the manual callback fallback without exposing credentials', async () => {
+    const wrapper = await openGLM()
+    await wrapper.get('[data-testid="zhipu-init"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="zhipu-callback"]').setValue(zhipuCallback)
+    await wrapper.get('[data-testid="zhipu-exchange"]').trigger('click')
+    await flushPromises()
+    expect(zhipuExchangeMock).toHaveBeenCalledWith({ session_id: 'glm-session', callback_url: zhipuCallback }, expect.any(AbortSignal))
+    expect(createAccountMock).toHaveBeenCalledOnce()
+    expect(wrapper.text()).not.toContain('derived-secret')
+    expect(wrapper.text()).not.toContain('business-access')
+    wrapper.unmount()
+  })
+  it.each(['back', 'close', 'hide', 'unmount'])('stops GLM polling on %s', async action => {
+    const wrapper = await openGLM()
+    await wrapper.get('[data-testid="zhipu-init"]').trigger('click')
+    await flushPromises()
+    if (action === 'back') await selectButtonByText(wrapper, 'common.back')
+    if (action === 'close') { wrapper.findComponent(BaseDialogStub).vm.$emit('close'); await flushPromises() }
+    if (action === 'hide') await wrapper.setProps({ show: false })
+    if (action === 'unmount') wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(zhipuPollMock).not.toHaveBeenCalled()
+    if (action !== 'unmount') wrapper.unmount()
+  })
+  it('allows retrying a failed save without authorizing again', async () => {
+    createAccountMock.mockRejectedValueOnce(new Error('save failed'))
+    const wrapper = await openGLM()
+    await wrapper.get('[data-testid="zhipu-init"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    await wrapper.get('[data-testid="zhipu-save-account"]').trigger('click')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledTimes(2)
+    expect(zhipuInitMock).toHaveBeenCalledOnce()
+    wrapper.unmount()
   })
 })

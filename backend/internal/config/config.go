@@ -1127,11 +1127,20 @@ type GatewayConfig struct {
 	UserMessageQueue UserMessageQueueConfig `mapstructure:"user_message_queue"`
 
 	// Grok: Grok/xAI gateway scheduling and free-tier soft-gate settings.
-	Grok GatewayGrokConfig `mapstructure:"grok"`
+	Grok  GatewayGrokConfig  `mapstructure:"grok"`
+	Zhipu GatewayZhipuConfig `mapstructure:"zhipu"`
 
 	// CNProviders: 国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）的余额检测配置。
 	// 仅作用于 payg（按量付费）账号：周期探测余额，低于阈值则临时停调。
 	CNProviders GatewayCNProvidersConfig `mapstructure:"cn_providers"`
+}
+
+// GatewayZhipuConfig controls the ZCode Coding Plan protocol. HTTP origins are
+// intentionally not configurable here; AllowInsecureHTTP belongs to package tests.
+type GatewayZhipuConfig struct {
+	SignatureMode string            `mapstructure:"signature_mode"`
+	ClientVersion string            `mapstructure:"client_version"`
+	ConfigHeaders map[string]string `mapstructure:"config_headers"`
 }
 
 // GatewayGrokConfig holds Grok-specific gateway scheduling knobs.
@@ -2093,6 +2102,10 @@ func setDefaults() {
 		"api.moonshot.ai",
 		"api.moonshot.cn",
 		"open.bigmodel.cn",
+		"bigmodel.cn",      // GLM OAuth business APIs
+		"zcode.z.ai",       // GLM CLI OAuth + remote agent configuration
+		"api.z.ai",         // International inference + business token exchange
+		"chat.z.ai",        // International OAuth userinfo
 		"api.minimaxi.com", // MiniMax CN quota + inference
 		"api.minimax.io",   // MiniMax intl; frozen allowlists must add this host to use the intl site
 		"opencode.ai",
@@ -2505,6 +2518,8 @@ func setDefaults() {
 	// Enabled by default because free detection requires an explicit free tier marker.
 	viper.SetDefault("gateway.grok.free_quota_soft_gate_enabled", true)
 	viper.SetDefault("gateway.grok.password_auth_enabled", false)
+	viper.SetDefault("gateway.zhipu.signature_mode", "always")
+	viper.SetDefault("gateway.zhipu.client_version", "3.11.2")
 	// Free soft-gate nominal limit: 500k tokens / rolling 24h (operator policy).
 	viper.SetDefault("gateway.grok.free_quota_token_limit", int64(500_000))
 	viper.SetDefault("gateway.grok.free_quota_soft_gate_percent", 95)
@@ -2703,6 +2718,14 @@ func setEnvReachableDefaults() {
 }
 
 func (c *Config) Validate() error {
+	switch c.Gateway.Zhipu.SignatureMode {
+	case "", "auto", "always", "never":
+	default:
+		return fmt.Errorf("gateway.zhipu.signature_mode must be auto, always or never")
+	}
+	if strings.ContainsAny(c.Gateway.Zhipu.ClientVersion, "\r\n") {
+		return fmt.Errorf("gateway.zhipu.client_version contains invalid header characters")
+	}
 	forwardedClientIPHeaders, err := NormalizeForwardedClientIPHeaders(c.Security.ForwardedClientIPHeaders)
 	if err != nil {
 		return fmt.Errorf("security.forwarded_client_ip_headers: %w", err)

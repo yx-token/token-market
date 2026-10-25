@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/yx-token/token-market/internal/pkg/claude"
+	"github.com/yx-token/token-market/internal/pkg/kimi"
 	"github.com/yx-token/token-market/internal/pkg/openai"
 )
 
@@ -27,7 +28,11 @@ func (s *AccountTestService) testCNProviderAdaptiveConnection(c *gin.Context, ac
 	}
 	testModelID = account.GetMappedModel(testModelID)
 
-	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	authToken, credentialErr := s.protocolCredential(c.Request.Context(), account)
+	if credentialErr != nil {
+		return s.sendErrorAndEnd(c, credentialErr.Error())
+	}
+	authToken = strings.TrimSpace(authToken)
 	if authToken == "" {
 		return s.sendErrorAndEnd(c, "No API key available")
 	}
@@ -81,6 +86,10 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 		req.Header.Set(key, value)
 	}
 	req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
+	if account.Platform == PlatformKimi && account.Type == AccountTypeOAuth {
+		kimi.ApplyDeviceHeaders(req.Header, account.GetCredential("device_id"))
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
 	// Ollama Cloud Anthropic 兼容端点按 adaptive 实际选用的 Anthropic
 	// base_url 强制 Bearer，其余保持 extra/default 行为。
 	setAnthropicAPIKeyAuthHeader(req.Header, account, authToken, account.GetCNProtocolBaseURL(APIProtocolAnthropic))
@@ -96,7 +105,7 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		errMsg := fmt.Sprintf("Adaptive Anthropic endpoint returned %d: %s", resp.StatusCode, string(body))
-		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil && !account.isKimiOAuth() {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
 		return s.sendErrorAndEnd(c, errMsg)
@@ -178,6 +187,10 @@ func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Co
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+authToken)
+	if account.Platform == PlatformKimi && account.Type == AccountTypeOAuth {
+		kimi.ApplyDeviceHeaders(req.Header, account.GetCredential("device_id"))
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
 	applyOpenAICodexProbeHeaders(req.Header)
 	applyOpenCodeUpstreamUserAgent(account, apiURL, req.Header)
 	account.ApplyHeaderOverrides(req.Header)
@@ -191,7 +204,7 @@ func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Co
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		errMsg := fmt.Sprintf("Adaptive Responses endpoint returned %d: %s", resp.StatusCode, string(body))
-		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil && !account.isKimiOAuth() {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
 		return s.sendErrorAndEnd(c, errMsg)
@@ -209,7 +222,7 @@ func (s *AccountTestService) doCNProviderAdaptiveRequest(req *http.Request, acco
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	return s.doAccountTestUpstream(req, proxyURL, account)
 }
 
 // testCNProviderAnthropicConnection verifies the native Anthropic endpoint of a
@@ -228,7 +241,11 @@ func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, a
 	}
 	testModelID = account.GetMappedModel(testModelID)
 
-	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	authToken, credentialErr := s.protocolCredential(c.Request.Context(), account)
+	if credentialErr != nil {
+		return s.sendErrorAndEnd(c, credentialErr.Error())
+	}
+	authToken = strings.TrimSpace(authToken)
 	if authToken == "" {
 		return s.sendErrorAndEnd(c, "No API key available")
 	}
@@ -266,6 +283,10 @@ func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, a
 	for key, value := range claude.DefaultHeaders() {
 		req.Header.Set(key, value)
 	}
+	if account.Platform == PlatformKimi && account.Type == AccountTypeOAuth {
+		kimi.ApplyDeviceHeaders(req.Header, account.GetCredential("device_id"))
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
 	// Ollama Cloud Anthropic 兼容端点按实际 base_url 强制 Bearer，其余保持
 	// extra/default 行为。
 	setAnthropicAPIKeyAuthHeader(req.Header, account, authToken, account.GetAnthropicProtocolBaseURL())
@@ -281,7 +302,7 @@ func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, a
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		errMsg := fmt.Sprintf("Anthropic endpoint returned %d: %s", resp.StatusCode, string(body))
-		if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && s.accountRepo != nil {
+		if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && s.accountRepo != nil && !account.isKimiOAuth() {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
 		return s.sendErrorAndEnd(c, errMsg)

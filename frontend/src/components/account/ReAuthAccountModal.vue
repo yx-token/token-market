@@ -1,5 +1,13 @@
 <template>
+  <AdminReAuthAccountModal
+    v-if="(account?.platform === 'kimi' || account?.platform === 'zhipu') && account.type === 'oauth'"
+    :show="show"
+    :account="account"
+    @close="emit('close')"
+    @reauthorized="emit('reauthorized')"
+  />
   <BaseDialog
+    v-else
     :show="show"
     :title="t('admin.accounts.reAuthorizeAccount')"
     width="normal"
@@ -194,6 +202,7 @@ import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
 import type { Account } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import AdminReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OAuthAuthorizationFlow from './OAuthAuthorizationFlow.vue'
 

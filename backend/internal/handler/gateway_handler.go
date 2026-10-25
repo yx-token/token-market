@@ -1197,6 +1197,10 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	}
 
 	// Fallback to default models
+	if service.IsCNProvider(platform) {
+		writeModelsList(c, platform, service.DefaultCNModelIDs(platform))
+		return
+	}
 	if platform == service.PlatformOpenAI {
 		writeModelsListResponse(c, openai.DefaultModels)
 		return
@@ -1455,17 +1459,13 @@ func modelListingSource(platform string, availableModels, fallbackModels []strin
 }
 
 func defaultCodexModelIDsForPlatform(platform string) []string {
-	switch platform {
-	case service.PlatformDeepseek:
-		return []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-flash"}
-	case service.PlatformMiniMax:
-		return []string{"MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.5"}
-	default:
-		return defaultModelIDsForPlatform(platform)
-	}
+	return defaultModelIDsForPlatform(platform)
 }
 
 func defaultModelIDsForPlatform(platform string) []string {
+	if service.IsCNProvider(platform) {
+		return service.DefaultCNModelIDs(platform)
+	}
 	switch platform {
 	case service.PlatformOpenAI:
 		return openai.DefaultModelIDs()

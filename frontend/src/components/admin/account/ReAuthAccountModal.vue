@@ -41,7 +41,11 @@
                       ? t('admin.accounts.antigravityAccount')
                       : isGrok
                         ? t('admin.accounts.grokAccount')
-                        : t('admin.accounts.claudeCodeAccount')
+                        : isKimi
+                          ? t('admin.accounts.oauth.kimi.title')
+                          : isZhipu
+                            ? t('admin.accounts.oauth.zhipu.title')
+                            : t('admin.accounts.claudeCodeAccount')
               }}
             </span>
           </div>
@@ -120,7 +124,27 @@
         </div>
       </div>
 
+      <KimiDeviceAuthorizationFlow
+        ref="kimiFlowRef"
+        v-if="show && isKimi"
+        :key="account.id"
+        :proxy-id="account.proxy_id"
+        :saving="kimiSaving"
+        :save-error="kimiSaveError"
+        @authorized="handleKimiAuthorized"
+      />
+      <ZhipuAuthorizationFlow
+        v-else-if="show && isZhipu"
+        ref="zhipuFlowRef"
+        :key="account.id"
+        :provider="zhipuProvider"
+        :proxy-id="account.proxy_id"
+        :saving="zhipuSaving"
+        :save-error="zhipuSaveError"
+        @authorized="handleZhipuAuthorized"
+      />
       <OAuthAuthorizationFlow
+        v-else-if="!isKimi && !isZhipu"
         ref="oauthFlowRef"
         :add-method="addMethod"
         :auth-url="currentAuthUrl"
@@ -207,6 +231,13 @@ import type { Account } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OAuthAuthorizationFlow from '@/components/account/OAuthAuthorizationFlow.vue'
+import KimiDeviceAuthorizationFlow from '@/components/account/KimiDeviceAuthorizationFlow.vue'
+import { buildKimiOAuthCredentials } from '@/components/account/credentialsBuilder'
+import type { KimiTokenInfo } from '@/api/admin/kimi'
+import type { ZhipuOAuthResult } from '@/api/admin/zhipu'
+import ZhipuAuthorizationFlow from '@/components/account/ZhipuAuthorizationFlow.vue'
+import { buildZhipuOAuthCredentials } from '@/components/account/credentialsBuilder'
+import { extractApiErrorMessage } from '@/utils/apiError'
 
 // Type for exposed OAuthAuthorizationFlow component
 // Note: defineExpose automatically unwraps refs, so we use the unwrapped types
@@ -242,6 +273,8 @@ const grokOAuth = useGrokOAuth()
 
 // Refs
 const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
+const kimiFlowRef = ref<{ reset: () => void } | null>(null)
+const zhipuFlowRef = ref<{ reset: () => void } | null>(null)
 
 // State
 const addMethod = ref<AddMethod>('oauth')
@@ -254,6 +287,13 @@ const isGemini = computed(() => props.account?.platform === 'gemini')
 const isAnthropic = computed(() => props.account?.platform === 'anthropic')
 const isAntigravity = computed(() => props.account?.platform === 'antigravity')
 const isGrok = computed(() => props.account?.platform === 'grok')
+const isKimi = computed(() => props.account?.platform === 'kimi' && props.account.type === 'oauth')
+const isZhipu = computed(() => props.account?.platform === 'zhipu' && props.account.type === 'oauth')
+const zhipuProvider = computed(() => props.account?.credentials?.oauth_provider === 'zai' ? 'zai' : 'bigmodel')
+const zhipuSaving = ref(false)
+const zhipuSaveError = ref('')
+const kimiSaving = ref(false)
+const kimiSaveError = ref('')
 
 /**
  * Grok reauth default tab (password auth is hidden):
@@ -302,6 +342,7 @@ const currentError = computed(() => {
 
 // Computed — footer "complete auth" only for code-exchange flows, not SSO/password/RT.
 const isManualInputMethod = computed(() => {
+  if (isKimi.value) return false
   const method = oauthFlowRef.value?.inputMethod
   if (method === 'sso_cookie' || method === 'email_password' || method === 'refresh_token') {
     return false
@@ -352,6 +393,9 @@ watch(
 
 // Methods
 const resetState = () => {
+  zhipuSaveError.value = ''
+  zhipuFlowRef.value?.reset()
+  kimiSaveError.value = ''
   addMethod.value = 'oauth'
   geminiOAuthType.value = 'code_assist'
   claudeOAuth.resetState()
@@ -363,7 +407,49 @@ const resetState = () => {
 }
 
 const handleClose = () => {
+  kimiFlowRef.value?.reset()
+  zhipuFlowRef.value?.reset()
   emit('close')
+}
+
+const handleZhipuAuthorized = async (result: ZhipuOAuthResult) => {
+  const account = props.account
+  if (!props.show || !account || !isZhipu.value || zhipuSaving.value) return
+  zhipuSaving.value = true
+  zhipuSaveError.value = ''
+  try {
+    const credentials = buildZhipuOAuthCredentials(result, account.credentials)
+    await adminAPI.accounts.update(account.id, { type: 'oauth', credentials })
+    const updatedAccount = await adminAPI.accounts.clearError(account.id)
+    appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
+    emit('reauthorized', updatedAccount)
+    handleClose()
+  } catch (error) {
+    zhipuSaveError.value = extractApiErrorMessage(error, t('admin.accounts.oauth.authFailed'))
+    appStore.showError(zhipuSaveError.value)
+  } finally {
+    zhipuSaving.value = false
+  }
+}
+
+const handleKimiAuthorized = async (tokenInfo: KimiTokenInfo) => {
+  const account = props.account
+  if (!props.show || !account || !isKimi.value || kimiSaving.value) return
+  kimiSaving.value = true
+  kimiSaveError.value = ''
+  try {
+    const credentials = buildKimiOAuthCredentials(tokenInfo, account.credentials)
+    await adminAPI.accounts.update(account.id, { type: 'oauth', credentials })
+    const updatedAccount = await adminAPI.accounts.clearError(account.id)
+    appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
+    emit('reauthorized', updatedAccount)
+    handleClose()
+  } catch (error) {
+    kimiSaveError.value = extractApiErrorMessage(error, t('admin.accounts.oauth.authFailed'))
+    appStore.showError(kimiSaveError.value)
+  } finally {
+    kimiSaving.value = false
+  }
 }
 
 const handleGenerateUrl = async () => {

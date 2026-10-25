@@ -47,6 +47,15 @@ var (
 )
 
 type oauthRefreshRequestPathKey struct{}
+type kimiForceRefreshKey struct{}
+
+// ForceKimiRefresh coalesces a 401/manual request with a concurrent rotation.
+func (api *OAuthRefreshAPI) ForceKimiRefresh(ctx context.Context, a *Account, executor OAuthRefreshExecutor) (*OAuthRefreshResult, error) {
+	if a == nil || !a.isKimiOAuth() {
+		return nil, errors.New("not a Kimi OAuth account")
+	}
+	return api.RefreshIfNeeded(context.WithValue(ctx, kimiForceRefreshKey{}, a.GetCredential("access_token")), a, executor, 0)
+}
 
 func withOAuthRefreshRequestPath(ctx context.Context) context.Context {
 	return context.WithValue(ctx, oauthRefreshRequestPathKey{}, true)
@@ -181,6 +190,8 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 		return nil, errors.New("oauth refresh executor is nil")
 	}
 	requestPath := isOAuthRefreshRequestPath(ctx)
+	forceToken, forceKimi := ctx.Value(kimiForceRefreshKey{}).(string)
+	forceKimi = forceKimi && account.isKimiOAuth()
 	cacheKey := executor.CacheKey(account)
 
 	// 0. 获取进程内互斥锁（防止同一进程内的并发刷新竞争）
@@ -193,6 +204,9 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	// 1. 获取分布式锁
 	if api.tokenCache != nil {
 		acquired, lockErr := api.tokenCache.AcquireRefreshLock(ctx, cacheKey, api.lockTTL)
+		if lockErr != nil && account.isKimiOAuth() {
+			return &OAuthRefreshResult{LockHeld: true, Account: account}, nil
+		}
 		if lockErr != nil {
 			// Redis 错误，降级为无锁刷新（进程内互斥锁仍生效）
 			slog.Warn("oauth_refresh_lock_failed_degraded",
@@ -225,8 +239,8 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	if freshAccount.ID != account.ID {
 		return nil, fmt.Errorf("%w: account identity mismatch", errOAuthRefreshAccountRereadFailed)
 	}
-	if !freshAccount.IsActive() {
-		if requestPath {
+	if !freshAccount.IsActive() && (!forceKimi || freshAccount.Status != StatusError) {
+		if requestPath || forceKimi {
 			return nil, fmt.Errorf("%w: account is not active", errOAuthRefreshAccountStateChanged)
 		}
 		return &OAuthRefreshResult{Account: freshAccount}, nil
@@ -247,7 +261,7 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	}
 
 	// 3. 二次检查是否仍需刷新（另一条路径可能已刷新）
-	if !executor.NeedsRefresh(freshAccount, refreshWindow) {
+	if (!forceKimi && !executor.NeedsRefresh(freshAccount, refreshWindow)) || (forceKimi && forceToken != freshAccount.GetCredential("access_token")) {
 		return &OAuthRefreshResult{
 			Account: freshAccount,
 		}, nil
@@ -257,9 +271,20 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	attemptedAccount := snapshotOAuthRefreshAccount(freshAccount)
 	newCredentials, refreshErr := executor.Refresh(ctx, freshAccount)
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		// A provider implementation may ignore cancellation and return late
-		// credentials. Never persist them after the attempt/cycle boundary.
-		return nil, ctxErr
+		if !attemptedAccount.isKimiOAuth() {
+			return nil, ctxErr
+		}
+		if refreshErr != nil {
+			if stateErr := api.recordKimiFailure(ctx, attemptedAccount, refreshErr); stateErr != nil {
+				return nil, stateErr
+			}
+			return &OAuthRefreshResult{Account: attemptedAccount}, ctxErr
+		}
+		// A returned Kimi rotation has consumed the old refresh token. Persist it
+		// with bounded detached cleanup even if the requesting client went away.
+		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultRefreshPostPersistCleanupTimeout)
+		defer cancel()
+		ctx = persistCtx
 	}
 	if refreshErr != nil {
 		// 竞争恢复：invalid_grant 可能是另一个 worker 已消费了旧 refresh_token
@@ -287,12 +312,21 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 		if requestPath && attemptedAccount.Platform == PlatformGrok {
 			return result, withGrokCredentialFailureSnapshot(refreshErr, attemptedAccount)
 		}
+		if attemptedAccount.isKimiOAuth() {
+			if stateErr := api.recordKimiFailure(ctx, attemptedAccount, refreshErr); stateErr != nil {
+				return result, stateErr
+			}
+		}
 		return result, refreshErr
 	}
 
 	// 5. 设置版本号 + 更新 DB
 	if newCredentials != nil {
-		newCredentials["_token_version"] = time.Now().UnixMilli()
+		version := time.Now().UnixMilli()
+		if (freshAccount.IsZhipuOAuth() || freshAccount.isKimiOAuth()) && version <= freshAccount.GetCredentialAsInt64("_token_version") {
+			version = freshAccount.GetCredentialAsInt64("_token_version") + 1
+		}
+		newCredentials["_token_version"] = version
 		if freshAccount.IsGrokOAuth() {
 			conditionalRepo, ok := api.accountRepo.(GrokOAuthRefreshSuccessRepository)
 			if !ok {
@@ -350,6 +384,45 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 			// while the provider call was in flight. Return the durable row so
 			// post-refresh cache publication cannot restore that stale snapshot.
 			freshAccount = durableAccount
+		} else if freshAccount.isKimiOAuth() {
+			repo, ok := api.accountRepo.(KimiOAuthRepository)
+			if !ok {
+				return nil, errors.New("kimi OAuth CAS repository is not configured")
+			}
+			applied, persistErr := repo.UpdateKimiOAuthCredentialsIfUnchanged(ctx, freshAccount.ID, attemptedAccount.Credentials, attemptedAccount.ProxyID, newCredentials)
+			if persistErr != nil {
+				return nil, fmt.Errorf("%w: %w", errOAuthRefreshCredentialPersist, persistErr)
+			}
+			durable, readErr := api.loadGrokDurableAccountAfterPersist(ctx, cacheKey, freshAccount.ID)
+			if readErr != nil {
+				return nil, readErr
+			}
+			if durable == nil {
+				return nil, errOAuthRefreshAccountStateChanged
+			}
+			freshAccount = durable
+			if !applied {
+				return &OAuthRefreshResult{Account: freshAccount}, nil
+			}
+		} else if freshAccount.IsZhipuOAuth() {
+			repo, ok := api.accountRepo.(ZhipuOAuthRefreshRepository)
+			if !ok {
+				return nil, errors.New("zhipu OAuth CAS repository is not configured")
+			}
+			applied, updateErr := repo.UpdateZhipuOAuthCredentialsIfUnchanged(ctx, freshAccount.ID, attemptedAccount.Credentials, attemptedAccount.ProxyID, newCredentials)
+			if updateErr != nil {
+				return nil, fmt.Errorf("%w: %w", errOAuthRefreshCredentialPersist, updateErr)
+			}
+			freshAccount, err = api.accountRepo.GetByID(ctx, freshAccount.ID)
+			if err != nil {
+				return nil, err
+			}
+			if freshAccount == nil {
+				return nil, errOAuthRefreshAccountStateChanged
+			}
+			if !applied {
+				return &OAuthRefreshResult{Account: freshAccount}, nil
+			}
 		} else if updateErr := persistAccountCredentials(ctx, api.accountRepo, freshAccount, newCredentials); updateErr != nil {
 			slog.Error("oauth_refresh_update_failed",
 				"account_id", freshAccount.ID,
@@ -464,4 +537,23 @@ func BuildClaudeAccountCredentials(tokenInfo *TokenInfo) map[string]any {
 		creds["scope"] = tokenInfo.Scope
 	}
 	return creds
+}
+
+func (api *OAuthRefreshAPI) recordKimiFailure(parent context.Context, account *Account, failure error) error {
+	repo, ok := api.accountRepo.(KimiOAuthRepository)
+	if !ok {
+		return errors.New("kimi OAuth CAS repository is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Second)
+	defer cancel()
+	permanent := isInvalidGrantError(failure) || errors.Is(failure, errKimiOAuthRefreshTokenMissing)
+	reason := "Kimi OAuth refresh temporarily unavailable; retry later"
+	if permanent {
+		reason = "Kimi OAuth reauthorization required: refresh token is missing or invalid"
+	}
+	_, err := repo.SetKimiOAuthFailureIfUnchanged(ctx, account.ID, account.Credentials, account.ProxyID, permanent, time.Now().Add(30*time.Second), reason)
+	if api.tokenCache != nil {
+		_ = api.tokenCache.DeleteAccessToken(ctx, KimiTokenCacheKey(account))
+	}
+	return err
 }

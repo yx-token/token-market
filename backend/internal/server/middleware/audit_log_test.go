@@ -188,3 +188,47 @@ func TestOllamaCloudUsageSessionRouteOmitsAuditBody(t *testing.T) {
 	require.Equal(t, "<credential-bearing body omitted>", logs[0].RequestBody)
 	require.NotContains(t, logs[0].RequestBody, "audit-canary")
 }
+
+func TestZhipuOAuthAuditOmitsFlowCredentialsAndPreservesRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, path := range []string{"poll", "exchange-code"} {
+		t.Run(path, func(t *testing.T) {
+			repository := &auditCaptureRepository{}
+			auditService := service.NewAuditLogService(repository, nil)
+			auditService.Start()
+			t.Cleanup(auditService.Stop)
+
+			router := gin.New()
+			router.Use(func(c *gin.Context) {
+				c.Set(string(ContextKeyUser), AuthSubject{UserID: 77})
+				c.Set(string(ContextKeyUserRole), "admin")
+				c.Next()
+			})
+			router.Use(gin.HandlerFunc(NewAuditLogMiddleware(auditService)))
+			route := "/api/v1/admin/zhipu/oauth/" + path
+			router.POST(route, func(c *gin.Context) {
+				var body struct {
+					SessionID   string `json:"session_id"`
+					CallbackURL string `json:"callback_url"`
+				}
+				require.NoError(t, c.ShouldBindJSON(&body))
+				require.Equal(t, "audit-canary-session", body.SessionID)
+				require.Contains(t, body.CallbackURL, "audit-canary-code")
+				c.JSON(http.StatusOK, gin.H{"status": "pending"})
+			})
+			request := httptest.NewRequest(http.MethodPost, route, bytes.NewBufferString(`{"session_id":"audit-canary-session","callback_url":"zcode://oauth/callback?code=audit-canary-code&state=s"}`))
+			request.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusOK, recorder.Code)
+			auditService.Stop()
+
+			repository.mu.Lock()
+			logs := append([]*service.AuditLog(nil), repository.logs...)
+			repository.mu.Unlock()
+			require.Len(t, logs, 1)
+			require.Equal(t, "<credential-bearing body omitted>", logs[0].RequestBody)
+			require.NotContains(t, logs[0].RequestBody, "audit-canary")
+		})
+	}
+}

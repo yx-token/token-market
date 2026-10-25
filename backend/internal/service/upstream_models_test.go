@@ -285,6 +285,23 @@ func TestBuildUpstreamModelsRequestsForAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "https://openai.example.com/v1/models", openAIReq.URL.String())
 	require.Equal(t, "Bearer openai-key", openAIReq.Header.Get("Authorization"))
 
+	svc.kimiTokenProvider = NewKimiTokenProvider(nil, nil)
+	kimiOAuthReq, err := svc.buildOpenAIUpstreamModelsRequest(ctx, &Account{
+		Platform: PlatformKimi,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "kimi-access",
+			"expires_at":   time.Now().Add(time.Hour).Format(time.RFC3339),
+			"device_id":    "kimi-device",
+			"base_url":     DefaultKimiCodingBaseURL,
+			"account_mode": AccountModeCoding,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://api.kimi.com/coding/v1/models", kimiOAuthReq.URL.String())
+	require.Equal(t, "Bearer kimi-access", kimiOAuthReq.Header.Get("Authorization"))
+	require.Equal(t, "kimi-device", kimiOAuthReq.Header.Get("X-Msh-Device-Id"))
+
 	grokReq, err := svc.buildUpstreamModelsRequest(ctx, &Account{
 		Platform: PlatformGrok,
 		Type:     AccountTypeAPIKey,
