@@ -189,17 +189,45 @@ onMounted(load)
       <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
       <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
 
-      <div class="y-search">
-        <input v-model="keyword" type="search" placeholder="厂商" @keyup.enter="pageNum = 1" />
-        <select v-model="filterEnabled" class="input" @change="pageNum = 1">
-          <option value="">接入：全部</option>
-          <option value="true">开放</option>
-          <option value="false">关闭</option>
-        </select>
+      <div class="filter-grid">
+        <div class="filter-item">
+          <label class="filter-label">关键词</label>
+          <div class="relative flex-1 w-full">
+            <input
+              v-model="keyword"
+              class="filter-input w-full"
+              type="search"
+              placeholder="厂商"
+              @keyup.enter="pageNum = 1"
+            />
+          </div>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">接入</label>
+          <select v-model="filterEnabled" class="filter-input flex-1" @change="pageNum = 1">
+            <option value="">全部</option>
+            <option value="true">开放</option>
+            <option value="false">关闭</option>
+          </select>
+        </div>
+        <div class="filter-actions lg:col-span-4">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="
+              keyword = '';
+              filterEnabled = '';
+              pageNum = 1
+            "
+          >
+            重置
+          </button>
+          <button type="button" class="btn btn-primary" @click="pageNum = 1">查询</button>
+        </div>
       </div>
 
       <p v-if="loading" class="y-msg">加载中…</p>
-      <p v-else-if="!pageRows.length" class="y-msg">没有符合条件的厂商</p>
+      <div v-else-if="!pageRows.length" class="y-empty">没有符合条件的厂商</div>
       <table v-else>
         <thead>
           <tr>

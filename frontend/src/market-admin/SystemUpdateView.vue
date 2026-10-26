@@ -226,7 +226,12 @@ onUnmounted(() => {
               <td class="mono">{{ r.version }}</td>
               <td>{{ fmtTime(r.published_at) }}</td>
               <td class="y-col-op">
-                <button type="button" class="y-link" :disabled="busy" @click="confirmRollback = r.version">
+                <button
+                  type="button"
+                  class="y-link y-link--danger"
+                  :disabled="busy"
+                  @click="confirmRollback = r.version"
+                >
                   回滚到此版本
                 </button>
                 <a

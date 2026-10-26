@@ -260,23 +260,46 @@ onMounted(load)
       <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
       <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
 
-      <div class="y-search">
-        <input v-model="keyword" type="search" placeholder="名称 / 标题 / ID" @keyup.enter="pageNum = 1" />
-        <select v-model="filterPlatform" class="input" @change="pageNum = 1">
-          <option value="">平台：全部</option>
-          <option v-for="o in PLATFORM_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
-        </select>
-        <select v-model="filterEnabled" class="input" @change="pageNum = 1">
-          <option value="">状态：全部</option>
-          <option value="true">启用</option>
-          <option value="false">停用</option>
-        </select>
-        <select v-model="filterMarket" class="input" @change="pageNum = 1">
-          <option value="">市场：全部</option>
-          <option value="true">已上架</option>
-          <option value="false">未上架</option>
-        </select>
-        <button type="button" class="y-btn y-btn--ghost" @click="resetFilters">重置</button>
+      <div class="filter-grid">
+        <div class="filter-item">
+          <label class="filter-label">关键词</label>
+          <div class="relative flex-1 w-full">
+            <input
+              class="filter-input w-full"
+              v-model="keyword"
+              type="search"
+              placeholder="名称 / 标题 / ID"
+              @keyup.enter="pageNum = 1"
+            />
+          </div>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">平台</label>
+          <select v-model="filterPlatform" class="filter-input flex-1" @change="pageNum = 1">
+            <option value="">平台：全部</option>
+            <option v-for="o in PLATFORM_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
+          </select>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">状态</label>
+          <select v-model="filterEnabled" class="filter-input flex-1" @change="pageNum = 1">
+            <option value="">状态：全部</option>
+            <option value="true">启用</option>
+            <option value="false">停用</option>
+          </select>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">市场</label>
+          <select v-model="filterMarket" class="filter-input flex-1" @change="pageNum = 1">
+            <option value="">市场：全部</option>
+            <option value="true">已上架</option>
+            <option value="false">未上架</option>
+          </select>
+        </div>
+        <div class="filter-actions lg:col-span-4">
+          <button type="button" class="btn btn-secondary" @click="resetFilters">重置</button>
+          <button type="button" class="btn btn-primary" @click="pageNum = 1">查询</button>
+        </div>
       </div>
 
       <p v-if="loading" class="y-msg">加载中…</p>

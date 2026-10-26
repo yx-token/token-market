@@ -143,25 +143,55 @@ onMounted(load)
     <div class="y-container--tight">
       <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
       <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
-      <div class="y-search">
-        <input v-model="keyword" type="search" placeholder="编号 / 类型 / 用户" />
-        <select v-if="tab === 'risk'" v-model="riskStatus" class="input">
-          <option value="open">待处理</option>
-          <option value="resolved">已处理</option>
-          <option value="ignored">已忽略</option>
-          <option value="">全部</option>
-        </select>
-        <select v-else v-model="anomalyStatus" class="input">
-          <option value="open">待处理</option>
-          <option value="resolved">已处理</option>
-          <option value="ignored">已忽略</option>
-          <option value="">全部</option>
-        </select>
-        <select v-if="tab === 'risk'" v-model="severity" class="input">
-          <option value="">级别：全部</option>
-          <option value="high">高</option>
-          <option value="medium">中</option>
-        </select>
+      <div class="filter-grid">
+        <div class="filter-item">
+          <label class="filter-label">关键词</label>
+          <div class="relative flex-1 w-full">
+            <input class="filter-input w-full" v-model="keyword" type="search" placeholder="编号 / 类型 / 用户" />
+          </div>
+        </div>
+        <div v-show="tab === 'risk'" class="filter-item">
+          <label class="filter-label">状态</label>
+          <select v-model="riskStatus" class="filter-input flex-1">
+            <option value="open">待处理</option>
+            <option value="resolved">已处理</option>
+            <option value="ignored">已忽略</option>
+            <option value="">全部</option>
+          </select>
+        </div>
+        <div v-show="tab !== 'risk'" class="filter-item">
+          <label class="filter-label">状态</label>
+          <select v-model="anomalyStatus" class="filter-input flex-1">
+            <option value="open">待处理</option>
+            <option value="resolved">已处理</option>
+            <option value="ignored">已忽略</option>
+            <option value="">全部</option>
+          </select>
+        </div>
+        <div v-show="tab === 'risk'" class="filter-item">
+          <label class="filter-label">级别</label>
+          <select v-model="severity" class="filter-input flex-1">
+            <option value="">级别：全部</option>
+            <option value="high">高</option>
+            <option value="medium">中</option>
+          </select>
+        </div>
+        <div class="filter-actions lg:col-span-4">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="
+              keyword = '';
+              riskStatus = 'open';
+              anomalyStatus = 'open';
+              severity = '';
+              load()
+            "
+          >
+            重置
+          </button>
+          <button type="button" class="btn btn-primary" @click="load">查询</button>
+        </div>
       </div>
 
       <p v-if="loading" class="y-msg">加载中…</p>
@@ -199,7 +229,7 @@ onMounted(load)
               <td class="y-col-op">
                 <template v-if="e.status === 'open'">
                   <button type="button" class="y-link" :disabled="busy" @click="resolveRisk(e, 'resolved')">处理</button>
-                  <button type="button" class="y-link" :disabled="busy" @click="resolveRisk(e, 'ignored')">忽略</button>
+                  <button type="button" class="y-link y-link--danger" :disabled="busy" @click="resolveRisk(e, 'ignored')">忽略</button>
                 </template>
                 <span v-else>—</span>
               </td>
@@ -236,7 +266,7 @@ onMounted(load)
               <td class="y-col-op">
                 <template v-if="a.status === 'open'">
                   <button type="button" class="y-link" :disabled="busy" @click="resolveAnomaly(a, 'resolved')">确认</button>
-                  <button type="button" class="y-link" :disabled="busy" @click="resolveAnomaly(a, 'ignored')">忽略</button>
+                  <button type="button" class="y-link y-link--danger" :disabled="busy" @click="resolveAnomaly(a, 'ignored')">忽略</button>
                 </template>
                 <span v-else>{{ a.note || '—' }}</span>
               </td>

@@ -198,12 +198,10 @@ const routes: RouteRecordRaw[] = [
     }
   },
 
-  // ==================== 闲置市场（C 端迁入宿主前端的第一页；/ 仍由 market/web 提供） ====================
+  // ==================== 闲置市场（买卖中心在宿主；逛店走完整 C 端 /） ====================
   {
     path: '/shop',
-    name: 'MarketShop',
-    component: () => import('@/views/market/MarketShopView.vue'),
-    meta: { requiresAuth: false, title: '闲置市场', titleKey: 'nav.idleMarket' }
+    redirect: '/shop/center'
   },
   {
     path: '/shop/listings/:id',
@@ -435,13 +433,8 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/market-admin/MarketShell.vue'),
     meta: { requiresAuth: true, requiresAdmin: true, title: '闲置市场', titleKey: 'nav.idleMarket' },
     children: [
-      { path: '', redirect: '/admin/market/overview' },
-      {
-        path: 'overview',
-        name: 'MarketAdminOverview',
-        component: () => import('@/market-admin/OverviewView.vue'),
-        meta: { title: '市场概览', titleKey: 'nav.marketOverview' }
-      },
+      { path: '', redirect: '/admin/market/listings' },
+      { path: 'overview', redirect: '/admin/market/listings' },
       {
         path: 'vendors',
         name: 'MarketAdminVendors',
@@ -485,6 +478,30 @@ const routes: RouteRecordRaw[] = [
         name: 'MarketAdminUpstreams',
         component: () => import('@/market-admin/UpstreamsView.vue'),
         meta: { title: '上游', titleKey: 'nav.marketUpstreams' }
+      },
+      {
+        path: 'upstreams/:id',
+        name: 'MarketAdminUpstreamDetail',
+        component: () => import('@/market-admin/UpstreamDetailView.vue'),
+        meta: { title: '上游详情', titleKey: 'nav.marketUpstreams' }
+      },
+      {
+        path: 'listings',
+        name: 'MarketAdminListings',
+        component: () => import('@/market-admin/ListingsView.vue'),
+        meta: { title: '挂单管理', titleKey: 'nav.marketListings' }
+      },
+      {
+        path: 'listings/new',
+        name: 'MarketAdminListingCreate',
+        component: () => import('@/market-admin/ListingDetailView.vue'),
+        meta: { title: '新建挂单', titleKey: 'nav.marketListingCreate' }
+      },
+      {
+        path: 'listings/:id',
+        name: 'MarketAdminListingDetail',
+        component: () => import('@/market-admin/ListingDetailView.vue'),
+        meta: { title: '挂单详情', titleKey: 'nav.marketListingDetail' }
       },
       {
         path: 'quality',

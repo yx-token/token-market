@@ -800,7 +800,6 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
   const items: NavItem[] = []
   if (withDashboard) {
     items.push({ path: '/dashboard', label: t('nav.dashboard'), icon: DashboardIcon })
-    items.push({ path: '/shop', label: t('nav.idleMarket'), icon: GlobeIcon })
     items.push({ path: '/shop/center', label: t('nav.marketCenter'), icon: CreditCardIcon })
   }
   items.push(
@@ -930,14 +929,13 @@ const adminNavItems = computed((): NavItem[] => {
           icon: GlobeIcon,
           external: true,
         },
-        { path: '/shop', label: t('nav.marketShelf'), icon: GlobeIcon },
         { path: '/shop/center', label: t('nav.marketCenter'), icon: CreditCardIcon },
         {
           path: '/admin/market/section-supply',
           label: t('nav.marketSupply'),
           icon: ServerIcon,
           children: [
-            { path: '/admin/market/overview', label: t('nav.marketOverview'), icon: DashboardIcon },
+            { path: '/admin/market/listings', label: t('nav.marketListings'), icon: GlobeIcon },
             { path: '/admin/market/supply-accounts', label: t('nav.marketSupplyAccounts'), icon: GlobeIcon },
             { path: '/admin/market/supply-groups', label: t('nav.marketSupplyGroups'), icon: FolderIcon },
             { path: '/admin/market/upstreams', label: t('nav.marketUpstreams'), icon: ServerIcon },

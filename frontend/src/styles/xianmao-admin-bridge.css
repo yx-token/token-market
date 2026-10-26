@@ -340,6 +340,13 @@
   box-shadow: var(--shadow-primary, 0px 4px 16px 0px rgba(5, 85, 206, 0.2)) !important;
 }
 
+.console-app .btn-secondary {
+  background: var(--color-white, #ffffff) !important;
+  border: 1px solid var(--color-border, #e8e8e8) !important;
+  color: var(--color-text-primary, #262626) !important;
+  box-shadow: none !important;
+}
+
 .console-app .y-page {
   display: flex;
   flex-direction: column;
@@ -390,13 +397,14 @@
   font-size: var(--font-size-caption, 12px);
 }
 
-.console-app .y-page table {
+/* 仅原生 table；勿命中 Element Plus .el-table（否则压扁表头/单元格） */
+.console-app .y-page table:not(.el-table__header):not(.el-table__body):not(.el-table__footer) {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--font-size-body, 14px);
 }
 
-.console-app .y-page thead th {
+.console-app .y-page thead th:not(.el-table__cell) {
   padding: 6px 8px;
   text-align: left;
   font-size: var(--font-size-caption, 12px);
@@ -406,14 +414,14 @@
   border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
 
-.console-app .y-page tbody td {
+.console-app .y-page tbody td:not(.el-table__cell) {
   padding: 6px 8px;
   color: var(--color-text-primary, #262626);
   border-bottom: 1px solid rgba(15, 23, 42, 0.05);
   background: transparent;
 }
 
-.console-app .y-page tbody tr:nth-child(even) td {
+.console-app .y-page tbody tr:nth-child(even) td:not(.el-table__cell) {
   background: rgba(242, 244, 247, 0.45);
 }
 
@@ -432,16 +440,52 @@
 }
 
 .console-app .y-btn.y-btn--ghost {
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--color-white, #ffffff);
   color: var(--color-text-primary, #262626);
-  border-color: rgba(255, 255, 255, 0.65);
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border-color: var(--color-border, #e8e8e8);
 }
 
-.console-app .y-link {
+/* 表格操作列：参考宿主「修改 / 删除」——蓝字链接 + 间距，危险操作为红 */
+.console-app .y-link,
+.console-app a.y-link,
+.console-app button.y-link {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   color: var(--color-primary, #0555ce);
+  font: inherit;
   font-size: var(--font-size-body, 14px);
+  line-height: 22px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.console-app .y-link:hover,
+.console-app a.y-link:hover,
+.console-app button.y-link:hover {
+  color: #003eb3;
+  text-decoration: none;
+}
+
+.console-app .y-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.console-app .y-link--danger,
+.console-app a.y-link--danger,
+.console-app button.y-link--danger {
+  color: var(--color-error, #ff4d4f) !important;
+}
+
+.console-app .y-link--danger:hover,
+.console-app a.y-link--danger:hover,
+.console-app button.y-link--danger:hover {
+  color: #cf1322 !important;
 }
 
 .console-app .y-msg {
@@ -469,13 +513,175 @@
   height: 28px;
   width: 200px;
   padding: 0 8px;
-  border: 1px solid rgba(255, 255, 255, 0.65);
+  border: 1px solid var(--color-border, #e8e8e8);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--color-white, #ffffff);
   color: var(--color-text-primary, #262626);
   font-size: 13px;
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+}
+
+.console-app .y-page .filter-grid {
+  padding: 8px 0 10px;
+  gap: 8px 10px;
+}
+
+.console-app .y-page .filter-label {
+  width: 4rem;
+  color: var(--color-text-secondary, #868686);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.console-app .y-page .filter-input,
+.console-app .y-page .filter-item .input,
+.console-app .y-page .filter-item select.filter-input {
+  height: 32px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--color-border, #e8e8e8);
+  border-radius: 8px;
+  background: var(--color-white, #ffffff);
+  color: var(--color-text-primary, #262626);
+  font-size: 13px;
+  line-height: 30px;
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
+/* 筛选栏 Select / DateRangePicker 与 filter-input 同高同圆角 */
+.console-app .y-page .filter-item .select-trigger,
+.console-app .y-page .filter-item .select-trigger-sm,
+.console-app .y-page .filter-item .date-picker-trigger {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border, #e8e8e8);
+  border-radius: 8px;
+  background: var(--color-white, #ffffff);
+  color: var(--color-text-primary, #262626);
+  font-size: 13px;
+  line-height: 30px;
+  box-shadow: none;
+  box-sizing: border-box;
+}
+
+/* Element Plus 日期时间范围：与筛选栏同高同宽（filter-item / list-filter 共用） */
+.console-app .y-page .filter-item .el-date-editor.el-input__wrapper,
+.console-app .y-page .filter-item .el-date-editor.el-range-editor,
+.console-app .y-page .list-filter .el-date-editor.el-input__wrapper,
+.console-app .y-page .list-filter .el-date-editor.el-range-editor {
+  width: 100% !important;
+  max-width: 100%;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 10px !important;
+  border-radius: 8px !important;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 1px var(--color-border, #e8e8e8) inset !important;
+  background: var(--color-white, #ffffff) !important;
+}
+
+.console-app .y-page .filter-item .el-date-editor.el-range-editor:hover,
+.console-app .y-page .filter-item .el-date-editor.is-active,
+.console-app .y-page .list-filter .el-date-editor.el-range-editor:hover,
+.console-app .y-page .list-filter .el-date-editor.is-active {
+  box-shadow: 0 0 0 1px var(--color-primary, #0555ce) inset !important;
+}
+
+.console-app .y-page .filter-item .el-range-input,
+.console-app .y-page .list-filter .el-range-input {
+  font-size: 13px !important;
+  height: 30px !important;
+  line-height: 30px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.console-app .y-page .filter-item .el-range-separator,
+.console-app .y-page .list-filter .el-range-separator {
+  line-height: 30px !important;
+  font-size: 13px !important;
+  color: var(--color-text-secondary, #868686);
+}
+
+.console-app .y-page .filter-item .el-range__icon,
+.console-app .y-page .filter-item .el-range__close-icon,
+.console-app .y-page .list-filter .el-range__icon,
+.console-app .y-page .list-filter .el-range__close-icon {
+  font-size: 14px;
+  color: var(--color-text-secondary, #868686);
+}
+
+.console-app .y-page .list-filter .filter-input,
+.console-app .y-page .list-filter .select-trigger,
+.console-app .y-page .list-filter .select-trigger-sm {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 10px !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  box-sizing: border-box !important;
+}
+
+.console-app .y-page .list-filter .list-filter__actions .btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px !important;
+}
+
+.console-app .y-page .filter-item .select-trigger:hover,
+.console-app .y-page .filter-item .date-picker-trigger:hover {
+  border-color: var(--color-border-hover, #d0d0d0);
+}
+
+.console-app .y-page .filter-item .select-trigger-open,
+.console-app .y-page .filter-item .date-picker-trigger-open,
+.console-app .y-page .filter-item .select-trigger:focus,
+.console-app .y-page .filter-item .date-picker-trigger:focus {
+  border-color: var(--color-primary, #0555ce) !important;
+  box-shadow: 0 0 0 3px rgba(5, 85, 206, 0.12) !important;
+  outline: none;
+}
+
+.console-app .y-page .filter-item .select-icon,
+.console-app .y-page .filter-item .date-picker-icon,
+.console-app .y-page .filter-item .date-picker-chevron {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-secondary, #868686);
+}
+
+.console-app .y-page .filter-item .relative {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+.console-app .y-page .filter-actions {
+  gap: 8px;
+}
+
+.console-app .y-page .filter-actions .btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px !important;
+  border-width: 1px;
+  border-style: solid;
+  box-sizing: border-box;
+}
+
+.console-app .y-page .y-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 48px 16px;
+  color: var(--color-text-secondary, #868686);
+  font-size: 13px;
 }
 
 .console-app .y-pager {
@@ -504,6 +710,31 @@
 .console-app .y-page td.y-col-op {
   position: sticky;
   right: 0;
+}
+
+.console-app .y-page td.y-col-op {
+  white-space: nowrap;
+}
+
+.console-app .y-page td.y-col-op > .y-link,
+.console-app .y-page td.y-col-op > a.y-link,
+.console-app .y-page td.y-col-op > button.y-link {
+  margin-right: 16px;
+}
+
+.console-app .y-page td.y-col-op > .y-link:last-child,
+.console-app .y-page td.y-col-op > a.y-link:last-child,
+.console-app .y-page td.y-col-op > button.y-link:last-child {
+  margin-right: 0;
+}
+
+/* DataTable 操作列：多个 y-link 用 flex gap，避免粘成一团 */
+.console-app .table-ops {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 16px;
+  white-space: nowrap;
 }
 
 .console-app .y-page-desc {
@@ -541,20 +772,18 @@
 .console-app .y-tab {
   height: 28px;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--color-border, #e8e8e8);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.45);
+  background: var(--color-white, #ffffff);
   color: #64748b;
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
-  backdrop-filter: blur(10px) saturate(1.4);
-  -webkit-backdrop-filter: blur(10px) saturate(1.4);
 }
 
 .console-app .y-tab.is-on {
-  border-color: rgba(255, 255, 255, 0.7);
-  background: rgba(30, 41, 59, 0.82);
+  border-color: var(--color-primary, #0555ce);
+  background: var(--color-primary, #0555ce);
   color: #ffffff;
   font-weight: 600;
 }
@@ -585,27 +814,58 @@
   color: var(--color-error, #ff4d4f);
 }
 
+/* 原生表单控件样式；排除 Element Plus 内部节点，避免 el-input 双边框 / 浅蓝 focus 环 */
 .console-app .y-page .input,
+.console-app .y-page select.input,
+.console-app .y-page textarea.input,
 .console-app .console-body-slot .input,
-.console-app .console-body-slot select,
-.console-app .console-body-slot input[type='text'],
-.console-app .console-body-slot input[type='search'],
-.console-app .console-body-slot input[type='number'],
-.console-app .console-body-slot input[type='date'] {
+.console-app .console-body-slot select:not(.el-select__wrapper):not(.el-select__original),
+.console-app .console-body-slot textarea:not(.el-textarea__inner),
+.console-app .console-body-slot input[type='text']:not(.el-input__inner):not(.el-range-input):not(.el-select__input):not(.filter-input),
+.console-app .console-body-slot input[type='search']:not(.el-input__inner):not(.el-range-input):not(.filter-input),
+.console-app .console-body-slot input[type='number']:not(.el-input__inner):not(.filter-input),
+.console-app .console-body-slot input[type='date']:not(.el-input__inner):not(.filter-input),
+.console-app .console-body-slot input[type='password']:not(.el-input__inner):not(.filter-input) {
   height: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.65) !important;
+  border: 1px solid var(--color-border, #e8e8e8) !important;
   border-radius: 8px !important;
-  background: rgba(255, 255, 255, 0.55) !important;
+  background: var(--color-white, #ffffff) !important;
   color: var(--color-text-primary, #262626) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+  box-shadow: none !important;
 }
 
-.console-app .console-body-slot select:focus,
-.console-app .console-body-slot input:focus,
-.console-app .y-page .input:focus {
+.console-app .y-page .filter-input {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 10px !important;
+  border: 1px solid var(--color-border, #e8e8e8) !important;
+  border-radius: 8px !important;
+  background: var(--color-white, #ffffff) !important;
+  color: var(--color-text-primary, #262626) !important;
+  font-size: 13px !important;
+  line-height: 30px !important;
+  box-shadow: none !important;
+  box-sizing: border-box !important;
+}
+
+.console-app .y-page textarea.input,
+.console-app .console-body-slot textarea:not(.el-textarea__inner) {
+  height: auto;
+  min-height: 56px;
+  padding: 6px 8px;
+}
+
+.console-app .console-body-slot select:not(.el-select__original):focus,
+.console-app .console-body-slot input:not(.el-input__inner):not(.el-range-input):not(.el-select__input):focus,
+.console-app .console-body-slot textarea:not(.el-textarea__inner):focus,
+.console-app .y-page .input:focus,
+.console-app .y-page select.input:focus,
+.console-app .y-page textarea.input:focus,
+.console-app .y-page .filter-input:focus {
   border-color: var(--color-primary, #0555ce) !important;
   box-shadow: 0 0 0 3px rgba(5, 85, 206, 0.12) !important;
   outline: none;
+  line-height: 30px;
 }
 
 .console-app .card .rounded-lg.bg-blue-100,
@@ -836,35 +1096,39 @@ html.dark .console-app .y-page tbody td,
   color: #f5f5f5 !important;
 }
 
-html.dark .console-app .y-page tbody tr:nth-child(even) td,
-.dark .console-app .y-page tbody tr:nth-child(even) td {
+html.dark .console-app .y-page tbody tr:nth-child(even) td:not(.el-table__cell),
+.dark .console-app .y-page tbody tr:nth-child(even) td:not(.el-table__cell) {
   background: rgba(255, 255, 255, 0.04) !important;
 }
 
 html.dark .console-app .y-btn.y-btn--ghost,
 html.dark .console-app .y-search input,
+html.dark .console-app .y-page .filter-input,
+html.dark .console-app .y-page .filter-item .input,
 html.dark .console-app .y-tab,
 html.dark .console-app .y-page .input,
 html.dark .console-app .console-body-slot .input,
-html.dark .console-app .console-body-slot select,
-html.dark .console-app .console-body-slot input[type='text'],
-html.dark .console-app .console-body-slot input[type='search'],
-html.dark .console-app .console-body-slot input[type='number'],
-html.dark .console-app .console-body-slot input[type='date'],
-html.dark .console-app .console-body-slot input[type='password'],
-html.dark .console-app .console-body-slot textarea,
+html.dark .console-app .console-body-slot select:not(.el-select__original),
+html.dark .console-app .console-body-slot input[type='text']:not(.el-input__inner):not(.el-range-input):not(.el-select__input),
+html.dark .console-app .console-body-slot input[type='search']:not(.el-input__inner):not(.el-range-input),
+html.dark .console-app .console-body-slot input[type='number']:not(.el-input__inner),
+html.dark .console-app .console-body-slot input[type='date']:not(.el-input__inner),
+html.dark .console-app .console-body-slot input[type='password']:not(.el-input__inner),
+html.dark .console-app .console-body-slot textarea:not(.el-textarea__inner),
 .dark .console-app .y-btn.y-btn--ghost,
 .dark .console-app .y-search input,
+.dark .console-app .y-page .filter-input,
+.dark .console-app .y-page .filter-item .input,
 .dark .console-app .y-tab,
 .dark .console-app .y-page .input,
 .dark .console-app .console-body-slot .input,
-.dark .console-app .console-body-slot select,
-.dark .console-app .console-body-slot input[type='text'],
-.dark .console-app .console-body-slot input[type='search'],
-.dark .console-app .console-body-slot input[type='number'],
-.dark .console-app .console-body-slot input[type='date'],
-.dark .console-app .console-body-slot input[type='password'],
-.dark .console-app .console-body-slot textarea {
+.dark .console-app .console-body-slot select:not(.el-select__original),
+.dark .console-app .console-body-slot input[type='text']:not(.el-input__inner):not(.el-range-input):not(.el-select__input),
+.dark .console-app .console-body-slot input[type='search']:not(.el-input__inner):not(.el-range-input),
+.dark .console-app .console-body-slot input[type='number']:not(.el-input__inner),
+.dark .console-app .console-body-slot input[type='date']:not(.el-input__inner),
+.dark .console-app .console-body-slot input[type='password']:not(.el-input__inner),
+.dark .console-app .console-body-slot textarea:not(.el-textarea__inner) {
   border-color: rgba(255, 255, 255, 0.14) !important;
   background: rgba(17, 17, 17, 0.85) !important;
   color: #f5f5f5 !important;
@@ -917,6 +1181,11 @@ html.dark .console-app .lg-tab.is-active,
 html.dark .console-app .y-link,
 .dark .console-app .y-link {
   color: #93c5fd !important;
+}
+
+html.dark .console-app .y-link--danger,
+.dark .console-app .y-link--danger {
+  color: #f87171 !important;
 }
 
 html.dark .console-app .y-chip,

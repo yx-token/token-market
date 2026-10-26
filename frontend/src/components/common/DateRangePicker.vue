@@ -1,5 +1,28 @@
 <template>
-  <div class="relative" ref="containerRef">
+  <!-- Element 风格：datetimerange（快捷侧栏 + 双日历 + 清空/确定） -->
+  <div v-if="mode === 'datetimerange'" class="relative w-full date-range-el" ref="containerRef">
+    <el-config-provider :locale="elLocale">
+      <el-date-picker
+        v-model="rangeModel"
+        type="datetimerange"
+        class="date-range-el__picker"
+        range-separator="-"
+        :start-placeholder="startPlaceholder"
+        :end-placeholder="endPlaceholder"
+        format="YYYY-MM-DD HH:mm:ss"
+        value-format="YYYY-MM-DD HH:mm:ss"
+        :shortcuts="elShortcuts"
+        :disabled="disabled"
+        :clearable="clearable"
+        :default-time="defaultTime"
+        teleported
+        @change="onElChange"
+      />
+    </el-config-provider>
+  </div>
+
+  <!-- 默认：预设快捷 + 自定义日期（Usage / Dashboard） -->
+  <div v-else class="relative w-full" ref="containerRef">
     <button
       type="button"
       @click="toggle"
@@ -22,7 +45,6 @@
 
     <Transition name="date-picker-dropdown">
       <div v-if="isOpen" class="date-picker-dropdown">
-        <!-- Quick presets -->
         <div class="date-picker-presets">
           <button
             v-for="preset in presets"
@@ -36,7 +58,6 @@
 
         <div class="date-picker-divider"></div>
 
-        <!-- Custom date range inputs -->
         <div class="date-picker-custom">
           <div class="date-picker-field">
             <label class="date-picker-label">{{ t('dates.startDate') }}</label>
@@ -64,7 +85,6 @@
           </div>
         </div>
 
-        <!-- Apply button -->
         <div class="date-picker-actions">
           <button @click="apply" class="date-picker-apply">
             {{ t('dates.apply') }}
@@ -78,6 +98,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElConfigProvider, ElDatePicker } from 'element-plus'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import en from 'element-plus/es/locale/lang/en'
 import Icon from '@/components/icons/Icon.vue'
 
 interface DatePreset {
@@ -89,6 +112,12 @@ interface DatePreset {
 interface Props {
   startDate: string
   endDate: string
+  /** preset=默认快捷面板；datetimerange=Element 风格日期时间范围 */
+  mode?: 'preset' | 'datetimerange'
+  disabled?: boolean
+  clearable?: boolean
+  startPlaceholder?: string
+  endPlaceholder?: string
 }
 
 interface Emits {
@@ -97,7 +126,13 @@ interface Emits {
   (e: 'change', range: { startDate: string; endDate: string; preset: string | null }): void
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  mode: 'preset',
+  disabled: false,
+  clearable: true,
+  startPlaceholder: '开始时间',
+  endPlaceholder: '结束时间',
+})
 const emit = defineEmits<Emits>()
 
 const { t, locale } = useI18n()
@@ -108,17 +143,76 @@ const localStartDate = ref(props.startDate)
 const localEndDate = ref(props.endDate)
 const activePreset = ref<string | null>('last24Hours')
 
+const elLocale = computed(() => (locale.value === 'zh' || String(locale.value).startsWith('zh') ? zhCn : en))
+
+const defaultTime: [Date, Date] = [
+  new Date(2000, 0, 1, 0, 0, 0),
+  new Date(2000, 0, 1, 23, 59, 59),
+]
+
+function rangeEndingNow(daysBack: number): [Date, Date] {
+  const end = new Date()
+  end.setHours(23, 59, 59, 999)
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - daysBack)
+  return [start, end]
+}
+
+const elShortcuts = computed(() => [
+  { text: '最近一周', value: () => rangeEndingNow(6) },
+  { text: '最近两周', value: () => rangeEndingNow(13) },
+  { text: '最近一个月', value: () => rangeEndingNow(29) },
+  { text: '最近三个月', value: () => rangeEndingNow(89) },
+  { text: '最近半年', value: () => rangeEndingNow(179) },
+  { text: '最近一年', value: () => rangeEndingNow(364) },
+])
+
+const rangeModel = computed<[string, string] | null>({
+  get() {
+    if (!props.startDate && !props.endDate) return null
+    const start = props.startDate
+      ? props.startDate.length <= 10
+        ? `${props.startDate} 00:00:00`
+        : props.startDate
+      : ''
+    const end = props.endDate
+      ? props.endDate.length <= 10
+        ? `${props.endDate} 23:59:59`
+        : props.endDate
+      : ''
+    if (!start || !end) return null
+    return [start, end]
+  },
+  set(val) {
+    if (!val || val.length !== 2) {
+      emit('update:startDate', '')
+      emit('update:endDate', '')
+      emit('change', { startDate: '', endDate: '', preset: null })
+      return
+    }
+    emit('update:startDate', val[0])
+    emit('update:endDate', val[1])
+    emit('change', { startDate: val[0], endDate: val[1], preset: null })
+  },
+})
+
+function onElChange(val: [string, string] | null) {
+  if (!val) {
+    emit('update:startDate', '')
+    emit('update:endDate', '')
+    emit('change', { startDate: '', endDate: '', preset: null })
+  }
+}
+
 const today = () => formatDateToString(new Date())
 
-// Tomorrow's date - used for max date to handle timezone differences
-// When user is in a timezone behind the server, "today" on server might be "tomorrow" locally
 const tomorrow = () => {
   const d = new Date()
   d.setDate(d.getDate() + 1)
   return formatDateToString(d)
 }
 
-// Helper function to format date to YYYY-MM-DD using local timezone
 const formatDateToString = (date: Date): string => {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -133,7 +227,7 @@ const presets: DatePreset[] = [
     getRange: () => {
       const t = today()
       return { start: t, end: t }
-    }
+    },
   },
   {
     labelKey: 'dates.yesterday',
@@ -143,7 +237,7 @@ const presets: DatePreset[] = [
       d.setDate(d.getDate() - 1)
       const yesterday = formatDateToString(d)
       return { start: yesterday, end: yesterday }
-    }
+    },
   },
   {
     labelKey: 'dates.last24Hours',
@@ -153,9 +247,9 @@ const presets: DatePreset[] = [
       const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
       return {
         start: formatDateToString(start),
-        end: formatDateToString(end)
+        end: formatDateToString(end),
       }
-    }
+    },
   },
   {
     labelKey: 'dates.last7Days',
@@ -166,7 +260,7 @@ const presets: DatePreset[] = [
       d.setDate(d.getDate() - 6)
       const start = formatDateToString(d)
       return { start, end }
-    }
+    },
   },
   {
     labelKey: 'dates.last14Days',
@@ -177,7 +271,7 @@ const presets: DatePreset[] = [
       d.setDate(d.getDate() - 13)
       const start = formatDateToString(d)
       return { start, end }
-    }
+    },
   },
   {
     labelKey: 'dates.last30Days',
@@ -188,7 +282,7 @@ const presets: DatePreset[] = [
       d.setDate(d.getDate() - 29)
       const start = formatDateToString(d)
       return { start, end }
-    }
+    },
   },
   {
     labelKey: 'dates.thisMonth',
@@ -197,7 +291,7 @@ const presets: DatePreset[] = [
       const now = new Date()
       const start = formatDateToString(new Date(now.getFullYear(), now.getMonth(), 1))
       return { start, end: today() }
-    }
+    },
   },
   {
     labelKey: 'dates.lastMonth',
@@ -207,8 +301,8 @@ const presets: DatePreset[] = [
       const start = formatDateToString(new Date(now.getFullYear(), now.getMonth() - 1, 1))
       const end = formatDateToString(new Date(now.getFullYear(), now.getMonth(), 0))
       return { start, end }
-    }
-  }
+    },
+  },
 ]
 
 const displayValue = computed(() => {
@@ -245,7 +339,6 @@ const selectPreset = (preset: DatePreset) => {
 }
 
 const onDateChange = () => {
-  // Check if current dates match any preset
   activePreset.value = null
   for (const preset of presets) {
     const range = preset.getRange()
@@ -266,12 +359,13 @@ const apply = () => {
   emit('change', {
     startDate: localStartDate.value,
     endDate: localEndDate.value,
-    preset: activePreset.value
+    preset: activePreset.value,
   })
   isOpen.value = false
 }
 
 const handleClickOutside = (event: MouseEvent) => {
+  if (props.mode === 'datetimerange') return
   if (containerRef.value && !containerRef.value.contains(event.target as Node)) {
     isOpen.value = false
   }
@@ -283,21 +377,23 @@ const handleEscape = (event: KeyboardEvent) => {
   }
 }
 
-// Restore the applied range after dismissal, including parent updates from Apply.
-watch(isOpen, (open) => {
-  if (open) return
-  localStartDate.value = props.startDate
-  localEndDate.value = props.endDate
-  onDateChange()
-}, { flush: 'post' })
+watch(
+  isOpen,
+  (open) => {
+    if (open) return
+    localStartDate.value = props.startDate
+    localEndDate.value = props.endDate
+    onDateChange()
+  },
+  { flush: 'post' },
+)
 
-// Sync local state with props
 watch(
   () => props.startDate,
   (val) => {
     localStartDate.value = val
     onDateChange()
-  }
+  },
 )
 
 watch(
@@ -305,13 +401,12 @@ watch(
   (val) => {
     localEndDate.value = val
     onDateChange()
-  }
+  },
 )
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
   document.addEventListener('keydown', handleEscape)
-  // Initialize active preset detection
   onDateChange()
 })
 
@@ -322,8 +417,44 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.date-range-el {
+  width: 100%;
+}
+
+.date-range-el :deep(.date-range-el__picker) {
+  width: 100%;
+}
+
+.date-range-el :deep(.el-input__wrapper),
+.date-range-el :deep(.el-range-editor.el-input__wrapper) {
+  width: 100%;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px var(--color-border, #e8e8e8) inset;
+  background: var(--color-white, #fff);
+}
+
+.date-range-el :deep(.el-range-editor.el-input__wrapper:hover),
+.date-range-el :deep(.el-range-editor.is-active) {
+  box-shadow: 0 0 0 1px var(--color-primary, #0555ce) inset;
+}
+
+.date-range-el :deep(.el-range-input) {
+  font-size: 13px;
+  color: var(--color-text-primary, #262626);
+}
+
+.date-range-el :deep(.el-range-separator) {
+  flex: 0;
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--color-text-secondary, #868686);
+}
+
 .date-picker-trigger {
-  @apply flex items-center gap-2;
+  @apply flex w-full items-center gap-2;
   @apply rounded-lg px-3 py-2 text-sm;
   @apply bg-white dark:bg-dark-800;
   @apply border border-gray-200 dark:border-dark-600;
@@ -339,15 +470,15 @@ onUnmounted(() => {
 }
 
 .date-picker-icon {
-  @apply text-gray-400 dark:text-dark-400;
+  @apply shrink-0 text-gray-400 dark:text-dark-400;
 }
 
 .date-picker-value {
-  @apply font-medium;
+  @apply flex-1 truncate text-left font-medium;
 }
 
 .date-picker-chevron {
-  @apply text-gray-400 dark:text-dark-400;
+  @apply ml-auto shrink-0 text-gray-400 dark:text-dark-400;
 }
 
 .date-picker-dropdown {
@@ -424,7 +555,6 @@ onUnmounted(() => {
   @apply transition-colors duration-150;
 }
 
-/* Dropdown animation */
 .date-picker-dropdown-enter-active,
 .date-picker-dropdown-leave-active {
   transition: all 0.2s ease;

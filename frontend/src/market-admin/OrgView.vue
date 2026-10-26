@@ -446,14 +446,23 @@ onMounted(load)
       <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
 
       <template v-if="tab !== 'roles'">
-        <div class="y-search">
-          <input
-            v-model="keyword"
-            type="search"
-            :placeholder="tab === 'staff' ? '邮箱 / ID' : '名称 / 编码'"
-            @keyup.enter="load"
-          />
-          <button v-if="tab === 'staff'" type="button" class="y-btn" @click="load">查询</button>
+        <div class="filter-grid">
+          <div class="filter-item">
+            <label class="filter-label">关键词</label>
+            <div class="relative flex-1 w-full">
+              <input
+                class="filter-input w-full"
+                v-model="keyword"
+                type="search"
+                :placeholder="tab === 'staff' ? '邮箱 / ID' : '名称 / 编码'"
+                @keyup.enter="load"
+              />
+            </div>
+          </div>
+          <div class="filter-actions lg:col-span-4">
+            <button type="button" class="btn btn-secondary" @click="keyword = ''; load()">重置</button>
+            <button type="button" class="btn btn-primary" @click="load">查询</button>
+          </div>
         </div>
       </template>
 
@@ -561,9 +570,23 @@ onMounted(load)
                 </div>
               </template>
               <template v-else>
-                <div class="y-search">
-                  <input v-model="memberQ" type="search" placeholder="搜索用户邮箱" @keyup.enter="searchUsers" />
-                  <button type="button" class="y-btn" @click="searchUsers">搜索</button>
+                <div class="filter-grid">
+                  <div class="filter-item">
+                    <label class="filter-label">关键词</label>
+                    <div class="relative flex-1 w-full">
+                      <input
+                        class="filter-input w-full"
+                        v-model="memberQ"
+                        type="search"
+                        placeholder="搜索用户邮箱"
+                        @keyup.enter="searchUsers"
+                      />
+                    </div>
+                  </div>
+                  <div class="filter-actions lg:col-span-4">
+                    <button type="button" class="btn btn-secondary" @click="memberQ = ''; searchUsers()">重置</button>
+                    <button type="button" class="btn btn-primary" @click="searchUsers">查询</button>
+                  </div>
                 </div>
                 <div v-if="pickHits.length" class="pick-hits">
                   <button
@@ -736,9 +759,6 @@ onMounted(load)
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-}
-.y-link--danger {
-  color: var(--color-error, #ff4d4f);
 }
 .hint {
   margin: 4px 0 0;

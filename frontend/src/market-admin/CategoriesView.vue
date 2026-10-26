@@ -72,6 +72,12 @@ const hasActiveFilters = computed(
   () => !!(keyword.value.trim() || filterEnabled.value || filterPickable.value),
 )
 
+function resetFilters() {
+  keyword.value = ''
+  filterEnabled.value = ''
+  filterPickable.value = ''
+}
+
 const filterReveal = computed(() => {
   const show = new Set<string>()
   const forceOpen = new Set<string>()
@@ -290,29 +296,33 @@ onMounted(load)
       <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
       <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
 
-      <div class="y-search">
-        <input v-model="keyword" type="search" placeholder="名称 / ID / 说明" />
-        <select v-model="filterEnabled" class="input">
-          <option value="">状态：全部</option>
-          <option value="true">启用</option>
-          <option value="false">停用</option>
-        </select>
-        <select v-model="filterPickable" class="input">
-          <option value="">卖家可选：全部</option>
-          <option value="true">可选</option>
-          <option value="false">不可选</option>
-        </select>
-        <button
-          type="button"
-          class="y-btn y-btn--ghost"
-          @click="
-            keyword = ''
-            filterEnabled = ''
-            filterPickable = ''
-          "
-        >
-          重置
-        </button>
+      <div class="filter-grid">
+        <div class="filter-item">
+          <label class="filter-label">关键词</label>
+          <div class="relative flex-1 w-full">
+            <input class="filter-input w-full" v-model="keyword" type="search" placeholder="名称 / ID / 说明" />
+          </div>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">状态</label>
+          <select v-model="filterEnabled" class="filter-input flex-1">
+            <option value="">状态：全部</option>
+            <option value="true">启用</option>
+            <option value="false">停用</option>
+          </select>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">卖家可选</label>
+          <select v-model="filterPickable" class="filter-input flex-1">
+            <option value="">卖家可选：全部</option>
+            <option value="true">可选</option>
+            <option value="false">不可选</option>
+          </select>
+        </div>
+        <div class="filter-actions lg:col-span-4">
+          <button type="button" class="btn btn-secondary" @click="resetFilters">重置</button>
+          <button type="button" class="btn btn-primary" @click="load">查询</button>
+        </div>
       </div>
 
       <p v-if="loading" class="y-msg">加载中…</p>
@@ -473,9 +483,6 @@ onMounted(load)
 }
 tr.is-disabled {
   opacity: 0.55;
-}
-.y-link--danger {
-  color: var(--color-error, #ff4d4f);
 }
 .y-modal-mask {
   position: fixed;

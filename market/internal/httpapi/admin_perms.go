@@ -26,6 +26,7 @@ func adminRouteResources(pattern string) []string {
 		{"/api/admin/proxies", []string{"console.supply.proxies"}},
 		{"/api/admin/vendors", []string{"console.supply.vendors"}},
 		{"/api/admin/upstreams", []string{"console.supply.upstreams"}},
+		{"/api/admin/listings", []string{"console.supply.upstreams", "console.ops.categories"}},
 
 		{"/api/admin/detection-policies", []string{"console.detect.detection"}},
 		{"/api/admin/detection-providers", []string{"console.detect.third_party"}},

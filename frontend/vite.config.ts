@@ -117,43 +117,21 @@ export default defineConfig(({ mode }) => {
          * 分离第三方库并按功能合并应用代码，避免循环依赖
          */
         manualChunks(id: string) {
-          if (id.includes('node_modules')) {
-            // Vue 核心库
-            if (
-              id.includes('/vue/') ||
-              id.includes('/vue-router/') ||
-              id.includes('/pinia/') ||
-              id.includes('/@vue/')
-            ) {
-              return 'vendor-vue'
-            }
+          if (!id.includes('node_modules')) return
 
-            // UI 工具库（较大，单独分离）
-            if (id.includes('/@vueuse/') || id.includes('/xlsx/')) {
-              return 'vendor-ui'
-            }
-
-            // 图表库
-            if (id.includes('/chart.js/') || id.includes('/vue-chartjs/')) {
-              return 'vendor-chart'
-            }
-
-            // 国际化
-            if (id.includes('/vue-i18n/') || id.includes('/@intlify/')) {
-              return 'vendor-i18n'
-            }
-
-            // Stripe 仅在支付流程中按需加载，避免进入首页公共依赖。
-            if (id.includes('/@stripe/stripe-js/')) {
-              return 'vendor-stripe'
-            }
-
-            // 其他小型第三方库合并
-            return 'vendor-misc'
+          // Element Plus 仅随挂单等异步页加载，禁止进公共 vendor（易与 Vue 循环初始化白屏）
+          if (id.includes('/element-plus/') || id.includes('/@element-plus/')) {
+            return undefined
           }
 
-          // 应用代码：按入口点自动分包，不手动干预
-          // 这样可以避免循环依赖，同时保持合理的 chunk 数量
+          // 图表 / Stripe 保持按需；其余第三方打进同一 vendor，避免 vendor-vue↔misc↔ui 循环 TDZ
+          if (id.includes('/chart.js/') || id.includes('/vue-chartjs/')) {
+            return 'vendor-chart'
+          }
+          if (id.includes('/@stripe/stripe-js/')) {
+            return 'vendor-stripe'
+          }
+          return 'vendor'
         }
       }
     }

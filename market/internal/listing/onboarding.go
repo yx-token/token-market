@@ -75,6 +75,10 @@ var (
 // CreateUpstream 创建上游草稿并分配专用代理。reference 为 true 时创建平台基线账号（仅管理员）。
 // proxyFromImport 为 true 时暂不绑定代理，等导入账号时使用导出文件中的代理（检测连通后绑定）。
 func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, authType string, reference bool, selectedProxyID *int64, proxyFromImport bool) (*Upstream, error) {
+	return s.createUpstream(ctx, sellerID, platform, authType, reference, selectedProxyID, proxyFromImport, false)
+}
+
+func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, authType string, reference bool, selectedProxyID *int64, proxyFromImport, bypassSellerProxy bool) (*Upstream, error) {
 	v, err := GetVendor(ctx, s.DB, platform)
 	if err != nil {
 		return nil, err
@@ -98,7 +102,7 @@ func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, 
 	if proxyFromImport && (reference || selectedProxyID != nil) {
 		return nil, httpx.BadRequest("INVALID_PROXY", "proxy_from_import cannot be combined with proxy_id")
 	}
-	if !reference && !proxyFromImport && st.RequireSellerProxy && selectedProxyID == nil {
+	if !reference && !proxyFromImport && !bypassSellerProxy && st.RequireSellerProxy && selectedProxyID == nil {
 		return nil, httpx.BadRequest("SELLER_PROXY_REQUIRED", "please configure and select your own proxy before adding an account")
 	}
 
@@ -700,7 +704,7 @@ func (s *Service) requireAuthorizedAccount(ctx context.Context, u *Upstream) err
 	}
 	account, err := s.Admin.GetAccount(ctx, *u.Sub2APIAccountID)
 	if err != nil {
-		return err
+		return mapEngineAccountError(err)
 	}
 	if account.Status != "active" {
 		return httpx.Conflict("AUTHORIZATION_UNAVAILABLE", "upstream authorization is unavailable; authorize an active account before listing")

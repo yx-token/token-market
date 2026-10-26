@@ -127,6 +127,10 @@ function onDrop(index: number) {
     rows.value.splice(index, 0, item)
     reSort()
   }
+  onDragEnd()
+}
+
+function onDragEnd() {
   drag.value = null
   over.value = null
 }
@@ -188,10 +192,7 @@ onMounted(load)
           @dragstart="onDragStart(hi, $event)"
           @dragover="onDragOver(hi, $event)"
           @drop="onDrop(hi)"
-          @dragend="
-            drag = null
-            over = null
-          "
+          @dragend="onDragEnd"
         >
           <div class="hot-row">
             <span class="hot-grip" title="拖拽调序">⋮⋮</span>
@@ -268,8 +269,5 @@ onMounted(load)
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
   gap: 6px;
-}
-.y-link--danger {
-  color: var(--color-error, #ff4d4f);
 }
 </style>

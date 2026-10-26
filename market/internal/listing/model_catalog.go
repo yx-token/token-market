@@ -123,9 +123,32 @@ func (s *Service) RefreshModels(ctx context.Context, sellerID, upstreamID int64)
 	return upstreamModels(u), nil
 }
 
+// ErrEngineAccountMissing 引擎库中找不到上游绑定的账号（常见于引擎库被重建后）。
+var ErrEngineAccountMissing = httpx.Conflict(
+	"ENGINE_ACCOUNT_MISSING",
+	"引擎侧账号已失效或不存在，请清除绑定后重新授权，再选模型",
+)
+
+func mapEngineAccountError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if adminclient.StatusOf(err) == 404 {
+		return ErrEngineAccountMissing
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "ACCOUNT_NOT_FOUND") || strings.Contains(msg, "account not found") {
+		return ErrEngineAccountMissing
+	}
+	return err
+}
+
 func (s *Service) fetchModelCatalog(ctx context.Context, u *Upstream) error {
 	catalog, fromUpstream, err := s.Admin.GetAccountModelCatalog(ctx, *u.Sub2APIAccountID)
 	if err != nil {
+		if mapped := mapEngineAccountError(err); errors.Is(mapped, ErrEngineAccountMissing) {
+			return mapped
+		}
 		return httpx.Unavailable("MODEL_CATALOG_UNAVAILABLE", "暂时无法获取模型目录，请稍后刷新或手动填写模型 ID")
 	}
 	if !fromUpstream && u.ModelWhitelist != nil {
@@ -209,7 +232,17 @@ func (s *Service) SetModels(ctx context.Context, sellerID, upstreamID int64, mod
 	if err != nil {
 		return nil, err
 	}
+	if u.Sub2APIAccountID == nil {
+		return nil, ErrEngineAccountMissing
+	}
+	// bulk-update 对不存在的账号也可能返回 success，先探活再写白名单
+	if _, err := s.Admin.GetAccount(ctx, *u.Sub2APIAccountID); err != nil {
+		return nil, mapEngineAccountError(err)
+	}
 	if err := s.Admin.SetAccountModelWhitelist(ctx, *u.Sub2APIAccountID, selected); err != nil {
+		if mapped := mapEngineAccountError(err); mapped != err {
+			return nil, mapped
+		}
 		return nil, errors.Join(fmt.Errorf("同步挂售模型白名单：%w", err), s.restoreModelMapping(ctx, u))
 	}
 	tag, err := s.DB.Exec(ctx, `UPDATE upstreams SET model_whitelist = $2, updated_at = now()

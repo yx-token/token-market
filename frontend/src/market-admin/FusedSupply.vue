@@ -103,10 +103,23 @@ watch(() => props.kind, load)
       <button type="button" class="y-btn" :disabled="loading" @click="load">{{ t('nav.refresh') }}</button>
     </header>
     <div class="y-container--tight">
-      <div class="y-search">
-        <input v-model="query.keyword" type="search" :placeholder="t('nav.searchCurrentColumns')" @keyup.enter="handleQuery" />
-        <button type="button" class="y-btn" @click="handleQuery">{{ t('nav.query') }}</button>
-        <button type="button" class="y-btn y-btn--ghost" @click="resetQuery">{{ t('nav.reset') }}</button>
+      <div class="filter-grid">
+        <div class="filter-item">
+          <label class="filter-label">关键词</label>
+          <div class="relative flex-1 w-full">
+            <input
+              class="filter-input w-full"
+              v-model="query.keyword"
+              type="search"
+              :placeholder="t('nav.searchCurrentColumns')"
+              @keyup.enter="handleQuery"
+            />
+          </div>
+        </div>
+        <div class="filter-actions lg:col-span-4">
+          <button type="button" class="btn btn-secondary" @click="resetQuery">{{ t('nav.reset') }}</button>
+          <button type="button" class="btn btn-primary" @click="handleQuery">{{ t('nav.query') }}</button>
+        </div>
       </div>
       <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
       <p v-else-if="loading" class="y-msg">{{ t('nav.loading') }}</p>

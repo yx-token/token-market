@@ -229,19 +229,45 @@ onMounted(load)
       </template>
 
       <template v-else>
-        <div class="y-search">
-          <input v-model="keyword" type="search" placeholder="上游 / 模型 / 判定" />
-          <select v-model="filterProvider" class="input">
-            <option value="">检测站：全部</option>
-            <option v-for="p in providers" :key="p.name" :value="p.name">{{ p.label }}</option>
-          </select>
-          <select v-model="filterStatus" class="input">
-            <option value="">状态：全部</option>
-            <option value="pending">pending</option>
-            <option value="running">running</option>
-            <option value="done">done</option>
-            <option value="failed">failed</option>
-          </select>
+        <div class="filter-grid">
+          <div class="filter-item">
+            <label class="filter-label">关键词</label>
+            <div class="relative flex-1 w-full">
+              <input class="filter-input w-full" v-model="keyword" type="search" placeholder="上游 / 模型 / 判定" />
+            </div>
+          </div>
+          <div class="filter-item">
+            <label class="filter-label">检测站</label>
+            <select v-model="filterProvider" class="filter-input flex-1">
+              <option value="">检测站：全部</option>
+              <option v-for="p in providers" :key="p.name" :value="p.name">{{ p.label }}</option>
+            </select>
+          </div>
+          <div class="filter-item">
+            <label class="filter-label">状态</label>
+            <select v-model="filterStatus" class="filter-input flex-1">
+              <option value="">状态：全部</option>
+              <option value="pending">pending</option>
+              <option value="running">running</option>
+              <option value="done">done</option>
+              <option value="failed">failed</option>
+            </select>
+          </div>
+          <div class="filter-actions lg:col-span-4">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="
+                keyword = '';
+                filterProvider = '';
+                filterStatus = '';
+                load()
+              "
+            >
+              重置
+            </button>
+            <button type="button" class="btn btn-primary" @click="load">查询</button>
+          </div>
         </div>
         <p v-if="!filteredChecks.length" class="y-msg">暂无检测记录</p>
         <table v-else>

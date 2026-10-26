@@ -97,11 +97,19 @@ onMounted(load)
       </template>
 
       <template v-else>
-        <div class="y-search">
-          <input v-model="keyword" type="search" placeholder="动作 / 目标" @keyup.enter="load" />
-          <button type="button" class="y-btn" @click="load">查询</button>
+        <div class="filter-grid">
+          <div class="filter-item">
+            <label class="filter-label">关键词</label>
+            <div class="relative flex-1 w-full">
+              <input class="filter-input w-full" v-model="keyword" type="search" placeholder="动作 / 目标" @keyup.enter="load" />
+            </div>
+          </div>
+          <div class="filter-actions lg:col-span-4">
+            <button type="button" class="btn btn-secondary" @click="keyword = ''; load()">重置</button>
+            <button type="button" class="btn btn-primary" @click="load">查询</button>
+          </div>
         </div>
-        <p v-if="!logs.length" class="y-msg">暂无审计记录</p>
+        <div v-if="!logs.length" class="y-empty">暂无数据</div>
         <table v-else>
           <thead>
             <tr>

@@ -592,7 +592,7 @@ func (s *Server) resolveAppeal(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) adminUpstreams(w http.ResponseWriter, r *http.Request) error {
 	limit, offset := page(r)
-	us, err := listing.ListUpstreams(r.Context(), s.DB, r.URL.Query().Get("status"), limit, offset)
+	us, err := s.Listings.AdminListUpstreams(r.Context(), r.URL.Query().Get("status"), limit, offset)
 	if err != nil {
 		return err
 	}

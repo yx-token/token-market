@@ -104,15 +104,52 @@ start_real_engine() {
     kill "$(cat "$sdata/server.pid")" 2>/dev/null || true
     sleep 0.4
   fi
+  # enginehost.ServeAdmin 经 config.Load 读 TM_*；缺省则管理端 relay 全是 503
+  local admin_key=""
+  [[ -s "$DATA/engine-admin-key" ]] && admin_key="$(cat "$DATA/engine-admin-key")"
   (
     export DATA_DIR="$sdata" SERVER_HOST=127.0.0.1 SERVER_PORT=18080 SERVER_MODE=release TZ=Asia/Shanghai
     export MARKET_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
     export MARKET_ENGINE_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
+    export TM_ENV=dev
+    export TM_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
+    export TM_REDIS_ADDR=127.0.0.1:56379 TM_REDIS_DB=2
+    export TM_CRYPTO_ACTIVE_KEY_ID=k1 TM_CRYPTO_KEYS="k1:ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleS0="
+    export TM_CRYPTO_HASH_PEPPER=dev-pepper
+    export TM_AUTH_JWT_SECRET=dev-jwt-secret-dev-jwt-secret-dev-jwt-secret
+    export TM_BOOTSTRAP_ADMIN_EMAIL=$ADMIN_EMAIL TM_BOOTSTRAP_ADMIN_PASSWORD=$ADMIN_PASSWORD
+    export TM_SUB2API_BASE_URL="$ENGINE"
+    export TM_SUB2API_REPLICA_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
+    [[ -n "$admin_key" ]] && export TM_SUB2API_ADMIN_API_KEY="$admin_key"
     nohup "$ROOT/bin/sub2api" >"$sdata/server.log" 2>&1 &
     echo $! >"$sdata/server.pid"
   )
-  wait_http "$ENGINE/health"
-  echo "  sub2api 真实引擎 已启动（$ENGINE）"
+  wait_http "${ENGINE}/health"
+  # 首次无 key 时：生成后带 TM_* 再启一次，保证 outbound / relay 可用
+  if [[ -z "$admin_key" ]]; then
+    admin_key="$(ensure_engine_admin_key)"
+    kill "$(cat "$sdata/server.pid")" 2>/dev/null || true
+    sleep 0.4
+    (
+      export DATA_DIR="$sdata" SERVER_HOST=127.0.0.1 SERVER_PORT=18080 SERVER_MODE=release TZ=Asia/Shanghai
+      export MARKET_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
+      export MARKET_ENGINE_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
+      export TM_ENV=dev
+      export TM_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
+      export TM_REDIS_ADDR=127.0.0.1:56379 TM_REDIS_DB=2
+      export TM_CRYPTO_ACTIVE_KEY_ID=k1 TM_CRYPTO_KEYS="k1:ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleS0="
+      export TM_CRYPTO_HASH_PEPPER=dev-pepper
+      export TM_AUTH_JWT_SECRET=dev-jwt-secret-dev-jwt-secret-dev-jwt-secret
+      export TM_BOOTSTRAP_ADMIN_EMAIL=$ADMIN_EMAIL TM_BOOTSTRAP_ADMIN_PASSWORD=$ADMIN_PASSWORD
+      export TM_SUB2API_BASE_URL="$ENGINE"
+      export TM_SUB2API_ADMIN_API_KEY="$admin_key"
+      export TM_SUB2API_REPLICA_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
+      nohup "$ROOT/bin/sub2api" >"$sdata/server.log" 2>&1 &
+      echo $! >"$sdata/server.pid"
+    )
+    wait_http "${ENGINE}/health"
+  fi
+  echo "  sub2api 真实引擎 已启动 (${ENGINE})"
 }
 
 market_env() {

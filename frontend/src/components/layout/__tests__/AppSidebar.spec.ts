@@ -74,7 +74,7 @@ describe('AppSidebar market menu hierarchy', () => {
     expect(componentSource).not.toContain("label: t('nav.marketFront')")
     // buyer leaves hang directly under idle market (L2)
     expect(componentSource).toMatch(/path: '\/admin\/market'[\s\S]*?path: '\/'[\s\S]*?nav\.backToMarket/)
-    expect(componentSource).toMatch(/path: '\/shop'[\s\S]*?nav\.marketShelf/)
+    expect(componentSource).not.toMatch(/nav\.marketShelf/)
     expect(componentSource).toMatch(/path: '\/shop\/center'[\s\S]*?nav\.marketCenter/)
   })
 

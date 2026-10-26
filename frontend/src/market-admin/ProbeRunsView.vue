@@ -147,14 +147,32 @@ onMounted(load)
 
     <div class="y-container--tight">
       <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-      <div class="y-search">
-        <input
-          v-model="keyword"
-          type="search"
-          placeholder="ID / 上游 / 邮箱 / 平台 / 状态"
-          @keyup.enter="pageNum = 1"
-        />
-        <button type="button" class="y-btn" @click="pageNum = 1">查询</button>
+      <div class="filter-grid">
+        <div class="filter-item">
+          <label class="filter-label">关键词</label>
+          <div class="relative flex-1 w-full">
+            <input
+              class="filter-input w-full"
+              v-model="keyword"
+              type="search"
+              placeholder="ID / 上游 / 邮箱 / 平台 / 状态"
+              @keyup.enter="pageNum = 1"
+            />
+          </div>
+        </div>
+        <div class="filter-actions lg:col-span-4">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="
+              keyword = '';
+              pageNum = 1
+            "
+          >
+            重置
+          </button>
+          <button type="button" class="btn btn-primary" @click="pageNum = 1">查询</button>
+        </div>
       </div>
       <p v-if="loading" class="y-msg">加载中…</p>
       <p v-else-if="!filtered.length" class="y-msg">暂无检测记录</p>

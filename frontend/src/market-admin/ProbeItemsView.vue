@@ -342,18 +342,38 @@ onMounted(load)
       <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
 
       <template v-if="tab === 'items'">
-      <div class="y-search">
-        <input v-model="keyword" type="search" placeholder="ID / 套件 / 题目 / check_key" @keyup.enter="pageNum = 1" />
-        <select v-model="filterStatus" class="input" @change="pageNum = 1; load()">
-          <option value="">状态：全部</option>
-          <option value="active">启用</option>
-          <option value="retired">已下线</option>
-        </select>
-        <select v-model="filterSuite" class="input" @change="pageNum = 1">
-          <option value="">套件：全部</option>
-          <option v-for="s in SUITES" :key="s.value" :value="s.value">{{ s.text }}</option>
-        </select>
-        <button type="button" class="y-btn y-btn--ghost" @click="resetFilters">重置</button>
+      <div class="filter-grid">
+        <div class="filter-item">
+          <label class="filter-label">关键词</label>
+          <div class="relative flex-1 w-full">
+            <input
+              class="filter-input w-full"
+              v-model="keyword"
+              type="search"
+              placeholder="ID / 套件 / 题目 / check_key"
+              @keyup.enter="pageNum = 1"
+            />
+          </div>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">状态</label>
+          <select v-model="filterStatus" class="filter-input flex-1" @change="pageNum = 1; load()">
+            <option value="">状态：全部</option>
+            <option value="active">启用</option>
+            <option value="retired">已下线</option>
+          </select>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">套件</label>
+          <select v-model="filterSuite" class="filter-input flex-1" @change="pageNum = 1">
+            <option value="">套件：全部</option>
+            <option v-for="s in SUITES" :key="s.value" :value="s.value">{{ s.text }}</option>
+          </select>
+        </div>
+        <div class="filter-actions lg:col-span-4">
+          <button type="button" class="btn btn-secondary" @click="resetFilters">重置</button>
+          <button type="button" class="btn btn-primary" @click="pageNum = 1">查询</button>
+        </div>
       </div>
 
       <p v-if="loading" class="y-msg">加载中…</p>
@@ -566,9 +586,6 @@ onMounted(load)
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
-}
-.y-link--danger {
-  color: var(--color-error, #ff4d4f);
 }
 .y-modal-mask {
   position: fixed;

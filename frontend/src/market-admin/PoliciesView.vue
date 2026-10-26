@@ -456,21 +456,53 @@ onMounted(load)
       <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
 
       <template v-if="tab === 'policies'">
-        <div class="y-search">
-          <input v-model="keyword" type="search" placeholder="厂商 / 接入方式" @keyup.enter="pageNum = 1" />
-          <select v-model="filterPlatform" class="input" @change="pageNum = 1">
-            <option value="">厂商：全部</option>
-            <option v-for="(label, key) in PLATFORM_LABEL" :key="key" :value="key">{{ label }}</option>
-          </select>
-          <select v-model="filterEnabled" class="input" @change="pageNum = 1">
-            <option value="">检测：全部</option>
-            <option value="true">开</option>
-            <option value="false">关</option>
-          </select>
+        <div class="filter-grid">
+          <div class="filter-item">
+            <label class="filter-label">关键词</label>
+            <div class="relative flex-1 w-full">
+              <input
+                class="filter-input w-full"
+                v-model="keyword"
+                type="search"
+                placeholder="厂商 / 接入方式"
+                @keyup.enter="pageNum = 1"
+              />
+            </div>
+          </div>
+          <div class="filter-item">
+            <label class="filter-label">厂商</label>
+            <select v-model="filterPlatform" class="filter-input flex-1" @change="pageNum = 1">
+              <option value="">厂商：全部</option>
+              <option v-for="(label, key) in PLATFORM_LABEL" :key="key" :value="key">{{ label }}</option>
+            </select>
+          </div>
+          <div class="filter-item">
+            <label class="filter-label">检测</label>
+            <select v-model="filterEnabled" class="filter-input flex-1" @change="pageNum = 1">
+              <option value="">检测：全部</option>
+              <option value="true">开</option>
+              <option value="false">关</option>
+            </select>
+          </div>
+          <div class="filter-actions lg:col-span-4">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="
+                keyword = '';
+                filterPlatform = '';
+                filterEnabled = '';
+                pageNum = 1
+              "
+            >
+              重置
+            </button>
+            <button type="button" class="btn btn-primary" @click="pageNum = 1">查询</button>
+          </div>
         </div>
 
         <p v-if="loading" class="y-msg">加载中…</p>
-        <p v-else-if="!pageRows.length" class="y-msg">没有符合条件的策略</p>
+        <div v-else-if="!pageRows.length" class="y-empty">没有符合条件的策略</div>
         <table v-else>
           <thead>
             <tr>

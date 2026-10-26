@@ -215,18 +215,38 @@ onMounted(load)
         正在{{ checking.quality ? '检测代理质量（可能 1–3 分钟）' : '检测连通性和出口地区' }}…
       </p>
 
-      <div class="y-search">
-        <input v-model="keyword" type="search" placeholder="名称 / IP / 地区" @keyup.enter="pageNum = 1" />
-        <select v-model="filterStatus" class="input" @change="pageNum = 1">
-          <option value="">状态：全部</option>
-          <option v-for="o in STATUS_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
-        </select>
-        <select v-model="filterOwner" class="input" @change="pageNum = 1">
-          <option value="">来源：全部</option>
-          <option value="platform">平台</option>
-          <option value="seller">卖家</option>
-        </select>
-        <button type="button" class="y-btn y-btn--ghost" @click="resetFilters">重置</button>
+      <div class="filter-grid">
+        <div class="filter-item">
+          <label class="filter-label">关键词</label>
+          <div class="relative flex-1 w-full">
+            <input
+              class="filter-input w-full"
+              v-model="keyword"
+              type="search"
+              placeholder="名称 / IP / 地区"
+              @keyup.enter="pageNum = 1"
+            />
+          </div>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">状态</label>
+          <select v-model="filterStatus" class="filter-input flex-1" @change="pageNum = 1">
+            <option value="">状态：全部</option>
+            <option v-for="o in STATUS_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
+          </select>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">来源</label>
+          <select v-model="filterOwner" class="filter-input flex-1" @change="pageNum = 1">
+            <option value="">来源：全部</option>
+            <option value="platform">平台</option>
+            <option value="seller">卖家</option>
+          </select>
+        </div>
+        <div class="filter-actions lg:col-span-4">
+          <button type="button" class="btn btn-secondary" @click="resetFilters">重置</button>
+          <button type="button" class="btn btn-primary" @click="pageNum = 1">查询</button>
+        </div>
       </div>
 
       <p v-if="loading" class="y-msg">加载中…</p>

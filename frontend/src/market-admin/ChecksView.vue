@@ -193,12 +193,34 @@ onMounted(load)
       <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
       <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
 
-      <div class="y-search">
-        <input v-model="keyword" type="search" placeholder="质检项键 / 名称" />
-        <select v-model="filterCategory" class="input">
-          <option value="">分组：全部</option>
-          <option v-for="c in categories" :key="c" :value="c">{{ CATEGORY_LABEL[c] || c }}</option>
-        </select>
+      <div class="filter-grid">
+        <div class="filter-item">
+          <label class="filter-label">关键词</label>
+          <div class="relative flex-1 w-full">
+            <input class="filter-input w-full" v-model="keyword" type="search" placeholder="质检项键 / 名称" />
+          </div>
+        </div>
+        <div class="filter-item">
+          <label class="filter-label">分组</label>
+          <select v-model="filterCategory" class="filter-input flex-1">
+            <option value="">分组：全部</option>
+            <option v-for="c in categories" :key="c" :value="c">{{ CATEGORY_LABEL[c] || c }}</option>
+          </select>
+        </div>
+        <div class="filter-actions lg:col-span-4">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="
+              keyword = '';
+              filterCategory = '';
+              load()
+            "
+          >
+            重置
+          </button>
+          <button type="button" class="btn btn-primary" @click="load">查询</button>
+        </div>
       </div>
 
       <p v-if="loading" class="y-msg">加载中…</p>

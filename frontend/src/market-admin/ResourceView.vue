@@ -246,15 +246,23 @@ watch(() => props.kind, load)
     <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
     <p v-else-if="actionMsg" class="y-msg y-msg--ok">{{ actionMsg }}</p>
     <div class="y-container--tight">
-      <div class="y-search">
-        <input
-          v-model="query.keyword"
-          type="search"
-          :placeholder="t('nav.searchCurrentColumns')"
-          @keyup.enter="handleQuery"
-        />
-        <button type="button" class="y-btn" @click="handleQuery">{{ t('nav.query') }}</button>
-        <button type="button" class="y-btn y-btn--ghost" @click="resetQuery">{{ t('nav.reset') }}</button>
+      <div class="filter-grid">
+        <div class="filter-item">
+          <label class="filter-label">关键词</label>
+          <div class="relative flex-1 w-full">
+            <input
+              class="filter-input w-full"
+              v-model="query.keyword"
+              type="search"
+              :placeholder="t('nav.searchCurrentColumns')"
+              @keyup.enter="handleQuery"
+            />
+          </div>
+        </div>
+        <div class="filter-actions lg:col-span-4">
+          <button type="button" class="btn btn-secondary" @click="resetQuery">{{ t('nav.reset') }}</button>
+          <button type="button" class="btn btn-primary" @click="handleQuery">{{ t('nav.query') }}</button>
+        </div>
       </div>
       <p v-if="loading" class="y-msg">{{ t('nav.loading') }}</p>
       <p v-else-if="!filtered.length" class="y-msg">{{ t('nav.noData') }}</p>
@@ -295,15 +303,15 @@ watch(() => props.kind, load)
               </button>
               <template v-else-if="kind === 'withdrawals' && row.status === 'pending_review'">
                 <button type="button" class="y-link" @click="reviewWithdrawal(row, true)">通过</button>
-                <button type="button" class="y-link" @click="reviewWithdrawal(row, false)">拒绝</button>
+                <button type="button" class="y-link y-link--danger" @click="reviewWithdrawal(row, false)">拒绝</button>
               </template>
               <template v-else-if="kind === 'withdrawals' && (row.status === 'approved' || row.status === 'paying')">
                 <button type="button" class="y-link" @click="markWithdrawalPaid(row, false)">登记已打款</button>
-                <button type="button" class="y-link" @click="markWithdrawalPaid(row, true)">打款失败</button>
+                <button type="button" class="y-link y-link--danger" @click="markWithdrawalPaid(row, true)">打款失败</button>
               </template>
               <template v-else-if="kind === 'appeals' && row.status === 'open'">
                 <button type="button" class="y-link" @click="resolveAppeal(row, 'uphold')">维持</button>
-                <button type="button" class="y-link" @click="resolveAppeal(row, 'overturn')">推翻</button>
+                <button type="button" class="y-link y-link--danger" @click="resolveAppeal(row, 'overturn')">推翻</button>
                 <button type="button" class="y-link" @click="resolveAppeal(row, 'retest')">复测</button>
               </template>
             </td>

@@ -68,7 +68,7 @@ onMounted(load)
   <AppLayout>
     <section class="space-y-4">
       <header>
-        <RouterLink class="text-sm text-primary-600 dark:text-primary-400" to="/shop">返回货架</RouterLink>
+        <a class="text-sm text-primary-600 dark:text-primary-400" href="/">返回市场</a>
         <h1 class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ title }}</h1>
       </header>
       <p v-if="error" class="text-sm text-red-600 dark:text-red-400">{{ error }}</p>

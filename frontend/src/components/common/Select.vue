@@ -12,6 +12,7 @@
       :aria-describedby="ariaDescribedby"
       :class="[
         'select-trigger',
+        size === 'sm' && 'select-trigger-sm',
         isOpen && 'select-trigger-open',
         error && 'select-trigger-error',
         disabled && 'select-trigger-disabled'
@@ -159,6 +160,8 @@ interface Props {
   remote?: boolean
   /** 远程搜索模式下的加载态：options 为空时下拉显示 loading 文案 */
   loading?: boolean
+  /** 尺寸：sm 用于筛选栏，md 用于表单对话框 */
+  size?: 'sm' | 'md'
 }
 
 interface Emits {
@@ -177,7 +180,8 @@ const props = withDefaults(defineProps<Props>(), {
   valueKey: 'value',
   labelKey: 'label',
   remote: false,
-  loading: false
+  loading: false,
+  size: 'md',
 })
 
 const emit = defineEmits<Emits>()
@@ -523,6 +527,10 @@ onUnmounted(() => {
   @apply focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30;
   @apply hover:border-gray-300 dark:hover:border-dark-500;
   @apply cursor-pointer;
+}
+
+.select-trigger-sm {
+  @apply rounded-md px-2.5 py-1.5 text-xs;
 }
 
 .select-trigger-open {
