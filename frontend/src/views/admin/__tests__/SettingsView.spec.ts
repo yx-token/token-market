@@ -725,6 +725,31 @@ describe("admin SettingsView payment visible method controls", () => {
     adminSettingsFetch.mockResolvedValue(undefined);
   });
 
+  it("keeps one shared navigation before every settings panel without submitting the form", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    const shell = wrapper.get(".settings-tabs-shell");
+    const navigation = shell.get('[role="tablist"]');
+    const tabs = navigation.findAll('[role="tab"]');
+    expect(tabs).toHaveLength(10);
+    expect(navigation.classes()).toContain("settings-tabs-scroll");
+    for (const tab of tabs) {
+      expect(tab.attributes("type")).toBe("button");
+      await tab.trigger("click");
+      expect(wrapper.findAll(".settings-tabs-shell")).toHaveLength(1);
+      expect(tab.attributes("aria-selected")).toBe("true");
+      expect(navigation.findAll('[aria-selected="true"]')).toHaveLength(1);
+      // All panels share the same flow after navigation; none is nested in its glass surface.
+      const form = shell.element.parentElement!;
+      const children = [...form.children];
+      expect(children[0]).toBe(shell.element);
+      expect(shell.find(".card").exists()).toBe(false);
+      expect(shell.find('[role="tabpanel"]').exists()).toBe(false);
+    }
+    expect(updateSettings).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it("opens the update tab lazily, hides save and preserves the mounted panel across tabs", async () => {
     const wrapper = mountView();
     await flushPromises();
