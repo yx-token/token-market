@@ -19,9 +19,9 @@
 
 | 域 | 能力 |
 |---|---|
-| 挂单 Listing | 列表、详情、创建（指定 upstream）、全业务字段更新、强制 pause/resume/close |
-| 市场用户 | 列表、创建、详情编辑（email/status/is_admin/密码/KYC）、连带上游/挂单/资金单/风控 |
-| 引擎用户 | 详情展示绑定；跳转或内嵌调用 `/api/v1/admin/users/:id` 改余额/并发/分组等 |
+| 挂单 Listing | **仅管理端**：列表（跨卖家全部挂单）、详情、创建（指定 upstream）、业务字段更新、强制 pause/resume/close。C 端货架仍只读浏览；卖家端仍管自己的挂单 |
+| 市场用户 | **仅管理端**：列表、创建、详情编辑（email/status/is_admin/密码/KYC）、连带上游/挂单/资金单/风控 |
+| 引擎用户 | **仅管理端**：详情展示绑定；跳转或内嵌调用 `/api/v1/admin/users/:id` 改余额/并发/分组等 |
 | 身份 | 未绑定可 ensure/bind（复用现有 identities） |
 
 ## Architecture
@@ -47,7 +47,7 @@ Engine routes/market.go
 
 | Method | Path | 说明 |
 |---|---|---|
-| GET | `/api/admin/listings` | 全站列表；query: `status`, `seller_id`, `upstream_id`, `platform`, `q`, `limit`, `offset` |
+| GET | `/api/admin/listings` | 管理端列表（跨卖家）；query: `status`, `seller_id`, `upstream_id`, `platform`, `q`, `limit`, `offset` |
 | GET | `/api/admin/listings/{id}` | 详情（含上游摘要） |
 | POST | `/api/admin/listings` | 代创建；body 含 `upstream_id` + 卖家创建同构字段 |
 | PUT | `/api/admin/listings/{id}` | 更新业务字段（见下） |
@@ -89,14 +89,14 @@ Engine routes/market.go
 
 ## UI
 
-### `/admin/market/listings`（新）
+### `/admin/market/listings`（新，管理端专用）
 
-- y-page 列表 + 筛选 + 分页
+- y-page 列表 + 筛选 + 分页（运营看全部卖家的挂单，不是 C 端商品后台开放给买家）
 - 弹层/侧栏编辑全可写字段
 - 行内：暂停 / 恢复 / 关闭
 - 「新建」：选 upstream（仅 ready）+ 模式/倍率等
 
-侧栏：供给组或运营组挂「挂单」。
+侧栏「闲置市场」下挂「挂单」。C 端 `/`、`/shop` 不增加写能力。
 
 ### `/admin/market/users`（扩展）
 
