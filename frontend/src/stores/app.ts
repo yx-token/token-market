@@ -7,6 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Toast, ToastType, PublicSettings } from '@/types'
 import { i18n } from '@/i18n'
+import { extractApiErrorMessage } from '@/utils/apiError'
 import {
   checkUpdates as checkUpdatesAPI,
   type VersionInfo,
@@ -38,6 +39,8 @@ export const useAppStore = defineStore('app', () => {
   // Version cache state
   const versionLoaded = ref<boolean>(false)
   const versionLoading = ref<boolean>(false)
+  const versionError = ref('')
+  const versionWarning = ref('')
   const currentVersion = ref<string>('')
   const latestVersion = ref<string>('')
   const hasUpdate = ref<boolean>(false)
@@ -248,6 +251,7 @@ export const useAppStore = defineStore('app', () => {
         latest_version: latestVersion.value,
         has_update: hasUpdate.value,
         build_type: buildType.value,
+        warning: versionWarning.value || undefined,
         release_info: releaseInfo.value || undefined,
         cached: true
       }
@@ -259,8 +263,10 @@ export const useAppStore = defineStore('app', () => {
     }
 
     versionLoading.value = true
+    versionError.value = ''
     try {
       const data = await checkUpdatesAPI(force)
+      versionWarning.value = data.warning || ''
       currentVersion.value = data.current_version
       latestVersion.value = data.latest_version
       hasUpdate.value = data.has_update
@@ -269,6 +275,7 @@ export const useAppStore = defineStore('app', () => {
       versionLoaded.value = true
       return data
     } catch (error) {
+      versionError.value = extractApiErrorMessage(error, i18n.global.t('admin.settings.systemUpdate.checkFailed'))
       console.error('Failed to fetch version:', error)
       return null
     } finally {
@@ -457,6 +464,8 @@ export const useAppStore = defineStore('app', () => {
     // Version state
     versionLoaded,
     versionLoading,
+    versionError,
+    versionWarning,
     currentVersion,
     latestVersion,
     hasUpdate,

@@ -638,288 +638,37 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAuthStore, useAppStore } from '@/stores'
-import {
-  performUpdate,
-  restartService,
-  getRollbackVersions,
-  rollback as rollbackAPI,
-  type RollbackVersionInfo
-} from '@/api/admin/system'
+import { useSystemUpdate } from '@/composables/useSystemUpdate'
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
 
-const GITHUB_REPO = 'yx-token/token-market'
-// Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
-const DOCKER_IMAGE = 'weishaw/sub2api'
-
 const { t } = useI18n()
-
-const props = defineProps<{
-  version?: string
-}>()
-
-const authStore = useAuthStore()
-const appStore = useAppStore()
-
-const isAdmin = computed(() => authStore.isAdmin)
-
+const props = defineProps<{ version?: string }>()
+const {
+  isAdmin, loading, currentVersion, latestVersion, hasUpdate, releaseInfo, isReleaseBuild,
+  updating, restarting, needRestart, updateError, updateSuccess, restartCountdown, successKind,
+  rollbackPanelOpen, rollbackVersions, rollbackVersionsLoading, rollbackVersionsError,
+  selectedRollbackVersion, rollingBack, rollbackError, manualTab, manualTabs, activeManualCommand,
+  refreshVersion, handleUpdate, toggleRollbackPanel, loadRollbackVersions, selectRollbackVersion,
+  formatPublishedAt, handleRollback, handleRestart
+} = useSystemUpdate(() => props.version)
+const { copied, copyToClipboard } = useClipboard()
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
-
-// Use store's cached version state
-const loading = computed(() => appStore.versionLoading)
-const currentVersion = computed(() => appStore.currentVersion || props.version || '')
-const latestVersion = computed(() => appStore.latestVersion)
-const hasUpdate = computed(() => appStore.hasUpdate)
-const releaseInfo = computed(() => appStore.releaseInfo)
-const buildType = computed(() => appStore.buildType)
-
-// Update process states (local to this component)
-const updating = ref(false)
-const restarting = ref(false)
-const needRestart = ref(false)
-const updateError = ref('')
-const updateSuccess = ref(false)
-const restartCountdown = ref(0)
-// Distinguishes the success + restart panel between update and rollback flows
-const successKind = ref<'update' | 'rollback'>('update')
-
-// Rollback states
-const rollbackPanelOpen = ref(false)
-const rollbackVersions = ref<RollbackVersionInfo[]>([])
-const rollbackVersionsLoading = ref(false)
-const rollbackVersionsError = ref('')
-const selectedRollbackVersion = ref('')
-const rollingBack = ref(false)
-const rollbackError = ref('')
-
-const { copied, copyToClipboard } = useClipboard()
-
-// Manual rollback methods differ by deployment: script installs use install.sh,
-// docker deployments pin the image tag instead
-const manualTab = ref<'script' | 'docker'>('script')
-
-const manualTabs = computed(() => [
-  { key: 'script' as const, label: t('version.deployScript') },
-  { key: 'docker' as const, label: t('version.deployDocker') }
-])
-
-const scriptRollbackCommand = computed(() => {
-  if (!selectedRollbackVersion.value) return ''
-  const tag = `v${selectedRollbackVersion.value}`
-  return `curl -sSL https://raw.githubusercontent.com/${GITHUB_REPO}/${tag}/deploy/install.sh | sudo bash -s -- rollback ${tag}`
-})
-
-const dockerRollbackCommand = computed(() => {
-  if (!selectedRollbackVersion.value) return ''
-  return [
-    `# ${t('version.dockerEditCompose')}`,
-    `image: ${DOCKER_IMAGE}:${selectedRollbackVersion.value}`,
-    '',
-    `# ${t('version.dockerRecreate')}`,
-    'docker compose up -d'
-  ].join('\n')
-})
-
-const activeManualCommand = computed(() =>
-  manualTab.value === 'docker' ? dockerRollbackCommand.value : scriptRollbackCommand.value
-)
-
-// Only show update check for release builds (binary/docker deployment)
-const isReleaseBuild = computed(() => buildType.value === 'release')
-
-function toggleDropdown() {
-  dropdownOpen.value = !dropdownOpen.value
-}
-
-function closeDropdown() {
-  dropdownOpen.value = false
-}
-
-async function refreshVersion(force = true) {
-  if (!isAdmin.value) return
-
-  // Reset update states when refreshing
-  updateError.value = ''
-  updateSuccess.value = false
-  needRestart.value = false
-  resetRollbackState()
-
-  await appStore.fetchVersion(force)
-}
-
-async function handleUpdate() {
-  if (updating.value) return
-
-  updating.value = true
-  updateError.value = ''
-  updateSuccess.value = false
-
-  try {
-    const result = await performUpdate()
-    successKind.value = 'update'
-    updateSuccess.value = true
-    needRestart.value = result.need_restart
-    // Clear version cache to reflect update completed
-    appStore.clearVersionCache()
-  } catch (error: unknown) {
-    const err = error as { response?: { data?: { message?: string } }; message?: string }
-    updateError.value = err.response?.data?.message || err.message || t('version.updateFailed')
-  } finally {
-    updating.value = false
-  }
-}
-
-function resetRollbackState() {
-  rollbackPanelOpen.value = false
-  rollbackVersions.value = []
-  rollbackVersionsError.value = ''
-  selectedRollbackVersion.value = ''
-  rollbackError.value = ''
-  manualTab.value = 'script'
-}
-
-async function toggleRollbackPanel() {
-  if (!isAdmin.value) return
-  rollbackPanelOpen.value = !rollbackPanelOpen.value
-  // Source builds only show a hint, no version list to fetch
-  if (
-    rollbackPanelOpen.value &&
-    isReleaseBuild.value &&
-    rollbackVersions.value.length === 0 &&
-    !rollbackVersionsLoading.value
-  ) {
-    await loadRollbackVersions()
-  }
-}
-
-async function loadRollbackVersions() {
-  if (!isAdmin.value) return
-  rollbackVersionsLoading.value = true
-  rollbackVersionsError.value = ''
-  try {
-    const data = await getRollbackVersions()
-    rollbackVersions.value = data.versions || []
-  } catch (error: unknown) {
-    const err = error as { response?: { data?: { message?: string } }; message?: string }
-    rollbackVersionsError.value =
-      err.response?.data?.message || err.message || t('version.loadVersionsFailed')
-  } finally {
-    rollbackVersionsLoading.value = false
-  }
-}
-
-function selectRollbackVersion(version: string) {
-  if (rollingBack.value) return
-  rollbackError.value = ''
-  selectedRollbackVersion.value = selectedRollbackVersion.value === version ? '' : version
-}
-
-function formatPublishedAt(publishedAt: string): string {
-  if (!publishedAt) return ''
-  const date = new Date(publishedAt)
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleDateString()
-}
-
-async function handleRollback() {
-  if (!isAdmin.value) return
-  if (rollingBack.value || !selectedRollbackVersion.value) return
-
-  rollingBack.value = true
-  rollbackError.value = ''
-
-  try {
-    const result = await rollbackAPI(selectedRollbackVersion.value)
-    successKind.value = 'rollback'
-    updateSuccess.value = true
-    needRestart.value = result.need_restart
-    rollbackPanelOpen.value = false
-    // Clear version cache so the next check reflects the rolled-back version
-    appStore.clearVersionCache()
-  } catch (error: unknown) {
-    const err = error as { response?: { data?: { message?: string } }; message?: string }
-    rollbackError.value = err.response?.data?.message || err.message || t('version.rollbackFailed')
-  } finally {
-    rollingBack.value = false
-  }
-}
-
-async function handleRestart() {
-  if (restarting.value) return
-
-  restarting.value = true
-  restartCountdown.value = 8
-
-  try {
-    await restartService()
-    // Service will restart, page will reload automatically or show disconnected
-  } catch (error) {
-    // Expected - connection will be lost during restart
-    console.log('Service restarting...')
-  }
-
-  // Start countdown
-  const countdownInterval = setInterval(() => {
-    restartCountdown.value--
-    if (restartCountdown.value <= 0) {
-      clearInterval(countdownInterval)
-      // Try to check if service is back before reload
-      checkServiceAndReload()
-    }
-  }, 1000)
-}
-
-async function checkServiceAndReload() {
-  const maxRetries = 5
-  const retryDelay = 1000
-
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const response = await fetch('/health', {
-        method: 'GET',
-        cache: 'no-cache'
-      })
-      if (response.ok) {
-        // Service is back, reload page
-        window.location.reload()
-        return
-      }
-    } catch {
-      // Service not ready yet
-    }
-
-    if (i < maxRetries - 1) {
-      await new Promise((resolve) => setTimeout(resolve, retryDelay))
-    }
-  }
-
-  // After retries, reload anyway
-  window.location.reload()
-}
-
+function toggleDropdown() { dropdownOpen.value = !dropdownOpen.value }
+function closeDropdown() { dropdownOpen.value = false }
 function handleClickOutside(event: MouseEvent) {
   const target = event.target as Node
   const button = (event.target as Element).closest('button')
-  if (dropdownRef.value && !dropdownRef.value.contains(target) && !button?.contains(target)) {
-    closeDropdown()
-  }
+  if (dropdownRef.value && !dropdownRef.value.contains(target) && !button?.contains(target)) closeDropdown()
 }
-
 onMounted(() => {
-  if (isAdmin.value) {
-    // Use cached version if available, otherwise fetch
-    appStore.fetchVersion(false)
-  }
+  if (isAdmin.value) void refreshVersion(false)
   document.addEventListener('click', handleClickOutside)
 })
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClickOutside)
-})
+onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
 </script>
 
 <style scoped>

@@ -563,6 +563,7 @@ function mountView() {
         ProxySelector: true,
         ImageUpload: ImageUploadStub,
         BackupSettings: true,
+        SystemUpdateSettings: { template: '<div data-testid="updates-stub" />' },
       },
     },
   });
@@ -722,6 +723,26 @@ describe("admin SettingsView payment visible method controls", () => {
     });
     fetchPublicSettings.mockResolvedValue(undefined);
     adminSettingsFetch.mockResolvedValue(undefined);
+  });
+
+  it("opens the update tab lazily, hides save and preserves the mounted panel across tabs", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="updates-stub"]').exists()).toBe(false);
+    await wrapper.get('#settings-tab-updates').trigger('click');
+    const panel = wrapper.get('[data-testid="updates-stub"]');
+    expect(panel.isVisible()).toBe(true);
+    const originalElement = panel.element;
+    expect(wrapper.get('button[type="submit"]').element.parentElement?.style.display).toBe("none");
+    await wrapper.get('#settings-tab-general').trigger('click');
+    expect(wrapper.get('[role="tabpanel"]').attributes("style")).toContain("display: none");
+    expect(wrapper.get('button[type="submit"]').element.parentElement?.style.display).toBe("");
+    await wrapper.get('#settings-tab-general').trigger('keydown', { key: 'End' });
+    expect(wrapper.get('#settings-tab-updates').attributes('aria-selected')).toBe('true');
+    expect(wrapper.get('[data-testid="updates-stub"]').element).toBe(originalElement);
+    expect(wrapper.get('[role="tabpanel"]').attributes('aria-labelledby')).toBe('settings-tab-updates');
+    expect(updateSettings).not.toHaveBeenCalled();
+    wrapper.unmount();
   });
 
   it("loads and saves the open button visibility for each custom menu", async () => {
