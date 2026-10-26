@@ -71,6 +71,7 @@ type systemUpdateResponseEnvelope struct {
 	Message string `json:"message"`
 	Data    struct {
 		Message         string `json:"message"`
+		NeedRestart     bool   `json:"need_restart"`
 		AlreadyUpToDate bool   `json:"already_up_to_date"`
 		CurrentVersion  string `json:"current_version"`
 		LatestVersion   string `json:"latest_version"`
@@ -171,6 +172,24 @@ func TestSystemHandlerPerformUpdateFailureStillReturnsInternalError(t *testing.T
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, http.StatusInternalServerError, body.Code)
 	require.Equal(t, "internal error", body.Message)
+}
+
+func TestSystemHandlerPerformUpdateSuccessExplainsDockerRestart(t *testing.T) {
+	updateSvc := &systemHandlerUpdateServiceStub{}
+	repo := newMemoryIdempotencyRepoStub()
+	router := newSystemHandlerTestRouter(t, updateSvc, repo)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system/update", nil)
+	req.Header.Set("Idempotency-Key", "docker-success")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body systemUpdateResponseEnvelope
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.True(t, body.Data.NeedRestart)
+	require.Contains(t, body.Data.Message, "Docker")
+	require.Contains(t, body.Data.Message, "rebuilding the container")
 }
 
 // TestSystemHandlerPerformUpdateSurvivesClientDisconnect reproduces #4504:

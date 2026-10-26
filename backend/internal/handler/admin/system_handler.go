@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -119,9 +120,11 @@ func (h *SystemHandler) PerformUpdate(c *gin.Context) {
 			return nil, err
 		}
 		succeeded = true
+		containerMessage := "Update completed. Please restart the service. In Docker, restarting applies the written files; rebuilding the container restores the image version."
+		log.Printf("system update completed; restart is required (Docker container rebuilds restore the image version)")
 
 		return gin.H{
-			"message":      "Update completed. Please restart the service.",
+			"message":      containerMessage,
 			"need_restart": true,
 			"operation_id": lock.OperationID(),
 		}, nil
