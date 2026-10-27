@@ -55,7 +55,7 @@ watch(
     document.documentElement.classList.toggle('is-console', on)
     document.documentElement.classList.toggle('is-market', !on)
     const meta = document.querySelector('meta[name="theme-color"]')
-    if (meta) meta.setAttribute('content', on ? '#0555ce' : '#ffe60f')
+    if (meta) meta.setAttribute('content', on ? '#0555ce' : '#ffffff')
   },
   { immediate: true },
 )
@@ -82,13 +82,13 @@ function logout() {
   <LoginModal />
   <RouterView v-if="isConsole" />
 
-  <div v-else class="xm-market flex min-h-screen flex-col">
+  <div v-else class="xm-market flex min-h-screen flex-col" :class="{ 'is-browse': isMarketBrowse }">
     <MarketMasthead />
 
-    <!-- 市场浏览：全宽，对齐原型 .page -->
-    <main v-if="isMarketBrowse" class="min-w-0 flex-1">
+    <!-- 市场浏览：全宽一屏（无页脚），中间列表自滚 -->
+    <main v-if="isMarketBrowse" class="min-w-0 flex-1 overflow-hidden">
       <RouterView v-slot="{ Component, route: r }">
-        <div :key="r.path" class="page-enter">
+        <div :key="r.path" class="page-enter h-full">
           <component :is="Component" />
         </div>
       </RouterView>
@@ -138,8 +138,8 @@ function logout() {
       </div>
     </div>
 
-    <footer class="shrink-0 border-t border-black/5 bg-white">
-      <div class="mx-auto flex max-w-[1480px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-4 text-[11px] text-[#888] md:px-8 lg:px-10">
+    <footer v-if="!isMarketBrowse" class="shrink-0 border-t border-black/5 bg-white">
+      <div class="flex w-full flex-wrap items-center gap-x-6 gap-y-2 px-4 py-4 text-[11px] text-[#888] md:px-6 lg:px-7">
         <span class="font-extrabold text-[#303030]">闲猫 · 订阅额度集市</span>
         <span>按官方价 × 倍率计费 · 1 元 = 1 个余额单位</span>
         <span class="ml-auto">质量检测 · 降智即停</span>

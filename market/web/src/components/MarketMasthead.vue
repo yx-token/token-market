@@ -19,6 +19,45 @@ watch(
 )
 
 const initial = computed(() => (auth.user?.email ?? '猫').slice(0, 1).toUpperCase())
+const displayName = computed(() => {
+  const email = auth.user?.email || ''
+  const at = email.indexOf('@')
+  return at > 0 ? email.slice(0, at) : email || '用户'
+})
+
+type NavItem = { id: string; label: string; to: string; auth?: boolean }
+
+const navItems: NavItem[] = [
+  { id: 'home', label: '首页', to: '/' },
+  { id: 'market', label: '市场', to: '/' },
+  { id: 'publish', label: '发布', to: '/seller/publish', auth: true },
+  { id: 'orders', label: '我的订单', to: '/buyer/bills', auth: true },
+  { id: 'help', label: '帮助中心', to: '/#guide' },
+]
+
+function navOn(item: NavItem) {
+  if (item.id === 'market') return route.path === '/' || route.path.startsWith('/market')
+  if (item.id === 'home') return false
+  if (item.id === 'publish') return route.path.startsWith('/seller/publish')
+  if (item.id === 'orders') return route.path.startsWith('/buyer')
+  return false
+}
+
+function goNav(item: NavItem) {
+  if (item.id === 'help') {
+    if (route.path === '/') {
+      document.getElementById('guide')?.scrollIntoView({ behavior: 'smooth' })
+      return
+    }
+    router.push('/#guide')
+    return
+  }
+  if (item.auth && !auth.loggedIn) {
+    loginModal.show({ redirect: item.to })
+    return
+  }
+  router.push(item.to)
+}
 
 function search() {
   applyAction({ q: q.value.trim() })
@@ -42,64 +81,74 @@ function logout() {
   router.push('/')
 }
 
+function goPublish() {
+  if (auth.loggedIn) router.push('/seller/publish')
+  else loginModal.show({ redirect: '/seller/publish' })
+}
 </script>
 
 <template>
-  <header class="header">
-    <div class="header-row">
-      <RouterLink class="logo" to="/" aria-label="闲猫首页">
-        <span class="logo-mark" aria-hidden="true">
-          <img src="/assets/xianmao-pet.svg" alt="" width="44" height="38" />
+  <header class="mh">
+    <div class="mh-row">
+      <RouterLink class="mh-logo" to="/" aria-label="闲猫首页">
+        <span class="mh-logo-mark" aria-hidden="true">
+          <img src="/assets/xianmao-pet.svg" alt="" width="36" height="32" />
         </span>
-        <span class="logo-word">闲猫</span>
+        <span class="mh-logo-text">
+          <span class="mh-logo-word">闲猫</span>
+          <span class="mh-logo-tag">闲置 Token 交易市场</span>
+        </span>
       </RouterLink>
-      <form class="search" @submit.prevent="search">
-        <span class="search-ico" aria-hidden="true">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5" />
-            <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+
+      <nav class="mh-nav" aria-label="主导航">
+        <button
+          v-for="item in navItems"
+          :key="item.id"
+          type="button"
+          class="mh-nav-link"
+          :class="{ on: navOn(item) }"
+          @click="goNav(item)"
+        >{{ item.label }}</button>
+      </nav>
+
+      <div class="mh-right">
+        <form class="mh-search" @submit.prevent="search">
+          <input v-model="q" type="search" placeholder="搜索模型 / 供应商 / Token" aria-label="搜索" />
+          <button type="submit" class="mh-search-btn" aria-label="搜索">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.6" />
+              <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </button>
+        </form>
+
+        <button type="button" class="mh-bell" aria-label="通知" title="通知">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+            <path d="M6.5 10.5a5.5 5.5 0 0 1 11 0v3.2l1.2 2.3H5.3l1.2-2.3v-3.2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+            <path d="M10 18.5a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
           </svg>
-        </span>
-        <input v-model="q" type="search" placeholder="搜 Claude、ChatGPT、Kimi、挂单号…" aria-label="搜索" />
-        <button type="submit">搜索</button>
-      </form>
-      <div class="header-actions">
-        <a
-          class="header-link"
-          href="/seller/publish"
-          title="发布闲置TOKEN"
-          @click.prevent="auth.loggedIn ? router.push('/seller/publish') : loginModal.show({ redirect: '/seller/publish' })"
-        >
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M8 8.5H7.2A2.2 2.2 0 0 0 5 10.7v6.1A2.2 2.2 0 0 0 7.2 19h9.6a2.2 2.2 0 0 0 2.2-2.2v-6.1a2.2 2.2 0 0 0-2.2-2.2H16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-            <path d="M9 8.5l1.1-2.2h3.8L15 8.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-            <circle cx="12" cy="13.2" r="2.4" stroke="currentColor" stroke-width="1.6" />
-          </svg>
-          <span>我要卖闲置<span class="sell-extra"> TOKEN</span></span>
-        </a>
-        <a v-if="auth.canConsole" class="header-link admin" href="/open-admin?to=/admin/dashboard" title="运营控制台">控制台</a>
+          <span class="mh-bell-dot" aria-hidden="true">3</span>
+        </button>
+
+        <a v-if="auth.canConsole" class="mh-admin" href="/open-admin?to=/admin/dashboard" title="运营控制台">控制台</a>
+
         <div v-if="auth.loggedIn" class="user-menu">
-          <button class="user-chip" type="button" :aria-expanded="false" aria-haspopup="menu">
-            <span class="avatar" aria-hidden="true">{{ initial }}</span>
-            <span class="uname">{{ auth.user?.email }}</span>
+          <button class="mh-user" type="button" aria-haspopup="menu">
+            <span class="mh-avatar" aria-hidden="true">{{ initial }}</span>
+            <span class="mh-uname">{{ displayName }}</span>
             <svg class="user-caret" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
               <path d="M3 4.5L6 7.5L9 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
             </svg>
           </button>
           <div class="user-menu-drop" role="menu">
             <RouterLink role="menuitem" to="/buyer/keys">买家中心</RouterLink>
+            <button role="menuitem" type="button" @click="goPublish">发布闲置</button>
             <button role="menuitem" type="button" @click="logout">退出登录</button>
           </div>
         </div>
-        <template v-else>
-          <button type="button" class="header-link" @click="loginModal.show({ redirect: route.fullPath })">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="8" r="3.25" stroke="currentColor" stroke-width="1.6" />
-              <path d="M5.5 19.25c.9-3.2 3.1-4.75 6.5-4.75s5.6 1.55 6.5 4.75" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-            </svg>
-            <span>登录</span>
-          </button>
-        </template>
+        <button v-else type="button" class="mh-login" @click="loginModal.show({ redirect: route.fullPath })">
+          登录
+        </button>
       </div>
     </div>
   </header>
