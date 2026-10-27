@@ -1,6 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+/**
+ * 检测策略：TablePageLayout + filter-grid + DataTable；策略列表 / 单个上游覆盖。
+ */
+import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
+import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import Select from '@/components/common/Select.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import Icon from '@/components/icons/Icon.vue'
+import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
+
+defineOptions({ name: 'MarketAdminPolicies' })
 
 type FlowPolicy = {
   enabled: boolean
@@ -70,6 +82,28 @@ const PLATFORM_LABEL: Record<string, string> = {
   opencode_go: 'OpenCode Go',
 }
 
+const ENABLED_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'true', label: '开' },
+  { value: 'false', label: '关' },
+]
+
+const SCHEDULED_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'true', label: '开' },
+  { value: 'false', label: '关' },
+]
+
+const AUTH_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'oauth', label: 'OAuth' },
+  { value: 'api_key', label: 'API Key' },
+  { value: 'cookie', label: 'Cookie' },
+  { value: 'coding', label: 'Coding' },
+  { value: '__all__', label: '全部接入（空）' },
+]
+
+const tab = ref<'policies' | 'upstream'>('policies')
 const policies = ref<Policy[]>([])
 const providers = ref<Provider[]>([])
 const vendors = ref<Vendor[]>([])
@@ -77,12 +111,23 @@ const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
 const msg = ref('')
-const keyword = ref('')
-const filterPlatform = ref('')
-const filterEnabled = ref('')
-const pageNum = ref(1)
-const pageSize = 15
-const tab = ref<'policies' | 'upstream'>('policies')
+
+const initQueryParams = {
+  pageNum: 1,
+  pageSize: 15,
+  keyword: '',
+  platform: '',
+  enabled: '',
+  scheduled: '',
+  auth_type: '',
+}
+const data = reactive({ queryParams: { ...initQueryParams } })
+const { queryParams } = toRefs(data)
+
+const platformFilterOptions = computed(() => [
+  { value: '', label: '全部' },
+  ...Object.entries(PLATFORM_LABEL).map(([value, label]) => ({ value, label })),
+])
 
 const editing = ref<Policy | null>(null)
 const showCreate = ref(false)
@@ -117,6 +162,19 @@ const override = reactive({
   reason: '',
 })
 const selectedFlows = ref<string[]>(['intelligence', 'degradation', 'identity'])
+
+const columns: Column[] = [
+  { key: 'serial', label: '序号', class: 'w-16' },
+  { key: 'platform', label: '厂商', class: 'col-platform' },
+  { key: 'auth_type', label: '接入', class: 'col-auth' },
+  { key: 'enabled', label: '检测', class: 'col-enabled' },
+  { key: 'scheduled', label: '定时', class: 'col-sched' },
+  { key: 'intelligence', label: '测智', class: 'col-flow' },
+  { key: 'degradation', label: '降智', class: 'col-flow' },
+  { key: 'identity', label: '身份', class: 'col-flow' },
+  { key: 'budget', label: '预算', class: 'col-budget' },
+  { key: 'actions', label: '操作', class: 'col-ops' },
+]
 
 function emptyFlow(enabled: boolean): FlowPolicy {
   return {
@@ -168,28 +226,61 @@ function flowSummary(p: Policy, flow: keyof DetectionFlows) {
 
 const filtered = computed(() => {
   let rows = policies.value
-  if (filterPlatform.value) rows = rows.filter((p) => p.platform === filterPlatform.value)
-  if (filterEnabled.value === 'true') rows = rows.filter((p) => p.enabled)
-  if (filterEnabled.value === 'false') rows = rows.filter((p) => !p.enabled)
-  const kw = keyword.value.trim().toLowerCase()
+  if (queryParams.value.platform) rows = rows.filter((p) => p.platform === queryParams.value.platform)
+  if (queryParams.value.enabled === 'true') rows = rows.filter((p) => p.enabled)
+  if (queryParams.value.enabled === 'false') rows = rows.filter((p) => !p.enabled)
+  if (queryParams.value.scheduled === 'true') rows = rows.filter((p) => p.scheduled_enabled)
+  if (queryParams.value.scheduled === 'false') rows = rows.filter((p) => !p.scheduled_enabled)
+  if (queryParams.value.auth_type === '__all__') rows = rows.filter((p) => !p.auth_type)
+  else if (queryParams.value.auth_type) rows = rows.filter((p) => p.auth_type === queryParams.value.auth_type)
+  const kw = queryParams.value.keyword.trim().toLowerCase()
   if (kw) {
     rows = rows.filter((p) =>
-      [p.platform, p.auth_type, p.default_grade].map((v) => String(v ?? '').toLowerCase()).some((s) => s.includes(kw)),
+      [p.platform, platLabel(p.platform), p.auth_type, p.default_grade]
+        .map((v) => String(v ?? '').toLowerCase())
+        .some((s) => s.includes(kw)),
     )
   }
   return rows
 })
 
 const total = computed(() => filtered.value.length)
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const pageRows = computed(() => {
-  const start = (pageNum.value - 1) * pageSize
-  return filtered.value.slice(start, start + pageSize)
+  const start = (queryParams.value.pageNum - 1) * queryParams.value.pageSize
+  return filtered.value.slice(start, start + queryParams.value.pageSize)
+})
+
+const allStats = computed(() => {
+  const all = policies.value
+  return {
+    total: all.length,
+    enabled: all.filter((p) => p.enabled).length,
+    scheduled: all.filter((p) => p.scheduled_enabled).length,
+  }
 })
 
 const createAuthTypes = computed(
   () => vendors.value.find((v) => v.platform === newAuth.platform)?.supported_auth_types ?? [],
 )
+
+watch(
+  () => [
+    queryParams.value.keyword,
+    queryParams.value.platform,
+    queryParams.value.enabled,
+    queryParams.value.scheduled,
+    queryParams.value.auth_type,
+    queryParams.value.pageSize,
+  ],
+  () => {
+    queryParams.value.pageNum = 1
+  },
+)
+
+watch(tab, () => {
+  error.value = ''
+  msg.value = ''
+})
 
 function platLabel(p: string) {
   return PLATFORM_LABEL[p] || p
@@ -210,6 +301,18 @@ function setModelsText(flow: FlowPolicy, text: string) {
     .map((s) => s.trim())
     .filter(Boolean)
     .map((model) => ({ model, expected_pass_rate: null }))
+}
+
+function getSerialNumber(index: number) {
+  return String((queryParams.value.pageNum - 1) * queryParams.value.pageSize + index + 1).padStart(2, '0')
+}
+
+function handleQuery() {
+  queryParams.value.pageNum = 1
+}
+
+function resetQuery() {
+  Object.assign(queryParams.value, { ...initQueryParams })
 }
 
 async function load() {
@@ -428,112 +531,175 @@ onMounted(load)
 </script>
 
 <template>
-  <section id="market-policies-page" class="y-page">
-    <header class="y-header">
-      <div>
-        <h2 class="y-title">{{ tab === 'policies' ? '检测策略' : '单个上游' }}</h2>
-        <p class="y-page-desc">
-          {{
-            tab === 'policies'
-              ? '控制测智 / 降智 / 身份核验流程与定时检测'
-              : '按上游覆盖策略，或手动排队检测'
-          }}
-        </p>
-      </div>
-      <div class="y-header-actions">
-        <button v-if="tab === 'policies'" type="button" class="y-btn" @click="showCreate = true">新建策略</button>
-        <button type="button" class="y-btn y-btn--ghost" :disabled="loading" @click="load">刷新</button>
-      </div>
-    </header>
+  <section id="market-policies-page" class="policies-shell">
+    <TablePageLayout>
+      <template #title>
+        <div class="page-heading">
+          <h2 class="y-title">{{ tab === 'policies' ? '检测策略' : '单个上游' }}</h2>
+          <p class="y-page-desc">
+            {{
+              tab === 'policies'
+                ? '控制测智 / 降智 / 身份核验流程与定时检测'
+                : '按上游覆盖策略，或手动排队检测'
+            }}
+          </p>
+        </div>
+      </template>
 
-    <nav class="y-tabs">
-      <button type="button" class="y-tab" :class="{ 'is-on': tab === 'policies' }" @click="tab = 'policies'">策略列表</button>
-      <button type="button" class="y-tab" :class="{ 'is-on': tab === 'upstream' }" @click="tab = 'upstream'">单个上游</button>
-    </nav>
+      <template #actions>
+        <button
+          v-if="tab === 'policies'"
+          type="button"
+          class="btn btn-primary page-action-btn"
+          @click="showCreate = true"
+        >
+          <Icon name="plus" size="sm" />
+          新建策略
+        </button>
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
+          <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
+          刷新
+        </button>
+      </template>
 
-    <div class="y-container--tight">
-      <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-      <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
+      <template #filters>
+        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
 
-      <template v-if="tab === 'policies'">
-        <div class="filter-grid">
-          <div class="filter-item">
-            <label class="filter-label">关键词</label>
-            <div class="relative flex-1 w-full">
-              <input
-                class="filter-input w-full"
-                v-model="keyword"
-                type="search"
-                placeholder="厂商 / 接入方式"
-                @keyup.enter="pageNum = 1"
-              />
+        <nav class="y-tabs mb-3">
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'policies' }" @click="tab = 'policies'">
+            策略列表
+          </button>
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'upstream' }" @click="tab = 'upstream'">
+            单个上游
+          </button>
+        </nav>
+
+        <template v-if="tab === 'policies'">
+          <div class="section-block">
+            <div class="section-title">基本信息</div>
+            <div class="stats-row">
+              <article class="stat-card stat-card--blue">
+                <div>
+                  <div class="stat-card__label">策略总数</div>
+                  <div class="stat-card__value">{{ allStats.total.toLocaleString() }}</div>
+                </div>
+              </article>
+              <article class="stat-card stat-card--green">
+                <div>
+                  <div class="stat-card__label">检测开启</div>
+                  <div class="stat-card__value">{{ allStats.enabled.toLocaleString() }}</div>
+                </div>
+              </article>
+              <article class="stat-card stat-card--orange">
+                <div>
+                  <div class="stat-card__label">定时开启</div>
+                  <div class="stat-card__value">{{ allStats.scheduled.toLocaleString() }}</div>
+                </div>
+              </article>
             </div>
           </div>
-          <div class="filter-item">
-            <label class="filter-label">厂商</label>
-            <select v-model="filterPlatform" class="filter-input flex-1" @change="pageNum = 1">
-              <option value="">厂商：全部</option>
-              <option v-for="(label, key) in PLATFORM_LABEL" :key="key" :value="key">{{ label }}</option>
-            </select>
-          </div>
-          <div class="filter-item">
-            <label class="filter-label">检测</label>
-            <select v-model="filterEnabled" class="filter-input flex-1" @change="pageNum = 1">
-              <option value="">检测：全部</option>
-              <option value="true">开</option>
-              <option value="false">关</option>
-            </select>
-          </div>
-          <div class="filter-actions lg:col-span-4">
-            <button
-              type="button"
-              class="btn btn-secondary"
-              @click="
-                keyword = '';
-                filterPlatform = '';
-                filterEnabled = '';
-                pageNum = 1
-              "
-            >
-              重置
-            </button>
-            <button type="button" class="btn btn-primary" @click="pageNum = 1">查询</button>
-          </div>
-        </div>
 
-        <p v-if="loading" class="y-msg">加载中…</p>
-        <div v-else-if="!pageRows.length" class="y-empty">没有符合条件的策略</div>
-        <table v-else>
-          <thead>
-            <tr>
-              <th>厂商</th>
-              <th>接入</th>
-              <th>检测</th>
-              <th>定时</th>
-              <th>测智</th>
-              <th>降智</th>
-              <th>身份</th>
-              <th>预算</th>
-              <th class="y-col-op">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in pageRows" :key="row.id">
-              <td>{{ platLabel(row.platform) }}</td>
-              <td>{{ row.auth_type || '全部' }}</td>
-              <td>
-                <span :class="row.enabled ? 'y-chip y-chip--ok' : 'y-chip'">{{ row.enabled ? '开' : '关' }}</span>
-              </td>
-              <td>
-                <span :class="row.scheduled_enabled ? 'y-chip y-chip--ok' : 'y-chip'">
-                  {{ row.scheduled_enabled ? '开' : '关' }}
-                </span>
-              </td>
-              <td>{{ flowSummary(row, 'intelligence') }}</td>
-              <td>{{ flowSummary(row, 'degradation') }}</td>
-              <td>{{ flowSummary(row, 'identity') }}</td>
-              <td>{{ row.daily_budget_usd }}</td>
-              <td class="y-col-op">
+          <div class="section-block mt-3">
+            <div class="section-title">策略信息</div>
+            <div class="filter-grid">
+              <div class="filter-item">
+                <label class="filter-label">关键词</label>
+                <div class="relative flex-1 w-full min-w-0">
+                  <input
+                    v-model="queryParams.keyword"
+                    class="filter-input w-full"
+                    type="search"
+                    placeholder="厂商 / 接入方式 / 等级"
+                    @keyup.enter="handleQuery"
+                  />
+                </div>
+              </div>
+              <div class="filter-item">
+                <label class="filter-label">厂商</label>
+                <Select
+                  v-model="queryParams.platform"
+                  class="flex-1 w-full min-w-0"
+                  size="sm"
+                  :options="platformFilterOptions"
+                />
+              </div>
+              <div class="filter-item">
+                <label class="filter-label">接入</label>
+                <Select
+                  v-model="queryParams.auth_type"
+                  class="flex-1 w-full min-w-0"
+                  size="sm"
+                  :options="AUTH_OPTIONS"
+                />
+              </div>
+              <div class="filter-item">
+                <label class="filter-label">检测</label>
+                <Select
+                  v-model="queryParams.enabled"
+                  class="flex-1 w-full min-w-0"
+                  size="sm"
+                  :options="ENABLED_OPTIONS"
+                />
+              </div>
+              <div class="filter-item">
+                <label class="filter-label">定时</label>
+                <Select
+                  v-model="queryParams.scheduled"
+                  class="flex-1 w-full min-w-0"
+                  size="sm"
+                  :options="SCHEDULED_OPTIONS"
+                />
+              </div>
+              <div class="filter-actions lg:col-span-4 sm:col-span-2">
+                <button type="button" class="btn btn-secondary" @click="resetQuery">
+                  <Icon name="refresh" size="sm" />
+                  重置
+                </button>
+                <button type="button" class="btn btn-primary" @click="handleQuery">
+                  <Icon name="search" size="sm" />
+                  搜索
+                </button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </template>
+
+      <template #table>
+        <template v-if="tab === 'policies'">
+          <DataTable
+            :columns="columns"
+            :data="pageRows"
+            :loading="loading"
+            :expandable-actions="false"
+          >
+            <template #cell-serial="{ row }">
+              {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
+            </template>
+            <template #cell-platform="{ row }">
+              <div>{{ platLabel(row.platform) }}</div>
+              <div class="row-sub">{{ row.platform }}</div>
+            </template>
+            <template #cell-auth_type="{ row }">{{ row.auth_type || '全部' }}</template>
+            <template #cell-enabled="{ row }">
+              <span class="status-cell">
+                <i class="status-dot" :data-tone="row.enabled ? 'ok' : 'idle'" />
+                {{ row.enabled ? '开' : '关' }}
+              </span>
+            </template>
+            <template #cell-scheduled="{ row }">
+              <span class="status-cell">
+                <i class="status-dot" :data-tone="row.scheduled_enabled ? 'ok' : 'idle'" />
+                {{ row.scheduled_enabled ? '开' : '关' }}
+              </span>
+            </template>
+            <template #cell-intelligence="{ row }">{{ flowSummary(row, 'intelligence') }}</template>
+            <template #cell-degradation="{ row }">{{ flowSummary(row, 'degradation') }}</template>
+            <template #cell-identity="{ row }">{{ flowSummary(row, 'identity') }}</template>
+            <template #cell-budget="{ row }">{{ row.daily_budget_usd }}</template>
+            <template #cell-actions="{ row }">
+              <div class="table-ops">
                 <button type="button" class="y-link" :disabled="busy" @click="quick(row, 'enabled')">
                   {{ row.enabled ? '关检测' : '开检测' }}
                 </button>
@@ -541,66 +707,79 @@ onMounted(load)
                   {{ row.scheduled_enabled ? '关定时' : '开定时' }}
                 </button>
                 <button type="button" class="y-link" @click="openEdit(row)">编辑</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <footer v-if="total > 0" class="y-footer">
-          <div class="y-pager">
-            <span>共 {{ total }} 条</span>
-            <button type="button" :disabled="pageNum <= 1" @click="pageNum -= 1">上一页</button>
-            <button type="button" class="is-on">{{ pageNum }} / {{ pageCount }}</button>
-            <button type="button" :disabled="pageNum >= pageCount" @click="pageNum += 1">下一页</button>
-          </div>
-        </footer>
-      </template>
+              </div>
+            </template>
+            <template #empty>
+              <EmptyState
+                title="暂无策略"
+                description="调整筛选条件后重试，或新建接入方式级策略"
+                action-text="新建策略"
+                @action="showCreate = true"
+              />
+            </template>
+          </DataTable>
+        </template>
 
-      <template v-else>
-        <div class="pay-form">
-          <label class="y-field">
-            <span>上游 ID</span>
-            <input v-model="override.upstream" class="input w-full" inputmode="numeric" placeholder="123" />
-          </label>
-          <label class="y-field">
-            <span>覆盖检测</span>
-            <select v-model="override.mode" class="input w-full">
-              <option value="on">强制开启</option>
-              <option value="off">强制关闭</option>
-            </select>
-          </label>
-          <label class="y-field">
-            <span>覆盖定时</span>
-            <select v-model="override.scheduled" class="input w-full">
-              <option value="">不覆盖</option>
-              <option value="on">开</option>
-              <option value="off">关</option>
-            </select>
-          </label>
-          <label class="y-field">
-            <span>过期时间（可选）</span>
-            <input v-model="override.expires" class="input w-full" type="datetime-local" />
-          </label>
-          <label class="y-field y-field--wide">
-            <span>原因</span>
-            <input v-model="override.reason" class="input w-full" />
-          </label>
-          <div class="y-field y-field--wide">
-            <span>手动检测流程</span>
-            <div class="auth-list">
-              <label v-for="f in ['intelligence', 'degradation', 'identity']" :key="f" class="y-check">
-                <input v-model="selectedFlows" type="checkbox" :value="f" />
-                {{ f === 'intelligence' ? '测智' : f === 'degradation' ? '降智' : '身份' }}
-              </label>
+        <template v-else>
+          <div class="pay-form">
+            <label class="y-field">
+              <span>上游 ID</span>
+              <input v-model="override.upstream" class="input w-full" inputmode="numeric" placeholder="123" />
+            </label>
+            <label class="y-field">
+              <span>覆盖检测</span>
+              <select v-model="override.mode" class="input w-full">
+                <option value="on">强制开启</option>
+                <option value="off">强制关闭</option>
+              </select>
+            </label>
+            <label class="y-field">
+              <span>覆盖定时</span>
+              <select v-model="override.scheduled" class="input w-full">
+                <option value="">不覆盖</option>
+                <option value="on">开</option>
+                <option value="off">关</option>
+              </select>
+            </label>
+            <label class="y-field">
+              <span>过期时间（可选）</span>
+              <input v-model="override.expires" class="input w-full" type="datetime-local" />
+            </label>
+            <label class="y-field y-field--wide">
+              <span>原因</span>
+              <input v-model="override.reason" class="input w-full" />
+            </label>
+            <div class="y-field y-field--wide">
+              <span>手动检测流程</span>
+              <div class="auth-list">
+                <label v-for="f in ['intelligence', 'degradation', 'identity']" :key="f" class="y-check">
+                  <input v-model="selectedFlows" type="checkbox" :value="f" />
+                  {{ f === 'intelligence' ? '测智' : f === 'degradation' ? '降智' : '身份' }}
+                </label>
+              </div>
+            </div>
+            <div class="pay-actions">
+              <button type="button" class="btn btn-secondary" :disabled="busy" @click="clearOverride">清除覆盖</button>
+              <button type="button" class="btn btn-secondary" :disabled="busy" @click="setOverride">设置覆盖</button>
+              <button type="button" class="btn btn-primary" :disabled="busy" @click="probe">排队检测</button>
             </div>
           </div>
-          <div class="pay-actions">
-            <button type="button" class="y-btn y-btn--ghost" :disabled="busy" @click="clearOverride">清除覆盖</button>
-            <button type="button" class="y-btn y-btn--ghost" :disabled="busy" @click="setOverride">设置覆盖</button>
-            <button type="button" class="y-btn" :disabled="busy" @click="probe">排队检测</button>
-          </div>
-        </div>
+        </template>
       </template>
-    </div>
+
+      <template #pagination>
+        <Pagination
+          v-if="tab === 'policies' && total > 0"
+          :total="total"
+          :page="queryParams.pageNum"
+          :page-size="queryParams.pageSize"
+          :page-size-options="[15, 20, 50]"
+          show-jump
+          @update:page="queryParams.pageNum = $event"
+          @update:page-size="queryParams.pageSize = $event"
+        />
+      </template>
+    </TablePageLayout>
 
     <div v-if="showCreate" class="y-modal-mask" @click.self="showCreate = false">
       <div class="y-modal" role="dialog" aria-label="新建策略">
@@ -625,8 +804,8 @@ onMounted(load)
           </label>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="showCreate = false">取消</button>
-          <button type="button" class="y-btn" :disabled="busy" @click="createAuthPolicy">创建</button>
+          <button type="button" class="btn btn-secondary" @click="showCreate = false">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="busy" @click="createAuthPolicy">创建</button>
         </footer>
       </div>
     </div>
@@ -708,8 +887,8 @@ onMounted(load)
           </label>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="closeModal">取消</button>
-          <button type="button" class="y-btn" :disabled="busy" @click="save">保存</button>
+          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
         </footer>
       </div>
     </div>
@@ -717,11 +896,118 @@ onMounted(load)
 </template>
 
 <style scoped>
-.y-header-actions {
+#market-policies-page.policies-shell {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
+
+.page-heading {
+  min-width: 0;
+}
+
+.page-action-btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-block {
+  min-width: 0;
+}
+
+.section-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--color-text-primary, #262626);
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stat-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: #f8fafc;
+}
+
+.stat-card--blue {
+  background: linear-gradient(135deg, #eff6ff, #f8fafc);
+}
+.stat-card--green {
+  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
+}
+.stat-card--orange {
+  background: linear-gradient(135deg, #fff7ed, #f8fafc);
+}
+
+.stat-card__label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.stat-card__value {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.table-ops {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  min-width: max-content;
+}
+
+.row-sub {
+  margin-top: 2px;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.status-dot[data-tone='ok'] {
+  background: #16a34a;
+}
+.status-dot[data-tone='idle'] {
+  background: #94a3b8;
+}
+
 .pay-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
@@ -786,6 +1072,66 @@ onMounted(load)
   align-items: center;
   margin-bottom: 6px;
 }
+
+#market-policies-page :deep(.filter-grid .select-trigger),
+#market-policies-page :deep(.filter-grid .select-trigger-sm),
+#market-policies-page :deep(.filter-grid .filter-input) {
+  height: 32px;
+  min-height: 32px;
+}
+
+#market-policies-page :deep(.table-scroll-container table thead th) {
+  background: #f5f7fa;
+  color: #606266;
+  font-weight: 500;
+  font-size: 13px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+#market-policies-page :deep(.table-scroll-container table tbody td) {
+  border-bottom: 1px solid #ebeef5;
+  font-size: 13px;
+  color: #303133;
+}
+
+#market-policies-page :deep(.table-scroll-container table tbody tr:hover td) {
+  background: #f5f7fa;
+}
+
+#market-policies-page :deep(th.col-platform),
+#market-policies-page :deep(td.col-platform) {
+  min-width: 8rem;
+}
+#market-policies-page :deep(th.col-auth),
+#market-policies-page :deep(td.col-auth),
+#market-policies-page :deep(th.col-enabled),
+#market-policies-page :deep(td.col-enabled),
+#market-policies-page :deep(th.col-sched),
+#market-policies-page :deep(td.col-sched),
+#market-policies-page :deep(th.col-budget),
+#market-policies-page :deep(td.col-budget) {
+  min-width: 5rem;
+}
+#market-policies-page :deep(th.col-flow),
+#market-policies-page :deep(td.col-flow) {
+  min-width: 7rem;
+}
+#market-policies-page :deep(th.col-ops),
+#market-policies-page :deep(td.col-ops) {
+  min-width: 14rem;
+  width: 14rem;
+  box-sizing: border-box;
+}
+#market-policies-page :deep(thead th.col-ops) {
+  background: #f5f7fa !important;
+}
+#market-policies-page :deep(tbody td.col-ops) {
+  background: #fff !important;
+}
+#market-policies-page :deep(tbody tr:hover td.col-ops) {
+  background: #f5f7fa !important;
+}
+
 .y-modal-mask {
   position: fixed;
   inset: 0;
@@ -838,7 +1184,11 @@ onMounted(load)
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
 }
-@media (max-width: 800px) {
+
+@media (max-width: 900px) {
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
   .y-field-row--4 {
     grid-template-columns: 1fr 1fr;
   }

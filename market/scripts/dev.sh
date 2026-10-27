@@ -54,6 +54,18 @@ ensure_db() {
   [[ "$exists" == "1" ]] || docker exec tm-test-pg psql -U tm -d tm -qc "CREATE DATABASE $1"
 }
 
+# 后台拉起进程；Linux 用 setsid 脱进程组，macOS 回退 nohup
+launch_bg() {
+  local log=$1
+  shift
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "$@" >"$log" 2>&1 </dev/null &
+  else
+    nohup "$@" >"$log" 2>&1 </dev/null &
+  fi
+  echo $!
+}
+
 start() { # name, command...
   local name=$1
   shift
@@ -61,8 +73,7 @@ start() { # name, command...
     echo "  $name 已在运行"
     return
   fi
-  nohup "$@" >"$DATA/$name.log" 2>&1 &
-  echo $! >"$DATA/$name.pid"
+  launch_bg "$DATA/$name.log" "$@" >"$DATA/$name.pid"
   echo "  $name 已启动（日志 data/dev/$name.log）"
 }
 
@@ -121,8 +132,7 @@ start_real_engine() {
     export TM_SUB2API_BASE_URL="$ENGINE"
     export TM_SUB2API_REPLICA_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
     [[ -n "$admin_key" ]] && export TM_SUB2API_ADMIN_API_KEY="$admin_key"
-    nohup "$ROOT/bin/sub2api" >"$sdata/server.log" 2>&1 &
-    echo $! >"$sdata/server.pid"
+    launch_bg "$sdata/server.log" "$ROOT/bin/sub2api" >"$sdata/server.pid"
   )
   wait_http "${ENGINE}/health"
   # 首次无 key 时：生成后带 TM_* 再启一次，保证 outbound / relay 可用
@@ -144,8 +154,7 @@ start_real_engine() {
       export TM_SUB2API_BASE_URL="$ENGINE"
       export TM_SUB2API_ADMIN_API_KEY="$admin_key"
       export TM_SUB2API_REPLICA_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
-      nohup "$ROOT/bin/sub2api" >"$sdata/server.log" 2>&1 &
-      echo $! >"$sdata/server.pid"
+      launch_bg "$sdata/server.log" "$ROOT/bin/sub2api" >"$sdata/server.pid"
     )
     wait_http "${ENGINE}/health"
   fi
@@ -177,8 +186,17 @@ market_env() {
 
 build_frontends() {
   echo "构建前端（闲猫 SPA + 引擎 SPA）…"
+  if [[ "${SKIP_FRONTEND_BUILD:-0}" == "1" ]]; then
+    [[ -f web/dist/index.html ]] || { echo "SKIP_FRONTEND_BUILD=1 但缺少 web/dist" >&2; exit 1; }
+    [[ -f engine-dist/index.html ]] || echo "  提示：缺少 engine-dist，管理端页可能不可用"
+    echo "  跳过构建，复用已有 dist"
+    return
+  fi
   if [[ -d web/node_modules ]]; then
-    (cd web && node node_modules/vite/bin/vite.js build) >/dev/null
+    if ! (cd web && node node_modules/vite/bin/vite.js build) >/dev/null; then
+      [[ -f web/dist/index.html ]] || { echo "web 构建失败且无可用 dist" >&2; exit 1; }
+      echo "  web 构建失败，复用已有 dist"
+    fi
   elif [[ -f web/dist/index.html ]]; then
     echo "  复用已有 web/dist"
   else
@@ -186,7 +204,10 @@ build_frontends() {
     exit 1
   fi
   if [[ -d "$FRONTEND_DIR/node_modules" ]]; then
-    (cd "$FRONTEND_DIR" && VITE_ENGINE_HOST=1 VITE_API_BASE_URL=/api/v1 node node_modules/vite/bin/vite.js build) >/dev/null
+    if ! (cd "$FRONTEND_DIR" && VITE_ENGINE_HOST=1 VITE_API_BASE_URL=/api/v1 node node_modules/vite/bin/vite.js build) >/dev/null; then
+      [[ -f engine-dist/index.html ]] || echo "  引擎 SPA 构建失败且无 engine-dist"
+      echo "  引擎 SPA 构建失败，复用已有 dist（若有）"
+    fi
   elif [[ -f engine-dist/index.html ]]; then
     echo "  复用已有 engine-dist"
   else
@@ -202,6 +223,24 @@ api() { # method path [json]
   fi
 }
 
+# 幂等种子写入：201/200 成功；409 视为已存在；其它码重试
+api_upsert() {
+  local method=$1 path=$2 body=$3
+  local i code
+  for i in $(seq 1 30); do
+    code="$(curl -sS -o /tmp/tm-dev-api.json -w '%{http_code}' -X "$method" "$API$path" \
+      -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$body" || true)"
+    case "$code" in
+      200|201|204) return 0 ;;
+      409) return 0 ;;
+      503) sleep 1 ;;
+      *) sleep 1 ;;
+    esac
+  done
+  echo "api_upsert 失败 $method $path → HTTP ${code:-err}: $(head -c 200 /tmp/tm-dev-api.json 2>/dev/null)" >&2
+  return 1
+}
+
 login_as() {
   TOKEN="$(curl -fsS -X POST "$API/api/auth/login" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$1\",\"password\":\"$2\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["access_token"])')"
@@ -210,22 +249,25 @@ login_as() {
 seed() {
   [[ -f "$DATA/seeded" ]] && return
   echo "写入演示数据…"
-  TOKEN="$(curl -fsS -X POST "$API/api/auth/login" -H 'Content-Type: application/json' \
-    -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | sed -E 's/.*"token":"([^"]+)".*/\1/')"
+  login_as "$ADMIN_EMAIL" "$ADMIN_PASSWORD"
   # 等 worker 完成首次兼容自检，之前对 sub2api 的写入会被拒绝（安全模式）
-  for _ in $(seq 1 60); do
-    api GET /api/admin/sub2api/status | grep -q '"guard_state":"normal"' && break
+  for _ in $(seq 1 90); do
+    if api GET /api/admin/sub2api/status | grep -q '"guard_state":"normal"'; then
+      # status 切到 normal 与写通道真正放开之间可能还有一瞬间 503
+      sleep 2
+      break
+    fi
     sleep 1
   done
   for p in anthropic openai gemini antigravity grok kimi zhipu minimax opencode_go; do
-    api PUT "/api/admin/vendors/$p" '{"enabled":true}' >/dev/null
+    api_upsert PUT "/api/admin/vendors/$p" '{"enabled":true}'
   done
   for i in $(seq 1 16); do
-    api POST /api/admin/proxies "{\"name\":\"dev-proxy-$i\",\"protocol\":\"socks5\",\"host\":\"10.255.0.$i\",\"port\":1080,\"region\":\"dev\"}" >/dev/null
+    api_upsert POST /api/admin/proxies "{\"name\":\"dev-proxy-$i\",\"protocol\":\"socks5\",\"host\":\"10.255.0.$i\",\"port\":1080,\"region\":\"dev\"}"
   done
-  api POST /api/admin/pools '{"name":"tm-pool-claude","platform":"anthropic","sell_multiplier":0.8}' >/dev/null
-  api POST /api/admin/pools '{"name":"tm-pool-gpt","platform":"openai","sell_multiplier":0.7}' >/dev/null
-  api POST /api/admin/pools '{"name":"tm-pool-all","platform":"composite","sell_multiplier":0.9}' >/dev/null
+  api_upsert POST /api/admin/pools '{"name":"tm-pool-claude","platform":"anthropic","sell_multiplier":0.8}'
+  api_upsert POST /api/admin/pools '{"name":"tm-pool-gpt","platform":"openai","sell_multiplier":0.7}'
+  api_upsert POST /api/admin/pools '{"name":"tm-pool-all","platform":"composite","sell_multiplier":0.9}'
   # 替身只会回答"口令题"：把内置题库下线，换成测智口令题，让上架检测能在本地通过。
   # 测智按题目判定至少需要 20 道可计分题，这里放 24 道。
   for id in $(api GET '/api/admin/probe-items?status=active' | grep -o '"id":[0-9]*' | cut -d: -f2); do
@@ -253,21 +295,34 @@ seed_accounts() {
     [[ "${synced:-0}" -ge 1 ]] && break
     sleep 1
   done
-  curl -fsS -X POST "$API/api/auth/register" -H 'Content-Type: application/json' \
-    -d "{\"email\":\"$SELLER_EMAIL\",\"password\":\"$SELLER_PASSWORD\"}" >/dev/null || true
-  curl -fsS -X POST "$API/api/auth/register" -H 'Content-Type: application/json' \
-    -d "{\"email\":\"$BUYER_EMAIL\",\"password\":\"$BUYER_PASSWORD\"}" >/dev/null || true
+  curl -sS -o /dev/null -X POST "$API/api/auth/register" -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$SELLER_EMAIL\",\"password\":\"$SELLER_PASSWORD\"}" || true
+  curl -sS -o /dev/null -X POST "$API/api/auth/register" -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$BUYER_EMAIL\",\"password\":\"$BUYER_PASSWORD\"}" || true
   login_as "$SELLER_EMAIL" "$SELLER_PASSWORD"
   local i=0
   for platform in anthropic openai; do
     i=$((i + 1))
-    local body id start state
-    body="$(api POST /api/seller/upstreams "{\"platform\":\"$platform\",\"auth_type\":\"oauth\"}")"
-    id="$(printf '%s' "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["id"])')"
-    start="$(api POST "/api/seller/upstreams/$id/oauth/start" '{}')"
-    state="$(printf '%s' "$start" | python3 -c 'import sys,json,urllib.parse; u=json.load(sys.stdin)["data"]["auth_url"]; print(urllib.parse.parse_qs(urllib.parse.urlparse(u).query).get("state",[""])[0])')"
-    api POST "/api/seller/upstreams/$id/oauth/complete" \
-      "{\"code\":\"https://cb.dev/callback?code=demo-$platform-$i&state=$state\"}" >/dev/null
+    local body id start state code
+    # 真实引擎下 OAuth 演示码可能不可用；失败不阻断环境启动
+    body="$(curl -sS -X POST "$API/api/seller/upstreams" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+      -d "{\"platform\":\"$platform\",\"auth_type\":\"oauth\"}" || true)"
+    id="$(printf '%s' "$body" | python3 -c 'import sys,json
+try:
+ d=json.load(sys.stdin); print((d.get("data") or {}).get("id") or "")
+except Exception:
+ print("")' 2>/dev/null || true)"
+    [[ -n "$id" ]] || { echo "  跳过 $platform 上游演示接入（创建失败）"; continue; }
+    start="$(curl -sS -X POST "$API/api/seller/upstreams/$id/oauth/start" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}' || true)"
+    state="$(printf '%s' "$start" | python3 -c 'import sys,json,urllib.parse
+try:
+ u=json.load(sys.stdin)["data"]["auth_url"]; print(urllib.parse.parse_qs(urllib.parse.urlparse(u).query).get("state",[""])[0])
+except Exception:
+ print("")' 2>/dev/null || true)"
+    code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API/api/seller/upstreams/$id/oauth/complete" \
+      -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+      -d "{\"code\":\"https://cb.dev/callback?code=demo-$platform-$i&state=$state\"}" || true)"
+    [[ "$code" == "200" || "$code" == "201" ]] || echo "  跳过 $platform OAuth 演示完成（HTTP $code）"
   done
   # 等出站把账号落到替身，供给融合页才能显示 linked
   login_admin
@@ -357,7 +412,7 @@ up() {
   卖家                 $SELLER_EMAIL / $SELLER_PASSWORD
   买家                 $BUYER_EMAIL / $BUYER_PASSWORD
 
-  sub2api 引擎  ${TM_SUB2API_BASE_URL}（USE_REAL_ENGINE=$USE_REAL_ENGINE）
+  sub2api 引擎  ${TM_SUB2API_BASE_URL:-$ENGINE} (USE_REAL_ENGINE=${USE_REAL_ENGINE:-1})
   第三方替身    ${THIRDPARTY}
 INFO
 }

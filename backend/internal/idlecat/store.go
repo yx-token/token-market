@@ -136,7 +136,11 @@ func (s *Store) ListVendors(ctx context.Context) ([]Vendor, error) {
 // FusedAccount 闲猫上游 × 引擎账号。
 type FusedAccount struct {
 	UpstreamID      int64    `json:"upstream_id,omitempty"`
+	UpstreamCode    string   `json:"upstream_code,omitempty"`
+	UpstreamName    string   `json:"upstream_name,omitempty"`
+	AccountEmail    string   `json:"account_email,omitempty"`
 	SellerID        int64    `json:"seller_id,omitempty"`
+	SellerEmail     string   `json:"seller_email,omitempty"`
 	Platform        string   `json:"platform"`
 	MarketStatus    string   `json:"market_status"`
 	Health          string   `json:"health,omitempty"`
@@ -148,6 +152,7 @@ type FusedAccount struct {
 	RateMultiplier  *float64 `json:"rate_multiplier,omitempty"`
 	Concurrency     *int     `json:"concurrency,omitempty"`
 	Linked          bool     `json:"linked"`
+	LinkState       string   `json:"link_state,omitempty"`
 }
 
 type engineAccount struct {
@@ -162,22 +167,26 @@ type engineAccount struct {
 
 func (s *Store) ListSupplyAccounts(ctx context.Context) ([]FusedAccount, error) {
 	rows, err := s.Market.QueryContext(ctx, `
-		SELECT id, seller_id, platform, status, health, grade, sub2api_account_id
-		FROM upstreams WHERE status <> 'removed' ORDER BY id DESC LIMIT 500`)
+		SELECT u.id, COALESCE(u.code, ''), COALESCE(u.name, ''), COALESCE(u.account_email, ''),
+			u.seller_id, COALESCE(usr.email, ''), u.platform, u.status, u.health, u.grade, u.sub2api_account_id
+		FROM upstreams u
+		LEFT JOIN users usr ON usr.id = u.seller_id
+		WHERE u.status <> 'removed' ORDER BY u.id DESC LIMIT 500`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	type up struct {
-		ID, SellerID             int64
-		Platform, Status, Health string
-		Grade                    sql.NullString
-		EngineID                 sql.NullInt64
+		ID, SellerID                           int64
+		Code, Name, AccountEmail, SellerEmail  string
+		Platform, Status, Health               string
+		Grade                                  sql.NullString
+		EngineID                               sql.NullInt64
 	}
 	var ups []up
 	for rows.Next() {
 		var u up
-		if err := rows.Scan(&u.ID, &u.SellerID, &u.Platform, &u.Status, &u.Health, &u.Grade, &u.EngineID); err != nil {
+		if err := rows.Scan(&u.ID, &u.Code, &u.Name, &u.AccountEmail, &u.SellerID, &u.SellerEmail, &u.Platform, &u.Status, &u.Health, &u.Grade, &u.EngineID); err != nil {
 			return nil, err
 		}
 		ups = append(ups, u)
@@ -197,8 +206,9 @@ func (s *Store) ListSupplyAccounts(ctx context.Context) ([]FusedAccount, error) 
 	out := make([]FusedAccount, 0, len(ups)+len(engines))
 	for _, u := range ups {
 		row := FusedAccount{
-			UpstreamID: u.ID, SellerID: u.SellerID, Platform: u.Platform,
-			MarketStatus: u.Status, Health: u.Health, Linked: true,
+			UpstreamID: u.ID, UpstreamCode: u.Code, UpstreamName: u.Name, AccountEmail: u.AccountEmail,
+			SellerID: u.SellerID, SellerEmail: u.SellerEmail, Platform: u.Platform,
+			MarketStatus: u.Status, Health: u.Health, LinkState: "unbound",
 		}
 		if u.Grade.Valid {
 			g := u.Grade.String
@@ -210,8 +220,11 @@ func (s *Store) ListSupplyAccounts(ctx context.Context) ([]FusedAccount, error) 
 			if a, ok := byID[id]; ok {
 				fillAccount(&row, a)
 				used[id] = true
+				row.Linked = true
+				row.LinkState = "linked"
 			} else {
 				row.EngineStatus = "未同步"
+				row.LinkState = "orphan"
 			}
 		}
 		out = append(out, row)
@@ -220,7 +233,7 @@ func (s *Store) ListSupplyAccounts(ctx context.Context) ([]FusedAccount, error) 
 		if used[a.ID] {
 			continue
 		}
-		row := FusedAccount{Platform: a.Platform, MarketStatus: "仅引擎", Linked: false}
+		row := FusedAccount{Platform: a.Platform, MarketStatus: "仅引擎", Linked: false, LinkState: "engine_only"}
 		fillAccount(&row, a)
 		out = append(out, row)
 	}

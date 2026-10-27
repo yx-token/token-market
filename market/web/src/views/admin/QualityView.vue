@@ -146,6 +146,7 @@ async function resolve(a: Appeal, action: string) {
       row-key="id"
       empty="没有符合条件的申诉"
     >
+      <template #cell-seller_id="{ row }">{{ row.seller_email?.trim() || '—' }}</template>
       <template #cell-reason="{ row }"><span class="block max-w-xs truncate" :title="row.reason">{{ row.reason }}</span></template>
       <template #cell-status="{ row }"><StatusBadge kind="appealStatus" :value="row.status" /></template>
       <template #cell-created_at="{ row }">{{ dateTime(row.created_at) }}</template>

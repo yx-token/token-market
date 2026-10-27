@@ -1,10 +1,24 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+/**
+ * 卖家代理：TablePageLayout + filter-grid + DataTable；卖家显示邮箱，字段分列。
+ */
+import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
+import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import Select from '@/components/common/Select.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import Icon from '@/components/icons/Icon.vue'
+import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
+import { sellerAccount, sellerFilterLabel } from './sellerDisplay'
+
+defineOptions({ name: 'MarketAdminProxies' })
 
 interface ProxyRow {
   id: number
   seller_id?: number | null
+  seller_email?: string
   name: string
   protocol: string
   host: string
@@ -22,22 +36,62 @@ interface ProxyRow {
 }
 
 const STATUS_OPTIONS = [
-  { value: 'ready', text: '就绪' },
-  { value: 'disabled', text: '停用' },
-  { value: 'error', text: '异常' },
-  { value: 'pending', text: '待同步' },
+  { value: '', label: '全部' },
+  { value: 'ready', label: '就绪' },
+  { value: 'disabled', label: '停用' },
+  { value: 'error', label: '异常' },
+  { value: 'pending', label: '待同步' },
 ]
+
+const OWNER_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'platform', label: '平台' },
+  { value: 'seller', label: '卖家' },
+]
+
+const BIND_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'bound', label: '已绑定上游' },
+  { value: 'unbound', label: '未绑定' },
+]
+
+const PROTOCOL_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'socks5', label: 'socks5' },
+  { value: 'socks5h', label: 'socks5h' },
+  { value: 'http', label: 'http' },
+  { value: 'https', label: 'https' },
+]
+
+const STATUS_LABEL: Record<string, string> = {
+  ready: '就绪',
+  disabled: '停用',
+  error: '异常',
+  pending: '待同步',
+}
+
+const initQueryParams = {
+  pageNum: 1,
+  pageSize: 15,
+  keyword: '',
+  status: '',
+  owner: '',
+  seller_id: '',
+  bind: '',
+  protocol: '',
+  region: '',
+}
+
+const data = reactive({
+  queryParams: { ...initQueryParams },
+})
+const { queryParams } = toRefs(data)
 
 const rows = ref<ProxyRow[]>([])
 const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
 const msg = ref('')
-const keyword = ref('')
-const filterStatus = ref('')
-const filterOwner = ref('')
-const pageNum = ref(1)
-const pageSize = 15
 const checking = ref<{ id: number; quality: boolean } | null>(null)
 
 const show = ref(false)
@@ -51,6 +105,20 @@ const form = reactive({
   region: '',
 })
 
+const columns: Column[] = [
+  { key: 'serial', label: '序号', class: 'w-16' },
+  { key: 'name', label: '名称', class: 'col-name' },
+  { key: 'endpoint', label: '地址', class: 'col-endpoint' },
+  { key: 'owner', label: '来源/卖家', class: 'col-owner' },
+  { key: 'region', label: '地区', class: 'col-region' },
+  { key: 'connection', label: '连接', class: 'col-conn' },
+  { key: 'quality', label: '质量', class: 'col-quality' },
+  { key: 'status', label: '状态', class: 'col-status' },
+  { key: 'bind', label: '绑定', class: 'col-bind' },
+  { key: 'created_at', label: '创建时间', class: 'col-time' },
+  { key: 'actions', label: '操作', class: 'col-ops' },
+]
+
 const valid = computed(
   () =>
     !!form.name.trim() &&
@@ -60,15 +128,51 @@ const valid = computed(
     Number(form.port) <= 65535,
 )
 
+const sellerFilterOptions = computed(() => {
+  const map = new Map<string, string>()
+  for (const r of rows.value) {
+    const sid = String(r.seller_id || '').trim()
+    if (!sid || map.has(sid)) continue
+    map.set(sid, sellerFilterLabel(r.seller_email, r.seller_id))
+  }
+  return [
+    { value: '', label: '全部' },
+    ...[...map.entries()]
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([value, label]) => ({ value, label })),
+  ]
+})
+
+const regionFilterOptions = computed(() => {
+  const set = new Set<string>()
+  for (const r of rows.value) {
+    const region = String(r.region || '').trim()
+    if (region) set.add(region)
+  }
+  return [
+    { value: '', label: '全部' },
+    ...[...set].sort().map((value) => ({ value, label: value })),
+  ]
+})
+
 const filtered = computed(() => {
   let list = rows.value
-  if (filterStatus.value) list = list.filter((p) => p.status === filterStatus.value)
-  if (filterOwner.value === 'platform') list = list.filter((p) => !p.seller_id)
-  if (filterOwner.value === 'seller') list = list.filter((p) => !!p.seller_id)
-  const kw = keyword.value.trim().toLowerCase()
+  if (queryParams.value.status) list = list.filter((p) => p.status === queryParams.value.status)
+  if (queryParams.value.owner === 'platform') list = list.filter((p) => !p.seller_id)
+  if (queryParams.value.owner === 'seller') list = list.filter((p) => !!p.seller_id)
+  if (queryParams.value.seller_id) {
+    list = list.filter((p) => String(p.seller_id || '') === queryParams.value.seller_id)
+  }
+  if (queryParams.value.bind === 'bound') list = list.filter((p) => !!p.assigned_upstream_id)
+  if (queryParams.value.bind === 'unbound') list = list.filter((p) => !p.assigned_upstream_id)
+  if (queryParams.value.protocol) list = list.filter((p) => p.protocol === queryParams.value.protocol)
+  if (queryParams.value.region) {
+    list = list.filter((p) => String(p.region || '').trim() === queryParams.value.region)
+  }
+  const kw = queryParams.value.keyword.trim().toLowerCase()
   if (kw) {
     list = list.filter((p) =>
-      [p.id, p.name, p.host, p.region, p.seller_id, p.assigned_upstream_id]
+      [p.id, p.name, p.host, p.region, p.seller_id, p.seller_email, p.protocol, p.assigned_upstream_id]
         .map((v) => String(v ?? '').toLowerCase())
         .some((s) => s.includes(kw)),
     )
@@ -77,11 +181,36 @@ const filtered = computed(() => {
 })
 
 const total = computed(() => filtered.value.length)
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const pageRows = computed(() => {
-  const start = (pageNum.value - 1) * pageSize
-  return filtered.value.slice(start, start + pageSize)
+  const start = (queryParams.value.pageNum - 1) * queryParams.value.pageSize
+  return filtered.value.slice(start, start + queryParams.value.pageSize)
 })
+
+const allStats = computed(() => {
+  const all = rows.value
+  return {
+    total: all.length,
+    ready: all.filter((p) => p.status === 'ready').length,
+    seller: all.filter((p) => !!p.seller_id).length,
+    unbound: all.filter((p) => !p.assigned_upstream_id).length,
+  }
+})
+
+watch(
+  () => [
+    queryParams.value.keyword,
+    queryParams.value.status,
+    queryParams.value.owner,
+    queryParams.value.seller_id,
+    queryParams.value.bind,
+    queryParams.value.protocol,
+    queryParams.value.region,
+    queryParams.value.pageSize,
+  ],
+  () => {
+    queryParams.value.pageNum = 1
+  },
+)
 
 function endpoint(p: ProxyRow) {
   const host = p.host.includes(':') ? `[${p.host}]` : p.host
@@ -91,7 +220,61 @@ function endpoint(p: ProxyRow) {
 function fmtTime(v?: string) {
   if (!v) return '—'
   const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleString()
+  if (Number.isNaN(d.getTime())) return v
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function statusLabel(s: string) {
+  return STATUS_LABEL[s] || s || '—'
+}
+
+function statusTone(s: string) {
+  if (s === 'ready') return 'ok'
+  if (s === 'error') return 'err'
+  if (s === 'disabled') return 'idle'
+  return 'progress'
+}
+
+function ownerLabel(p: ProxyRow) {
+  if (!p.seller_id) return '平台'
+  return sellerAccount(p.seller_email, p.seller_id)
+}
+
+function exitIp(p: ProxyRow) {
+  if (
+    p.quality_checked_at &&
+    (!p.connection_checked_at || p.quality_checked_at > p.connection_checked_at)
+  ) {
+    return p.quality_report?.exit_ip || ''
+  }
+  return p.connection_report?.ip_address || ''
+}
+
+function connectionText(p: ProxyRow) {
+  if (!p.connection_report) return '未检测'
+  if (p.connection_report.success) return `${p.connection_report.latency_ms ?? '—'} ms`
+  return '失败'
+}
+
+function qualityText(p: ProxyRow) {
+  if (!p.quality_report) return '未检测'
+  const grade = p.quality_report.grade || '—'
+  const score = p.quality_report.score
+  return score == null ? grade : `${grade} · ${score} 分`
+}
+
+function getSerialNumber(index: number) {
+  const n = (queryParams.value.pageNum - 1) * queryParams.value.pageSize + index + 1
+  return String(n).padStart(2, '0')
+}
+
+function handleQuery() {
+  queryParams.value.pageNum = 1
+}
+
+function resetQuery() {
+  Object.assign(queryParams.value, { ...initQueryParams })
 }
 
 async function load() {
@@ -173,7 +356,7 @@ function sync(p: ProxyRow) {
 async function check(p: ProxyRow, quality: boolean) {
   if (busy.value) return
   checking.value = { id: p.id, quality }
-  const ok = await run(
+  await run(
     quality ? `代理 ${p.name} 质量检测完成` : `代理 ${p.name} 连接检测完成`,
     () =>
       marketSend(
@@ -182,131 +365,188 @@ async function check(p: ProxyRow, quality: boolean) {
       ),
   )
   checking.value = null
-  if (!ok) return
-}
-
-function resetFilters() {
-  keyword.value = ''
-  filterStatus.value = ''
-  filterOwner.value = ''
-  pageNum.value = 1
 }
 
 onMounted(load)
 </script>
 
 <template>
-  <section id="market-proxies-page" class="y-page">
-    <header class="y-header">
-      <div>
-        <h2 class="y-title">代理 IP</h2>
-        <p class="y-page-desc">管理平台库存与卖家代理；账号独占绑定，移除后释放</p>
-      </div>
-      <div class="y-header-actions">
-        <button type="button" class="y-btn" :disabled="busy" @click="openCreate">添加代理</button>
-        <button type="button" class="y-btn y-btn--ghost" :disabled="loading" @click="load">刷新</button>
-      </div>
-    </header>
+  <section id="market-proxies-page" class="proxies-shell">
+    <TablePageLayout>
+      <template #title>
+        <div class="page-heading">
+          <h2 class="y-title">卖家代理</h2>
+          <p class="y-page-desc">管理平台库存与卖家代理；账号独占绑定，移除后释放</p>
+        </div>
+      </template>
 
-    <div class="y-container--tight">
-      <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-      <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
-      <p v-if="checking" class="y-msg">
-        正在{{ checking.quality ? '检测代理质量（可能 1–3 分钟）' : '检测连通性和出口地区' }}…
-      </p>
+      <template #actions>
+        <button type="button" class="btn btn-primary page-action-btn" :disabled="busy" @click="openCreate">
+          <Icon name="plus" size="sm" />
+          添加代理
+        </button>
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
+          <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
+          刷新
+        </button>
+      </template>
 
-      <div class="filter-grid">
-        <div class="filter-item">
-          <label class="filter-label">关键词</label>
-          <div class="relative flex-1 w-full">
-            <input
-              class="filter-input w-full"
-              v-model="keyword"
-              type="search"
-              placeholder="名称 / IP / 地区"
-              @keyup.enter="pageNum = 1"
-            />
+      <template #filters>
+        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <p v-if="checking" class="y-msg mb-2">
+          正在{{ checking.quality ? '检测代理质量（可能 1–3 分钟）' : '检测连通性和出口地区' }}…
+        </p>
+
+        <div class="section-block">
+          <div class="section-title">基本信息</div>
+          <div class="stats-row">
+            <article class="stat-card stat-card--blue">
+              <div>
+                <div class="stat-card__label">代理总数</div>
+                <div class="stat-card__value">{{ allStats.total.toLocaleString() }}</div>
+              </div>
+            </article>
+            <article class="stat-card stat-card--green">
+              <div>
+                <div class="stat-card__label">就绪</div>
+                <div class="stat-card__value">{{ allStats.ready.toLocaleString() }}</div>
+              </div>
+            </article>
+            <article class="stat-card stat-card--cyan">
+              <div>
+                <div class="stat-card__label">卖家代理</div>
+                <div class="stat-card__value">{{ allStats.seller.toLocaleString() }}</div>
+              </div>
+            </article>
+            <article class="stat-card stat-card--orange">
+              <div>
+                <div class="stat-card__label">未绑定</div>
+                <div class="stat-card__value">{{ allStats.unbound.toLocaleString() }}</div>
+              </div>
+            </article>
           </div>
         </div>
-        <div class="filter-item">
-          <label class="filter-label">状态</label>
-          <select v-model="filterStatus" class="filter-input flex-1" @change="pageNum = 1">
-            <option value="">状态：全部</option>
-            <option v-for="o in STATUS_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
-          </select>
-        </div>
-        <div class="filter-item">
-          <label class="filter-label">来源</label>
-          <select v-model="filterOwner" class="filter-input flex-1" @change="pageNum = 1">
-            <option value="">来源：全部</option>
-            <option value="platform">平台</option>
-            <option value="seller">卖家</option>
-          </select>
-        </div>
-        <div class="filter-actions lg:col-span-4">
-          <button type="button" class="btn btn-secondary" @click="resetFilters">重置</button>
-          <button type="button" class="btn btn-primary" @click="pageNum = 1">查询</button>
-        </div>
-      </div>
 
-      <p v-if="loading" class="y-msg">加载中…</p>
-      <p v-else-if="!pageRows.length" class="y-msg">还没有代理 IP，请先添加</p>
-      <table v-else>
-        <thead>
-          <tr>
-            <th>代理</th>
-            <th>来源</th>
-            <th>地区</th>
-            <th>连接 / 质量</th>
-            <th>状态</th>
-            <th class="y-col-op">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in pageRows" :key="row.id">
-            <td>
-              <div>{{ row.name }}</div>
-              <div class="row-mono">{{ endpoint(row) }}</div>
-              <div class="row-sub">#{{ row.id }} · {{ fmtTime(row.created_at) }}</div>
-            </td>
-            <td>{{ row.seller_id ? `卖家 #${row.seller_id}` : '平台' }}</td>
-            <td>
-              <div>{{ row.region || '—' }}</div>
-              <div class="row-mono">
-                {{
-                  row.quality_checked_at &&
-                  (!row.connection_checked_at || row.quality_checked_at > row.connection_checked_at)
-                    ? row.quality_report?.exit_ip
-                    : row.connection_report?.ip_address
-                }}
+        <div class="section-block mt-3">
+          <div class="section-title">代理信息</div>
+          <div class="filter-grid">
+            <div class="filter-item">
+              <label class="filter-label">关键词</label>
+              <div class="relative flex-1 w-full min-w-0">
+                <input
+                  v-model="queryParams.keyword"
+                  class="filter-input w-full"
+                  type="search"
+                  placeholder="名称 / IP / 卖家邮箱"
+                  @keyup.enter="handleQuery"
+                />
               </div>
-            </td>
-            <td>
-              <div v-if="row.connection_report">
-                {{
-                  row.connection_report.success
-                    ? `连接 ${row.connection_report.latency_ms ?? '—'} ms`
-                    : '连接失败'
-                }}
-              </div>
-              <div v-else class="row-sub">连接未检测</div>
-              <div class="row-sub">
-                <template v-if="row.quality_report">
-                  {{ row.quality_report.grade }} · {{ row.quality_report.score }} 分
-                </template>
-                <template v-else>质量未检测</template>
-              </div>
-            </td>
-            <td>
-              <span :class="row.status === 'disabled' ? 'y-chip' : 'y-chip y-chip--ok'">{{ row.status }}</span>
-              <div class="row-sub">
-                {{ row.assigned_upstream_id ? `账号 #${row.assigned_upstream_id}` : '未绑定账号' }}
-              </div>
-              <div class="row-sub" :class="{ warn: !row.sub2api_proxy_id }">
-                {{ row.sub2api_proxy_id ? '连接已就绪' : '连接配置待重试' }}
-              </div>
-            </td>
-            <td class="y-col-op">
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">状态</label>
+              <Select
+                v-model="queryParams.status"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="STATUS_OPTIONS"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">来源</label>
+              <Select
+                v-model="queryParams.owner"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="OWNER_OPTIONS"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">卖家</label>
+              <Select
+                v-model="queryParams.seller_id"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="sellerFilterOptions"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">绑定</label>
+              <Select
+                v-model="queryParams.bind"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="BIND_OPTIONS"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">协议</label>
+              <Select
+                v-model="queryParams.protocol"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="PROTOCOL_OPTIONS"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">地区</label>
+              <Select
+                v-model="queryParams.region"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="regionFilterOptions"
+              />
+            </div>
+            <div class="filter-actions lg:col-span-4 sm:col-span-2">
+              <button type="button" class="btn btn-secondary" @click="resetQuery">
+                <Icon name="refresh" size="sm" />
+                重置
+              </button>
+              <button type="button" class="btn btn-primary" @click="handleQuery">
+                <Icon name="search" size="sm" />
+                搜索
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #table>
+        <DataTable
+          :columns="columns"
+          :data="pageRows"
+          :loading="loading"
+          :expandable-actions="false"
+        >
+          <template #cell-serial="{ row }">
+            {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
+          </template>
+          <template #cell-name="{ row }">{{ row.name || '—' }}</template>
+          <template #cell-endpoint="{ row }">
+            <span class="mono-cell" :title="endpoint(row)">{{ endpoint(row) }}</span>
+          </template>
+          <template #cell-owner="{ row }">{{ ownerLabel(row) }}</template>
+          <template #cell-region="{ row }">
+            <div>{{ row.region || '—' }}</div>
+            <div v-if="exitIp(row)" class="row-sub mono-cell">{{ exitIp(row) }}</div>
+          </template>
+          <template #cell-connection="{ row }">{{ connectionText(row) }}</template>
+          <template #cell-quality="{ row }">{{ qualityText(row) }}</template>
+          <template #cell-status="{ row }">
+            <span class="status-cell">
+              <i class="status-dot" :data-tone="statusTone(row.status)" />
+              {{ statusLabel(row.status) }}
+            </span>
+            <div class="row-sub" :class="{ warn: !row.sub2api_proxy_id }">
+              {{ row.sub2api_proxy_id ? '连接已就绪' : '连接配置待重试' }}
+            </div>
+          </template>
+          <template #cell-bind="{ row }">
+            {{ row.assigned_upstream_id ? '已绑定上游' : '未绑定' }}
+          </template>
+          <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
+          <template #cell-actions="{ row }">
+            <div class="table-ops">
               <button
                 type="button"
                 class="y-link"
@@ -340,20 +580,32 @@ onMounted(load)
               >
                 {{ row.status === 'disabled' ? '启用' : '停用' }}
               </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </template>
+          <template #empty>
+            <EmptyState
+              title="暂无代理"
+              description="点右上角「添加代理」录入平台库存，或调整筛选条件"
+              action-text="添加代理"
+              @action="openCreate"
+            />
+          </template>
+        </DataTable>
+      </template>
 
-    <footer v-if="total > 0" class="y-footer">
-      <div class="y-pager">
-        <span>共 {{ total }} 条</span>
-        <button type="button" :disabled="pageNum <= 1" @click="pageNum -= 1">上一页</button>
-        <button type="button" class="is-on">{{ pageNum }} / {{ pageCount }}</button>
-        <button type="button" :disabled="pageNum >= pageCount" @click="pageNum += 1">下一页</button>
-      </div>
-    </footer>
+      <template #pagination>
+        <Pagination
+          v-if="total > 0"
+          :total="total"
+          :page="queryParams.pageNum"
+          :page-size="queryParams.pageSize"
+          :page-size-options="[15, 20, 50]"
+          show-jump
+          @update:page="queryParams.pageNum = $event"
+          @update:page-size="queryParams.pageSize = $event"
+        />
+      </template>
+    </TablePageLayout>
 
     <div v-if="show" class="y-modal-mask" @click.self="closeModal">
       <div class="y-modal" role="dialog" aria-label="添加代理">
@@ -400,8 +652,8 @@ onMounted(load)
           </div>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="closeModal">取消</button>
-          <button type="button" class="y-btn" :disabled="busy || !valid" @click="save">添加</button>
+          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="busy || !valid" @click="save">添加</button>
         </footer>
       </div>
     </div>
@@ -409,27 +661,207 @@ onMounted(load)
 </template>
 
 <style scoped>
-.y-header-actions {
+#market-proxies-page.proxies-shell {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
+
+.page-heading {
+  min-width: 0;
+}
+
+.page-action-btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-block {
+  min-width: 0;
+}
+
+.section-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--color-text-primary, #262626);
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stat-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: #f8fafc;
+}
+
+.stat-card--blue {
+  background: linear-gradient(135deg, #eff6ff, #f8fafc);
+}
+.stat-card--green {
+  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
+}
+.stat-card--cyan {
+  background: linear-gradient(135deg, #ecfeff, #f8fafc);
+}
+.stat-card--orange {
+  background: linear-gradient(135deg, #fff7ed, #f8fafc);
+}
+
+.stat-card__label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.stat-card__value {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.table-ops {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  min-width: max-content;
+}
+
 .row-sub {
   margin-top: 2px;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
-  opacity: 0.65;
+  color: #8c8c8c;
 }
+
 .row-sub.warn {
   color: var(--color-warning, #faad14);
-  opacity: 1;
 }
-.row-mono {
-  margin-top: 2px;
+
+.mono-cell {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   word-break: break-all;
 }
+
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.status-dot[data-tone='ok'] {
+  background: #16a34a;
+}
+.status-dot[data-tone='err'] {
+  background: #ef4444;
+}
+.status-dot[data-tone='progress'] {
+  background: #0555ce;
+}
+.status-dot[data-tone='idle'] {
+  background: #94a3b8;
+}
+
+#market-proxies-page :deep(.filter-grid .select-trigger),
+#market-proxies-page :deep(.filter-grid .select-trigger-sm),
+#market-proxies-page :deep(.filter-grid .filter-input) {
+  height: 32px;
+  min-height: 32px;
+}
+
+#market-proxies-page :deep(.table-scroll-container table thead th) {
+  background: #f5f7fa;
+  color: #606266;
+  font-weight: 500;
+  font-size: 13px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+#market-proxies-page :deep(.table-scroll-container table tbody td) {
+  border-bottom: 1px solid #ebeef5;
+  font-size: 13px;
+  color: #303133;
+}
+
+#market-proxies-page :deep(.table-scroll-container table tbody tr:hover td) {
+  background: #f5f7fa;
+}
+
+#market-proxies-page :deep(th.col-name),
+#market-proxies-page :deep(td.col-name) {
+  min-width: 7rem;
+}
+#market-proxies-page :deep(th.col-endpoint),
+#market-proxies-page :deep(td.col-endpoint) {
+  min-width: 12rem;
+  max-width: 16rem;
+}
+#market-proxies-page :deep(th.col-owner),
+#market-proxies-page :deep(td.col-owner) {
+  min-width: 10rem;
+}
+#market-proxies-page :deep(th.col-region),
+#market-proxies-page :deep(td.col-region),
+#market-proxies-page :deep(th.col-conn),
+#market-proxies-page :deep(td.col-conn),
+#market-proxies-page :deep(th.col-quality),
+#market-proxies-page :deep(td.col-quality),
+#market-proxies-page :deep(th.col-status),
+#market-proxies-page :deep(td.col-status),
+#market-proxies-page :deep(th.col-bind),
+#market-proxies-page :deep(td.col-bind) {
+  min-width: 5.5rem;
+}
+#market-proxies-page :deep(th.col-time),
+#market-proxies-page :deep(td.col-time) {
+  min-width: 9rem;
+}
+#market-proxies-page :deep(th.col-ops),
+#market-proxies-page :deep(td.col-ops) {
+  min-width: 18rem;
+  width: 18rem;
+  box-sizing: border-box;
+}
+#market-proxies-page :deep(thead th.col-ops) {
+  background: #f5f7fa !important;
+}
+#market-proxies-page :deep(tbody td.col-ops) {
+  background: #fff !important;
+}
+#market-proxies-page :deep(tbody tr:hover td.col-ops) {
+  background: #f5f7fa !important;
+}
+
 .y-modal-mask {
   position: fixed;
   inset: 0;
@@ -482,7 +914,14 @@ onMounted(load)
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+
+@media (max-width: 1100px) {
+  .stats-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 @media (max-width: 720px) {
+  .stats-row,
   .y-field-row {
     grid-template-columns: 1fr;
   }

@@ -19,6 +19,7 @@ func (s *Server) adminCreateUpstream(w http.ResponseWriter, r *http.Request) err
 	}
 	s.audit(r, "upstream.create", fmt.Sprintf("upstream:%d", u.ID), map[string]any{
 		"seller_id": in.SellerID, "platform": in.Platform, "auth_type": in.AuthType,
+		"name": in.Name, "note": in.Note,
 	})
 	return created(w, u)
 }
@@ -144,5 +145,24 @@ func (s *Server) adminClearDeadEngineAccount(w http.ResponseWriter, r *http.Requ
 		return err
 	}
 	s.audit(r, "upstream.clear_dead_account", fmt.Sprintf("upstream:%d", id), nil)
+	return ok(w, u)
+}
+
+func (s *Server) adminSwitchUpstreamChannel(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in listing.AdminSwitchChannelInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	u, err := s.Listings.AdminSwitchChannel(r.Context(), id, in)
+	if err != nil {
+		return err
+	}
+	s.audit(r, "upstream.switch_channel", fmt.Sprintf("upstream:%d", id), map[string]any{
+		"platform": in.Platform, "auth_type": in.AuthType,
+	})
 	return ok(w, u)
 }

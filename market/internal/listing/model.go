@@ -98,6 +98,7 @@ func (v VendorConfig) AppraisalBaseFor(tier string) (float64, bool) {
 type Upstream struct {
 	InspectionView
 	ID                 int64      `json:"id"`
+	Code               string     `json:"code"` // 展示编号 YYYYMMDD+随机串，界面用此字段而非裸 id
 	SellerID           int64      `json:"seller_id"`
 	Platform           string     `json:"platform"`
 	AuthType           string     `json:"auth_type"`
@@ -111,6 +112,8 @@ type Upstream struct {
 	ProbeGroupID       *int64     `json:"-"`
 	Tier               *string    `json:"tier,omitempty"`
 	AccountEmail       *string    `json:"account_email,omitempty"` // 官方账号邮箱，授权或导入时从令牌信息中识别
+	Name               *string    `json:"name,omitempty"`          // 运营展示名称
+	Note               *string    `json:"note,omitempty"`          // 运营备注
 	PrivacyOK          *bool      `json:"privacy_ok,omitempty"`
 	SelfReservePercent int        `json:"self_reserve_percent"`
 	ModelWhitelist     []string   `json:"model_whitelist"` // 空值表示存量上游未声明，不限制模型
@@ -127,15 +130,15 @@ type Upstream struct {
 	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
-const upstreamColumns = `id, seller_id, platform, auth_type, is_reference, status, health, health_reason, health_changed_at,
-	sub2api_account_id, proxy_id, probe_group_id, tier, account_email, privacy_ok, self_reserve_percent,
+const upstreamColumns = `id, code, seller_id, platform, auth_type, is_reference, status, health, health_reason, health_changed_at,
+	sub2api_account_id, proxy_id, probe_group_id, tier, account_email, name, note, privacy_ok, self_reserve_percent,
 	auto_reset_enabled, auto_reset_5h_percent, auto_reset_7d_percent, auto_reset_authorized_at, grade, failure_reason, created_at, updated_at,
 	model_whitelist, model_catalog, model_catalog_at`
 
 func scanUpstream(row pgx.Row) (*Upstream, error) {
 	var u Upstream
-	err := row.Scan(&u.ID, &u.SellerID, &u.Platform, &u.AuthType, &u.IsReference, &u.Status, &u.Health, &u.HealthReason,
-		&u.HealthChangedAt, &u.Sub2APIAccountID, &u.ProxyID, &u.ProbeGroupID, &u.Tier, &u.AccountEmail, &u.PrivacyOK,
+	err := row.Scan(&u.ID, &u.Code, &u.SellerID, &u.Platform, &u.AuthType, &u.IsReference, &u.Status, &u.Health, &u.HealthReason,
+		&u.HealthChangedAt, &u.Sub2APIAccountID, &u.ProxyID, &u.ProbeGroupID, &u.Tier, &u.AccountEmail, &u.Name, &u.Note, &u.PrivacyOK,
 		&u.SelfReservePercent, &u.AutoResetEnabled, &u.AutoReset5hPercent, &u.AutoReset7dPercent, &u.AutoResetAuthorizedAt,
 		&u.Grade, &u.FailureReason, &u.CreatedAt, &u.UpdatedAt, &u.ModelWhitelist, &u.ModelCatalog, &u.ModelCatalogAt)
 	if err != nil {

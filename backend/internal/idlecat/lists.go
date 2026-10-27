@@ -61,38 +61,53 @@ func (s *Store) ListPools(ctx context.Context) ([]map[string]any, error) {
 
 func (s *Store) ListProxies(ctx context.Context) ([]map[string]any, error) {
 	return s.queryMaps(ctx, `
-		SELECT id, name, protocol, host, port, status, seller_id
-		FROM proxies ORDER BY id DESC LIMIT 500`)
+		SELECT p.id, p.name, p.protocol, p.host, p.port, p.status, p.seller_id,
+			COALESCE(u.email, '') AS seller_email
+		FROM proxies p
+		LEFT JOIN users u ON u.id = p.seller_id
+		ORDER BY p.id DESC LIMIT 500`)
 }
 
 func (s *Store) ListUpstreams(ctx context.Context) ([]map[string]any, error) {
 	return s.queryMaps(ctx, `
-		SELECT id, seller_id, platform, auth_type, status, health, grade, sub2api_account_id, created_at
-		FROM upstreams WHERE status <> 'removed' ORDER BY id DESC LIMIT 500`)
+		SELECT up.id, up.seller_id, COALESCE(u.email, '') AS seller_email, up.platform, up.auth_type,
+			up.status, up.health, up.grade, up.sub2api_account_id, up.created_at,
+			up.account_email, up.name, up.note, up.code
+		FROM upstreams up
+		LEFT JOIN users u ON u.id = up.seller_id
+		WHERE up.status <> 'removed' ORDER BY up.id DESC LIMIT 500`)
 }
 
 func (s *Store) ListRecharges(ctx context.Context) ([]map[string]any, error) {
 	return s.queryMaps(ctx, `
-		SELECT id, user_id, amount, status, provider, created_at
-		FROM recharge_orders ORDER BY id DESC LIMIT 200`)
+		SELECT r.id, r.user_id, COALESCE(u.email, '') AS user_email, r.amount, r.status, r.provider, r.channel, r.created_at
+		FROM recharge_orders r
+		LEFT JOIN users u ON u.id = r.user_id
+		ORDER BY r.id DESC LIMIT 200`)
 }
 
 func (s *Store) ListRefunds(ctx context.Context) ([]map[string]any, error) {
 	return s.queryMaps(ctx, `
-		SELECT id, user_id, amount, status, created_at
-		FROM refunds ORDER BY id DESC LIMIT 200`)
+		SELECT r.id, r.user_id, COALESCE(u.email, '') AS user_email, r.amount, r.status, r.created_at
+		FROM refunds r
+		LEFT JOIN users u ON u.id = r.user_id
+		ORDER BY r.id DESC LIMIT 200`)
 }
 
 func (s *Store) ListWithdrawals(ctx context.Context) ([]map[string]any, error) {
 	return s.queryMaps(ctx, `
-		SELECT id, seller_id AS user_id, amount, status, created_at
-		FROM withdrawals ORDER BY id DESC LIMIT 200`)
+		SELECT w.id, w.seller_id, COALESCE(u.email, '') AS seller_email, w.amount, w.status, w.channel, w.created_at
+		FROM withdrawals w
+		LEFT JOIN users u ON u.id = w.seller_id
+		ORDER BY w.id DESC LIMIT 200`)
 }
 
 func (s *Store) ListAppeals(ctx context.Context) ([]map[string]any, error) {
 	return s.queryMaps(ctx, `
-		SELECT id, report_id, seller_id, status, created_at
-		FROM appeals ORDER BY id DESC LIMIT 200`)
+		SELECT a.id, a.report_id, a.seller_id, COALESCE(u.email, '') AS seller_email, a.status, a.created_at
+		FROM appeals a
+		LEFT JOIN users u ON u.id = a.seller_id
+		ORDER BY a.id DESC LIMIT 200`)
 }
 
 func (s *Store) ListPolicies(ctx context.Context) ([]map[string]any, error) {

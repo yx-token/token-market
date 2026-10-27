@@ -4,14 +4,27 @@ import (
 	"net/http"
 
 	"github.com/yx-token/token-market/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/platform/usermail"
 	"github.com/yx-token/token-market/market/internal/scheduling"
 	"github.com/yx-token/token-market/market/internal/sub2api/replica"
+)
+
+// link_state 取值：linked / unbound / orphan / engine_only
+const (
+	linkLinked     = "linked"
+	linkUnbound    = "unbound"
+	linkOrphan     = "orphan"
+	linkEngineOnly = "engine_only"
 )
 
 // fusedAccount 是一条供给：闲猫上游与 sub2api 账号是同一资源。
 type fusedAccount struct {
 	UpstreamID      int64    `json:"upstream_id,omitempty"`
+	UpstreamCode    string   `json:"upstream_code,omitempty"`
+	UpstreamName    string   `json:"upstream_name,omitempty"`
+	AccountEmail    string   `json:"account_email,omitempty"`
 	SellerID        int64    `json:"seller_id,omitempty"`
+	SellerEmail     string   `json:"seller_email,omitempty"`
 	Platform        string   `json:"platform"`
 	MarketStatus    string   `json:"market_status"`
 	Health          string   `json:"health,omitempty"`
@@ -23,6 +36,7 @@ type fusedAccount struct {
 	RateMultiplier  *float64 `json:"rate_multiplier,omitempty"`
 	Concurrency     *int     `json:"concurrency,omitempty"`
 	Linked          bool     `json:"linked"`
+	LinkState       string   `json:"link_state"`
 }
 
 // fusedGroup 是一条供给分组：闲猫默认分组与 sub2api 分组是同一资源。
@@ -37,6 +51,7 @@ type fusedGroup struct {
 	EngineRate     *float64 `json:"engine_rate,omitempty"`
 	MarketStatus   string   `json:"market_status"`
 	Linked         bool     `json:"linked"`
+	LinkState      string   `json:"link_state"`
 }
 
 func (s *Server) adminSupplyAccounts(w http.ResponseWriter, r *http.Request) error {
@@ -51,7 +66,21 @@ func (s *Server) adminSupplyAccounts(w http.ResponseWriter, r *http.Request) err
 			return err
 		}
 	}
-	return ok(w, fuseAccounts(ups, engines))
+	out := fuseAccounts(ups, engines)
+	ids := make([]int64, 0, len(out))
+	for _, row := range out {
+		if row.SellerID > 0 {
+			ids = append(ids, row.SellerID)
+		}
+	}
+	emails, err := usermail.Lookup(r.Context(), s.DB, ids)
+	if err != nil {
+		return err
+	}
+	for i := range out {
+		out[i].SellerEmail = emails[out[i].SellerID]
+	}
+	return ok(w, out)
 }
 
 func (s *Server) adminSupplyGroups(w http.ResponseWriter, r *http.Request) error {
@@ -79,11 +108,19 @@ func fuseAccounts(ups []listing.Upstream, engines []replica.Account) []fusedAcco
 	for _, u := range ups {
 		row := fusedAccount{
 			UpstreamID:   u.ID,
+			UpstreamCode: u.Code,
 			SellerID:     u.SellerID,
 			Platform:     u.Platform,
 			MarketStatus: u.Status,
 			Health:       u.Health,
 			Grade:        u.Grade,
+			LinkState:    linkUnbound,
+		}
+		if u.Name != nil {
+			row.UpstreamName = *u.Name
+		}
+		if u.AccountEmail != nil {
+			row.AccountEmail = *u.AccountEmail
 		}
 		if u.Sub2APIAccountID != nil {
 			id := *u.Sub2APIAccountID
@@ -91,8 +128,10 @@ func fuseAccounts(ups []listing.Upstream, engines []replica.Account) []fusedAcco
 			if a, ok := byID[id]; ok {
 				fillEngineAccount(&row, a)
 				used[id] = true
+				row.LinkState = linkLinked
 			} else {
 				row.EngineStatus = "未同步"
+				row.LinkState = linkOrphan
 			}
 		}
 		out = append(out, row)
@@ -101,9 +140,10 @@ func fuseAccounts(ups []listing.Upstream, engines []replica.Account) []fusedAcco
 		if used[a.ID] {
 			continue
 		}
-		row := fusedAccount{Platform: a.Platform, MarketStatus: "仅引擎"}
+		row := fusedAccount{Platform: a.Platform, MarketStatus: "仅引擎", LinkState: linkEngineOnly}
 		fillEngineAccount(&row, a)
 		row.Linked = false
+		row.LinkState = linkEngineOnly
 		out = append(out, row)
 	}
 	return out
@@ -143,6 +183,7 @@ func fuseGroups(pools []scheduling.Pool, groups []replica.Group) []fusedGroup {
 			Enabled:        &enabled,
 			SellMultiplier: &sell,
 			MarketStatus:   "市场分组",
+			LinkState:      linkUnbound,
 		}
 		if p.Sub2APIGroupID != nil {
 			id := *p.Sub2APIGroupID
@@ -150,8 +191,10 @@ func fuseGroups(pools []scheduling.Pool, groups []replica.Group) []fusedGroup {
 			if g, ok := byID[id]; ok {
 				fillEngineGroup(&row, g)
 				used[id] = true
+				row.LinkState = linkLinked
 			} else {
 				row.MarketStatus = "未同步"
+				row.LinkState = linkOrphan
 			}
 		}
 		out = append(out, row)
@@ -160,9 +203,10 @@ func fuseGroups(pools []scheduling.Pool, groups []replica.Group) []fusedGroup {
 		if used[g.ID] {
 			continue
 		}
-		row := fusedGroup{Platform: g.Platform, MarketStatus: "仅引擎"}
+		row := fusedGroup{Platform: g.Platform, MarketStatus: "仅引擎", LinkState: linkEngineOnly}
 		fillEngineGroup(&row, g)
 		row.Linked = false
+		row.LinkState = linkEngineOnly
 		if row.Name == "" {
 			row.Name = g.Name
 		}

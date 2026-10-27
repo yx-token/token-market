@@ -172,6 +172,7 @@ func registerIdleCatRelay(admin *gin.RouterGroup) {
 		"POST upstreams/:id/oauth/complete",
 		"POST upstreams/:id/coding-key",
 		"POST upstreams/:id/clear-dead-account",
+		"POST upstreams/:id/switch-channel",
 		"POST upstreams/:id/suspend",
 		"POST upstreams/:id/unsuspend",
 		"DELETE upstreams/:id",

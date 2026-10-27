@@ -159,10 +159,11 @@ func (e *Engine) ManualRetest(ctx context.Context, sellerID, upstreamID int64) (
 }
 
 type Appeal struct {
-	ID         int64      `json:"id"`
-	ReportID   int64      `json:"report_id"`
-	SellerID   int64      `json:"seller_id"`
-	Reason     string     `json:"reason"`
+	ID          int64      `json:"id"`
+	ReportID    int64      `json:"report_id"`
+	SellerID    int64      `json:"seller_id"`
+	SellerEmail string     `json:"seller_email,omitempty"`
+	Reason      string     `json:"reason"`
 	Status     string     `json:"status"`
 	AdminNote  *string    `json:"admin_note,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -385,6 +386,7 @@ type RunSummary struct {
 	IdentitySource *string         `json:"identity_source"`
 	Models         []string        `json:"models"`
 	ID             int64           `json:"id"`
+	Code           string          `json:"code"` // 展示编号 YYYYMMDD+随机串
 	UpstreamID     int64           `json:"upstream_id"`
 	BatchID        string          `json:"batch_id"`
 	Trigger        string          `json:"trigger"`
@@ -440,16 +442,17 @@ type RunResult struct {
 
 // RunDetail 是一次检测的逐题明细；有基线对照时一并返回基线账号同批次的检测。
 type RunDetail struct {
-	Run        RunSummary  `json:"run"`
-	Results    []RunResult `json:"results"`
-	Reference  *RunSummary `json:"reference,omitempty"`
-	RefResults []RunResult `json:"reference_results,omitempty"`
+	Run          RunSummary  `json:"run"`
+	UpstreamCode string      `json:"upstream_code"`
+	Results      []RunResult `json:"results"`
+	Reference    *RunSummary `json:"reference,omitempty"`
+	RefResults   []RunResult `json:"reference_results,omitempty"`
 }
 
 // plannedRunColumn 读取写快照时记录的计划总题数，列表查询不解析可达数 MB 的执行快照。
 const plannedRunColumn = `r.planned`
 
-const runSummaryColumns = `r.id, r.upstream_id, r.batch_id, r.trigger, r.model, r.status, r.summary,
+const runSummaryColumns = `r.id, r.code, r.upstream_id, r.batch_id, r.trigger, r.model, r.status, r.summary,
 	(SELECT count(*) FROM probe_results x WHERE x.run_id = r.id),
 	(SELECT count(*) FILTER (WHERE x.passed) FROM probe_results x WHERE x.run_id = r.id),
 	` + plannedRunColumn + `,
@@ -458,7 +461,7 @@ const runSummaryColumns = `r.id, r.upstream_id, r.batch_id, r.trigger, r.model, 
 func scanRunSummary(row pgx.CollectableRow) (RunSummary, error) {
 	var s RunSummary
 	var summary []byte
-	err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models)
+	err := row.Scan(&s.ID, &s.Code, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models)
 	if len(summary) > 0 {
 		s.Summary = summary
 	}
@@ -485,7 +488,7 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 	target, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunSummary, error) {
 		var s RunSummary
 		var summary, snapshot []byte
-		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models, &snapshot)
+		err := row.Scan(&s.ID, &s.Code, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models, &snapshot)
 		if len(summary) > 0 {
 			s.Summary = summary
 		}
@@ -499,6 +502,7 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 		return nil, httpx.NotFound("RUN_NOT_FOUND", "probe run not found")
 	}
 	out := &RunDetail{Run: target[0]}
+	_ = db.QueryRow(ctx, `SELECT code FROM upstreams WHERE id = $1`, out.Run.UpstreamID).Scan(&out.UpstreamCode)
 	if out.Results, err = runResults(ctx, db, runID); err != nil {
 		return nil, err
 	}
@@ -514,7 +518,7 @@ func GetRunDetail(ctx context.Context, db DB, runID int64) (*RunDetail, error) {
 	refs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RunSummary, error) {
 		var s RunSummary
 		var summary, snapshot []byte
-		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models, &snapshot)
+		err := row.Scan(&s.ID, &s.Code, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models, &snapshot)
 		if len(summary) > 0 {
 			s.Summary = summary
 		}

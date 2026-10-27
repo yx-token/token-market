@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import Icon from '@/components/icons/Icon.vue'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
+
+defineOptions({ name: 'MarketAdminSettings' })
 
 const fields = [
   { key: 'commission_rate', label: '抽佣率' },
@@ -15,11 +18,19 @@ const form = reactive<Record<string, string>>({})
 const error = ref('')
 const msg = ref('')
 const busy = ref(false)
+const loading = ref(false)
 
 async function load() {
+  loading.value = true
   error.value = ''
-  const data = await marketGet<Record<string, unknown>>(`${MARKET_API_PREFIX}/settings`)
-  for (const f of fields) form[f.key] = data[f.key] == null ? '' : String(data[f.key])
+  try {
+    const data = await marketGet<Record<string, unknown>>(`${MARKET_API_PREFIX}/settings`)
+    for (const f of fields) form[f.key] = data[f.key] == null ? '' : String(data[f.key])
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '加载失败'
+  } finally {
+    loading.value = false
+  }
 }
 
 async function save() {
@@ -43,31 +54,84 @@ async function save() {
   }
 }
 
-onMounted(async () => {
-  try {
-    await load()
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载失败'
-  }
-})
+onMounted(load)
 </script>
 
 <template>
-  <section class="y-page max-w-lg">
+  <section id="market-settings-page" class="settings-shell">
     <header class="y-header">
-      <div>
+      <div class="page-heading">
         <h2 class="y-title">市场设置</h2>
         <p class="y-page-desc">抽佣、冻结与提现等平台参数</p>
       </div>
+      <div class="y-header-actions">
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
+          <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
+          刷新
+        </button>
+        <button type="button" class="btn btn-primary page-action-btn" :disabled="busy || loading" @click="save">
+          {{ busy ? '保存中…' : '保存' }}
+        </button>
+      </div>
     </header>
-    <form class="y-container--tight space-y-3 py-4" @submit.prevent="save">
+
+    <div class="form-panel">
       <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
       <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
-      <label v-for="f in fields" :key="f.key" class="block text-sm">
-        <span class="mb-1 block text-gray-500">{{ f.label }}</span>
-        <input v-model="form[f.key]" class="input w-full" inputmode="decimal" />
-      </label>
-      <button class="y-btn" type="submit" :disabled="busy">{{ busy ? '保存中…' : '保存' }}</button>
-    </form>
+      <p v-if="loading" class="y-msg">加载中…</p>
+      <form v-else class="form-grid" @submit.prevent="save">
+        <label v-for="f in fields" :key="f.key" class="form-field">
+          <span>{{ f.label }}</span>
+          <input v-model="form[f.key]" class="input w-full" inputmode="decimal" />
+        </label>
+      </form>
+    </div>
   </section>
 </template>
+
+<style scoped>
+#market-settings-page.settings-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  gap: 12px;
+}
+.page-heading { min-width: 0; }
+.y-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.page-action-btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.form-panel {
+  max-width: 40rem;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.form-grid {
+  display: grid;
+  gap: 12px;
+}
+.form-field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.form-field > span {
+  color: var(--color-text-secondary, #868686);
+}
+</style>

@@ -152,6 +152,7 @@ func (s *Server) adminRoutes() []route {
 		{"POST /api/admin/upstreams/{id}/oauth/complete", s.adminCompleteUpstreamOAuth},
 		{"POST /api/admin/upstreams/{id}/coding-key", s.adminSubmitUpstreamCodingKey},
 		{"POST /api/admin/upstreams/{id}/clear-dead-account", s.adminClearDeadEngineAccount},
+		{"POST /api/admin/upstreams/{id}/switch-channel", s.adminSwitchUpstreamChannel},
 		{"POST /api/admin/upstreams/{id}/suspend", s.suspendUpstream(true)},
 		{"POST /api/admin/upstreams/{id}/unsuspend", s.suspendUpstream(false)},
 		{"DELETE /api/admin/upstreams/{id}", s.adminRemoveUpstream},
@@ -392,6 +393,19 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 	adminHome := "/admin/dashboard"
 	if !opts.EmbedInHost && s.AdminWebDir != "" {
 		mux.Handle("/admin-assets/", adminAssetHandler(s.AdminWebDir))
+		// 管理端 public/ 产物落在 AdminWebDir 根（非 admin-assets），须在 C 端 SPA 回退前挂上，
+		// 否则 /xianmao-logo.svg 等会被 / 吃掉变成 HTML，侧栏 logo 空白。
+		for _, name := range []string{"xianmao-logo.svg", "logo.svg"} {
+			p := filepath.Join(s.AdminWebDir, name)
+			if _, err := os.Stat(p); err != nil {
+				continue
+			}
+			file := p
+			mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+				http.ServeFile(w, r, file)
+			})
+		}
 		adminIndex := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-cache")
 			http.ServeFile(w, r, filepath.Join(s.AdminWebDir, "index.html"))

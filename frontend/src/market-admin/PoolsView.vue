@@ -1,6 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+/**
+ * 默认分组：TablePageLayout + filter-grid + DataTable；名称/标题分列。
+ */
+import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
+import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import Select from '@/components/common/Select.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import Icon from '@/components/icons/Icon.vue'
+import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
+
+defineOptions({ name: 'MarketAdminPools' })
 
 interface Pool {
   id: number
@@ -17,29 +29,51 @@ interface Pool {
 }
 
 const PLATFORM_OPTIONS = [
-  { value: 'anthropic', text: 'Anthropic' },
-  { value: 'openai', text: 'OpenAI' },
-  { value: 'gemini', text: 'Gemini' },
-  { value: 'antigravity', text: 'Antigravity' },
-  { value: 'grok', text: 'Grok' },
-  { value: 'kimi', text: 'Kimi' },
-  { value: 'zhipu', text: '智谱' },
-  { value: 'minimax', text: 'MiniMax' },
-  { value: 'opencode_go', text: 'OpenCode Go' },
-  { value: 'composite', text: '综合池' },
+  { value: 'anthropic', label: 'Anthropic' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'antigravity', label: 'Antigravity' },
+  { value: 'grok', label: 'Grok' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'zhipu', label: '智谱' },
+  { value: 'minimax', label: 'MiniMax' },
+  { value: 'opencode_go', label: 'OpenCode Go' },
+  { value: 'composite', label: '综合池' },
 ]
+
+const PLATFORM_FILTER_OPTIONS = [{ value: '', label: '全部' }, ...PLATFORM_OPTIONS]
+
+const ENABLED_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'true', label: '启用' },
+  { value: 'false', label: '停用' },
+]
+
+const MARKET_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'true', label: '已上架' },
+  { value: 'false', label: '未上架' },
+]
+
+const initQueryParams = {
+  pageNum: 1,
+  pageSize: 15,
+  keyword: '',
+  platform: '',
+  enabled: '',
+  market: '',
+}
+
+const data = reactive({
+  queryParams: { ...initQueryParams },
+})
+const { queryParams } = toRefs(data)
 
 const pools = ref<Pool[]>([])
 const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
 const msg = ref('')
-const keyword = ref('')
-const filterPlatform = ref('')
-const filterEnabled = ref('')
-const filterMarket = ref('')
-const pageNum = ref(1)
-const pageSize = 15
 
 const show = ref(false)
 const editing = ref<Pool | null>(null)
@@ -55,14 +89,30 @@ const form = reactive({
   market_description: '',
 })
 
+const columns: Column[] = [
+  { key: 'serial', label: '序号', class: 'w-16' },
+  { key: 'name', label: '名称', class: 'col-name' },
+  { key: 'market_title', label: '市场标题', class: 'col-title' },
+  { key: 'platform', label: '平台', class: 'col-platform' },
+  { key: 'sell', label: '售价 D', class: 'col-num' },
+  { key: 'margin', label: '毛利 / 缓冲', class: 'col-num' },
+  { key: 'cap', label: '寄售上限', class: 'col-num' },
+  { key: 'enabled', label: '状态', class: 'col-status' },
+  { key: 'market', label: '市场', class: 'col-status' },
+  { key: 'sub2api', label: 'sub2api', class: 'col-sub2api' },
+  { key: 'actions', label: '操作', class: 'col-ops' },
+]
+
 const filtered = computed(() => {
   let rows = pools.value
-  if (filterPlatform.value) rows = rows.filter((p) => p.platform === filterPlatform.value)
-  if (filterEnabled.value === 'true') rows = rows.filter((p) => p.enabled)
-  if (filterEnabled.value === 'false') rows = rows.filter((p) => !p.enabled)
-  if (filterMarket.value === 'true') rows = rows.filter((p) => p.market_published)
-  if (filterMarket.value === 'false') rows = rows.filter((p) => !p.market_published)
-  const kw = keyword.value.trim().toLowerCase()
+  if (queryParams.value.platform) {
+    rows = rows.filter((p) => p.platform === queryParams.value.platform)
+  }
+  if (queryParams.value.enabled === 'true') rows = rows.filter((p) => p.enabled)
+  if (queryParams.value.enabled === 'false') rows = rows.filter((p) => !p.enabled)
+  if (queryParams.value.market === 'true') rows = rows.filter((p) => p.market_published)
+  if (queryParams.value.market === 'false') rows = rows.filter((p) => !p.market_published)
+  const kw = queryParams.value.keyword.trim().toLowerCase()
   if (kw) {
     rows = rows.filter((p) =>
       [p.id, p.name, p.platform, p.sub2api_group_id, p.market_title]
@@ -74,14 +124,35 @@ const filtered = computed(() => {
 })
 
 const total = computed(() => filtered.value.length)
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const pageRows = computed(() => {
-  const start = (pageNum.value - 1) * pageSize
-  return filtered.value.slice(start, start + pageSize)
+  const start = (queryParams.value.pageNum - 1) * queryParams.value.pageSize
+  return filtered.value.slice(start, start + queryParams.value.pageSize)
 })
 
+const allStats = computed(() => {
+  const all = pools.value
+  return {
+    total: all.length,
+    enabled: all.filter((p) => p.enabled).length,
+    published: all.filter((p) => p.market_published).length,
+  }
+})
+
+watch(
+  () => [
+    queryParams.value.keyword,
+    queryParams.value.platform,
+    queryParams.value.enabled,
+    queryParams.value.market,
+    queryParams.value.pageSize,
+  ],
+  () => {
+    queryParams.value.pageNum = 1
+  },
+)
+
 function platformLabel(v: string) {
-  return PLATFORM_OPTIONS.find((o) => o.value === v)?.text || v
+  return PLATFORM_OPTIONS.find((o) => o.value === v)?.label || v
 }
 
 function defaultTitle(p: Pick<Pool, 'name' | 'platform'>) {
@@ -99,6 +170,19 @@ function fmtMul(n: number) {
 
 function fmtPct(n: number) {
   return Number.isFinite(n) ? `${(n * 100).toFixed(0)}%` : '—'
+}
+
+function getSerialNumber(index: number) {
+  const n = (queryParams.value.pageNum - 1) * queryParams.value.pageSize + index + 1
+  return String(n).padStart(2, '0')
+}
+
+function handleQuery() {
+  queryParams.value.pageNum = 1
+}
+
+function resetQuery() {
+  Object.assign(queryParams.value, { ...initQueryParams })
 }
 
 async function load() {
@@ -232,112 +316,151 @@ async function toggleEnabled(p: Pool) {
   }
 }
 
-function resetFilters() {
-  keyword.value = ''
-  filterPlatform.value = ''
-  filterEnabled.value = ''
-  filterMarket.value = ''
-  pageNum.value = 1
-}
-
 onMounted(load)
 </script>
 
 <template>
-  <section id="market-pools-page" class="y-page">
-    <header class="y-header">
-      <div>
-        <h2 class="y-title">默认分组</h2>
-        <p class="y-page-desc">买家走平台默认分组时按售价 D 计费；可将分组上架到市场推销</p>
-      </div>
-      <div class="y-header-actions">
-        <button type="button" class="y-btn" :disabled="busy" @click="openNew">新建分组</button>
-        <button type="button" class="y-btn y-btn--ghost" :disabled="loading" @click="load">刷新</button>
-      </div>
-    </header>
+  <section id="market-pools-page" class="pools-shell">
+    <TablePageLayout>
+      <template #title>
+        <div class="page-heading">
+          <h2 class="y-title">默认分组</h2>
+          <p class="y-page-desc">买家走平台默认分组时按售价 D 计费；可将分组上架到市场推销</p>
+        </div>
+      </template>
 
-    <div class="y-container--tight">
-      <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-      <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
+      <template #actions>
+        <button type="button" class="btn btn-primary page-action-btn" :disabled="busy" @click="openNew">
+          <Icon name="plus" size="sm" />
+          新建分组
+        </button>
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
+          <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
+          刷新
+        </button>
+      </template>
 
-      <div class="filter-grid">
-        <div class="filter-item">
-          <label class="filter-label">关键词</label>
-          <div class="relative flex-1 w-full">
-            <input
-              class="filter-input w-full"
-              v-model="keyword"
-              type="search"
-              placeholder="名称 / 标题 / ID"
-              @keyup.enter="pageNum = 1"
-            />
+      <template #filters>
+        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+
+        <div class="section-block">
+          <div class="section-title">基本信息</div>
+          <div class="stats-row">
+            <article class="stat-card stat-card--blue">
+              <div>
+                <div class="stat-card__label">分组总数</div>
+                <div class="stat-card__value">{{ allStats.total.toLocaleString() }}</div>
+              </div>
+            </article>
+            <article class="stat-card stat-card--green">
+              <div>
+                <div class="stat-card__label">已启用</div>
+                <div class="stat-card__value">{{ allStats.enabled.toLocaleString() }}</div>
+              </div>
+            </article>
+            <article class="stat-card stat-card--orange">
+              <div>
+                <div class="stat-card__label">已上架</div>
+                <div class="stat-card__value">{{ allStats.published.toLocaleString() }}</div>
+              </div>
+            </article>
           </div>
         </div>
-        <div class="filter-item">
-          <label class="filter-label">平台</label>
-          <select v-model="filterPlatform" class="filter-input flex-1" @change="pageNum = 1">
-            <option value="">平台：全部</option>
-            <option v-for="o in PLATFORM_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
-          </select>
-        </div>
-        <div class="filter-item">
-          <label class="filter-label">状态</label>
-          <select v-model="filterEnabled" class="filter-input flex-1" @change="pageNum = 1">
-            <option value="">状态：全部</option>
-            <option value="true">启用</option>
-            <option value="false">停用</option>
-          </select>
-        </div>
-        <div class="filter-item">
-          <label class="filter-label">市场</label>
-          <select v-model="filterMarket" class="filter-input flex-1" @change="pageNum = 1">
-            <option value="">市场：全部</option>
-            <option value="true">已上架</option>
-            <option value="false">未上架</option>
-          </select>
-        </div>
-        <div class="filter-actions lg:col-span-4">
-          <button type="button" class="btn btn-secondary" @click="resetFilters">重置</button>
-          <button type="button" class="btn btn-primary" @click="pageNum = 1">查询</button>
-        </div>
-      </div>
 
-      <p v-if="loading" class="y-msg">加载中…</p>
-      <p v-else-if="!pageRows.length" class="y-msg">没有符合条件的分组</p>
-      <table v-else>
-        <thead>
-          <tr>
-            <th>分组</th>
-            <th>平台</th>
-            <th>售价 D</th>
-            <th>毛利 / 缓冲</th>
-            <th>寄售上限</th>
-            <th>状态</th>
-            <th>市场</th>
-            <th>sub2api</th>
-            <th class="y-col-op">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in pageRows" :key="row.id">
-            <td>
-              <div>{{ row.name }}</div>
-              <div v-if="row.market_published && row.market_title" class="row-sub">{{ row.market_title }}</div>
-            </td>
-            <td>{{ platformLabel(row.platform) }}</td>
-            <td>{{ fmtMul(row.sell_multiplier) }}</td>
-            <td>{{ fmtPct(row.min_margin) }} / {{ fmtPct(row.safety_buffer) }}</td>
-            <td>{{ fmtMul(cap(row)) }}</td>
-            <td>
-              <span :class="row.enabled ? 'y-chip y-chip--ok' : 'y-chip'">{{ row.enabled ? '启用' : '停用' }}</span>
-            </td>
-            <td>
-              <span :class="row.market_published ? 'y-chip y-chip--ok' : 'y-chip'">
-                {{ row.market_published ? '已上架' : '未上架' }}
-              </span>
-            </td>
-            <td>{{ row.sub2api_group_id ? `#${row.sub2api_group_id}` : '未同步' }}</td>
-            <td class="y-col-op">
+        <div class="section-block mt-3">
+          <div class="section-title">分组信息</div>
+          <div class="filter-grid">
+            <div class="filter-item">
+              <label class="filter-label">关键词</label>
+              <div class="relative flex-1 w-full min-w-0">
+                <input
+                  v-model="queryParams.keyword"
+                  class="filter-input w-full"
+                  type="search"
+                  placeholder="名称 / 标题 / ID"
+                  @keyup.enter="handleQuery"
+                />
+              </div>
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">平台</label>
+              <Select
+                v-model="queryParams.platform"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="PLATFORM_FILTER_OPTIONS"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">状态</label>
+              <Select
+                v-model="queryParams.enabled"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="ENABLED_OPTIONS"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">市场</label>
+              <Select
+                v-model="queryParams.market"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="MARKET_OPTIONS"
+              />
+            </div>
+            <div class="filter-actions lg:col-span-4 sm:col-span-2">
+              <button type="button" class="btn btn-secondary" @click="resetQuery">
+                <Icon name="refresh" size="sm" />
+                重置
+              </button>
+              <button type="button" class="btn btn-primary" @click="handleQuery">
+                <Icon name="search" size="sm" />
+                搜索
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #table>
+        <DataTable
+          :columns="columns"
+          :data="pageRows"
+          :loading="loading"
+          :expandable-actions="false"
+        >
+          <template #cell-serial="{ row }">
+            {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
+          </template>
+          <template #cell-name="{ row }">{{ row.name }}</template>
+          <template #cell-market_title="{ row }">
+            {{ row.market_published ? row.market_title || '—' : '—' }}
+          </template>
+          <template #cell-platform="{ row }">{{ platformLabel(row.platform) }}</template>
+          <template #cell-sell="{ row }">{{ fmtMul(row.sell_multiplier) }}</template>
+          <template #cell-margin="{ row }">
+            {{ fmtPct(row.min_margin) }} / {{ fmtPct(row.safety_buffer) }}
+          </template>
+          <template #cell-cap="{ row }">{{ fmtMul(cap(row)) }}</template>
+          <template #cell-enabled="{ row }">
+            <span class="status-cell">
+              <i class="status-dot" :data-tone="row.enabled ? 'ok' : 'idle'" />
+              {{ row.enabled ? '启用' : '停用' }}
+            </span>
+          </template>
+          <template #cell-market="{ row }">
+            <span class="status-cell">
+              <i class="status-dot" :data-tone="row.market_published ? 'ok' : 'idle'" />
+              {{ row.market_published ? '已上架' : '未上架' }}
+            </span>
+          </template>
+          <template #cell-sub2api="{ row }">
+            {{ row.sub2api_group_id ? '已同步' : '未同步' }}
+          </template>
+          <template #cell-actions="{ row }">
+            <div class="table-ops">
               <button type="button" class="y-link" :disabled="busy" @click="openEdit(row)">编辑</button>
               <button type="button" class="y-link" :disabled="busy" @click="sync(row)">同步</button>
               <button type="button" class="y-link" :disabled="busy" @click="toggleEnabled(row)">
@@ -352,20 +475,32 @@ onMounted(load)
               >
                 {{ row.market_published ? '下架' : '上架' }}
               </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </div>
+          </template>
+          <template #empty>
+            <EmptyState
+              title="暂无分组"
+              description="点右上角「新建分组」创建，或调整筛选条件"
+              action-text="新建分组"
+              @action="openNew"
+            />
+          </template>
+        </DataTable>
+      </template>
 
-    <footer v-if="total > 0" class="y-footer">
-      <div class="y-pager">
-        <span>共 {{ total }} 条</span>
-        <button type="button" :disabled="pageNum <= 1" @click="pageNum -= 1">上一页</button>
-        <button type="button" class="is-on">{{ pageNum }} / {{ pageCount }}</button>
-        <button type="button" :disabled="pageNum >= pageCount" @click="pageNum += 1">下一页</button>
-      </div>
-    </footer>
+      <template #pagination>
+        <Pagination
+          v-if="total > 0"
+          :total="total"
+          :page="queryParams.pageNum"
+          :page-size="queryParams.pageSize"
+          :page-size-options="[15, 20, 50]"
+          show-jump
+          @update:page="queryParams.pageNum = $event"
+          @update:page-size="queryParams.pageSize = $event"
+        />
+      </template>
+    </TablePageLayout>
 
     <div v-if="show" class="y-modal-mask" @click.self="closeModal">
       <div class="y-modal" role="dialog" :aria-label="editing ? '编辑默认分组' : '新建默认分组'">
@@ -381,7 +516,7 @@ onMounted(load)
           <label class="y-field">
             <span>平台</span>
             <select v-model="form.platform" class="input w-full" :disabled="!!editing">
-              <option v-for="o in PLATFORM_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
+              <option v-for="o in PLATFORM_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
             </select>
           </label>
           <div class="y-field-row y-field-row--3">
@@ -429,8 +564,8 @@ onMounted(load)
           </div>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="closeModal">取消</button>
-          <button type="button" class="y-btn" :disabled="busy" @click="save">保存</button>
+          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
         </footer>
       </div>
     </div>
@@ -438,17 +573,171 @@ onMounted(load)
 </template>
 
 <style scoped>
-.y-header-actions {
+#market-pools-page.pools-shell {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.page-heading {
+  min-width: 0;
+}
+
+.page-action-btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
 }
-.row-sub {
-  margin-top: 2px;
+
+.section-block {
+  min-width: 0;
+}
+
+.section-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--color-text-primary, #262626);
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stat-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: #f8fafc;
+}
+
+.stat-card--blue {
+  background: linear-gradient(135deg, #eff6ff, #f8fafc);
+}
+.stat-card--green {
+  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
+}
+.stat-card--orange {
+  background: linear-gradient(135deg, #fff7ed, #f8fafc);
+}
+
+.stat-card__label {
   font-size: 12px;
-  opacity: 0.65;
+  color: #64748b;
 }
+
+.stat-card__value {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.table-ops {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  min-width: max-content;
+}
+
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.status-dot[data-tone='ok'] {
+  background: #16a34a;
+}
+.status-dot[data-tone='idle'] {
+  background: #94a3b8;
+}
+
+#market-pools-page :deep(.filter-grid .select-trigger),
+#market-pools-page :deep(.filter-grid .select-trigger-sm),
+#market-pools-page :deep(.filter-grid .filter-input) {
+  height: 32px;
+  min-height: 32px;
+}
+
+#market-pools-page :deep(.table-scroll-container table thead th) {
+  background: #f5f7fa;
+  color: #606266;
+  font-weight: 500;
+  font-size: 13px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+#market-pools-page :deep(.table-scroll-container table tbody td) {
+  border-bottom: 1px solid #ebeef5;
+  font-size: 13px;
+  color: #303133;
+}
+
+#market-pools-page :deep(.table-scroll-container table tbody tr:hover td) {
+  background: #f5f7fa;
+}
+
+#market-pools-page :deep(th.col-name),
+#market-pools-page :deep(td.col-name) {
+  min-width: 8rem;
+}
+#market-pools-page :deep(th.col-title),
+#market-pools-page :deep(td.col-title) {
+  min-width: 9rem;
+}
+#market-pools-page :deep(th.col-platform),
+#market-pools-page :deep(td.col-platform) {
+  min-width: 6rem;
+}
+#market-pools-page :deep(th.col-num),
+#market-pools-page :deep(td.col-num) {
+  min-width: 5.5rem;
+}
+#market-pools-page :deep(th.col-status),
+#market-pools-page :deep(td.col-status),
+#market-pools-page :deep(th.col-sub2api),
+#market-pools-page :deep(td.col-sub2api) {
+  min-width: 5rem;
+}
+#market-pools-page :deep(th.col-ops),
+#market-pools-page :deep(td.col-ops) {
+  min-width: 14rem;
+  width: 14rem;
+  box-sizing: border-box;
+}
+#market-pools-page :deep(thead th.col-ops) {
+  background: #f5f7fa !important;
+}
+#market-pools-page :deep(tbody td.col-ops) {
+  background: #fff !important;
+}
+#market-pools-page :deep(tbody tr:hover td.col-ops) {
+  background: #f5f7fa !important;
+}
+
 .y-modal-mask {
   position: fixed;
   inset: 0;
@@ -527,7 +816,11 @@ onMounted(load)
   padding: 8px 10px;
   resize: vertical;
 }
-@media (max-width: 720px) {
+
+@media (max-width: 900px) {
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
   .y-field-row--3 {
     grid-template-columns: 1fr;
   }

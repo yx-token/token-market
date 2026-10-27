@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/internal/buyer"
 	"github.com/yx-token/token-market/market/internal/edgecfg"
 	"github.com/yx-token/token-market/market/internal/inspection"
 	"github.com/yx-token/token-market/market/internal/listing"
 	"github.com/yx-token/token-market/market/internal/platform/crypto"
+	"github.com/yx-token/token-market/market/internal/platform/displaycode"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/platform/randx"
 	"github.com/yx-token/token-market/market/internal/settings"
@@ -203,7 +205,7 @@ func (e *Engine) QueueRun(ctx context.Context, upstreamID int64, trigger string,
 		return 0, httpx.Conflict("RUN_PENDING", "该上游已有待完成的检测")
 	}
 	var id int64
-	if err := tx.QueryRow(ctx, `INSERT INTO probe_runs(upstream_id,batch_id,trigger,policy_version,model,mode,flows,identity_source,models,degradation_models,execution_snapshot) VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),$9,$10,$11) RETURNING id`, u.id, batch, trigger, p.Version, model, mode, flows, source, models, degradationModelList, mustJSON(snapshot)).Scan(&id); err != nil {
+	if err := insertProbeRun(ctx, tx, u.id, batch, trigger, p.Version, model, mode, flows, source, models, degradationModelList, mustJSON(snapshot), &id); err != nil {
 		return 0, err
 	}
 	selfFlows := []string{}
@@ -234,7 +236,8 @@ func (e *Engine) QueueRun(ctx context.Context, upstreamID int64, trigger string,
 		err := tx.QueryRow(ctx, `SELECT u.id FROM upstreams u WHERE is_reference AND platform=$1 AND status IN ('ready','listed') AND health='healthy' AND sub2api_account_id IS NOT NULL AND auth_type=$2 AND tier IS NOT DISTINCT FROM $3::text AND (model_whitelist IS NULL OR model_whitelist @> $4::text[]) ORDER BY (SELECT count(*) FROM probe_runs r WHERE r.upstream_id=u.id AND r.status IN ('queued','running','third_party')),u.id LIMIT 1`, u.platform, u.authType, u.tier, referenceModels).Scan(&refID)
 		if err == nil {
 			// 基线跑同一批题目，需要与目标运行一致地冻结降智模型集合，否则同一批次的两侧选题不同。
-			if _, err := tx.Exec(ctx, `INSERT INTO probe_runs(upstream_id,batch_id,trigger,policy_version,model,mode,flows,identity_source,models,degradation_models,execution_snapshot) VALUES($1,$2,'reference',$3,$4,$5,$6,NULLIF($7,''),$8,$9,$10)`, refID, batch, p.Version, model, mode, selfFlows, source, models, degradationModelList, []byte(`{}`)); err != nil {
+			var refRunID int64
+			if err := insertProbeRun(ctx, tx, refID, batch, "reference", p.Version, model, mode, selfFlows, source, models, degradationModelList, []byte(`{}`), &refRunID); err != nil {
 				return 0, err
 			}
 		} else if !errors.Is(err, pgx.ErrNoRows) {
@@ -242,6 +245,24 @@ func (e *Engine) QueueRun(ctx context.Context, upstreamID int64, trigger string,
 		}
 	}
 	return id, tx.Commit(ctx)
+}
+
+func insertProbeRun(ctx context.Context, tx pgx.Tx, upstreamID int64, batch, trigger string, policyVersion int64, model, mode string, flows []string, source string, models, degradationModels []string, snapshot []byte, id *int64) error {
+	var lastErr error
+	for attempt := 0; attempt < 8; attempt++ {
+		code := displaycode.New()
+		lastErr = tx.QueryRow(ctx, `INSERT INTO probe_runs(upstream_id,batch_id,trigger,policy_version,model,mode,flows,identity_source,models,degradation_models,execution_snapshot,code)
+			VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,''),$9,$10,$11,$12) RETURNING id`,
+			upstreamID, batch, trigger, policyVersion, model, mode, flows, source, models, degradationModels, snapshot, code).Scan(id)
+		if lastErr == nil {
+			return nil
+		}
+		var pgErr *pgconn.PgError
+		if !errors.As(lastErr, &pgErr) || pgErr.Code != "23505" {
+			return lastErr
+		}
+	}
+	return lastErr
 }
 
 // Tick 是一轮质量调度：排队到期的检测、推进第三方检测、被动分析、回收续报价、补足探测余额。

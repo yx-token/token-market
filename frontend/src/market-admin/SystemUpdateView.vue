@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import Icon from '@/components/icons/Icon.vue'
+import type { Column } from '@/components/common/types'
 import {
   checkUpdates,
   getRollbackVersions,
@@ -10,6 +15,14 @@ import {
   type RollbackVersionInfo,
   type VersionInfo,
 } from '@/api/admin/system'
+
+defineOptions({ name: 'MarketAdminSystemUpdate' })
+
+const rollbackColumns: Column[] = [
+  { key: 'version', label: '版本', class: 'col-ver' },
+  { key: 'published_at', label: '发布时间', class: 'col-time' },
+  { key: 'actions', label: '操作', class: 'col-ops' },
+]
 
 const version = ref('')
 const info = ref<VersionInfo | null>(null)
@@ -139,117 +152,115 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section id="market-system-update-page" class="y-page">
-    <header class="y-header">
-      <div>
-        <h2 class="y-title">系统更新</h2>
-        <p class="y-page-desc">查看引擎版本、检查 GitHub 发布并执行站内更新 / 回滚</p>
-      </div>
-      <div class="y-header-actions">
-        <button type="button" class="y-btn y-btn--ghost" :disabled="checking || busy" @click="refresh(true)">
+  <section id="market-system-update-page" class="update-shell">
+    <TablePageLayout>
+      <template #title>
+        <div class="page-heading">
+          <h2 class="y-title">系统更新</h2>
+          <p class="y-page-desc">查看引擎版本、检查 GitHub 发布并执行站内更新 / 回滚</p>
+        </div>
+      </template>
+      <template #actions>
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="checking || busy" @click="refresh(true)">
+          <Icon name="refresh" size="sm" :class="{ 'animate-spin': checking }" />
           {{ checking ? '检查中…' : '检查更新' }}
         </button>
-        <button type="button" class="y-btn y-btn--ghost" :disabled="busy" @click="doRestart">重启服务</button>
-      </div>
-    </header>
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="busy" @click="doRestart">
+          重启服务
+        </button>
+      </template>
+      <template #filters>
+        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <p v-if="loading && !info" class="y-msg mb-2">加载中…</p>
 
-    <div class="y-container--tight space-y-4">
-      <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-      <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
-      <p v-if="loading && !info" class="y-msg">加载中…</p>
-
-      <div class="card-block">
-        <div class="card-head">
-          <h3>当前版本</h3>
-          <span class="mono ver">{{ version || '—' }}</span>
-        </div>
-        <dl class="kv">
-          <div>
-            <dt>构建类型</dt>
-            <dd>{{ info?.build_type || '—' }}</dd>
+        <div class="cards-row">
+          <div class="card-block">
+            <div class="card-head">
+              <h3>当前版本</h3>
+              <span class="mono ver">{{ version || '—' }}</span>
+            </div>
+            <dl class="kv">
+              <div>
+                <dt>构建类型</dt>
+                <dd>{{ info?.build_type || '—' }}</dd>
+              </div>
+              <div>
+                <dt>缓存结果</dt>
+                <dd>{{ info ? (info.cached ? '是' : '否') : '—' }}</dd>
+              </div>
+            </dl>
+            <p v-if="info?.warning" class="hint warn">{{ info.warning }}</p>
+            <p v-if="info?.build_type === 'source'" class="hint">
+              源码构建不支持一键更新，请通过镜像或发布包升级。
+            </p>
           </div>
-          <div>
-            <dt>缓存结果</dt>
-            <dd>{{ info ? (info.cached ? '是' : '否') : '—' }}</dd>
-          </div>
-        </dl>
-        <p v-if="info?.warning" class="hint warn">{{ info.warning }}</p>
-        <p v-if="info?.build_type === 'source'" class="hint">
-          源码构建不支持一键更新，请通过镜像或发布包升级。
-        </p>
-      </div>
 
-      <div class="card-block">
-        <div class="card-head">
-          <h3>最新正式版本</h3>
-          <button type="button" class="y-btn" :disabled="!canUpdate" @click="confirming = true">
-            {{ busy ? '处理中…' : '更新系统' }}
-          </button>
-        </div>
-        <template v-if="info">
-          <div class="release-line">
-            <span class="mono ver">{{ info.latest_version || '—' }}</span>
-            <span class="hint">{{ info.has_update ? '有新版本可用' : '已是最新' }}</span>
-            <a
-              v-if="info.release_info?.html_url"
-              class="y-link ml-auto"
-              :href="info.release_info.html_url"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              发布详情 ↗
-            </a>
-          </div>
-          <p v-if="info.release_info?.published_at" class="hint">
-            发布于 {{ fmtTime(info.release_info.published_at) }}
-          </p>
-          <pre v-if="info.release_info?.body" class="notes">{{ info.release_info.body }}</pre>
-        </template>
-        <p v-else class="hint">{{ checking ? '正在查询发布信息…' : '尚未查询发布信息' }}</p>
-      </div>
-
-      <div class="card-block">
-        <div class="card-head">
-          <h3>可回滚版本</h3>
-        </div>
-        <p v-if="!rollbacks.length" class="hint">暂无可回滚版本</p>
-        <table v-else>
-          <thead>
-            <tr>
-              <th>版本</th>
-              <th>发布时间</th>
-              <th class="y-col-op">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in rollbacks" :key="r.version">
-              <td class="mono">{{ r.version }}</td>
-              <td>{{ fmtTime(r.published_at) }}</td>
-              <td class="y-col-op">
-                <button
-                  type="button"
-                  class="y-link y-link--danger"
-                  :disabled="busy"
-                  @click="confirmRollback = r.version"
-                >
-                  回滚到此版本
-                </button>
+          <div class="card-block">
+            <div class="card-head">
+              <h3>最新正式版本</h3>
+              <button type="button" class="btn btn-primary page-action-btn" :disabled="!canUpdate" @click="confirming = true">
+                {{ busy ? '处理中…' : '更新系统' }}
+              </button>
+            </div>
+            <template v-if="info">
+              <div class="release-line">
+                <span class="mono ver">{{ info.latest_version || '—' }}</span>
+                <span class="hint">{{ info.has_update ? '有新版本可用' : '已是最新' }}</span>
                 <a
-                  v-if="r.html_url"
-                  class="y-link"
-                  :href="r.html_url"
+                  v-if="info.release_info?.html_url"
+                  class="y-link ml-auto"
+                  :href="info.release_info.html_url"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  详情
+                  发布详情 ↗
                 </a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </div>
+              <p v-if="info.release_info?.published_at" class="hint">
+                发布于 {{ fmtTime(info.release_info.published_at) }}
+              </p>
+              <pre v-if="info.release_info?.body" class="notes">{{ info.release_info.body }}</pre>
+            </template>
+            <p v-else class="hint">{{ checking ? '正在查询发布信息…' : '尚未查询发布信息' }}</p>
+          </div>
+        </div>
         <p class="hint mt">更新会下载完整发布包，耗时可能较长；失败时请查看服务日志。</p>
-      </div>
-    </div>
+      </template>
+      <template #table>
+        <div class="section-title">可回滚版本</div>
+        <DataTable :columns="rollbackColumns" :data="rollbacks" :loading="loading" :expandable-actions="false">
+          <template #cell-version="{ row }">
+            <span class="mono">{{ row.version }}</span>
+          </template>
+          <template #cell-published_at="{ row }">{{ fmtTime(row.published_at) }}</template>
+          <template #cell-actions="{ row }">
+            <div class="table-ops">
+              <button
+                type="button"
+                class="y-link y-link--danger"
+                :disabled="busy"
+                @click="confirmRollback = row.version"
+              >
+                回滚
+              </button>
+              <a
+                v-if="row.html_url"
+                class="y-link"
+                :href="row.html_url"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                详情
+              </a>
+            </div>
+          </template>
+          <template #empty>
+            <EmptyState title="暂无可回滚版本" description="完成正式版更新后会出现可回滚记录" />
+          </template>
+        </DataTable>
+      </template>
+    </TablePageLayout>
 
     <div v-if="confirming" class="y-modal-mask" @click.self="confirming = false">
       <div class="y-modal">
@@ -265,8 +276,8 @@ onUnmounted(() => {
           <p class="hint">服务可能短暂不可用，进行中的请求可能中断。请确认已备份数据库。</p>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="confirming = false">取消</button>
-          <button type="button" class="y-btn" :disabled="!canUpdate" @click="startUpdate">确认更新</button>
+          <button type="button" class="btn btn-secondary" @click="confirming = false">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="!canUpdate" @click="startUpdate">确认更新</button>
         </footer>
       </div>
     </div>
@@ -283,8 +294,8 @@ onUnmounted(() => {
           </p>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="confirmRollback = null">取消</button>
-          <button type="button" class="y-btn" :disabled="busy" @click="doRollback(confirmRollback!)">
+          <button type="button" class="btn btn-secondary" @click="confirmRollback = null">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="busy" @click="doRollback(confirmRollback!)">
             确认回滚
           </button>
         </footer>
@@ -294,16 +305,59 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.y-header-actions {
+#market-system-update-page.update-shell {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.page-heading { min-width: 0; }
+.page-action-btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cards-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.section-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.table-ops {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
 }
 .card-block {
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 10px;
   padding: 14px 16px;
   background: var(--color-bg-elevated, #fff);
+}
+#market-system-update-page :deep(.table-scroll-container table thead th) {
+  background: #f5f7fa;
+  color: #606266;
+  font-weight: 500;
+  font-size: 13px;
+}
+#market-system-update-page :deep(th.col-ops),
+#market-system-update-page :deep(td.col-ops) {
+  min-width: 8rem;
+  width: 8rem;
+}
+@media (max-width: 900px) {
+  .cards-row { grid-template-columns: 1fr; }
 }
 .card-head {
   display: flex;

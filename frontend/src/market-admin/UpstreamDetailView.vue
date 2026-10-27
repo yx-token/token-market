@@ -2,8 +2,9 @@
 /**
  * 管理端上游详情 / 编辑：代卖家完成授权、选模型，把 draft / selecting_models 推进到 ready。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import Select from '@/components/common/Select.vue'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
 import { useConsoleTabs } from '@/stores/consoleTabs'
 
@@ -20,6 +21,9 @@ interface Upstream {
   platform: string
   auth_type?: string
   account_email?: string | null
+  code?: string
+  name?: string | null
+  note?: string | null
   status: string
   health?: string
   health_reason?: string
@@ -38,6 +42,13 @@ interface UpstreamModels {
   detection_status?: string
 }
 
+interface VendorConfig {
+  platform: string
+  enabled: boolean
+  auth_types: string[]
+  supported_auth_types?: string[]
+}
+
 const STATUS_LABEL: Record<string, string> = {
   ready: '就绪',
   listed: '已挂单',
@@ -49,6 +60,39 @@ const STATUS_LABEL: Record<string, string> = {
   authorizing: '授权中',
   failed: '失败',
   removing: '移除中',
+}
+
+const PLATFORM_OPTIONS = [
+  { value: 'anthropic', label: 'Anthropic' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'antigravity', label: 'Antigravity' },
+  { value: 'grok', label: 'Grok' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'zhipu', label: '智谱' },
+  { value: 'minimax', label: 'MiniMax' },
+  { value: 'opencode_go', label: 'OpenCode Go' },
+]
+
+const AUTH_FALLBACK: Record<string, string[]> = {
+  anthropic: ['oauth', 'setup-token'],
+  openai: ['oauth'],
+  gemini: ['oauth', 'google_one'],
+  antigravity: ['oauth'],
+  grok: ['oauth'],
+  kimi: ['coding'],
+  zhipu: ['coding', 'coding-intl'],
+  minimax: ['coding', 'coding-intl'],
+  opencode_go: ['go'],
+}
+
+const AUTH_LABEL: Record<string, string> = {
+  oauth: 'OAuth 授权',
+  'setup-token': 'Setup Token',
+  google_one: 'Google One',
+  coding: 'Coding Plan',
+  'coding-intl': 'Coding Plan 国际站',
+  go: 'OpenCode Go',
 }
 
 const upstreamId = computed(() => {
@@ -72,6 +116,10 @@ const apiKey = ref('')
 const organization = ref('')
 const project = ref('')
 
+const vendors = ref<VendorConfig[]>([])
+const switchPlatform = ref('')
+const switchAuthType = ref('')
+
 const needsAuth = computed(() =>
   !!row.value && ['draft', 'authorizing', 'failed'].includes(row.value.status),
 )
@@ -83,9 +131,62 @@ const needsModels = computed(() =>
 )
 const isCoding = computed(() => {
   const t = (row.value?.auth_type || '').toLowerCase()
-  return t.includes('coding') || t.includes('apikey') || t === 'api_key' || t === 'key'
+  return t.includes('coding') || t.includes('apikey') || t === 'api_key' || t === 'key' || t === 'go'
 })
 const isOAuth = computed(() => !isCoding.value)
+
+function authTypesForPlatform(platform: string): string[] {
+  if (!platform) return []
+  const v = vendors.value.find((x) => x.platform === platform)
+  const supported = Array.isArray(v?.supported_auth_types) ? v!.supported_auth_types.filter(Boolean) : []
+  const opened = Array.isArray(v?.auth_types) ? v!.auth_types.filter(Boolean) : []
+  const merged = [...new Set([...supported, ...opened])]
+  if (merged.length) return merged
+  return AUTH_FALLBACK[platform] || ['oauth']
+}
+
+const switchPlatformOptions = computed(() => {
+  const fromApi = vendors.value
+    .filter((v) => v.enabled)
+    .map((v) => ({
+      value: v.platform,
+      label: PLATFORM_OPTIONS.find((o) => o.value === v.platform)?.label || v.platform,
+    }))
+  if (fromApi.length) return fromApi
+  return Object.keys(AUTH_FALLBACK).map((p) => ({
+    value: p,
+    label: PLATFORM_OPTIONS.find((o) => o.value === p)?.label || p,
+  }))
+})
+
+const switchAuthOptions = computed(() =>
+  authTypesForPlatform(switchPlatform.value).map((t) => ({
+    value: t,
+    label: AUTH_LABEL[t] || t,
+  })),
+)
+
+function syncSwitchAuthType() {
+  const opts = authTypesForPlatform(switchPlatform.value)
+  if (!opts.length) {
+    switchAuthType.value = ''
+    return
+  }
+  if (!opts.includes(switchAuthType.value)) {
+    switchAuthType.value = opts[0]
+  }
+}
+
+function syncSwitchFormFromRow() {
+  if (!row.value) return
+  switchPlatform.value = row.value.platform || ''
+  switchAuthType.value = row.value.auth_type || ''
+  syncSwitchAuthType()
+}
+
+watch(switchPlatform, () => {
+  syncSwitchAuthType()
+})
 
 function statusLabel(s?: string) {
   return (s && STATUS_LABEL[s]) || s || '—'
@@ -95,6 +196,14 @@ function backToList() {
   const path = '/admin/market/upstreams'
   closeTab(`/admin/market/upstreams/${upstreamId.value}`)
   router.push(path)
+}
+
+async function loadVendors() {
+  try {
+    vendors.value = (await marketGet<VendorConfig[] | null>(`${MARKET_API_PREFIX}/vendors`)) ?? []
+  } catch {
+    vendors.value = []
+  }
 }
 
 async function load() {
@@ -108,8 +217,14 @@ async function load() {
   try {
     row.value = await marketGet<Upstream>(`${MARKET_API_PREFIX}/upstreams/${upstreamId.value}`)
     openTab(`/admin/market/upstreams/${upstreamId.value}`, {
-      title: `上游 #${upstreamId.value}`,
+      title:
+        row.value?.name?.trim() ||
+        row.value?.account_email?.trim() ||
+        row.value?.seller_email?.trim() ||
+        '上游详情',
     })
+    syncSwitchFormFromRow()
+    if (needsAuth.value) await loadVendors()
     if (needsModels.value) {
       await loadModels()
     } else {
@@ -235,6 +350,29 @@ async function clearDeadAccount() {
   )
 }
 
+async function switchChannel() {
+  if (!switchPlatform.value || !switchAuthType.value) {
+    error.value = '请选择厂商与接入方式'
+    return
+  }
+  const same =
+    row.value?.platform === switchPlatform.value && row.value?.auth_type === switchAuthType.value
+  if (same) {
+    msg.value = '渠道未变化'
+    return
+  }
+  const ok = await run('已切换渠道，请重新授权', async () => {
+    await marketSend('POST', `${MARKET_API_PREFIX}/upstreams/${upstreamId.value}/switch-channel`, {
+      platform: switchPlatform.value,
+      auth_type: switchAuthType.value,
+    })
+    authURL.value = ''
+    oauthCode.value = ''
+    apiKey.value = ''
+  })
+  if (ok) await nextTick()
+}
+
 watch(upstreamId, () => {
   void load()
 })
@@ -248,7 +386,14 @@ onMounted(() => {
   <section id="market-upstream-detail-page" class="detail-shell">
     <header class="detail-header">
       <div class="page-heading">
-        <h2 class="y-title">上游 #{{ upstreamId || '—' }}</h2>
+        <h2 class="y-title">
+          {{
+            (row?.name || '').trim() ||
+            (row?.account_email || '').trim() ||
+            (row?.seller_email || '').trim() ||
+            '未命名上游'
+          }}
+        </h2>
         <p class="y-page-desc">管理端可代卖家完成授权与选模型；完成后状态变为就绪即可挂单</p>
       </div>
       <div class="detail-header__actions">
@@ -273,17 +418,57 @@ onMounted(() => {
       <template v-else-if="row">
         <div class="summary-card">
           <div>
+            <span>编号</span>
+            {{ row.code || '—' }}
+          </div>
+          <div>
+            <span>名称</span>
+            {{ (row.name || '').trim() || '—' }}
+          </div>
+          <div>
             <span>卖家</span>
-            {{ row.seller_email || `卖家 #${row.seller_id}` }}
-            <template v-if="row.seller_email"> · #{{ row.seller_id }}</template>
+            {{ row.seller_email?.trim() || '—' }}
           </div>
           <div><span>厂商</span>{{ row.platform }} · {{ row.auth_type || '—' }}</div>
           <div><span>状态</span>{{ statusLabel(row.status) }}</div>
           <div><span>邮箱</span>{{ row.account_email || '—' }}</div>
           <div><span>健康</span>{{ row.health || '—' }}</div>
           <div><span>等级</span>{{ row.grade || row.tier || '—' }}</div>
+          <div class="summary-note">
+            <span>备注</span>
+            {{ (row.note || '').trim() || '—' }}
+          </div>
         </div>
         <p v-if="row.failure_reason" class="hint warn">失败原因：{{ row.failure_reason }}</p>
+
+        <!-- 换渠道（仅未完成接入） -->
+        <section v-if="needsAuth" class="edit-panel">
+          <h3>切换渠道</h3>
+          <p class="sub">
+            草稿 / 授权中 / 失败时可更换厂商与接入方式；切换后需重新授权。已接入完成的上游请删除后新建。
+          </p>
+          <label class="field">
+            <span>厂商</span>
+            <Select
+              v-model="switchPlatform"
+              class="w-full"
+              size="sm"
+              :options="switchPlatformOptions"
+            />
+          </label>
+          <label class="field">
+            <span>接入方式</span>
+            <Select
+              v-model="switchAuthType"
+              class="w-full"
+              size="sm"
+              :options="switchAuthOptions"
+            />
+          </label>
+          <button type="button" class="btn btn-secondary" :disabled="busy" @click="switchChannel">
+            确认切换
+          </button>
+        </section>
 
         <!-- 授权 -->
         <section v-if="needsAuth" class="edit-panel">
@@ -467,6 +652,12 @@ onMounted(() => {
   margin-bottom: 2px;
   font-size: 12px;
   color: #8c8c8c;
+}
+
+.summary-note {
+  grid-column: 1 / -1;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 @media (max-width: 800px) {

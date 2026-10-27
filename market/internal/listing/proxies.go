@@ -20,6 +20,7 @@ import (
 type Proxy struct {
 	ID                  int64                           `json:"id"`
 	SellerID            *int64                          `json:"seller_id,omitempty"`
+	SellerEmail         string                          `json:"seller_email,omitempty"`
 	Name                string                          `json:"name"`
 	Protocol            string                          `json:"protocol"`
 	Host                string                          `json:"host"`

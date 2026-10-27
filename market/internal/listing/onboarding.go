@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yx-token/token-market/market/internal/platform/crypto"
+	"github.com/yx-token/token-market/market/internal/platform/displaycode"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/settings"
 	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
@@ -113,9 +114,21 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var id int64
-	if err := tx.QueryRow(ctx, `INSERT INTO upstreams (seller_id, platform, auth_type, is_reference) VALUES ($1, $2, $3, $4) RETURNING id`,
-		sellerID, platform, authType, reference).Scan(&id); err != nil {
-		return nil, err
+	var lastErr error
+	for attempt := 0; attempt < 8; attempt++ {
+		code := displaycode.New()
+		lastErr = tx.QueryRow(ctx, `INSERT INTO upstreams (seller_id, platform, auth_type, is_reference, code) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			sellerID, platform, authType, reference, code).Scan(&id)
+		if lastErr == nil {
+			break
+		}
+		// 编号唯一冲突极罕见，换号重试
+		if !isUniqueViolation(lastErr) {
+			return nil, lastErr
+		}
+	}
+	if lastErr != nil {
+		return nil, lastErr
 	}
 	var proxyID int64
 	if selectedProxyID != nil {

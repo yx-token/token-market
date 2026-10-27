@@ -330,7 +330,7 @@ describe('质检报告与估价', () => {
     expect(wrapper.text()).toContain('B 级')
     expect(wrapper.text()).toContain('97%')
     expect(wrapper.text()).toContain('400ms')
-    expect(wrapper.classes()).toContain('lib-card')
+    expect(wrapper.classes()).toContain('sku-card')
     wrapper.unmount()
   })
 
@@ -340,7 +340,7 @@ describe('质检报告与估价', () => {
     const wrapper = mount(MarketListingCard, { props: { sku: { id: 'l-1', listingId: 1, kind: 'channel', plat: 'ChatGPT', tier: 'Plus', title: '测试通道', img: 'card1.jpg', mult: 0.8, grade: 'B', success: 0.97, ttft: 400, detectionStatus: status } }, global: { plugins: [router] } })
     expect(wrapper.text()).toContain('测试通道')
     expect(wrapper.text()).not.toContain('B 级')
-    expect(wrapper.classes()).toContain('lib-card')
+    expect(wrapper.classes()).toContain('sku-card')
     wrapper.unmount()
   })
 })

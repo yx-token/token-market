@@ -85,8 +85,38 @@
                       </button>
                       <div v-if="isGroupExpanded(child)" class="sidebar-submenu sidebar-submenu--l3">
                         <template v-for="leaf in child.children" :key="leaf.path">
+                          <template v-if="leaf.children?.length">
+                            <div class="sidebar-group">
+                              <button
+                                type="button"
+                                class="sidebar-link sidebar-link--l3 w-full"
+                                :class="{ 'sidebar-link-active': isGroupActive(leaf) }"
+                                @click="toggleGroup(leaf)"
+                              >
+                                <span class="sidebar-label sidebar-label-flex">
+                                  <span class="min-w-0 truncate">{{ leaf.label }}</span>
+                                  <ChevronDownIcon
+                                    class="sidebar-caret"
+                                    :class="isGroupExpanded(leaf) ? 'rotate-180' : ''"
+                                  />
+                                </span>
+                              </button>
+                              <div v-if="isGroupExpanded(leaf)" class="sidebar-submenu sidebar-submenu--l4">
+                                <template v-for="nested in leaf.children" :key="nested.path">
+                                  <router-link
+                                    :to="nested.path"
+                                    class="sidebar-link sidebar-link--l4"
+                                    :class="{ 'sidebar-link-active': route.path === nested.path }"
+                                    @click="handleMenuItemClick(nested.path)"
+                                  >
+                                    <span>{{ nested.label }}</span>
+                                  </router-link>
+                                </template>
+                              </div>
+                            </div>
+                          </template>
                           <a
-                            v-if="leaf.external"
+                            v-else-if="leaf.external"
                             :href="leaf.path"
                             class="sidebar-link sidebar-link--l3"
                             :title="t('nav.backToMarketHint')"
@@ -936,9 +966,16 @@ const adminNavItems = computed((): NavItem[] => {
           icon: ServerIcon,
           children: [
             { path: '/admin/market/listings', label: t('nav.marketListings'), icon: GlobeIcon },
-            { path: '/admin/market/supply-accounts', label: t('nav.marketSupplyAccounts'), icon: GlobeIcon },
-            { path: '/admin/market/supply-groups', label: t('nav.marketSupplyGroups'), icon: FolderIcon },
             { path: '/admin/market/upstreams', label: t('nav.marketUpstreams'), icon: ServerIcon },
+            {
+              path: '/admin/market/section-dispatch',
+              label: t('nav.marketDispatch'),
+              icon: ChannelIcon,
+              children: [
+                { path: '/admin/market/supply-accounts', label: t('nav.marketSupplyAccounts'), icon: GlobeIcon },
+                { path: '/admin/market/supply-groups', label: t('nav.marketSupplyGroups'), icon: FolderIcon },
+              ],
+            },
             { path: '/admin/market/pools', label: t('nav.marketPools'), icon: FolderIcon },
             { path: '/admin/market/vendors', label: t('nav.marketVendors'), icon: GlobeIcon },
             { path: '/admin/market/proxies', label: t('nav.marketProxies'), icon: ServerIcon },

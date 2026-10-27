@@ -27,6 +27,7 @@ type RunRecord struct {
 	AuthType     string                `json:"auth_type"`
 	SellerID     int64                 `json:"seller_id"`
 	AccountEmail *string               `json:"account_email,omitempty"`
+	UpstreamCode string                `json:"upstream_code"`
 	IsReference  bool                  `json:"is_reference"`
 	Suites       map[string]SuiteCount `json:"suites"`
 }
@@ -80,7 +81,7 @@ func (f RecordFilter) args() []any {
 
 // ListRunRecords 返回全部上游的检测记录（新的在前）。
 func ListRunRecords(ctx context.Context, db DB, f RecordFilter, limit, offset int) ([]RunRecord, error) {
-	rows, err := db.Query(ctx, "SELECT "+runSummaryColumns+`, u.platform, u.auth_type, u.seller_id, u.account_email, u.is_reference,
+	rows, err := db.Query(ctx, "SELECT "+runSummaryColumns+`, u.platform, u.auth_type, u.seller_id, u.account_email, u.code, u.is_reference,
 			COALESCE((SELECT jsonb_object_agg(s.suite, jsonb_build_object('items', s.n, 'passed', s.p))
 				FROM (SELECT x.suite, count(*) AS n, count(*) FILTER (WHERE x.passed) AS p
 					FROM probe_results x WHERE x.run_id = r.id GROUP BY x.suite) s), '{}')
@@ -93,8 +94,8 @@ func ListRunRecords(ctx context.Context, db DB, f RecordFilter, limit, offset in
 		var rec RunRecord
 		var summary, suites []byte
 		s := &rec.RunSummary
-		err := row.Scan(&s.ID, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models,
-			&rec.Platform, &rec.AuthType, &rec.SellerID, &rec.AccountEmail, &rec.IsReference, &suites)
+		err := row.Scan(&s.ID, &s.Code, &s.UpstreamID, &s.BatchID, &s.Trigger, &s.Model, &s.Status, &summary, &s.Items, &s.Passed, &s.Planned, &s.QueuedAt, &s.FinishedAt, &s.Flows, &s.IdentitySource, &s.Models,
+			&rec.Platform, &rec.AuthType, &rec.SellerID, &rec.AccountEmail, &rec.UpstreamCode, &rec.IsReference, &suites)
 		if err != nil {
 			return rec, err
 		}

@@ -1,6 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+/**
+ * 组织管理：TablePageLayout + DataTable（组织/员工）；角色保留左右分栏与权限树。
+ */
+import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
+import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import Icon from '@/components/icons/Icon.vue'
+import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
+
+defineOptions({ name: 'MarketAdminOrg' })
 
 interface OrgUnit {
   id: number
@@ -48,7 +59,14 @@ const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
 const msg = ref('')
-const keyword = ref('')
+
+const initQueryParams = {
+  pageNum: 1,
+  pageSize: 15,
+  keyword: '',
+}
+const data = reactive({ queryParams: { ...initQueryParams } })
+const { queryParams } = toRefs(data)
 
 const showUnit = ref(false)
 const editingUnit = ref<OrgUnit | null>(null)
@@ -77,17 +95,53 @@ const staffForm = reactive({
 
 const kindLabel: Record<string, string> = { dir: '目录', menu: '菜单', action: '功能' }
 
+const unitColumns: Column[] = [
+  { key: 'serial', label: '序号', class: 'w-16' },
+  { key: 'id', label: 'ID', class: 'col-id' },
+  { key: 'name', label: '名称', class: 'col-name' },
+  { key: 'code', label: '编码', class: 'col-code' },
+  { key: 'parent_id', label: '父级', class: 'col-parent' },
+  { key: 'sort', label: '排序', class: 'col-sort' },
+  { key: 'enabled', label: '状态', class: 'col-status' },
+  { key: 'actions', label: '操作', class: 'col-ops' },
+]
+
+const staffColumns: Column[] = [
+  { key: 'serial', label: '序号', class: 'w-16' },
+  { key: 'id', label: 'ID', class: 'col-id' },
+  { key: 'email', label: '邮箱', class: 'col-email' },
+  { key: 'roles', label: '角色', class: 'col-roles' },
+  { key: 'org_units', label: '组织', class: 'col-orgs' },
+  { key: 'actions', label: '操作', class: 'col-ops' },
+]
+
+const memberColumns: Column[] = [
+  { key: 'id', label: 'ID', class: 'col-id' },
+  { key: 'email', label: '邮箱', class: 'col-email' },
+  { key: 'actions', label: '操作', class: 'col-ops' },
+]
+
 const filteredUnits = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
+  const kw = queryParams.value.keyword.trim().toLowerCase()
   if (!kw) return units.value
   return units.value.filter((u) => `${u.name} ${u.code}`.toLowerCase().includes(kw))
 })
 
 const filteredStaff = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
+  const kw = queryParams.value.keyword.trim().toLowerCase()
   if (!kw) return staff.value
   return staff.value.filter((s) => `${s.id} ${s.email}`.toLowerCase().includes(kw))
 })
+
+const pageSource = computed(() => (tab.value === 'units' ? filteredUnits.value : filteredStaff.value))
+const total = computed(() => (tab.value === 'roles' ? 0 : pageSource.value.length))
+const pageRows = computed(() => {
+  if (tab.value === 'roles') return []
+  const start = (queryParams.value.pageNum - 1) * queryParams.value.pageSize
+  return pageSource.value.slice(start, start + queryParams.value.pageSize)
+})
+
+const columns = computed(() => (tab.value === 'staff' ? staffColumns : unitColumns))
 
 const selectedRole = computed(() => roles.value.find((r) => r.id === selectedRoleId.value) ?? null)
 
@@ -120,6 +174,25 @@ const resourceParentOf = computed(() => {
   return m
 })
 
+const pageTitle = computed(() => {
+  if (tab.value === 'units') return '组织单元'
+  if (tab.value === 'roles') return '角色权限'
+  return '员工授权'
+})
+
+const pageDesc = computed(() => {
+  if (tab.value === 'units') return '维护组织树与启用状态'
+  if (tab.value === 'roles') return '配置角色菜单权限与成员'
+  return '员工账号与角色/组织绑定'
+})
+
+watch(
+  () => [queryParams.value.keyword, queryParams.value.pageSize, tab.value],
+  () => {
+    queryParams.value.pageNum = 1
+  },
+)
+
 function collectDescendantIds(id: string): string[] {
   const out: string[] = []
   const walk = (pid: string) => {
@@ -140,6 +213,28 @@ function collectAncestorIds(id: string): string[] {
     cur = resourceParentOf.value.get(cur) ?? null
   }
   return out
+}
+
+function getSerialNumber(index: number) {
+  return String((queryParams.value.pageNum - 1) * queryParams.value.pageSize + index + 1).padStart(2, '0')
+}
+
+function roleNames(row: IAMStaff) {
+  return (row.roles || []).map((r) => r.name).join('、') || '—'
+}
+
+function orgUnitNames(row: IAMStaff) {
+  return (row.org_units || []).map((o) => o.name).join('、') || '—'
+}
+
+function handleQuery() {
+  queryParams.value.pageNum = 1
+  if (tab.value === 'staff') load()
+}
+
+function resetQuery() {
+  Object.assign(queryParams.value, { ...initQueryParams })
+  if (tab.value === 'staff') load()
 }
 
 async function load() {
@@ -164,7 +259,9 @@ async function load() {
         await loadRoleDetail(selectedRoleId.value)
       }
     } else {
-      const q = keyword.value.trim() ? `?q=${encodeURIComponent(keyword.value.trim())}` : ''
+      const q = queryParams.value.keyword.trim()
+        ? `?q=${encodeURIComponent(queryParams.value.keyword.trim())}`
+        : ''
       const [st, rs, us] = await Promise.all([
         marketGet<IAMStaff[] | null>(`${MARKET_API_PREFIX}/org/staff${q}`),
         marketGet<IAMRole[] | null>(`${MARKET_API_PREFIX}/org/roles`).catch(() => []),
@@ -413,272 +510,314 @@ async function saveStaff() {
   }
 }
 
+function openCreate() {
+  if (tab.value === 'units') openUnit()
+  else if (tab.value === 'roles') openRole()
+  else openStaff()
+}
+
 watch(tab, () => {
-  keyword.value = ''
+  Object.assign(queryParams.value, { ...initQueryParams })
   load()
 })
 onMounted(load)
 </script>
 
 <template>
-  <section id="market-org-page" class="y-page">
-    <header class="y-header">
-      <div>
-        <h2 class="y-title">组织管理</h2>
-        <p class="y-page-desc">组织单元、角色权限与员工授权</p>
-      </div>
-      <div class="y-header-actions">
-        <button v-if="tab === 'units'" type="button" class="y-btn" @click="openUnit()">新建组织</button>
-        <button v-else-if="tab === 'roles'" type="button" class="y-btn" @click="openRole()">新建角色</button>
-        <button v-else type="button" class="y-btn" @click="openStaff()">新建员工</button>
-        <button type="button" class="y-btn y-btn--ghost" :disabled="loading" @click="load">刷新</button>
-      </div>
-    </header>
+  <section id="market-org-page" class="org-shell">
+    <TablePageLayout>
+      <template #title>
+        <div class="page-heading">
+          <h2 class="y-title">{{ pageTitle }}</h2>
+          <p class="y-page-desc">{{ pageDesc }}</p>
+        </div>
+      </template>
 
-    <nav class="y-tabs">
-      <button type="button" class="y-tab" :class="{ 'is-on': tab === 'units' }" @click="tab = 'units'">组织</button>
-      <button type="button" class="y-tab" :class="{ 'is-on': tab === 'roles' }" @click="tab = 'roles'">角色</button>
-      <button type="button" class="y-tab" :class="{ 'is-on': tab === 'staff' }" @click="tab = 'staff'">员工</button>
-    </nav>
+      <template #actions>
+        <button type="button" class="btn btn-primary page-action-btn" @click="openCreate">
+          <Icon name="plus" size="sm" />
+          {{ tab === 'units' ? '新建组织' : tab === 'roles' ? '新建角色' : '新建员工' }}
+        </button>
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
+          <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
+          刷新
+        </button>
+      </template>
 
-    <div class="y-container--tight">
-      <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-      <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
+      <template #filters>
+        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
 
-      <template v-if="tab !== 'roles'">
-        <div class="filter-grid">
-          <div class="filter-item">
-            <label class="filter-label">关键词</label>
-            <div class="relative flex-1 w-full">
-              <input
-                class="filter-input w-full"
-                v-model="keyword"
-                type="search"
-                :placeholder="tab === 'staff' ? '邮箱 / ID' : '名称 / 编码'"
-                @keyup.enter="load"
-              />
+        <nav class="y-tabs mb-3">
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'units' }" @click="tab = 'units'">组织</button>
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'roles' }" @click="tab = 'roles'">角色</button>
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'staff' }" @click="tab = 'staff'">员工</button>
+        </nav>
+
+        <div v-if="tab !== 'roles'" class="section-block">
+          <div class="section-title">筛选条件</div>
+          <div class="filter-grid">
+            <div class="filter-item">
+              <label class="filter-label">关键词</label>
+              <div class="relative flex-1 w-full min-w-0">
+                <input
+                  v-model="queryParams.keyword"
+                  class="filter-input w-full"
+                  type="search"
+                  :placeholder="tab === 'staff' ? '邮箱 / ID' : '名称 / 编码'"
+                  @keyup.enter="handleQuery"
+                />
+              </div>
+            </div>
+            <div class="filter-actions lg:col-span-4 sm:col-span-2">
+              <button type="button" class="btn btn-secondary" @click="resetQuery">
+                <Icon name="refresh" size="sm" />
+                重置
+              </button>
+              <button type="button" class="btn btn-primary" @click="handleQuery">
+                <Icon name="search" size="sm" />
+                搜索
+              </button>
             </div>
           </div>
-          <div class="filter-actions lg:col-span-4">
-            <button type="button" class="btn btn-secondary" @click="keyword = ''; load()">重置</button>
-            <button type="button" class="btn btn-primary" @click="load">查询</button>
-          </div>
         </div>
       </template>
 
-      <p v-if="loading" class="y-msg">加载中…</p>
-
-      <template v-else-if="tab === 'units'">
-        <p v-if="!filteredUnits.length" class="y-msg">暂无组织</p>
-        <table v-else>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>名称</th>
-              <th>编码</th>
-              <th>父级</th>
-              <th>排序</th>
-              <th>状态</th>
-              <th class="y-col-op">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="u in filteredUnits" :key="u.id">
-              <td>{{ u.id }}</td>
-              <td>{{ u.name }}</td>
-              <td class="mono">{{ u.code }}</td>
-              <td>{{ u.parent_id ?? '—' }}</td>
-              <td>{{ u.sort }}</td>
-              <td>
-                <span :class="u.enabled ? 'y-chip y-chip--ok' : 'y-chip'">{{ u.enabled ? '启用' : '停用' }}</span>
-              </td>
-              <td class="y-col-op">
-                <button type="button" class="y-link" @click="openUnit(u)">编辑</button>
-                <button type="button" class="y-link y-link--danger" :disabled="busy" @click="deleteUnit(u)">删除</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </template>
-
-      <template v-else-if="tab === 'roles'">
-        <div class="org-split">
-          <aside class="org-side">
-            <p v-if="!roles.length" class="y-msg">暂无角色</p>
-            <button
-              v-for="r in roles"
-              :key="r.id"
-              type="button"
-              class="org-side__item"
-              :class="{ 'is-on': r.id === selectedRoleId }"
-              @click="selectRole(r.id)"
-            >
-              <span class="org-side__title">{{ r.name }}</span>
-              <span class="org-side__meta">{{ r.code }} · {{ r.member_count ?? 0 }} 人</span>
-            </button>
-          </aside>
-          <section class="org-main">
-            <p v-if="!selectedRole" class="y-msg">请选择左侧角色</p>
-            <template v-else>
-              <div class="org-main__head">
-                <div>
-                  <h3>{{ selectedRole.name }}</h3>
-                  <p class="hint">{{ selectedRole.description || '暂无说明' }}</p>
-                </div>
-                <div class="y-header-actions">
-                  <button type="button" class="y-btn y-btn--ghost" @click="openRole(selectedRole)">编辑</button>
-                  <button type="button" class="y-btn y-btn--ghost" :disabled="busy" @click="deleteRole(selectedRole)">
-                    删除
-                  </button>
-                </div>
-              </div>
-              <nav class="y-tabs">
-                <button
-                  type="button"
-                  class="y-tab"
-                  :class="{ 'is-on': roleDetailTab === 'perms' }"
-                  @click="roleDetailTab = 'perms'"
-                >
-                  权限
-                </button>
-                <button
-                  type="button"
-                  class="y-tab"
-                  :class="{ 'is-on': roleDetailTab === 'members' }"
-                  @click="roleDetailTab = 'members'"
-                >
-                  成员
-                </button>
-              </nav>
-              <p v-if="detailLoading" class="y-msg">加载详情…</p>
-              <template v-else-if="roleDetailTab === 'perms'">
-                <p v-if="!resourceTree.length" class="y-msg">暂无资源树</p>
-                <div v-else class="perm-list">
-                  <label
-                    v-for="r in resourceTree"
-                    :key="r.id"
-                    class="y-check perm-item"
-                    :style="{ paddingLeft: `${8 + r.depth * 16}px` }"
-                  >
-                    <input type="checkbox" :checked="checked.includes(r.id)" @change="toggleRes(r.id)" />
-                    <span>{{ r.name }}</span>
-                    <span class="perm-kind">{{ kindLabel[r.kind] || r.kind }}</span>
-                  </label>
-                </div>
-                <div class="pay-actions">
-                  <button type="button" class="y-btn" :disabled="busy" @click="savePerm">保存权限</button>
-                </div>
-              </template>
+      <template #table>
+        <template v-if="tab === 'roles'">
+          <div class="org-split">
+            <aside class="org-side">
+              <p v-if="loading" class="y-msg">加载中…</p>
+              <EmptyState v-else-if="!roles.length" title="暂无角色" description="点右上角「新建角色」创建" />
+              <button
+                v-for="r in roles"
+                v-else
+                :key="r.id"
+                type="button"
+                class="org-side__item"
+                :class="{ 'is-on': r.id === selectedRoleId }"
+                @click="selectRole(r.id)"
+              >
+                <span class="org-side__title">{{ r.name }}</span>
+                <span class="org-side__meta">{{ r.code }} · {{ r.member_count ?? 0 }} 人</span>
+              </button>
+            </aside>
+            <section class="org-main">
+              <p v-if="!selectedRole" class="y-msg">请选择左侧角色</p>
               <template v-else>
-                <div class="filter-grid">
-                  <div class="filter-item">
-                    <label class="filter-label">关键词</label>
-                    <div class="relative flex-1 w-full">
-                      <input
-                        class="filter-input w-full"
-                        v-model="memberQ"
-                        type="search"
-                        placeholder="搜索用户邮箱"
-                        @keyup.enter="searchUsers"
-                      />
+                <div class="org-main__head">
+                  <div>
+                    <h3>{{ selectedRole.name }}</h3>
+                    <p class="hint">{{ selectedRole.description || '暂无说明' }}</p>
+                  </div>
+                  <div class="role-head-actions">
+                    <button type="button" class="btn btn-secondary page-action-btn" @click="openRole(selectedRole)">
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-secondary page-action-btn"
+                      :disabled="busy"
+                      @click="deleteRole(selectedRole)"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+                <nav class="y-tabs mb-3">
+                  <button
+                    type="button"
+                    class="y-tab"
+                    :class="{ 'is-on': roleDetailTab === 'perms' }"
+                    @click="roleDetailTab = 'perms'"
+                  >
+                    权限
+                  </button>
+                  <button
+                    type="button"
+                    class="y-tab"
+                    :class="{ 'is-on': roleDetailTab === 'members' }"
+                    @click="roleDetailTab = 'members'"
+                  >
+                    成员
+                  </button>
+                </nav>
+                <p v-if="detailLoading" class="y-msg">加载详情…</p>
+                <template v-else-if="roleDetailTab === 'perms'">
+                  <p v-if="!resourceTree.length" class="y-msg">暂无资源树</p>
+                  <div v-else class="perm-list">
+                    <label
+                      v-for="r in resourceTree"
+                      :key="r.id"
+                      class="y-check perm-item"
+                      :style="{ paddingLeft: `${8 + r.depth * 16}px` }"
+                    >
+                      <input type="checkbox" :checked="checked.includes(r.id)" @change="toggleRes(r.id)" />
+                      <span>{{ r.name }}</span>
+                      <span class="perm-kind">{{ kindLabel[r.kind] || r.kind }}</span>
+                    </label>
+                  </div>
+                  <div class="pay-actions">
+                    <button type="button" class="btn btn-primary" :disabled="busy" @click="savePerm">保存权限</button>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="filter-grid mb-3">
+                    <div class="filter-item">
+                      <label class="filter-label">关键词</label>
+                      <div class="relative flex-1 w-full min-w-0">
+                        <input
+                          v-model="memberQ"
+                          class="filter-input w-full"
+                          type="search"
+                          placeholder="搜索用户邮箱"
+                          @keyup.enter="searchUsers"
+                        />
+                      </div>
+                    </div>
+                    <div class="filter-actions lg:col-span-4 sm:col-span-2">
+                      <button type="button" class="btn btn-secondary" @click="memberQ = ''; searchUsers()">
+                        <Icon name="refresh" size="sm" />
+                        重置
+                      </button>
+                      <button type="button" class="btn btn-primary" @click="searchUsers">
+                        <Icon name="search" size="sm" />
+                        查询
+                      </button>
                     </div>
                   </div>
-                  <div class="filter-actions lg:col-span-4">
-                    <button type="button" class="btn btn-secondary" @click="memberQ = ''; searchUsers()">重置</button>
-                    <button type="button" class="btn btn-primary" @click="searchUsers">查询</button>
+                  <div v-if="pickHits.length" class="pick-hits">
+                    <button
+                      v-for="u in pickHits"
+                      :key="u.id"
+                      type="button"
+                      class="y-link"
+                      @click="addMember(u)"
+                    >
+                      添加 {{ u.email }}
+                    </button>
                   </div>
-                </div>
-                <div v-if="pickHits.length" class="pick-hits">
-                  <button
-                    v-for="u in pickHits"
-                    :key="u.id"
-                    type="button"
-                    class="y-link"
-                    @click="addMember(u)"
+                  <DataTable
+                    :columns="memberColumns"
+                    :data="roleMembers"
+                    :loading="false"
+                    :expandable-actions="false"
                   >
-                    添加 {{ u.email }} (#{{ u.id }})
-                  </button>
-                </div>
-                <p v-if="!roleMembers.length" class="y-msg">暂无成员</p>
-                <table v-else>
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>邮箱</th>
-                      <th class="y-col-op">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="m in roleMembers" :key="m.id">
-                      <td>{{ m.id }}</td>
-                      <td>{{ m.email }}</td>
-                      <td class="y-col-op">
-                        <button type="button" class="y-link y-link--danger" @click="removeMember(m.id)">移除</button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <div class="pay-actions">
-                  <button type="button" class="y-btn" :disabled="busy" @click="saveMembers">保存成员</button>
-                </div>
+                    <template #cell-id="{ row }">{{ row.id }}</template>
+                    <template #cell-email="{ row }">{{ row.email }}</template>
+                    <template #cell-actions="{ row }">
+                      <button type="button" class="y-link y-link--danger" @click="removeMember(row.id)">移除</button>
+                    </template>
+                    <template #empty>
+                      <EmptyState title="暂无成员" description="上方搜索用户后添加" />
+                    </template>
+                  </DataTable>
+                  <div class="pay-actions">
+                    <button type="button" class="btn btn-primary" :disabled="busy" @click="saveMembers">保存成员</button>
+                  </div>
+                </template>
               </template>
-            </template>
-          </section>
-        </div>
+            </section>
+          </div>
+        </template>
+
+        <DataTable
+          v-else
+          :columns="columns"
+          :data="pageRows"
+          :loading="loading"
+          :expandable-actions="false"
+        >
+          <template #cell-serial="{ row }">
+            {{
+              getSerialNumber(
+                pageRows.findIndex((r) => ('id' in r ? r.id : 0) === row.id),
+              )
+            }}
+          </template>
+          <template #cell-id="{ row }">{{ row.id }}</template>
+          <template #cell-name="{ row }">{{ row.name }}</template>
+          <template #cell-code="{ row }">
+            <span class="mono">{{ row.code }}</span>
+          </template>
+          <template #cell-parent_id="{ row }">{{ row.parent_id ?? '—' }}</template>
+          <template #cell-sort="{ row }">{{ row.sort }}</template>
+          <template #cell-enabled="{ row }">
+            <span class="status-cell">
+              <i class="status-dot" :data-tone="row.enabled ? 'ok' : 'idle'" />
+              {{ row.enabled ? '启用' : '停用' }}
+            </span>
+          </template>
+          <template #cell-email="{ row }">{{ row.email }}</template>
+          <template #cell-roles="{ row }">{{ roleNames(row) }}</template>
+          <template #cell-org_units="{ row }">{{ orgUnitNames(row) }}</template>
+          <template #cell-actions="{ row }">
+            <div class="table-ops">
+              <template v-if="tab === 'units'">
+                <button type="button" class="y-link" @click="openUnit(row)">编辑</button>
+                <button type="button" class="y-link y-link--danger" :disabled="busy" @click="deleteUnit(row)">
+                  删除
+                </button>
+              </template>
+              <button v-else type="button" class="y-link" @click="openStaff(row)">授权</button>
+            </div>
+          </template>
+          <template #empty>
+            <EmptyState
+              :title="tab === 'units' ? '暂无组织' : '暂无员工'"
+              description="调整筛选条件后重试，或点右上角新建"
+              :action-text="tab === 'units' ? '新建组织' : '新建员工'"
+              @action="openCreate"
+            />
+          </template>
+        </DataTable>
       </template>
 
-      <template v-else>
-        <p v-if="!filteredStaff.length" class="y-msg">暂无员工</p>
-        <table v-else>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>邮箱</th>
-              <th>角色</th>
-              <th>组织</th>
-              <th class="y-col-op">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="s in filteredStaff" :key="s.id">
-              <td>{{ s.id }}</td>
-              <td>{{ s.email }}</td>
-              <td>{{ (s.roles || []).map((r) => r.name).join('、') || '—' }}</td>
-              <td>{{ (s.org_units || []).map((o) => o.name).join('、') || '—' }}</td>
-              <td class="y-col-op">
-                <button type="button" class="y-link" @click="openStaff(s)">授权</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <template #pagination>
+        <Pagination
+          v-if="tab !== 'roles' && total > 0"
+          :total="total"
+          :page="queryParams.pageNum"
+          :page-size="queryParams.pageSize"
+          :page-size-options="[15, 20, 50]"
+          show-jump
+          @update:page="queryParams.pageNum = $event"
+          @update:page-size="queryParams.pageSize = $event"
+        />
       </template>
-    </div>
+    </TablePageLayout>
 
     <div v-if="showUnit" class="y-modal-mask" @click.self="showUnit = false">
-      <div class="y-modal">
+      <div class="y-modal" role="dialog" :aria-label="editingUnit ? '编辑组织' : '新建组织'">
         <header class="y-modal__head">
           <h3>{{ editingUnit ? '编辑组织' : '新建组织' }}</h3>
           <button type="button" class="y-link" @click="showUnit = false">关闭</button>
         </header>
         <div class="y-modal__body">
           <label class="y-field"><span>名称</span><input v-model="unitForm.name" class="input w-full" /></label>
-          <label class="y-field"><span>编码</span><input v-model="unitForm.code" class="input w-full" :disabled="!!editingUnit" /></label>
+          <label class="y-field">
+            <span>编码</span>
+            <input v-model="unitForm.code" class="input w-full" :disabled="!!editingUnit" />
+          </label>
           <label class="y-field">
             <span>父组织 ID（可空）</span>
             <input v-model="unitForm.parent_id" class="input w-full" />
           </label>
-          <label class="y-field"><span>排序</span><input v-model.number="unitForm.sort" type="number" class="input w-full" /></label>
+          <label class="y-field">
+            <span>排序</span>
+            <input v-model.number="unitForm.sort" type="number" class="input w-full" />
+          </label>
           <label class="y-check"><input v-model="unitForm.enabled" type="checkbox" /> 启用</label>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="showUnit = false">取消</button>
-          <button type="button" class="y-btn" :disabled="busy" @click="saveUnit">保存</button>
+          <button type="button" class="btn btn-secondary" @click="showUnit = false">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="busy" @click="saveUnit">保存</button>
         </footer>
       </div>
     </div>
 
     <div v-if="showRole" class="y-modal-mask" @click.self="showRole = false">
-      <div class="y-modal">
+      <div class="y-modal" role="dialog" :aria-label="editingRole ? '编辑角色' : '新建角色'">
         <header class="y-modal__head">
           <h3>{{ editingRole ? '编辑角色' : '新建角色' }}</h3>
           <button type="button" class="y-link" @click="showRole = false">关闭</button>
@@ -689,17 +828,20 @@ onMounted(load)
             <span>编码</span>
             <input v-model="roleForm.code" class="input w-full" :disabled="!!editingRole" />
           </label>
-          <label class="y-field"><span>说明</span><input v-model="roleForm.description" class="input w-full" /></label>
+          <label class="y-field">
+            <span>说明</span>
+            <input v-model="roleForm.description" class="input w-full" />
+          </label>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="showRole = false">取消</button>
-          <button type="button" class="y-btn" :disabled="busy" @click="saveRole">保存</button>
+          <button type="button" class="btn btn-secondary" @click="showRole = false">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="busy" @click="saveRole">保存</button>
         </footer>
       </div>
     </div>
 
     <div v-if="showStaff" class="y-modal-mask" @click.self="showStaff = false">
-      <div class="y-modal">
+      <div class="y-modal" role="dialog" :aria-label="editingStaff ? `授权 ${editingStaff.email}` : '新建员工'">
         <header class="y-modal__head">
           <h3>{{ editingStaff ? `授权 ${editingStaff.email}` : '新建员工' }}</h3>
           <button type="button" class="y-link" @click="showStaff = false">关闭</button>
@@ -707,7 +849,10 @@ onMounted(load)
         <div class="y-modal__body">
           <template v-if="!editingStaff">
             <label class="y-field"><span>邮箱</span><input v-model="staffForm.email" class="input w-full" /></label>
-            <label class="y-field"><span>初始密码</span><input v-model="staffForm.password" type="password" class="input w-full" /></label>
+            <label class="y-field">
+              <span>初始密码</span>
+              <input v-model="staffForm.password" type="password" class="input w-full" />
+            </label>
           </template>
           <div class="y-field">
             <span>角色</span>
@@ -737,8 +882,8 @@ onMounted(load)
           </div>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="showStaff = false">取消</button>
-          <button type="button" class="y-btn" :disabled="busy" @click="saveStaff">保存</button>
+          <button type="button" class="btn btn-secondary" @click="showStaff = false">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="busy" @click="saveStaff">保存</button>
         </footer>
       </div>
     </div>
@@ -746,15 +891,74 @@ onMounted(load)
 </template>
 
 <style scoped>
-.y-header-actions {
+#market-org-page.org-shell {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
+
+.page-heading {
+  min-width: 0;
+}
+
+.page-action-btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-block {
+  min-width: 0;
+}
+
+.section-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--color-text-primary, #262626);
+}
+
+.table-ops {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  min-width: max-content;
+}
+
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
 }
+
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.status-dot[data-tone='ok'] {
+  background: #16a34a;
+}
+.status-dot[data-tone='idle'] {
+  background: #94a3b8;
+}
+
 .auth-list {
   display: flex;
   flex-wrap: wrap;
@@ -770,6 +974,7 @@ onMounted(load)
   grid-template-columns: minmax(180px, 240px) 1fr;
   gap: 12px;
   min-height: 360px;
+  padding: 12px;
 }
 .org-side {
   border: 1px solid var(--color-border, #e5e7eb);
@@ -805,6 +1010,7 @@ onMounted(load)
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 10px;
   padding: 12px;
+  min-width: 0;
 }
 .org-main__head {
   display: flex;
@@ -816,6 +1022,11 @@ onMounted(load)
 .org-main__head h3 {
   margin: 0;
   font-size: 16px;
+}
+.role-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .perm-list {
   display: grid;
@@ -844,6 +1055,48 @@ onMounted(load)
   gap: 8px;
   margin-top: 12px;
 }
+
+#market-org-page :deep(.filter-grid .select-trigger),
+#market-org-page :deep(.filter-grid .select-trigger-sm),
+#market-org-page :deep(.filter-grid .filter-input) {
+  height: 32px;
+  min-height: 32px;
+}
+
+#market-org-page :deep(.table-scroll-container table thead th) {
+  background: #f5f7fa;
+  color: #606266;
+  font-weight: 500;
+  font-size: 13px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+#market-org-page :deep(.table-scroll-container table tbody td) {
+  border-bottom: 1px solid #ebeef5;
+  font-size: 13px;
+  color: #303133;
+}
+
+#market-org-page :deep(.table-scroll-container table tbody tr:hover td) {
+  background: #f5f7fa;
+}
+
+#market-org-page :deep(th.col-ops),
+#market-org-page :deep(td.col-ops) {
+  min-width: 8rem;
+  width: 8rem;
+  box-sizing: border-box;
+}
+#market-org-page :deep(thead th.col-ops) {
+  background: #f5f7fa !important;
+}
+#market-org-page :deep(tbody td.col-ops) {
+  background: #fff !important;
+}
+#market-org-page :deep(tbody tr:hover td.col-ops) {
+  background: #f5f7fa !important;
+}
+
 .y-modal-mask {
   position: fixed;
   inset: 0;

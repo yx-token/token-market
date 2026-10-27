@@ -119,8 +119,9 @@ function openRuns(u: Upstream) {
     >
       <template #cell-id="{ row }">
         {{ upstreamName(row) }}<span v-if="row.is_reference" class="ml-1 text-xs text-sky-700">基线</span>
-        <div v-if="row.account_email" class="text-xs text-ink-500">#{{ row.id }}</div>
+        <div v-if="row.account_email" class="text-xs text-ink-500">{{ row.account_email }}</div>
       </template>
+      <template #cell-seller_id="{ row }">{{ row.seller_email?.trim() || '—' }}</template>
       <template #cell-platform="{ row }">{{ label('platform', row.platform).text }} · {{ authTypeText(row.platform, row.auth_type) }}</template>
       <template #cell-status="{ row }">
         <StatusBadge kind="upstreamStatus" :value="row.status" />

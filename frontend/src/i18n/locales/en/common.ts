@@ -221,6 +221,7 @@ export default {
     marketBrand: 'IdleCat',
     marketFront: 'Buyer Entry',
     marketSupply: 'Seller Supply',
+    marketDispatch: 'Mid Dispatch',
     marketFunds: 'Escrow Funds',
     marketQuality: 'Listing QC',
     marketOps: 'Market Ops',

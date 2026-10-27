@@ -317,6 +317,7 @@ export interface Upstream {
   id: number
   proxy_id?: number
   seller_id: number
+  seller_email?: string
   platform: string
   auth_type: string
   is_reference: boolean
@@ -547,6 +548,7 @@ export interface Appeal {
   id: number
   report_id: number
   seller_id: number
+  seller_email?: string
   reason: string
   status: string
   admin_note?: string
@@ -576,6 +578,7 @@ export interface SettlementLine {
 export interface Withdrawal {
   id: number
   seller_id: number
+  seller_email?: string
   amount: number
   channel: string
   account_info?: string

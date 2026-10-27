@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import Icon from '@/components/icons/Icon.vue'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
+
+defineOptions({ name: 'MarketAdminExtras' })
 
 interface Discovery {
   hot_searches?: unknown
@@ -56,17 +59,24 @@ onMounted(load)
 </script>
 
 <template>
-  <section id="market-extras-page" class="y-page max-w-lg">
+  <section id="market-extras-page" class="extras-shell">
     <header class="y-header">
-      <div>
+      <div class="page-heading">
         <h2 class="y-title">货架开关</h2>
         <p class="y-page-desc">控制市场信息流的默认排序</p>
       </div>
-      <button type="button" class="y-btn" :disabled="busy || loading" @click="save">
-        {{ busy ? '保存中…' : '保存' }}
-      </button>
+      <div class="y-header-actions">
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
+          <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
+          刷新
+        </button>
+        <button type="button" class="btn btn-primary page-action-btn" :disabled="busy || loading" @click="save">
+          {{ busy ? '保存中…' : '保存' }}
+        </button>
+      </div>
     </header>
-    <div class="y-container--tight py-4">
+
+    <div class="form-panel">
       <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
       <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
       <p v-if="loading" class="y-msg">加载中…</p>
@@ -79,6 +89,38 @@ onMounted(load)
 </template>
 
 <style scoped>
+#market-extras-page.extras-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  gap: 12px;
+}
+.page-heading { min-width: 0; }
+.y-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.page-action-btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.form-panel {
+  max-width: 40rem;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
 .y-check {
   display: flex;
   align-items: center;

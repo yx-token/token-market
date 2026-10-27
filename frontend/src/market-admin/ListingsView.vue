@@ -10,6 +10,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet } from './api'
+import { sellerAccount, sellerFilterLabel } from './sellerDisplay'
 import { useConsoleTabs } from '@/stores/consoleTabs'
 import 'element-plus/es/components/date-picker/style/css'
 
@@ -40,6 +41,7 @@ const initQueryParams = {
   pageNum: 1,
   pageSize: 15,
   keyword: '',
+  seller_id: '',
   status: '',
   startDate: '',
   endDate: '',
@@ -50,9 +52,16 @@ const data = reactive({
 })
 const { queryParams } = toRefs(data)
 
+interface MarketUser {
+  id: number
+  email: string
+  status: string
+}
+
 const rows = ref<ListingRow[]>([])
 const loading = ref(false)
 const error = ref('')
+const userOptions = ref<MarketUser[]>([])
 
 const statusOptions = [
   { value: '', label: '全部' },
@@ -61,6 +70,24 @@ const statusOptions = [
   { value: 'pending_confirm', label: '待确认' },
   { value: 'closed', label: '已关闭' },
 ]
+
+const sellerFilterOptions = computed(() => {
+  const map = new Map<string, string>()
+  for (const u of userOptions.value) {
+    map.set(String(u.id), sellerFilterLabel(u.email, u.id))
+  }
+  for (const r of rows.value) {
+    const sid = String(r.seller_id || '').trim()
+    if (!sid || map.has(sid)) continue
+    map.set(sid, sellerFilterLabel(r.seller_email, r.seller_id))
+  }
+  return [
+    { value: '', label: '全部' },
+    ...[...map.entries()]
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([value, label]) => ({ value, label })),
+  ]
+})
 
 const columns: Column[] = [
   { key: 'serial', label: '序号', class: 'w-16' },
@@ -108,6 +135,8 @@ const supplyStatus = computed(() => {
 
 const filtered = computed(() => {
   let list = rows.value
+  const sellerId = queryParams.value.seller_id.trim()
+  if (sellerId) list = list.filter((r) => String(r.seller_id) === sellerId)
   if (queryParams.value.status) {
     list = list.filter((r) => r.status === queryParams.value.status)
   }
@@ -172,7 +201,16 @@ function getSerialNumber(index: number) {
 }
 
 function sellerLabel(row: ListingRow) {
-  return row.seller_email?.trim() || `卖家 #${row.seller_id}`
+  return sellerAccount(row.seller_email, row.seller_id)
+}
+
+async function loadFilterUsers() {
+  try {
+    userOptions.value =
+      (await marketGet<MarketUser[] | null>(`${MARKET_API_PREFIX}/users?limit=200`)) ?? []
+  } catch {
+    /* keep existing options */
+  }
 }
 
 async function getList() {
@@ -182,6 +220,7 @@ async function getList() {
     const q = new URLSearchParams()
     q.set('limit', '500')
     if (queryParams.value.keyword.trim()) q.set('q', queryParams.value.keyword.trim())
+    if (queryParams.value.seller_id.trim()) q.set('seller_id', queryParams.value.seller_id.trim())
     if (queryParams.value.status) q.set('status', queryParams.value.status)
     rows.value = (await marketGet<ListingRow[] | null>(`${MARKET_API_PREFIX}/listings?${q}`)) ?? []
   } catch (e) {
@@ -204,7 +243,7 @@ function resetQuery() {
 
 function openDetail(row: ListingRow) {
   const path = `/admin/market/listings/${row.id}`
-  openTab(path, { title: `挂单 #${row.id}` })
+  openTab(path, { title: String(row.title || '').trim() || '挂单详情' })
   router.push(path)
 }
 
@@ -215,9 +254,19 @@ function openCreate() {
 }
 
 function applyRouteQuery() {
+  const sellerId = route.query.seller_id
+  if (typeof sellerId === 'string' && /^\d+$/.test(sellerId.trim())) {
+    queryParams.value.seller_id = sellerId.trim()
+    queryParams.value.pageNum = 1
+  }
   const q = route.query.q
   if (typeof q === 'string' && q.trim()) {
-    queryParams.value.keyword = q.trim()
+    const raw = q.trim()
+    if (/^\d+$/.test(raw) && !queryParams.value.seller_id) {
+      queryParams.value.seller_id = raw
+    } else {
+      queryParams.value.keyword = raw
+    }
     queryParams.value.pageNum = 1
   }
 }
@@ -236,7 +285,7 @@ watch(
 
 onMounted(() => {
   applyRouteQuery()
-  getList()
+  void Promise.all([getList(), loadFilterUsers()])
 })
 </script>
 
@@ -313,47 +362,57 @@ onMounted(() => {
 
         <div class="section-block mt-3">
           <div class="section-title">挂单信息</div>
-          <!-- 工单列表标准：同一行 label+控件，时间加宽，操作按钮靠右 -->
-          <div class="list-filter">
-            <div class="list-filter__row">
-              <div class="list-filter__item list-filter__item--time">
-                <label class="list-filter__label">创建时间</label>
-                <div class="list-filter__control">
-                  <DateRangePicker
-                    mode="datetimerange"
-                    v-model:start-date="queryParams.startDate"
-                    v-model:end-date="queryParams.endDate"
-                  />
-                </div>
+          <!-- filter-grid：lg 每项 1/4，弹性伸缩 -->
+          <div class="filter-grid">
+            <div class="filter-item">
+              <label class="filter-label">创建时间</label>
+              <div class="flex flex-1 w-full min-w-0 items-center gap-2">
+                <DateRangePicker
+                  mode="datetimerange"
+                  v-model:start-date="queryParams.startDate"
+                  v-model:end-date="queryParams.endDate"
+                />
               </div>
-              <div class="list-filter__item">
-                <label class="list-filter__label">挂单 ID</label>
-                <div class="list-filter__control">
-                  <input
-                    v-model="queryParams.keyword"
-                    class="filter-input w-full"
-                    type="search"
-                    placeholder="请输入挂单 ID / 卖家 / 标题"
-                    @keyup.enter="handleQuery"
-                  />
-                </div>
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">挂单 ID</label>
+              <div class="relative flex-1 w-full min-w-0">
+                <input
+                  v-model="queryParams.keyword"
+                  class="filter-input w-full"
+                  type="search"
+                  placeholder="挂单 ID / 标题"
+                  @keyup.enter="handleQuery"
+                />
               </div>
-              <div class="list-filter__item">
-                <label class="list-filter__label">状态</label>
-                <div class="list-filter__control">
-                  <Select v-model="queryParams.status" class="w-full" size="sm" :options="statusOptions" />
-                </div>
-              </div>
-              <div class="list-filter__actions">
-                <button type="button" class="btn btn-secondary" @click="resetQuery">
-                  <Icon name="refresh" size="sm" />
-                  重置
-                </button>
-                <button type="button" class="btn btn-primary" @click="handleQuery">
-                  <Icon name="search" size="sm" />
-                  搜索
-                </button>
-              </div>
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">用户</label>
+              <Select
+                v-model="queryParams.seller_id"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="sellerFilterOptions"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">状态</label>
+              <Select
+                v-model="queryParams.status"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="statusOptions"
+              />
+            </div>
+            <div class="filter-actions lg:col-span-4 sm:col-span-2">
+              <button type="button" class="btn btn-secondary" @click="resetQuery">
+                <Icon name="refresh" size="sm" />
+                重置
+              </button>
+              <button type="button" class="btn btn-primary" @click="handleQuery">
+                <Icon name="search" size="sm" />
+                搜索
+              </button>
             </div>
           </div>
         </div>
@@ -364,13 +423,12 @@ onMounted(() => {
           <template #cell-serial="{ row }">
             {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
           </template>
-          <template #cell-id="{ row }">#{{ row.id }}</template>
+          <template #cell-id="{ row }">{{ row.id }}</template>
           <template #cell-title="{ row }">{{ row.title || '—' }}</template>
           <template #cell-seller="{ row }">
             <div>{{ sellerLabel(row) }}</div>
-            <div class="row-sub">#{{ row.seller_id }}</div>
           </template>
-          <template #cell-upstream_id="{ row }">#{{ row.upstream_id }}</template>
+          <template #cell-upstream_id="{ row }">{{ row.upstream_id || '—' }}</template>
           <template #cell-platform="{ row }">{{ row.platform || '—' }}</template>
           <template #cell-mode="{ row }">{{ modeLabel(row.mode) }}</template>
           <template #cell-status="{ row }">
@@ -491,103 +549,17 @@ onMounted(() => {
   color: var(--color-text-primary, #262626);
 }
 
-/* —— 查询条件：对齐工单列表（同行、标签右对齐、按钮靠右） —— */
-.list-filter {
-  width: 100%;
-}
-
-.list-filter__row {
-  display: grid;
-  grid-template-columns: minmax(280px, 1.7fr) minmax(180px, 1fr) minmax(150px, 0.85fr) auto;
-  align-items: center;
-  gap: 12px 16px;
-  width: 100%;
-}
-
-.list-filter__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.list-filter__item--time {
-  min-width: 0;
-}
-
-.list-filter__label {
-  width: 4.5rem;
-  flex-shrink: 0;
-  text-align: right;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 32px;
-  color: var(--color-text-secondary, #606266);
-  white-space: nowrap;
-}
-
-.list-filter__control {
-  flex: 1;
-  min-width: 0;
-  width: 100%;
-}
-
-.list-filter__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.list-filter__actions .btn {
-  height: 32px;
-  padding: 0 14px;
-  font-size: 13px;
-  border-radius: 8px;
-}
-
-@media (max-width: 1200px) {
-  .list-filter__row {
-    grid-template-columns: minmax(240px, 1.5fr) minmax(160px, 1fr) auto;
-  }
-
-  .list-filter__item:nth-child(3) {
-    grid-column: 1 / 2;
-  }
-
-  .list-filter__actions {
-    grid-column: 3 / 4;
-    grid-row: 1;
-  }
-}
-
-@media (max-width: 768px) {
-  .list-filter__row {
-    grid-template-columns: 1fr;
-  }
-
-  .list-filter__item:nth-child(3),
-  .list-filter__actions {
-    grid-column: auto;
-    grid-row: auto;
-  }
-
-  .list-filter__actions {
-    justify-content: flex-end;
-  }
-}
-
-#market-listings-page :deep(.list-filter .el-date-editor.el-input__wrapper),
-#market-listings-page :deep(.list-filter .el-date-editor.el-range-editor) {
+/* —— 筛选栏控件高度：沿用全局 filter-grid，仅补齐控件尺寸 —— */
+#market-listings-page :deep(.filter-grid .el-date-editor.el-input__wrapper),
+#market-listings-page :deep(.filter-grid .el-date-editor.el-range-editor) {
   width: 100% !important;
   height: 32px !important;
   min-height: 32px !important;
 }
 
-#market-listings-page :deep(.list-filter .select-trigger),
-#market-listings-page :deep(.list-filter .select-trigger-sm),
-#market-listings-page :deep(.list-filter .filter-input) {
+#market-listings-page :deep(.filter-grid .select-trigger),
+#market-listings-page :deep(.filter-grid .select-trigger-sm),
+#market-listings-page :deep(.filter-grid .filter-input) {
   height: 32px;
   min-height: 32px;
 }

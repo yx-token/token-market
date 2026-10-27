@@ -1,7 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+/**
+ * 题库 / 基线账号：TablePageLayout + filter-grid + DataTable。
+ */
+import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import Select from '@/components/common/Select.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import Icon from '@/components/icons/Icon.vue'
+import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
+
+defineOptions({ name: 'MarketAdminProbeItems' })
 
 const router = useRouter()
 
@@ -57,6 +69,26 @@ const PLATFORM_LABEL: Record<string, string> = {
   opencode_go: 'OpenCode Go',
 }
 
+const STATUS_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'active', label: '启用' },
+  { value: 'retired', label: '已下线' },
+]
+
+const SUITE_OPTIONS = [
+  { value: '', label: '全部' },
+  ...SUITES.map((s) => ({ value: s.value, label: s.text })),
+]
+
+const REF_STATUS_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'draft', label: 'draft' },
+  { value: 'authorizing', label: 'authorizing' },
+  { value: 'ready', label: 'ready' },
+  { value: 'active', label: 'active' },
+  { value: 'error', label: 'error' },
+]
+
 const tab = ref<'items' | 'refs'>('items')
 const rows = ref<ProbeItem[]>([])
 const refs = ref<RefUpstream[]>([])
@@ -65,17 +97,22 @@ const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
 const msg = ref('')
-const keyword = ref('')
-const filterStatus = ref('active')
-const filterSuite = ref('')
-const pageNum = ref(1)
-const pageSize = 15
+
+const initQueryParams = {
+  pageNum: 1,
+  pageSize: 15,
+  keyword: '',
+  status: 'active',
+  suite: '',
+  category: '',
+  platform: '',
+  ref_status: '',
+}
+const data = reactive({ queryParams: { ...initQueryParams } })
+const { queryParams } = toRefs(data)
+
 const newRef = reactive({ platform: 'anthropic', authType: 'oauth' })
 const showCreateRef = ref(false)
-
-const refAuthTypes = computed(
-  () => vendors.value.find((v) => v.platform === newRef.platform)?.supported_auth_types ?? ['oauth', 'api_key'],
-)
 
 const show = ref(false)
 const editing = ref<ProbeItem | null>(null)
@@ -94,14 +131,60 @@ const form = reactive({
   generator: '{}',
 })
 
-const filtered = computed(() => {
+const itemColumns: Column[] = [
+  { key: 'serial', label: '序号', class: 'w-16' },
+  { key: 'id', label: 'ID', class: 'col-id' },
+  { key: 'suite', label: '套件', class: 'col-suite' },
+  { key: 'category', label: '分类', class: 'col-cat' },
+  { key: 'prompt', label: '题目', class: 'col-prompt' },
+  { key: 'check_key', label: 'check_key', class: 'col-key' },
+  { key: 'weight', label: '权重', class: 'col-weight' },
+  { key: 'status', label: '状态', class: 'col-status' },
+  { key: 'actions', label: '操作', class: 'col-ops' },
+]
+
+const refColumns: Column[] = [
+  { key: 'serial', label: '序号', class: 'w-16' },
+  { key: 'id', label: 'ID', class: 'col-id' },
+  { key: 'platform', label: '厂商', class: 'col-platform' },
+  { key: 'auth_type', label: '接入', class: 'col-auth' },
+  { key: 'email', label: '邮箱', class: 'col-email' },
+  { key: 'status', label: '状态', class: 'col-status' },
+  { key: 'actions', label: '操作', class: 'col-ops' },
+]
+
+const columns = computed(() => (tab.value === 'items' ? itemColumns : refColumns))
+
+const categoryFilterOptions = computed(() => {
+  const set = new Set<string>()
+  for (const it of rows.value) {
+    const c = String(it.category || '').trim()
+    if (c) set.add(c)
+  }
+  return [
+    { value: '', label: '全部' },
+    ...[...set].sort().map((value) => ({ value, label: value })),
+  ]
+})
+
+const platformFilterOptions = computed(() => [
+  { value: '', label: '全部' },
+  ...Object.entries(PLATFORM_LABEL).map(([value, label]) => ({ value, label })),
+])
+
+const refAuthTypes = computed(
+  () => vendors.value.find((v) => v.platform === newRef.platform)?.supported_auth_types ?? ['oauth', 'api_key'],
+)
+
+const filteredItems = computed(() => {
   let list = rows.value
-  if (filterStatus.value) list = list.filter((it) => it.status === filterStatus.value)
-  if (filterSuite.value) list = list.filter((it) => it.suite === filterSuite.value)
-  const kw = keyword.value.trim().toLowerCase()
+  if (queryParams.value.status) list = list.filter((it) => it.status === queryParams.value.status)
+  if (queryParams.value.suite) list = list.filter((it) => it.suite === queryParams.value.suite)
+  if (queryParams.value.category) list = list.filter((it) => it.category === queryParams.value.category)
+  const kw = queryParams.value.keyword.trim().toLowerCase()
   if (kw) {
     list = list.filter((it) =>
-      [it.id, it.suite, it.category, it.prompt, it.check_key, it.status, it.builtin_key]
+      [it.id, it.suite, it.category, it.prompt, it.check_key, it.status, it.builtin_key, ...(it.platforms || []), ...(it.models || [])]
         .map((v) => String(v ?? '').toLowerCase())
         .some((s) => s.includes(kw)),
     )
@@ -109,15 +192,87 @@ const filtered = computed(() => {
   return list
 })
 
-const total = computed(() => filtered.value.length)
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
-const pageRows = computed(() => {
-  const start = (pageNum.value - 1) * pageSize
-  return filtered.value.slice(start, start + pageSize)
+const filteredRefs = computed(() => {
+  let list = refs.value
+  if (queryParams.value.platform) list = list.filter((u) => u.platform === queryParams.value.platform)
+  if (queryParams.value.ref_status) list = list.filter((u) => u.status === queryParams.value.ref_status)
+  const kw = queryParams.value.keyword.trim().toLowerCase()
+  if (kw) {
+    list = list.filter((u) =>
+      [u.id, u.platform, PLATFORM_LABEL[u.platform], u.auth_type, u.account_email, u.status]
+        .map((v) => String(v ?? '').toLowerCase())
+        .some((s) => s.includes(kw)),
+    )
+  }
+  return list
 })
+
+const pageSource = computed(() => (tab.value === 'items' ? filteredItems.value : filteredRefs.value))
+const total = computed(() => pageSource.value.length)
+const pageRows = computed(() => {
+  const start = (queryParams.value.pageNum - 1) * queryParams.value.pageSize
+  return pageSource.value.slice(start, start + queryParams.value.pageSize) as Array<ProbeItem & RefUpstream>
+})
+
+const allStats = computed(() => {
+  if (tab.value === 'items') {
+    const all = rows.value
+    return {
+      total: all.length,
+      active: all.filter((it) => it.status === 'active').length,
+      retired: all.filter((it) => it.status === 'retired').length,
+    }
+  }
+  const all = refs.value
+  return {
+    total: all.length,
+    active: all.filter((u) => u.status === 'ready' || u.status === 'active').length,
+    retired: all.filter((u) => u.status === 'draft' || u.status === 'authorizing').length,
+  }
+})
+
+watch(
+  () => [
+    queryParams.value.keyword,
+    queryParams.value.status,
+    queryParams.value.suite,
+    queryParams.value.category,
+    queryParams.value.platform,
+    queryParams.value.ref_status,
+    queryParams.value.pageSize,
+    tab.value,
+  ],
+  () => {
+    queryParams.value.pageNum = 1
+  },
+)
+
+watch(
+  () => queryParams.value.status,
+  () => {
+    if (tab.value === 'items') load()
+  },
+)
 
 function suiteText(v: string) {
   return SUITES.find((s) => s.value === v)?.text || v
+}
+
+function platLabel(p: string) {
+  return PLATFORM_LABEL[p] || p
+}
+
+function statusLabel(s: string) {
+  if (s === 'active') return '启用'
+  if (s === 'retired') return '已下线'
+  return s || '—'
+}
+
+function statusTone(s: string) {
+  if (s === 'active' || s === 'ready') return 'ok'
+  if (s === 'retired' || s === 'error') return 'err'
+  if (s === 'draft' || s === 'authorizing') return 'progress'
+  return 'idle'
 }
 
 function splitCSV(s: string) {
@@ -127,12 +282,29 @@ function splitCSV(s: string) {
     .filter(Boolean)
 }
 
+function getSerialNumber(index: number) {
+  return String((queryParams.value.pageNum - 1) * queryParams.value.pageSize + index + 1).padStart(2, '0')
+}
+
+function handleQuery() {
+  queryParams.value.pageNum = 1
+  if (tab.value === 'items') load()
+}
+
+function resetQuery() {
+  Object.assign(queryParams.value, {
+    ...initQueryParams,
+    status: tab.value === 'items' ? 'active' : '',
+  })
+  if (tab.value === 'items') load()
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
     if (tab.value === 'items') {
-      const q = filterStatus.value ? `?status=${encodeURIComponent(filterStatus.value)}` : ''
+      const q = queryParams.value.status ? `?status=${encodeURIComponent(queryParams.value.status)}` : ''
       rows.value = (await marketGet<ProbeItem[] | null>(`${MARKET_API_PREFIX}/probe-items${q}`)) ?? []
     } else {
       const [rs, vs] = await Promise.all([
@@ -268,14 +440,6 @@ function retire(it: ProbeItem) {
   )
 }
 
-function resetFilters() {
-  keyword.value = ''
-  filterStatus.value = 'active'
-  filterSuite.value = ''
-  pageNum.value = 1
-  load()
-}
-
 async function createRef() {
   const res = await run('基线账号草稿已创建', () =>
     marketSend<{ upstream?: RefUpstream }>('POST', `${MARKET_API_PREFIX}/reference-accounts`, {
@@ -306,6 +470,10 @@ async function removeRef(u: RefUpstream) {
 
 function switchTab(next: 'items' | 'refs') {
   tab.value = next
+  Object.assign(queryParams.value, {
+    ...initQueryParams,
+    status: next === 'items' ? 'active' : '',
+  })
   load()
 }
 
@@ -313,161 +481,252 @@ onMounted(load)
 </script>
 
 <template>
-  <section id="market-probe-items-page" class="y-page">
-    <header class="y-header">
-      <div>
-        <h2 class="y-title">{{ tab === 'items' ? '题库' : '基线账号' }}</h2>
-        <p class="y-page-desc">
-          {{
-            tab === 'items'
-              ? '测智与身份核验题库；可创建、编辑与下线'
-              : '平台自备干净官方账号，与被测上游同批次答题作对照'
-          }}
-        </p>
-      </div>
-      <div class="y-header-actions">
-        <button v-if="tab === 'items'" type="button" class="y-btn" :disabled="busy" @click="openNew">新建题目</button>
-        <button v-else type="button" class="y-btn" :disabled="busy" @click="showCreateRef = true">添加基线</button>
-        <button type="button" class="y-btn y-btn--ghost" :disabled="loading" @click="load">刷新</button>
-      </div>
-    </header>
-
-    <nav class="y-tabs">
-      <button type="button" class="y-tab" :class="{ 'is-on': tab === 'items' }" @click="switchTab('items')">题目</button>
-      <button type="button" class="y-tab" :class="{ 'is-on': tab === 'refs' }" @click="switchTab('refs')">基线账号</button>
-    </nav>
-
-    <div class="y-container--tight">
-      <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-      <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
-
-      <template v-if="tab === 'items'">
-      <div class="filter-grid">
-        <div class="filter-item">
-          <label class="filter-label">关键词</label>
-          <div class="relative flex-1 w-full">
-            <input
-              class="filter-input w-full"
-              v-model="keyword"
-              type="search"
-              placeholder="ID / 套件 / 题目 / check_key"
-              @keyup.enter="pageNum = 1"
-            />
-          </div>
+  <section id="market-probe-items-page" class="probe-items-shell">
+    <TablePageLayout>
+      <template #title>
+        <div class="page-heading">
+          <h2 class="y-title">{{ tab === 'items' ? '题库' : '基线账号' }}</h2>
+          <p class="y-page-desc">
+            {{
+              tab === 'items'
+                ? '测智与身份核验题库；可创建、编辑与下线'
+                : '平台自备干净官方账号，与被测上游同批次答题作对照'
+            }}
+          </p>
         </div>
-        <div class="filter-item">
-          <label class="filter-label">状态</label>
-          <select v-model="filterStatus" class="filter-input flex-1" @change="pageNum = 1; load()">
-            <option value="">状态：全部</option>
-            <option value="active">启用</option>
-            <option value="retired">已下线</option>
-          </select>
-        </div>
-        <div class="filter-item">
-          <label class="filter-label">套件</label>
-          <select v-model="filterSuite" class="filter-input flex-1" @change="pageNum = 1">
-            <option value="">套件：全部</option>
-            <option v-for="s in SUITES" :key="s.value" :value="s.value">{{ s.text }}</option>
-          </select>
-        </div>
-        <div class="filter-actions lg:col-span-4">
-          <button type="button" class="btn btn-secondary" @click="resetFilters">重置</button>
-          <button type="button" class="btn btn-primary" @click="pageNum = 1">查询</button>
-        </div>
-      </div>
-
-      <p v-if="loading" class="y-msg">加载中…</p>
-      <p v-else-if="!pageRows.length" class="y-msg">没有符合条件的题目</p>
-      <table v-else>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>套件</th>
-            <th>分类</th>
-            <th>题目</th>
-            <th>check_key</th>
-            <th>权重</th>
-            <th>状态</th>
-            <th class="y-col-op">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in pageRows" :key="row.id">
-            <td>{{ row.id }}</td>
-            <td>{{ suiteText(row.suite) }}</td>
-            <td>{{ row.category || '—' }}</td>
-            <td>
-              <div class="prompt-cell" :title="row.prompt">{{ row.prompt }}</div>
-            </td>
-            <td class="mono">{{ row.check_key || '—' }}</td>
-            <td>{{ row.weight ?? 1 }}</td>
-            <td>
-              <span :class="row.status === 'active' ? 'y-chip y-chip--ok' : 'y-chip'">{{ row.status }}</span>
-            </td>
-            <td class="y-col-op">
-              <button type="button" class="y-link" :disabled="busy" @click="openEdit(row)">编辑</button>
-              <button
-                v-if="row.status !== 'retired'"
-                type="button"
-                class="y-link y-link--danger"
-                :disabled="busy"
-                @click="retire(row)"
-              >
-                下线
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <footer v-if="total > 0" class="y-footer">
-        <div class="y-pager">
-          <span>共 {{ total }} 条</span>
-          <button type="button" :disabled="pageNum <= 1" @click="pageNum -= 1">上一页</button>
-          <button type="button" class="is-on">{{ pageNum }} / {{ pageCount }}</button>
-          <button type="button" :disabled="pageNum >= pageCount" @click="pageNum += 1">下一页</button>
-        </div>
-      </footer>
       </template>
 
-      <template v-else>
-        <p v-if="loading" class="y-msg">加载中…</p>
-        <p v-else-if="!refs.length" class="y-msg">还没有基线账号</p>
-        <table v-else>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>厂商</th>
-              <th>接入</th>
-              <th>邮箱</th>
-              <th>状态</th>
-              <th class="y-col-op">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="u in refs" :key="u.id">
-              <td>#{{ u.id }}</td>
-              <td>{{ PLATFORM_LABEL[u.platform] || u.platform }}</td>
-              <td>{{ u.auth_type || '—' }}</td>
-              <td>{{ u.account_email || '—' }}</td>
-              <td><span class="y-chip">{{ u.status }}</span></td>
-              <td class="y-col-op">
+      <template #actions>
+        <button
+          v-if="tab === 'items'"
+          type="button"
+          class="btn btn-primary page-action-btn"
+          :disabled="busy"
+          @click="openNew"
+        >
+          <Icon name="plus" size="sm" />
+          新建题目
+        </button>
+        <button
+          v-else
+          type="button"
+          class="btn btn-primary page-action-btn"
+          :disabled="busy"
+          @click="showCreateRef = true"
+        >
+          <Icon name="plus" size="sm" />
+          添加基线
+        </button>
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
+          <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
+          刷新
+        </button>
+      </template>
+
+      <template #filters>
+        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+
+        <nav class="y-tabs mb-3">
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'items' }" @click="switchTab('items')">
+            题目
+          </button>
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'refs' }" @click="switchTab('refs')">
+            基线账号
+          </button>
+        </nav>
+
+        <div class="section-block">
+          <div class="section-title">基本信息</div>
+          <div class="stats-row">
+            <article class="stat-card stat-card--blue">
+              <div>
+                <div class="stat-card__label">{{ tab === 'items' ? '题目总数' : '基线总数' }}</div>
+                <div class="stat-card__value">{{ allStats.total.toLocaleString() }}</div>
+              </div>
+            </article>
+            <article class="stat-card stat-card--green">
+              <div>
+                <div class="stat-card__label">{{ tab === 'items' ? '启用中' : '已就绪' }}</div>
+                <div class="stat-card__value">{{ allStats.active.toLocaleString() }}</div>
+              </div>
+            </article>
+            <article class="stat-card stat-card--orange">
+              <div>
+                <div class="stat-card__label">{{ tab === 'items' ? '已下线' : '待授权' }}</div>
+                <div class="stat-card__value">{{ allStats.retired.toLocaleString() }}</div>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <div class="section-block mt-3">
+          <div class="section-title">{{ tab === 'items' ? '题目信息' : '基线信息' }}</div>
+          <div class="filter-grid">
+            <div class="filter-item">
+              <label class="filter-label">关键词</label>
+              <div class="relative flex-1 w-full min-w-0">
+                <input
+                  v-model="queryParams.keyword"
+                  class="filter-input w-full"
+                  type="search"
+                  :placeholder="tab === 'items' ? 'ID / 套件 / 题目 / check_key' : 'ID / 厂商 / 邮箱'"
+                  @keyup.enter="handleQuery"
+                />
+              </div>
+            </div>
+            <template v-if="tab === 'items'">
+              <div class="filter-item">
+                <label class="filter-label">状态</label>
+                <Select
+                  v-model="queryParams.status"
+                  class="flex-1 w-full min-w-0"
+                  size="sm"
+                  :options="STATUS_OPTIONS"
+                />
+              </div>
+              <div class="filter-item">
+                <label class="filter-label">套件</label>
+                <Select
+                  v-model="queryParams.suite"
+                  class="flex-1 w-full min-w-0"
+                  size="sm"
+                  :options="SUITE_OPTIONS"
+                />
+              </div>
+              <div class="filter-item">
+                <label class="filter-label">分类</label>
+                <Select
+                  v-model="queryParams.category"
+                  class="flex-1 w-full min-w-0"
+                  size="sm"
+                  :options="categoryFilterOptions"
+                />
+              </div>
+            </template>
+            <template v-else>
+              <div class="filter-item">
+                <label class="filter-label">厂商</label>
+                <Select
+                  v-model="queryParams.platform"
+                  class="flex-1 w-full min-w-0"
+                  size="sm"
+                  :options="platformFilterOptions"
+                />
+              </div>
+              <div class="filter-item">
+                <label class="filter-label">状态</label>
+                <Select
+                  v-model="queryParams.ref_status"
+                  class="flex-1 w-full min-w-0"
+                  size="sm"
+                  :options="REF_STATUS_OPTIONS"
+                />
+              </div>
+            </template>
+            <div class="filter-actions lg:col-span-4 sm:col-span-2">
+              <button type="button" class="btn btn-secondary" @click="resetQuery">
+                <Icon name="refresh" size="sm" />
+                重置
+              </button>
+              <button type="button" class="btn btn-primary" @click="handleQuery">
+                <Icon name="search" size="sm" />
+                搜索
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #table>
+        <DataTable
+          :columns="columns"
+          :data="pageRows"
+          :loading="loading"
+          :expandable-actions="false"
+        >
+          <template #cell-serial="{ row }">
+            {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
+          </template>
+          <template #cell-id="{ row }">
+            {{ row.id }}
+          </template>
+          <template #cell-suite="{ row }">{{ suiteText(row.suite) }}</template>
+          <template #cell-category="{ row }">{{ row.category || '—' }}</template>
+          <template #cell-prompt="{ row }">
+            <div class="prompt-cell" :title="row.prompt">{{ row.prompt }}</div>
+          </template>
+          <template #cell-check_key="{ row }">
+            <span class="mono-cell">{{ row.check_key || '—' }}</span>
+          </template>
+          <template #cell-weight="{ row }">{{ row.weight ?? 1 }}</template>
+          <template #cell-platform="{ row }">{{ platLabel(row.platform) }}</template>
+          <template #cell-auth_type="{ row }">{{ row.auth_type || '—' }}</template>
+          <template #cell-email="{ row }">{{ row.account_email || '—' }}</template>
+          <template #cell-status="{ row }">
+            <span class="status-cell">
+              <i class="status-dot" :data-tone="statusTone(row.status)" />
+              {{ tab === 'items' ? statusLabel(row.status) : row.status || '—' }}
+            </span>
+          </template>
+          <template #cell-actions="{ row }">
+            <div class="table-ops">
+              <template v-if="tab === 'items'">
+                <button type="button" class="y-link" :disabled="busy" @click="openEdit(row)">编辑</button>
                 <button
-                  v-if="u.status === 'draft' || u.status === 'authorizing'"
+                  v-if="row.status !== 'retired'"
+                  type="button"
+                  class="y-link y-link--danger"
+                  :disabled="busy"
+                  @click="retire(row)"
+                >
+                  下线
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  v-if="row.status === 'draft' || row.status === 'authorizing'"
                   type="button"
                   class="y-link"
-                  @click="goAuthorize(u)"
+                  @click="goAuthorize(row)"
                 >
                   去授权
                 </button>
-                <button type="button" class="y-link" @click="goAuthorize(u)">打开上游</button>
-                <button type="button" class="y-link y-link--danger" :disabled="busy" @click="removeRef(u)">移除</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <footer v-if="!loading" class="y-footer">共 {{ refs.length }} 条</footer>
+                <button type="button" class="y-link" @click="goAuthorize(row)">打开上游</button>
+                <button type="button" class="y-link y-link--danger" :disabled="busy" @click="removeRef(row)">
+                  移除
+                </button>
+              </template>
+            </div>
+          </template>
+          <template #empty>
+            <EmptyState
+              :title="tab === 'items' ? '暂无题目' : '暂无基线账号'"
+              :description="
+                tab === 'items'
+                  ? '点右上角「新建题目」，或调整筛选条件'
+                  : '点右上角「添加基线」创建草稿并完成授权'
+              "
+              :action-text="tab === 'items' ? '新建题目' : '添加基线'"
+              @action="tab === 'items' ? openNew() : (showCreateRef = true)"
+            />
+          </template>
+        </DataTable>
       </template>
-    </div>
+
+      <template #pagination>
+        <Pagination
+          v-if="total > 0"
+          :total="total"
+          :page="queryParams.pageNum"
+          :page-size="queryParams.pageSize"
+          :page-size-options="[15, 20, 50]"
+          show-jump
+          @update:page="queryParams.pageNum = $event"
+          @update:page-size="queryParams.pageSize = $event"
+        />
+      </template>
+    </TablePageLayout>
 
     <div v-if="showCreateRef" class="y-modal-mask" @click.self="showCreateRef = false">
       <div class="y-modal" role="dialog" aria-label="添加基线账号">
@@ -478,7 +737,11 @@ onMounted(load)
         <div class="y-modal__body">
           <label class="y-field">
             <span>厂商</span>
-            <select v-model="newRef.platform" class="input w-full" @change="newRef.authType = refAuthTypes[0] || 'oauth'">
+            <select
+              v-model="newRef.platform"
+              class="input w-full"
+              @change="newRef.authType = refAuthTypes[0] || 'oauth'"
+            >
               <option v-for="(label, key) in PLATFORM_LABEL" :key="key" :value="key">{{ label }}</option>
             </select>
           </label>
@@ -491,8 +754,8 @@ onMounted(load)
           <p class="hint">创建后会跳转到上游页，请在卖家端或上游详情完成 OAuth / 密钥导入。</p>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="showCreateRef = false">取消</button>
-          <button type="button" class="y-btn" :disabled="busy" @click="createRef">创建</button>
+          <button type="button" class="btn btn-secondary" @click="showCreateRef = false">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="busy" @click="createRef">创建</button>
         </footer>
       </div>
     </div>
@@ -500,7 +763,7 @@ onMounted(load)
     <div v-if="show" class="y-modal-mask" @click.self="closeModal">
       <div class="y-modal" role="dialog" :aria-label="editing ? '编辑题目' : '新建题目'">
         <header class="y-modal__head">
-          <h3>{{ editing ? `编辑题目 #${editing.id}` : '新建题目' }}</h3>
+          <h3>{{ editing ? '编辑题目' : '新建题目' }}</h3>
           <button type="button" class="y-link" @click="closeModal">关闭</button>
         </header>
         <div class="y-modal__body">
@@ -562,8 +825,8 @@ onMounted(load)
           </label>
         </div>
         <footer class="y-modal__foot">
-          <button type="button" class="y-btn y-btn--ghost" @click="closeModal">取消</button>
-          <button type="button" class="y-btn" :disabled="busy" @click="save">保存</button>
+          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+          <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
         </footer>
       </div>
     </div>
@@ -571,22 +834,190 @@ onMounted(load)
 </template>
 
 <style scoped>
-.y-header-actions {
+#market-probe-items-page.probe-items-shell {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
+
+.page-heading {
+  min-width: 0;
+}
+
+.page-action-btn {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-block {
+  min-width: 0;
+}
+
+.section-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--color-text-primary, #262626);
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stat-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: #f8fafc;
+}
+
+.stat-card--blue {
+  background: linear-gradient(135deg, #eff6ff, #f8fafc);
+}
+.stat-card--green {
+  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
+}
+.stat-card--orange {
+  background: linear-gradient(135deg, #fff7ed, #f8fafc);
+}
+
+.stat-card__label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.stat-card__value {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.table-ops {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  min-width: max-content;
+}
+
 .prompt-cell {
   max-width: 22rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mono {
+
+.mono-cell {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
 }
+
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.status-dot[data-tone='ok'] {
+  background: #16a34a;
+}
+.status-dot[data-tone='err'] {
+  background: #ef4444;
+}
+.status-dot[data-tone='progress'] {
+  background: #0555ce;
+}
+.status-dot[data-tone='idle'] {
+  background: #94a3b8;
+}
+
+#market-probe-items-page :deep(.filter-grid .select-trigger),
+#market-probe-items-page :deep(.filter-grid .select-trigger-sm),
+#market-probe-items-page :deep(.filter-grid .filter-input) {
+  height: 32px;
+  min-height: 32px;
+}
+
+#market-probe-items-page :deep(.table-scroll-container table thead th) {
+  background: #f5f7fa;
+  color: #606266;
+  font-weight: 500;
+  font-size: 13px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+#market-probe-items-page :deep(.table-scroll-container table tbody td) {
+  border-bottom: 1px solid #ebeef5;
+  font-size: 13px;
+  color: #303133;
+}
+
+#market-probe-items-page :deep(.table-scroll-container table tbody tr:hover td) {
+  background: #f5f7fa;
+}
+
+#market-probe-items-page :deep(th.col-id),
+#market-probe-items-page :deep(td.col-id) {
+  min-width: 4rem;
+}
+#market-probe-items-page :deep(th.col-suite),
+#market-probe-items-page :deep(td.col-suite),
+#market-probe-items-page :deep(th.col-cat),
+#market-probe-items-page :deep(td.col-cat),
+#market-probe-items-page :deep(th.col-platform),
+#market-probe-items-page :deep(td.col-platform) {
+  min-width: 6rem;
+}
+#market-probe-items-page :deep(th.col-prompt),
+#market-probe-items-page :deep(td.col-prompt) {
+  min-width: 12rem;
+  max-width: 22rem;
+}
+#market-probe-items-page :deep(th.col-key),
+#market-probe-items-page :deep(td.col-key),
+#market-probe-items-page :deep(th.col-email),
+#market-probe-items-page :deep(td.col-email) {
+  min-width: 8rem;
+}
+#market-probe-items-page :deep(th.col-ops),
+#market-probe-items-page :deep(td.col-ops) {
+  min-width: 12rem;
+  width: 12rem;
+  box-sizing: border-box;
+}
+#market-probe-items-page :deep(thead th.col-ops) {
+  background: #f5f7fa !important;
+}
+#market-probe-items-page :deep(tbody td.col-ops) {
+  background: #fff !important;
+}
+#market-probe-items-page :deep(tbody tr:hover td.col-ops) {
+  background: #f5f7fa !important;
+}
+
 .y-modal-mask {
   position: fixed;
   inset: 0;
@@ -648,10 +1079,20 @@ onMounted(load)
   padding: 8px 10px;
   resize: vertical;
 }
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
 .hint {
   margin: 0;
   font-size: 12px;
   color: var(--color-text-secondary, #868686);
+}
+
+@media (max-width: 900px) {
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 720px) {
   .y-field-row,

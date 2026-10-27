@@ -17,6 +17,7 @@ interface ListingRow {
   id: number
   upstream_id: number
   seller_id: number
+  seller_email?: string
   mode: string
   status: string
   paused_by?: string | null
@@ -40,6 +41,7 @@ interface UpstreamRow {
   status?: string
   account_email?: string | null
   seller_id?: number
+  seller_email?: string
   tier?: string | null
   grade?: string | null
 }
@@ -146,9 +148,12 @@ function statusLabel(status?: string): string {
 }
 
 function upstreamTitle(u: UpstreamRow): string {
-  const parts = [`#${u.id}`]
+  const primary =
+    String(u.account_email || '').trim() ||
+    String(u.seller_email || '').trim() ||
+    '未命名上游'
+  const parts = [primary]
   if (u.platform) parts.push(u.platform)
-  if (u.account_email) parts.push(u.account_email)
   if (u.tier || u.grade) parts.push(String(u.tier || u.grade))
   return parts.join(' · ')
 }
@@ -161,7 +166,7 @@ function selectUpstream(id: number) {
 function goUpstreams(opts?: { add?: boolean; focusId?: number }) {
   if (opts?.focusId) {
     const path = `/admin/market/upstreams/${opts.focusId}`
-    openTab(path, { title: `上游 #${opts.focusId}` })
+    openTab(path, { title: '上游详情' })
     router.push(path)
     return
   }
@@ -266,7 +271,9 @@ async function load() {
   try {
     row.value = await marketGet<ListingRow>(`${MARKET_API_PREFIX}/listings/${listingId.value}`)
     fillForm(row.value)
-    openTab(`/admin/market/listings/${listingId.value}`, { title: `挂单 #${listingId.value}` })
+    openTab(`/admin/market/listings/${listingId.value}`, {
+      title: String(row.value?.title || '').trim() || '挂单详情',
+    })
   } catch (e) {
     error.value = e instanceof Error ? e.message : '加载失败'
     row.value = null
@@ -440,7 +447,9 @@ async function save() {
         createdId.value = id
         msg.value = '挂单已创建'
         step.value = STEP_DONE
-        openTab(`/admin/market/listings/${id}`, { title: `挂单 #${id}` })
+        openTab(`/admin/market/listings/${id}`, {
+          title: String(form.title || '').trim() || '挂单详情',
+        })
       }
     } catch (e) {
       error.value = mapCreateError(e instanceof Error ? e.message : '创建失败')
@@ -524,7 +533,7 @@ onUnmounted(() => {
   <section id="market-listing-detail-page" class="detail-shell">
     <header class="detail-header">
       <div class="page-heading">
-        <h2 class="y-title">{{ isNew ? '新建挂单' : `挂单详情 #${listingId}` }}</h2>
+        <h2 class="y-title">{{ isNew ? '新建挂单' : row?.title?.trim() || '挂单详情' }}</h2>
         <p class="y-page-desc">
           {{
             isNew
@@ -632,7 +641,7 @@ onUnmounted(() => {
               />
               <div>
                 <strong>{{ upstreamTitle(u) }}</strong>
-                <span>卖家 #{{ u.seller_id ?? '—' }} · {{ statusHint(u.status) }}</span>
+                <span>{{ u.seller_email?.trim() || '—' }} · {{ statusHint(u.status) }}</span>
               </div>
             </label>
           </div>
@@ -651,9 +660,7 @@ onUnmounted(() => {
             <ul class="upstream-list">
               <li v-for="u in otherUpstreams" :key="u.id" class="upstream-list__item">
                 <div class="upstream-list__main">
-                  <b>#{{ u.id }}</b>
-                  <span>{{ u.platform || '—' }}</span>
-                  <template v-if="u.account_email"><span>{{ u.account_email }}</span></template>
+                  <b>{{ upstreamTitle(u) }}</b>
                   <span class="upstream-list__status">{{ statusLabel(u.status) }}</span>
                 </div>
                 <div class="upstream-list__hint">{{ statusHint(u.status) }}</div>
@@ -695,7 +702,7 @@ onUnmounted(() => {
             卖家 C 端在此步完成授权 / 模型 / 检测。管理端请使用已 ready 的上游；选中后会自动跳到「商品」。
           </p>
           <div class="xm-summary">
-            当前上游 <b>#{{ form.upstream_id || '—' }}</b>
+            当前上游 <b>{{ selectedUpstream ? upstreamTitle(selectedUpstream) : '未选' }}</b>
             · {{ selectedUpstream?.status || '未选' }}
           </div>
           <div class="xm-pub-actions">
@@ -709,7 +716,10 @@ onUnmounted(() => {
         <!-- 4 商品形态 -->
         <section v-else-if="step === STEP_SKU" class="xm-pub-panel">
           <h2>选择商品形态</h2>
-          <p class="sub">同一上游同时只能有一条有效挂单；形态决定买家怎么下单。上游 #{{ form.upstream_id }}</p>
+          <p class="sub">
+            同一上游同时只能有一条有效挂单；形态决定买家怎么下单。
+            <template v-if="selectedUpstream">上游 {{ upstreamTitle(selectedUpstream) }}</template>
+          </p>
 
           <div class="xm-choice-list">
             <label class="xm-choice" :class="{ on: form.mode === 'consignment' }">
@@ -746,7 +756,10 @@ onUnmounted(() => {
         <!-- 5 定价 -->
         <section v-else-if="step === STEP_PRICE" class="xm-pub-panel">
           <h2>定价与上架内容</h2>
-          <p class="sub">设置买家看到的价格与标题。上游 #{{ form.upstream_id }} · {{ modeLabel }}</p>
+          <p class="sub">
+            设置买家看到的价格与标题。
+            <template v-if="selectedUpstream">上游 {{ upstreamTitle(selectedUpstream) }} · </template>{{ modeLabel }}
+          </p>
 
           <template v-if="form.mode === 'consignment'">
             <div class="xm-grid-2">
@@ -833,7 +846,9 @@ onUnmounted(() => {
           </p>
           <div class="xm-summary text-left">
             <div>
-              上游 <b>#{{ form.upstream_id }}</b> · 挂单 <b>#{{ createdId || '—' }}</b>
+              上游 <b>{{ selectedUpstream ? upstreamTitle(selectedUpstream) : '—' }}</b>
+              <template v-if="form.title"> · 标题 <b>{{ form.title }}</b></template>
+              <template v-else-if="createdId"> · 已创建挂单</template>
             </div>
             <div>形态：<b>{{ modeLabel }}</b></div>
             <div v-if="needMultiplier">倍率：<b>{{ form.multiplier }}</b></div>
@@ -850,8 +865,10 @@ onUnmounted(() => {
       <!-- ========== 编辑 ========== -->
       <template v-else>
         <div v-if="row" class="detail-meta">
-          <div><span>卖家</span>#{{ row.seller_id }}</div>
-          <div><span>上游</span>#{{ row.upstream_id }}</div>
+          <div><span>卖家</span>{{ row.seller_email?.trim() || '—' }}</div>
+          <div>
+            <span>上游</span>{{ selectedUpstream ? upstreamTitle(selectedUpstream) : row.platform || '—' }}
+          </div>
           <div><span>平台</span>{{ row.platform || '—' }}</div>
           <div>
             <span>状态</span>{{ row.status

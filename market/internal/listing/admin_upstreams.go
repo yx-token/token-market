@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/platform/usermail"
 )
 
 // AdminUpstreamRow 管理端上游列表/详情（附卖家账号信息）。
@@ -29,9 +30,11 @@ func (s *Service) adminSellerID(ctx context.Context, upstreamID int64) (int64, *
 }
 
 func (s *Service) sellerEmail(ctx context.Context, sellerID int64) string {
-	var email string
-	_ = s.DB.QueryRow(ctx, `SELECT email FROM users WHERE id = $1`, sellerID).Scan(&email)
-	return email
+	emails, err := usermail.Lookup(ctx, s.DB, []int64{sellerID})
+	if err != nil {
+		return ""
+	}
+	return emails[sellerID]
 }
 
 func attachSellerEmails(ctx context.Context, db DB, ups []Upstream) ([]AdminUpstreamRow, error) {
@@ -40,42 +43,12 @@ func attachSellerEmails(ctx context.Context, db DB, ups []Upstream) ([]AdminUpst
 		return out, nil
 	}
 	ids := make([]int64, 0, len(ups))
-	seen := map[int64]bool{}
 	for _, u := range ups {
-		if !seen[u.SellerID] {
-			seen[u.SellerID] = true
-			ids = append(ids, u.SellerID)
-		}
+		ids = append(ids, u.SellerID)
 	}
-	emails := map[int64]string{}
-	if len(ids) > 0 {
-		var b strings.Builder
-		args := make([]any, len(ids))
-		b.WriteString(`SELECT id, email FROM users WHERE id IN (`)
-		for i, id := range ids {
-			if i > 0 {
-				b.WriteByte(',')
-			}
-			args[i] = id
-			fmt.Fprintf(&b, "$%d", i+1)
-		}
-		b.WriteByte(')')
-		rows, err := db.Query(ctx, b.String(), args...)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id int64
-			var email string
-			if err := rows.Scan(&id, &email); err != nil {
-				return nil, err
-			}
-			emails[id] = email
-		}
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
+	emails, err := usermail.Lookup(ctx, db, ids)
+	if err != nil {
+		return nil, err
 	}
 	for i, u := range ups {
 		out[i] = AdminUpstreamRow{Upstream: u, SellerEmail: emails[u.SellerID]}
@@ -97,6 +70,8 @@ type AdminCreateUpstreamInput struct {
 	SellerID        int64  `json:"seller_id"`
 	Platform        string `json:"platform"`
 	AuthType        string `json:"auth_type"`
+	Name            string `json:"name"`
+	Note            string `json:"note"`
 	ProxyID         *int64 `json:"proxy_id"`
 	ProxyFromImport bool   `json:"proxy_from_import"`
 }
@@ -110,6 +85,14 @@ func (s *Service) AdminCreateUpstream(ctx context.Context, in AdminCreateUpstrea
 	authType := strings.TrimSpace(in.AuthType)
 	if platform == "" || authType == "" {
 		return nil, httpx.BadRequest("PLATFORM_REQUIRED", "platform and auth_type are required")
+	}
+	name := strings.TrimSpace(in.Name)
+	note := strings.TrimSpace(in.Note)
+	if len([]rune(name)) > 64 {
+		return nil, httpx.BadRequest("NAME_TOO_LONG", "name must be at most 64 characters")
+	}
+	if len([]rune(note)) > 500 {
+		return nil, httpx.BadRequest("NOTE_TOO_LONG", "note must be at most 500 characters")
 	}
 	var status string
 	err := s.DB.QueryRow(ctx, `SELECT status FROM users WHERE id = $1`, in.SellerID).Scan(&status)
@@ -125,6 +108,23 @@ func (s *Service) AdminCreateUpstream(ctx context.Context, in AdminCreateUpstrea
 	u, err := s.createUpstream(ctx, in.SellerID, platform, authType, false, in.ProxyID, in.ProxyFromImport, true)
 	if err != nil {
 		return nil, err
+	}
+	if name != "" || note != "" {
+		var nameArg, noteArg any
+		if name != "" {
+			nameArg = name
+		}
+		if note != "" {
+			noteArg = note
+		}
+		if _, err := s.DB.Exec(ctx, `UPDATE upstreams SET name = COALESCE($2, name), note = COALESCE($3, note), updated_at = now() WHERE id = $1`,
+			u.ID, nameArg, noteArg); err != nil {
+			return nil, err
+		}
+		u, err = GetUpstream(ctx, s.DB, u.ID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &AdminUpstreamRow{Upstream: *u, SellerEmail: s.sellerEmail(ctx, in.SellerID)}, nil
 }
@@ -163,6 +163,70 @@ func (s *Service) AdminSetModels(ctx context.Context, upstreamID int64, models [
 		return nil, err
 	}
 	return s.SetModels(ctx, sellerID, upstreamID, models)
+}
+
+// AdminSwitchChannelInput 未完成接入前更换厂商 / 接入方式。
+type AdminSwitchChannelInput struct {
+	Platform string `json:"platform"`
+	AuthType string `json:"auth_type"`
+}
+
+// AdminSwitchChannel 草稿/授权中/失败态可换渠道；已绑定引擎账号则需先清绑定或删建。
+func (s *Service) AdminSwitchChannel(ctx context.Context, upstreamID int64, in AdminSwitchChannelInput) (*AdminUpstreamRow, error) {
+	platform := strings.TrimSpace(in.Platform)
+	authType := strings.TrimSpace(in.AuthType)
+	if platform == "" || authType == "" {
+		return nil, httpx.BadRequest("PLATFORM_REQUIRED", "platform and auth_type are required")
+	}
+	u, err := GetUpstream(ctx, s.DB, upstreamID)
+	if err != nil {
+		return nil, err
+	}
+	if u.Status != StatusDraft && u.Status != StatusAuthorizing && u.Status != StatusFailed {
+		return nil, httpx.Conflict("INVALID_STATE", "仅草稿 / 授权中 / 失败状态可换渠道；已接入请删除后新建")
+	}
+	if u.Sub2APIAccountID != nil {
+		return nil, httpx.Conflict("ENGINE_ACCOUNT_BOUND", "已绑定引擎账号，请先「清除失效账号」或删除上游后新建")
+	}
+	v, err := GetVendor(ctx, s.DB, platform)
+	if err != nil {
+		return nil, err
+	}
+	if !v.Enabled && !u.IsReference {
+		return nil, ErrVendorDisabled
+	}
+	if !v.SupportsAuthType(authType) {
+		return nil, httpx.BadRequest("UNSUPPORTED_AUTH_TYPE", fmt.Sprintf("%s does not support %s", platform, authType))
+	}
+	if !IsOAuthAuthType(platform, authType) && !IsCodingAuthType(platform, authType) {
+		return nil, httpx.BadRequest("UNSUPPORTED_AUTH_TYPE", "auth type not implemented")
+	}
+	if platform == u.Platform && authType == u.AuthType {
+		return &AdminUpstreamRow{Upstream: *u, SellerEmail: s.sellerEmail(ctx, u.SellerID)}, nil
+	}
+	tag, err := s.DB.Exec(ctx, `UPDATE upstreams SET
+		platform = $2,
+		auth_type = $3,
+		status = 'draft',
+		failure_reason = NULL,
+		identity_hash = NULL,
+		account_email = NULL,
+		model_whitelist = NULL,
+		updated_at = now()
+		WHERE id = $1 AND status IN ('draft', 'authorizing', 'failed') AND sub2api_account_id IS NULL`,
+		upstreamID, platform, authType)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() != 1 {
+		return nil, ErrBadState
+	}
+	_, _ = s.DB.Exec(ctx, `DELETE FROM upstream_oauth_sessions WHERE upstream_id = $1`, upstreamID)
+	updated, err := GetUpstream(ctx, s.DB, upstreamID)
+	if err != nil {
+		return nil, err
+	}
+	return &AdminUpstreamRow{Upstream: *updated, SellerEmail: s.sellerEmail(ctx, updated.SellerID)}, nil
 }
 
 // AdminClearDeadEngineAccount 引擎侧账号已不存在时，清除绑定并回到 authorizing，便于重新 OAuth / 填 Key。

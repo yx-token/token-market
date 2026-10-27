@@ -126,6 +126,7 @@ const (
 type Refund struct {
 	ID              int64          `json:"id"`
 	UserID          int64          `json:"user_id"`
+	UserEmail       string         `json:"user_email,omitempty"`
 	Kind            string         `json:"kind"`
 	RechargeOrderID *int64         `json:"recharge_order_id,omitempty"`
 	Status          string         `json:"status"`
@@ -405,6 +406,7 @@ func (f *Funds) ListRefunds(ctx context.Context, userID int64, status string, li
 type Withdrawal struct {
 	ID           int64      `json:"id"`
 	SellerID     int64      `json:"seller_id"`
+	SellerEmail  string     `json:"seller_email,omitempty"`
 	Amount       float64    `json:"amount"`
 	Channel      string     `json:"channel"`
 	AccountInfo  string     `json:"account_info,omitempty"`

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 卖家上游管理：对齐挂单列表 TablePageLayout / list-filter / DataTable 标准；
+ * 卖家上游管理：对齐挂单列表 TablePageLayout / filter-grid / DataTable 标准；
  * 状态点用蓝/灰表达进行中，管理端不用黄色 chip。
  */
 import { computed, nextTick, onMounted, reactive, ref, toRefs, watch } from 'vue'
@@ -14,6 +14,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
+import { sellerAccount, sellerFilterLabel } from './sellerDisplay'
 import { useConsoleTabs } from '@/stores/consoleTabs'
 import 'element-plus/es/components/date-picker/style/css'
 
@@ -25,11 +26,14 @@ const { open: openTab } = useConsoleTabs()
 
 interface Upstream {
   id: number
+  code?: string
   seller_id: number
   seller_email?: string
   platform: string
   auth_type?: string
   account_email?: string
+  name?: string | null
+  note?: string | null
   status: string
   health?: string
   health_reason?: string
@@ -74,6 +78,7 @@ const initQueryParams = {
   pageNum: 1,
   pageSize: 15,
   keyword: '',
+  seller_id: '',
   status: '',
   platform: '',
   startDate: '',
@@ -114,7 +119,14 @@ const createForm = reactive({
   seller_id: '' as string | number,
   platform: '',
   auth_type: '',
+  name: '',
+  note: '',
 })
+
+const probeTarget = ref<Upstream | null>(null)
+const probeDone = ref<{ id: number; label: string } | null>(null)
+const probeBusy = ref(false)
+const probeError = ref('')
 
 /** 管理端兜底：与 listing.SupportedAuthTypes 对齐，避免厂商 auth_types 未开放时下拉为空 */
 const AUTH_FALLBACK: Record<string, string[]> = {
@@ -175,31 +187,53 @@ const createSellerOptions = computed(() => {
   const list = userOptions.value.filter((u) => u.status !== 'frozen')
   return list.map((u) => ({
     value: String(u.id),
-    label: `${u.email}（#${u.id}）`,
+    label: sellerFilterLabel(u.email, u.id),
   }))
+})
+
+const sellerFilterOptions = computed(() => {
+  const map = new Map<string, string>()
+  for (const u of userOptions.value) {
+    map.set(String(u.id), sellerFilterLabel(u.email, u.id))
+  }
+  for (const r of rows.value) {
+    const sid = String(r.seller_id || '').trim()
+    if (!sid || map.has(sid)) continue
+    map.set(sid, sellerFilterLabel(r.seller_email, r.seller_id))
+  }
+  return [
+    { value: '', label: '全部' },
+    ...[...map.entries()]
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([value, label]) => ({ value, label })),
+  ]
 })
 
 const columns: Column[] = [
   { key: 'serial', label: '序号', class: 'w-16' },
-  { key: 'account', label: '账号' },
-  { key: 'seller', label: '卖家', class: 'w-48' },
-  { key: 'platform', label: '厂商', class: 'w-36' },
-  { key: 'status', label: '状态', class: 'w-28' },
-  { key: 'health', label: '健康', class: 'w-24' },
-  { key: 'grade', label: '等级', class: 'w-20' },
-  { key: 'privacy', label: '隐私', class: 'w-28' },
-  { key: 'created_at', label: '接入时间', class: 'w-44' },
-  { key: 'actions', label: '操作', class: 'w-64' },
+  { key: 'name', label: '名称', class: 'col-name' },
+  { key: 'code', label: '编号', class: 'col-code' },
+  { key: 'note', label: '备注', class: 'col-note' },
+  { key: 'seller', label: '卖家', class: 'col-seller' },
+  { key: 'platform', label: '厂商', class: 'col-platform' },
+  { key: 'status', label: '状态', class: 'col-status' },
+  { key: 'health', label: '健康', class: 'col-health' },
+  { key: 'grade', label: '等级', class: 'col-grade' },
+  { key: 'privacy', label: '隐私', class: 'col-privacy' },
+  { key: 'created_at', label: '接入时间', class: 'col-time' },
+  { key: 'actions', label: '操作', class: 'col-ops' },
 ]
 
 const filtered = computed(() => {
   let list = rows.value
+  const sellerId = queryParams.value.seller_id.trim()
+  if (sellerId) list = list.filter((u) => String(u.seller_id) === sellerId)
   if (queryParams.value.status) list = list.filter((u) => u.status === queryParams.value.status)
   if (queryParams.value.platform) list = list.filter((u) => u.platform === queryParams.value.platform)
   const kw = queryParams.value.keyword.trim().toLowerCase()
   if (kw) {
     list = list.filter((u) =>
-      [u.id, u.seller_id, u.seller_email, u.account_email, u.platform, u.failure_reason, u.health_reason]
+      [u.code, u.id, u.seller_id, u.seller_email, u.account_email, u.name, u.note, u.platform, u.failure_reason, u.health_reason]
         .map((v) => String(v ?? '').toLowerCase())
         .some((s) => s.includes(kw)),
     )
@@ -292,12 +326,29 @@ function statusTone(status: string): string {
   return 'idle'
 }
 
+function upstreamCode(u: Upstream) {
+  return String(u.code || '').trim()
+}
+
 function displayName(u: Upstream) {
-  return u.account_email || `上游 #${u.id}`
+  const name = String(u.name || '').trim()
+  if (name) return name
+  const account = String(u.account_email || '').trim()
+  if (account) return account
+  const seller = String(u.seller_email || '').trim()
+  if (seller) return seller
+  return '未命名上游'
+}
+
+function nameCell(u: Upstream) {
+  const name = String(u.name || '').trim()
+  if (name) return name
+  const account = String(u.account_email || '').trim()
+  return account || '—'
 }
 
 function sellerLabel(u: Upstream) {
-  return u.seller_email?.trim() || `卖家 #${u.seller_id}`
+  return sellerAccount(u.seller_email, u.seller_id)
 }
 
 function privacyLabel(u: Upstream) {
@@ -355,36 +406,75 @@ async function run(label: string, fn: () => Promise<unknown>) {
   }
 }
 
-function probe(u: Upstream) {
-  return run(`上游 #${u.id} 已排队检测`, () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/upstreams/${u.id}/probe`),
-  )
+function openProbeConfirm(u: Upstream) {
+  probeTarget.value = u
+  probeError.value = ''
+  probeDone.value = null
+}
+
+function closeProbeConfirm() {
+  if (probeBusy.value) return
+  probeTarget.value = null
+  probeError.value = ''
+}
+
+async function confirmProbe() {
+  const u = probeTarget.value
+  if (!u) return
+  probeBusy.value = true
+  probeError.value = ''
+  error.value = ''
+  msg.value = ''
+  try {
+    await marketSend('POST', `${MARKET_API_PREFIX}/upstreams/${u.id}/probe`)
+    probeTarget.value = null
+    probeDone.value = { id: u.id, label: displayName(u) }
+    await getList()
+  } catch (e) {
+    probeError.value = e instanceof Error ? e.message : '检测排队失败'
+  } finally {
+    probeBusy.value = false
+  }
+}
+
+function closeProbeDone() {
+  probeDone.value = null
+}
+
+function goProbeRuns() {
+  const done = probeDone.value
+  const path = done
+    ? `/admin/market/probe-runs?upstream_id=${done.id}`
+    : '/admin/market/probe-runs'
+  probeDone.value = null
+  openTab(path, { title: '检测记录' })
+  router.push(path)
 }
 
 function suspend(u: Upstream) {
   const reason = window.prompt('冻结原因')
   if (reason === null) return
-  return run(`上游 #${u.id} 已冻结`, () =>
+  return run(`上游 ${displayName(u)} 已冻结`, () =>
     marketSend('POST', `${MARKET_API_PREFIX}/upstreams/${u.id}/suspend`, { reason }),
   )
 }
 
 function unsuspend(u: Upstream) {
-  return run(`上游 #${u.id} 已解冻`, () =>
+  return run(`上游 ${displayName(u)} 已解冻`, () =>
     marketSend('POST', `${MARKET_API_PREFIX}/upstreams/${u.id}/unsuspend`),
   )
 }
 
 function remove(u: Upstream) {
-  if (!window.confirm(`强制删除上游 #${u.id}？`)) return
-  return run(`上游 #${u.id} 已删除`, () =>
+  if (!window.confirm(`强制删除上游 ${displayName(u)}？`)) return
+  return run(`上游 ${displayName(u)} 已删除`, () =>
     marketSend('DELETE', `${MARKET_API_PREFIX}/upstreams/${u.id}`),
   )
 }
 
 function openEdit(u: Upstream) {
   const path = `/admin/market/upstreams/${u.id}`
-  openTab(path, { title: `上游 #${u.id}` })
+  openTab(path, { title: displayName(u) })
   router.push(path)
 }
 
@@ -414,11 +504,22 @@ async function searchUsers() {
   }
 }
 
+async function loadFilterUsers() {
+  try {
+    userOptions.value =
+      (await marketGet<MarketUser[] | null>(`${MARKET_API_PREFIX}/users?limit=200`)) ?? []
+  } catch {
+    /* keep existing options */
+  }
+}
+
 async function openCreate() {
   createError.value = ''
   createForm.seller_id = ''
   createForm.platform = ''
   createForm.auth_type = ''
+  createForm.name = ''
+  createForm.note = ''
   userKeyword.value = ''
   showCreate.value = true
   await Promise.all([loadVendors(), searchUsers()])
@@ -465,9 +566,11 @@ async function submitCreate() {
       seller_id: sellerId,
       platform: createForm.platform,
       auth_type: createForm.auth_type,
+      name: createForm.name.trim() || undefined,
+      note: createForm.note.trim() || undefined,
     })
     showCreate.value = false
-    msg.value = `已为卖家创建上游 #${created.id}，请继续完成接入`
+    msg.value = `已为卖家创建上游 ${displayName(created)}，请继续完成接入`
     await getList()
     openEdit(created)
   } catch (e) {
@@ -487,9 +590,20 @@ function resetQuery() {
 }
 
 function applyRouteQuery() {
+  const sellerId = route.query.seller_id
+  if (typeof sellerId === 'string' && /^\d+$/.test(sellerId.trim())) {
+    queryParams.value.seller_id = sellerId.trim()
+    queryParams.value.pageNum = 1
+  }
   const q = route.query.q
   if (typeof q === 'string' && q.trim()) {
-    queryParams.value.keyword = q.trim()
+    const raw = q.trim()
+    // 用户页跳转常带 ?q=<user_id>，优先落到「用户」筛选
+    if (/^\d+$/.test(raw) && !queryParams.value.seller_id) {
+      queryParams.value.seller_id = raw
+    } else {
+      queryParams.value.keyword = raw
+    }
     queryParams.value.pageNum = 1
   }
 }
@@ -508,7 +622,7 @@ watch(
 
 onMounted(() => {
   applyRouteQuery()
-  void getList()
+  void Promise.all([getList(), loadFilterUsers()])
 })
 </script>
 
@@ -546,7 +660,7 @@ onMounted(() => {
           <b>就绪</b> 后再回挂单页刷新。
         </p>
         <p v-else-if="focusId" class="y-msg mb-2">
-          已定位上游 #{{ focusId }}。可点「继续接入 / 选模型」完成编辑。
+          已定位上游 {{ focusId }}。可点「继续接入 / 选模型」完成编辑。
         </p>
 
         <div class="section-block">
@@ -597,80 +711,99 @@ onMounted(() => {
 
         <div class="section-block mt-3">
           <div class="section-title">上游信息</div>
-          <!-- 工单列表标准：同一行 label+控件，时间加宽，操作按钮靠右 -->
-          <div class="list-filter">
-            <div class="list-filter__row">
-              <div class="list-filter__item list-filter__item--time">
-                <label class="list-filter__label">接入时间</label>
-                <div class="list-filter__control">
-                  <DateRangePicker
-                    mode="datetimerange"
-                    v-model:start-date="queryParams.startDate"
-                    v-model:end-date="queryParams.endDate"
-                  />
-                </div>
-              </div>
-              <div class="list-filter__item">
-                <label class="list-filter__label">关键词</label>
-                <div class="list-filter__control">
-                  <input
-                    v-model="queryParams.keyword"
-                    class="filter-input w-full"
-                    type="search"
-                    placeholder="请输入上游 ID / 卖家邮箱 / 账号"
-                    @keyup.enter="handleQuery"
-                  />
-                </div>
-              </div>
-              <div class="list-filter__item">
-                <label class="list-filter__label">状态</label>
-                <div class="list-filter__control">
-                  <Select v-model="queryParams.status" class="w-full" size="sm" :options="STATUS_OPTIONS" />
-                </div>
-              </div>
-              <div class="list-filter__actions">
-                <button type="button" class="btn btn-secondary" @click="resetQuery">
-                  <Icon name="refresh" size="sm" />
-                  重置
-                </button>
-                <button type="button" class="btn btn-primary" @click="handleQuery">
-                  <Icon name="search" size="sm" />
-                  搜索
-                </button>
+          <!-- filter-grid：lg 每项 1/4，弹性伸缩 -->
+          <div class="filter-grid">
+            <div class="filter-item">
+              <label class="filter-label">接入时间</label>
+              <div class="flex flex-1 w-full min-w-0 items-center gap-2">
+                <DateRangePicker
+                  mode="datetimerange"
+                  v-model:start-date="queryParams.startDate"
+                  v-model:end-date="queryParams.endDate"
+                />
               </div>
             </div>
-            <div class="list-filter__row list-filter__row--sub">
-              <div class="list-filter__item">
-                <label class="list-filter__label">厂商</label>
-                <div class="list-filter__control">
-                  <Select
-                    v-model="queryParams.platform"
-                    class="w-full"
-                    size="sm"
-                    :options="PLATFORM_OPTIONS"
-                  />
-                </div>
+            <div class="filter-item">
+              <label class="filter-label">用户</label>
+              <Select
+                v-model="queryParams.seller_id"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="sellerFilterOptions"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">状态</label>
+              <Select
+                v-model="queryParams.status"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="STATUS_OPTIONS"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">厂商</label>
+              <Select
+                v-model="queryParams.platform"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="PLATFORM_OPTIONS"
+              />
+            </div>
+            <div class="filter-item">
+              <label class="filter-label">关键词</label>
+              <div class="relative flex-1 w-full min-w-0">
+                <input
+                  v-model="queryParams.keyword"
+                  class="filter-input w-full"
+                  type="search"
+                  placeholder="上游 ID / 账号"
+                  @keyup.enter="handleQuery"
+                />
               </div>
+            </div>
+            <div class="filter-actions lg:col-span-4">
+              <button type="button" class="btn btn-secondary" @click="resetQuery">
+                <Icon name="refresh" size="sm" />
+                重置
+              </button>
+              <button type="button" class="btn btn-primary" @click="handleQuery">
+                <Icon name="search" size="sm" />
+                搜索
+              </button>
             </div>
           </div>
         </div>
       </template>
 
       <template #table>
-        <DataTable :columns="columns" :data="pageRows" :loading="loading">
+        <DataTable
+          :columns="columns"
+          :data="pageRows"
+          :loading="loading"
+          :actions-count="4"
+          :expandable-actions="false"
+        >
           <template #cell-serial="{ row }">
             {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
           </template>
-          <template #cell-account="{ row }">
+          <template #cell-name="{ row }">
             <div class="account-cell">
-              <span>{{ displayName(row) }}</span>
+              <span>{{ nameCell(row) }}</span>
               <span v-if="row.is_reference" class="ref-tag">基线</span>
             </div>
-            <div v-if="row.account_email" class="row-sub">#{{ row.id }}</div>
+            <div v-if="row.account_email && row.name" class="row-sub" :title="row.account_email">
+              {{ row.account_email }}
+            </div>
+          </template>
+          <template #cell-code="{ row }">
+            {{ upstreamCode(row) || '—' }}
+          </template>
+          <template #cell-note="{ row }">
+            <span class="note-cell" :title="row.note || ''">{{ String(row.note || '').trim() || '—' }}</span>
           </template>
           <template #cell-seller="{ row }">
             <div>{{ sellerLabel(row) }}</div>
-            <div class="row-sub">#{{ row.seller_id }}</div>
           </template>
           <template #cell-platform="{ row }">
             {{ platformLabel(row.platform) }}
@@ -697,7 +830,9 @@ onMounted(() => {
           <template #cell-actions="{ row }">
             <div class="table-ops">
               <button type="button" class="y-link" @click="openEdit(row)">{{ editLabel(row) }}</button>
-              <button type="button" class="y-link" :disabled="busy" @click="probe(row)">检测</button>
+              <button type="button" class="y-link" :disabled="busy || probeBusy" @click="openProbeConfirm(row)">
+                检测
+              </button>
               <button
                 v-if="row.status !== 'suspended'"
                 type="button"
@@ -740,6 +875,52 @@ onMounted(() => {
       </template>
     </TablePageLayout>
 
+    <div v-if="probeTarget" class="create-mask" @click.self="closeProbeConfirm">
+      <div class="create-modal" role="dialog" aria-labelledby="probe-confirm-title">
+        <header class="create-modal__head">
+          <h3 id="probe-confirm-title">确认检测</h3>
+          <button type="button" class="y-link" :disabled="probeBusy" @click="closeProbeConfirm">关闭</button>
+        </header>
+        <div class="create-modal__body">
+          <p class="create-modal__hint">
+            将对上游
+            <strong>{{ displayName(probeTarget) }}</strong>
+            <template v-if="upstreamCode(probeTarget) !== displayName(probeTarget)">
+              （编号 {{ upstreamCode(probeTarget) }}）
+            </template>
+            发起检测。确认后任务会进入检测队列。
+          </p>
+          <p v-if="probeError" class="y-msg y-msg--error">{{ probeError }}</p>
+        </div>
+        <footer class="create-modal__foot">
+          <button type="button" class="btn btn-secondary" :disabled="probeBusy" @click="closeProbeConfirm">
+            取消
+          </button>
+          <button type="button" class="btn btn-primary" :disabled="probeBusy" @click="confirmProbe">
+            {{ probeBusy ? '提交中…' : '确认检测' }}
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    <div v-if="probeDone" class="create-mask" @click.self="closeProbeDone">
+      <div class="create-modal" role="dialog" aria-labelledby="probe-done-title">
+        <header class="create-modal__head">
+          <h3 id="probe-done-title">已排队检测</h3>
+          <button type="button" class="y-link" @click="closeProbeDone">关闭</button>
+        </header>
+        <div class="create-modal__body">
+          <p class="create-modal__hint">
+            上游 <strong>{{ probeDone.label }}</strong> 已进入检测队列。可前往「检测记录」查看进度与结果。
+          </p>
+        </div>
+        <footer class="create-modal__foot">
+          <button type="button" class="btn btn-secondary" @click="closeProbeDone">稍后查看</button>
+          <button type="button" class="btn btn-primary" @click="goProbeRuns">查看检测记录</button>
+        </footer>
+      </div>
+    </div>
+
     <div v-if="showCreate" class="create-mask" @click.self="showCreate = false">
       <div class="create-modal" role="dialog" aria-labelledby="create-upstream-title">
         <header class="create-modal__head">
@@ -773,6 +954,28 @@ onMounted(() => {
               class="w-full"
               size="sm"
               :options="[{ value: '', label: '— 请选择 —' }, ...createSellerOptions]"
+            />
+          </label>
+
+          <label class="create-field">
+            <span>名称</span>
+            <input
+              v-model="createForm.name"
+              class="filter-input w-full"
+              type="text"
+              maxlength="64"
+              placeholder="可选，列表展示用"
+            />
+          </label>
+
+          <label class="create-field">
+            <span>备注</span>
+            <textarea
+              v-model="createForm.note"
+              class="filter-input w-full create-note"
+              rows="2"
+              maxlength="500"
+              placeholder="可选，运营备注"
             />
           </label>
 
@@ -879,13 +1082,67 @@ onMounted(() => {
   gap: 6px;
 }
 
-/* 与 y-col-op 的 16px 间距对齐；DataTable 操作列没有 td.y-col-op */
+/* 操作列：固定宽度，避免 sticky 被挤窄后按钮叠到「接入时间」上 */
 .table-ops {
   display: inline-flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   white-space: nowrap;
+  min-width: max-content;
+}
+
+#market-upstreams-page :deep(th.col-name),
+#market-upstreams-page :deep(td.col-name) {
+  min-width: 7.5rem;
+}
+#market-upstreams-page :deep(th.col-code),
+#market-upstreams-page :deep(td.col-code) {
+  min-width: 10.5rem;
+}
+#market-upstreams-page :deep(th.col-note),
+#market-upstreams-page :deep(td.col-note) {
+  min-width: 8rem;
+  max-width: 12rem;
+}
+#market-upstreams-page :deep(th.col-seller),
+#market-upstreams-page :deep(td.col-seller) {
+  min-width: 10rem;
+}
+#market-upstreams-page :deep(th.col-platform),
+#market-upstreams-page :deep(td.col-platform) {
+  min-width: 8rem;
+}
+#market-upstreams-page :deep(th.col-status),
+#market-upstreams-page :deep(td.col-status),
+#market-upstreams-page :deep(th.col-health),
+#market-upstreams-page :deep(td.col-health),
+#market-upstreams-page :deep(th.col-privacy),
+#market-upstreams-page :deep(td.col-privacy) {
+  min-width: 5rem;
+}
+#market-upstreams-page :deep(th.col-grade),
+#market-upstreams-page :deep(td.col-grade) {
+  min-width: 3.5rem;
+}
+#market-upstreams-page :deep(th.col-time),
+#market-upstreams-page :deep(td.col-time) {
+  min-width: 10rem;
+}
+#market-upstreams-page :deep(th.col-ops),
+#market-upstreams-page :deep(td.col-ops) {
+  min-width: 17.5rem;
+  width: 17.5rem;
+  box-sizing: border-box;
+}
+#market-upstreams-page :deep(thead th.col-ops) {
+  background: #f5f7fa !important;
+}
+#market-upstreams-page :deep(tbody td.col-ops) {
+  background: #fff !important;
+}
+#market-upstreams-page :deep(tbody tr:hover td.col-ops) {
+  background: #f5f7fa !important;
 }
 
 .section-block {
@@ -900,109 +1157,17 @@ onMounted(() => {
   color: var(--color-text-primary, #262626);
 }
 
-/* —— 查询条件：对齐挂单/工单列表 —— */
-.list-filter {
-  width: 100%;
-}
-
-.list-filter__row {
-  display: grid;
-  grid-template-columns: minmax(280px, 1.7fr) minmax(180px, 1fr) minmax(150px, 0.85fr) auto;
-  align-items: center;
-  gap: 12px 16px;
-  width: 100%;
-}
-
-.list-filter__row--sub {
-  margin-top: 12px;
-  grid-template-columns: minmax(180px, 0.85fr) 1fr;
-}
-
-.list-filter__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.list-filter__item--time {
-  min-width: 0;
-}
-
-.list-filter__label {
-  width: 4.5rem;
-  flex-shrink: 0;
-  text-align: right;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 32px;
-  color: var(--color-text-secondary, #606266);
-  white-space: nowrap;
-}
-
-.list-filter__control {
-  flex: 1;
-  min-width: 0;
-  width: 100%;
-}
-
-.list-filter__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.list-filter__actions .btn {
-  height: 32px;
-  padding: 0 14px;
-  font-size: 13px;
-  border-radius: 8px;
-}
-
-@media (max-width: 1200px) {
-  .list-filter__row {
-    grid-template-columns: minmax(240px, 1.5fr) minmax(160px, 1fr) auto;
-  }
-
-  .list-filter__item:nth-child(3) {
-    grid-column: 1 / 2;
-  }
-
-  .list-filter__actions {
-    grid-column: 3 / 4;
-    grid-row: 1;
-  }
-}
-
-@media (max-width: 768px) {
-  .list-filter__row,
-  .list-filter__row--sub {
-    grid-template-columns: 1fr;
-  }
-
-  .list-filter__item:nth-child(3),
-  .list-filter__actions {
-    grid-column: auto;
-    grid-row: auto;
-  }
-
-  .list-filter__actions {
-    justify-content: flex-end;
-  }
-}
-
-#market-upstreams-page :deep(.list-filter .el-date-editor.el-input__wrapper),
-#market-upstreams-page :deep(.list-filter .el-date-editor.el-range-editor) {
+/* —— 筛选栏控件高度：沿用全局 filter-grid，仅补齐控件尺寸 —— */
+#market-upstreams-page :deep(.filter-grid .el-date-editor.el-input__wrapper),
+#market-upstreams-page :deep(.filter-grid .el-date-editor.el-range-editor) {
   width: 100% !important;
   height: 32px !important;
   min-height: 32px !important;
 }
 
-#market-upstreams-page :deep(.list-filter .select-trigger),
-#market-upstreams-page :deep(.list-filter .select-trigger-sm),
-#market-upstreams-page :deep(.list-filter .filter-input) {
+#market-upstreams-page :deep(.filter-grid .select-trigger),
+#market-upstreams-page :deep(.filter-grid .select-trigger-sm),
+#market-upstreams-page :deep(.filter-grid .filter-input) {
   height: 32px;
   min-height: 32px;
 }
@@ -1029,6 +1194,15 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.note-cell {
+  display: inline-block;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .ref-tag {
@@ -1253,6 +1427,12 @@ onMounted(() => {
 .create-field__err {
   color: #b45309;
   font-size: 12px;
+}
+
+.create-note {
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.45;
 }
 
 .flex-1 {

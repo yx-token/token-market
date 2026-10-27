@@ -367,7 +367,7 @@ async function paid(w: Withdrawal, failed: boolean) {
       empty="没有符合条件的提现"
     >
       <template #cell-id="{ row }">#{{ row.id }}</template>
-      <template #cell-seller_id="{ row }">#{{ row.seller_id }}</template>
+      <template #cell-seller_id="{ row }">{{ row.seller_email?.trim() || '—' }}</template>
       <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
       <template #cell-account="{ row }">{{ row.channel }}：{{ row.account_info }}</template>
       <template #cell-status="{ row }"><StatusBadge kind="withdrawalStatus" :value="row.status" /></template>

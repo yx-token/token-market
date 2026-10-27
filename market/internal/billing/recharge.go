@@ -25,6 +25,7 @@ import (
 type RechargeOrder struct {
 	ID          int64        `json:"id"`
 	UserID      int64        `json:"user_id"`
+	UserEmail   string       `json:"user_email,omitempty"`
 	Amount      float64      `json:"amount"`
 	Provider    string       `json:"provider"`
 	Channel     string       `json:"channel"`

@@ -144,6 +144,9 @@ func (s *Server) listProxies(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := s.attachProxySellerEmails(r.Context(), ps); err != nil {
+		return err
+	}
 	return ok(w, ps)
 }
 
@@ -567,6 +570,9 @@ func (s *Server) listAppeals(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := s.attachAppealSellerEmails(r.Context(), as); err != nil {
+		return err
+	}
 	return ok(w, as)
 }
 
@@ -685,6 +691,9 @@ func (s *Server) adminRecharges(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := s.attachRechargeUserEmails(r.Context(), os); err != nil {
+		return err
+	}
 	return ok(w, os)
 }
 
@@ -732,6 +741,9 @@ func (s *Server) adminRefunds(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := s.attachRefundUserEmails(r.Context(), rs); err != nil {
+		return err
+	}
 	return ok(w, rs)
 }
 
@@ -758,6 +770,9 @@ func (s *Server) adminWithdrawals(w http.ResponseWriter, r *http.Request) error 
 	limit, offset := page(r)
 	ws, err := s.Funds.ListWithdrawals(r.Context(), 0, r.URL.Query().Get("status"), true, limit, offset)
 	if err != nil {
+		return err
+	}
+	if err := s.attachWithdrawalSellerEmails(r.Context(), ws); err != nil {
 		return err
 	}
 	return ok(w, ws)

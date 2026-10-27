@@ -221,6 +221,7 @@ export default {
     marketBrand: '闲猫',
     marketFront: '买家入口',
     marketSupply: '卖家供给',
+    marketDispatch: '中间调度',
     marketFunds: '托管资金',
     marketQuality: '上架质检',
     marketOps: '市场运营',

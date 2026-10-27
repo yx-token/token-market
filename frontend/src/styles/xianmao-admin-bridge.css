@@ -172,6 +172,14 @@
   font-weight: 450 !important;
 }
 
+/* 四级：中间调度等叶子 */
+.console-app .sidebar-link--l4 {
+  min-height: 32px !important;
+  padding: 6px 12px 6px 14px !important;
+  font-size: 12.5px !important;
+  font-weight: 450 !important;
+}
+
 .console-app .sidebar-ico,
 .console-app .sidebar-ico--l1 {
   flex-shrink: 0 !important;
@@ -228,6 +236,17 @@
   background: rgba(15, 23, 42, 0.04) !important;
 }
 
+.console-app .sidebar-group > .sidebar-link--l3.sidebar-link-active {
+  color: #0555ce !important;
+  background: transparent !important;
+  font-weight: 600 !important;
+}
+
+.console-app .sidebar-group > .sidebar-link--l3.sidebar-link-active:hover {
+  color: #0555ce !important;
+  background: rgba(15, 23, 42, 0.04) !important;
+}
+
 .console-app .sidebar-submenu {
   margin: 0;
   padding: 0;
@@ -242,6 +261,13 @@
 }
 
 .console-app .sidebar-submenu--l3 {
+  margin: 0;
+  padding: 2px 0 2px 14px;
+  border: none;
+  border-left: none;
+}
+
+.console-app .sidebar-submenu--l4 {
   margin: 0;
   padding: 2px 0 2px 14px;
   border: none;
