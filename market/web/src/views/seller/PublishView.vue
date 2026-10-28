@@ -10,12 +10,13 @@ import type { Listing, ListingCategoryOption, Proxy, Quote, Upstream, VendorView
 import { useAction } from '@/composables/useAsync'
 import { useConfig } from '@/stores/config'
 import { useToast } from '@/stores/toast'
-import { authGuides, takesProjectID, takesTeam } from '@/utils/authGuides'
+import { authGuides, takesTeam } from '@/utils/authGuides'
 import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
 import { multiplier, percent } from '@/utils/format'
 import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 import MarketDetectionSummary from '@/components/MarketDetectionSummary.vue'
 import ModelWhitelistSelector from '@/components/ModelWhitelistSelector.vue'
+import SellerOAuthPanel from '@/components/SellerOAuthPanel.vue'
 import { privacyBlocksListing, sellerUntested } from '@/components/seller/listingGate'
 import '@/styles/seller-center.css'
 
@@ -39,10 +40,7 @@ const resumeUpstreamID = ref<number | ''>('')
 const platform = ref('')
 const authType = ref('')
 const upstream = ref<Upstream | null>(null)
-const authURL = ref('')
-const code = ref('')
 const apiKey = ref('')
-const projectID = ref('')
 const team = ref({ organization: '', project: '' })
 const reserve = ref(20)
 
@@ -68,7 +66,6 @@ const occupiedProxies = computed(() =>
 )
 const vendor = computed(() => vendors.value.find((v) => v.platform === platform.value))
 const isOAuth = computed(() => !isKeyAuthType(authType.value))
-const withProject = computed(() => takesProjectID(platform.value, authType.value))
 const withTeam = computed(() => takesTeam(platform.value, authType.value))
 const guide = computed(() => authGuides[`${platform.value}:${authType.value}`])
 const buyerPrice = computed(() => {
@@ -160,6 +157,7 @@ async function nextFromProxy() {
 }
 
 async function createAndAuthorize() {
+  if (busy.value) return
   if (!platform.value || !authType.value) {
     toast.error('请选择厂商与接入方式')
     return
@@ -168,41 +166,35 @@ async function createAndAuthorize() {
     toast.error('请先选择代理')
     return
   }
-  let u: Upstream | null = upstream.value
-  if (!u || u.platform !== platform.value) {
-    const created = await run(() => seller.createUpstream(platform.value, authType.value, proxyID.value || undefined))
-    if (!created) return
-    u = created
-    upstream.value = created
+  if (!isOAuth.value && !apiKey.value.trim()) {
+    toast.error('请粘贴 Coding Plan Key')
+    return
   }
-  if (isOAuth.value) {
-    if (!code.value.trim()) {
-      toast.error('请先获取授权链接并回填授权码')
-      return
+  const done = await run(async () => {
+    let u = upstream.value
+    if (!u) {
+      u = await seller.createUpstream(platform.value, authType.value, proxyID.value || undefined)
+      upstream.value = u
     }
-    const done = await run(() => seller.completeOAuth(u!.id, code.value.trim()))
-    if (!done) return
-    upstream.value = done
-    u = done
-  } else {
-    if (!apiKey.value.trim()) {
-      toast.error('请粘贴 Coding Plan Key')
-      return
-    }
+    if (u.platform !== platform.value || u.auth_type !== authType.value) throw new Error('接入方式与已创建的上游不一致，请重新开始接入。')
+    if (isOAuth.value) return null
     const body = {
       api_key: apiKey.value.trim(),
       ...(withTeam.value && team.value.organization.trim()
         ? { organization: team.value.organization.trim(), project: team.value.project.trim() || undefined }
         : {}),
     }
-    const done = await run(() => seller.submitCodingKey(u!.id, body))
-    if (!done) return
-    upstream.value = done
-    u = done
-  }
+    return seller.submitCodingKey(u.id, body)
+  })
+  if (done) await authorized(done)
+}
+
+async function authorized(u: Upstream) {
+  upstream.value = u
   if (reserve.value >= 0) {
     await seller.setSelfReserve(u.id, Number(reserve.value)).catch(() => null)
   }
+  toast.success(`接入成功，当前状态：${label('upstreamStatus', u.status).text}`)
   step.value = u.status === 'selecting_models' ? 2 : 3
 }
 
@@ -236,20 +228,6 @@ async function startDetection() {
   if (!started) return
   upstream.value = started
   step.value = 3
-}
-
-async function getOAuthLink() {
-  if (!upstream.value) {
-    const u = await run(() => seller.createUpstream(platform.value, authType.value, proxyID.value || undefined))
-    if (!u) return
-    upstream.value = u
-  }
-  const opts = withProject.value && projectID.value.trim() ? { project_id: projectID.value.trim() } : undefined
-  const res = await run(() => seller.startOAuth(upstream.value!.id, opts))
-  if (res) {
-    authURL.value = res.auth_url
-    window.open(res.auth_url, '_blank', 'noopener')
-  }
 }
 
 function startProbePoll() {
@@ -365,9 +343,7 @@ function resetWizard() {
   upstream.value = null
   listing.value = null
   quote.value = null
-  code.value = ''
   apiKey.value = ''
-  authURL.value = ''
   title.value = ''
   description.value = ''
   categories.value = []
@@ -434,7 +410,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
 
       <template v-if="!resumeUpstreamID">
         <label class="xm-field-label">选择代理{{ requireSellerProxy ? '（必选）' : '（可由平台关联）' }}</label>
-        <select v-model="proxyID" class="xm-input">
+        <select v-model="proxyID" class="xm-input" :disabled="!!upstream">
           <option value="">{{ requireSellerProxy ? '请选择空闲代理' : '由平台自动关联' }}</option>
           <option v-for="p in availableProxies" :key="p.id" :value="p.id">
             {{ p.name }} · {{ p.protocol }}://{{ p.host.includes(':') ? `[${p.host}]` : p.host }}:{{ p.port }}{{ p.region ? ` · ${p.region}` : '' }}
@@ -470,7 +446,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     <!-- 1 接入 -->
     <section v-else-if="step === 1" class="xm-pub-panel">
       <h2>接入上游账号</h2>
-      <p class="sub">只做授权，不交密码。OAuth 跳转官方页；Coding Plan 粘贴订阅 Key。</p>
+      <p class="sub">只做授权，不交密码。选择 OAuth 可在官方页面登录订阅账号，无需 API Key；也可使用已有订阅 Key。</p>
 
       <label class="xm-field-label">厂商</label>
       <div class="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3">
@@ -480,6 +456,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
           type="button"
           class="xm-choice"
           :class="{ on: platform === v.platform }"
+          :disabled="busy || !!upstream"
           @click="pickVendor(v)"
         >
           <strong>{{ label('platform', v.platform).text }}</strong>
@@ -495,7 +472,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
           class="xm-choice"
           :class="{ on: authType === t }"
         >
-          <input v-model="authType" type="radio" :value="t" class="mt-0.5" />
+          <input v-model="authType" type="radio" :value="t" class="mt-0.5" :disabled="busy || !!upstream" />
           <div>
             <strong>{{ authTypeText(platform, t) }}</strong>
             <span>{{ authGuides[`${platform}:${t}`]?.summary }}</span>
@@ -504,16 +481,8 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       </div>
 
       <template v-if="isOAuth">
-        <div v-if="withProject" class="mb-3">
-          <label class="xm-field-label">GCP 项目 ID（可选）</label>
-          <input v-model="projectID" class="xm-input" placeholder="my-project-123456" />
-        </div>
-        <button type="button" class="xm-btn xm-btn-ghost mb-2 w-full" :disabled="busy" @click="getOAuthLink">
-          {{ authURL ? '重新获取授权链接' : '打开官方授权页' }}
-        </button>
-        <p v-if="authURL" class="xm-hint break-all">{{ authURL }}</p>
-        <label class="xm-field-label">授权码或回调地址</label>
-        <textarea v-model="code" class="xm-input" rows="3" placeholder="code#state 或完整回调 URL" />
+        <SellerOAuthPanel v-if="upstream" :upstream-id="upstream.id" :platform="platform" :auth-type="authType" :disabled="busy" @ready="authorized" />
+        <p v-else class="xm-hint">{{ guide?.how || '点击开始授权后，在官方页面登录要接入的订阅账号。' }}</p>
       </template>
       <template v-else>
         <p class="xm-hint mb-2">{{ guide?.how || '粘贴官方 Coding Plan 订阅 Key，平台会校验窗口用量。' }}</p>
@@ -537,7 +506,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
 
       <div class="xm-pub-actions">
         <button type="button" class="xm-btn xm-btn-ghost" @click="step = 0">上一步</button>
-        <button type="button" class="xm-btn xm-btn-primary" :disabled="busy" @click="createAndAuthorize">完成接入，选择模型</button>
+        <button v-if="!isOAuth || !upstream" type="button" class="xm-btn xm-btn-primary" :disabled="busy" @click="createAndAuthorize">{{ isOAuth ? '开始授权' : '完成接入，选择模型' }}</button>
       </div>
     </section>
 

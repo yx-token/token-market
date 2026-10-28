@@ -73,9 +73,10 @@ export const seller = {
   createUpstream: (platform: string, auth_type: string, proxy_id?: number, proxy_from_import?: boolean) =>
     http.post<T.Upstream>('/api/seller/upstreams', { platform, auth_type, proxy_id, ...(proxy_from_import ? { proxy_from_import } : {}) }),
   importAccount: (id: number, data: unknown, account_index: number) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/import`, { data, account_index }),
-  startOAuth: (id: number, opts?: T.AuthorizationOptions) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/oauth/start`, opts),
-  completeOAuth: (id: number, code: string) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/oauth/complete`, { code }),
-  reauthorize: (id: number, opts?: T.AuthorizationOptions) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/reauthorize`, opts),
+  startOAuth: (id: number, opts?: T.AuthorizationOptions, signal?: AbortSignal) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/oauth/start`, opts, undefined, signal),
+  oauthPoll: (id: number, signal?: AbortSignal) => http.post<T.AuthorizationPoll>(`/api/seller/upstreams/${id}/oauth/poll`, {}, undefined, signal),
+  completeOAuth: (id: number, input: string | T.AuthorizationComplete, signal?: AbortSignal) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/oauth/complete`, typeof input === 'string' ? { code: input } : input, undefined, signal),
+  reauthorize: (id: number, opts?: T.AuthorizationOptions, signal?: AbortSignal) => http.post<T.AuthorizationStart>(`/api/seller/upstreams/${id}/reauthorize`, opts, undefined, signal),
   submitCodingKey: (id: number, body: T.CodingKeyInput) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/coding-key`, body),
   retryVerification: (id: number) => http.post<T.Upstream>(`/api/seller/upstreams/${id}/retry-verification`),
   setSelfReserve: (id: number, self_reserve_percent: number) =>

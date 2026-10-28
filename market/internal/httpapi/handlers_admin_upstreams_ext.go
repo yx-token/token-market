@@ -86,8 +86,8 @@ func (s *Server) adminStartUpstreamOAuth(w http.ResponseWriter, r *http.Request)
 		return err
 	}
 	var opts listing.AuthorizationOptions
-	if r.ContentLength > 0 {
-		if err := httpx.Decode(r, &opts); err != nil {
+	if r.ContentLength != 0 {
+		if err := decodeOAuth(r, &opts); err != nil {
 			return err
 		}
 	}
@@ -104,13 +104,15 @@ func (s *Server) adminCompleteUpstreamOAuth(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return err
 	}
-	var in struct {
-		Code string `json:"code"`
-	}
-	if err := httpx.Decode(r, &in); err != nil {
+	var in oauthCompleteInput
+	if err := decodeOAuth(r, &in); err != nil {
 		return err
 	}
-	u, err := s.Listings.AdminCompleteAuthorization(r.Context(), id, in.Code)
+	input, err := in.value()
+	if err != nil {
+		return err
+	}
+	u, err := s.Listings.AdminCompleteAuthorization(r.Context(), id, input)
 	if err != nil {
 		return err
 	}

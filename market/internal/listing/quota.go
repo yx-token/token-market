@@ -106,7 +106,7 @@ func (s *Service) withReserve(u *Upstream, q *AccountQuota) *AccountQuota {
 
 func (s *Service) fetchQuota(ctx context.Context, u *Upstream, refresh bool) (*AccountQuota, bool) {
 	q := &AccountQuota{FetchedAt: time.Now(), Windows: []QuotaWindow{}}
-	if IsCodingAuthType(u.Platform, u.AuthType) {
+	if isCodingPlanAuthType(u.Platform, u.AuthType) {
 		q.Supported, q.Source = true, "coding_plan"
 		cn, err := s.Admin.CNProviderQuota(ctx, *u.Sub2APIAccountID)
 		if err != nil {

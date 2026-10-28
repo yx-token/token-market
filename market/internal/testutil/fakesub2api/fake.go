@@ -194,6 +194,11 @@ func (s *Server) routes() http.Handler {
 		admin("POST /api/v1/admin/"+p+"/oauth/auth-url", s.authURL)
 		admin("POST /api/v1/admin/"+p+"/oauth/exchange-code", s.exchange)
 	}
+	admin("POST /api/v1/admin/kimi/oauth/device-code", s.codingOAuthStart)
+	admin("POST /api/v1/admin/kimi/oauth/poll", s.codingOAuthPoll)
+	admin("POST /api/v1/admin/zhipu/oauth/init", s.codingOAuthStart)
+	admin("POST /api/v1/admin/zhipu/oauth/poll", s.codingOAuthPoll)
+	admin("POST /api/v1/admin/zhipu/oauth/exchange-code", s.codingOAuthExchange)
 
 	mux.HandleFunc("POST /api/v1/auth/login", func(w http.ResponseWriter, r *http.Request) { s.serve(w, r, s.login) })
 	mux.HandleFunc("POST /api/v1/auth/refresh", func(w http.ResponseWriter, r *http.Request) { s.serve(w, r, s.doRefresh) })
@@ -944,6 +949,9 @@ func (s *Server) accountUsage(_ http.ResponseWriter, r *http.Request) (any, erro
 type oauthSession struct {
 	oauthType string
 	projectID string
+	provider  string
+	proxyID   *int64
+	polls     int
 }
 
 func (s *Server) authURL(_ http.ResponseWriter, r *http.Request) (any, error) {

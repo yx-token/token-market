@@ -135,6 +135,12 @@ func (c ModelCapability) ContextForAuth(auth string) int {
 	if window, ok := c.ContextWindowByAuth[auth]; ok {
 		return window
 	}
+	if c.Platform == "kimi" || c.Platform == "zhipu" {
+		keyAuth := map[string]string{"oauth": "coding", "oauth-intl": "coding-intl"}[auth]
+		if window, ok := c.ContextWindowByAuth[keyAuth]; keyAuth != "" && ok {
+			return window
+		}
+	}
 	return c.ContextWindow
 }
 
@@ -216,7 +222,7 @@ func validateCapabilityOverrides(overrides []ModelCapabilityOverride) error {
 		}
 		for auth, window := range c.ContextWindowByAuth {
 			switch auth {
-			case "oauth", "apikey", "setup-token", "coding", "coding-intl", "google_one", "go":
+			case "oauth", "oauth-intl", "apikey", "setup-token", "coding", "coding-intl", "google_one", "go":
 			default:
 				return fmt.Errorf("模型官方能力 %s 的认证类型无效：%s", key, auth)
 			}

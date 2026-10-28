@@ -233,7 +233,8 @@ func (e *Engine) QueueRun(ctx context.Context, upstreamID int64, trigger string,
 			}
 		}
 		var refID int64
-		err := tx.QueryRow(ctx, `SELECT u.id FROM upstreams u WHERE is_reference AND platform=$1 AND status IN ('ready','listed') AND health='healthy' AND sub2api_account_id IS NOT NULL AND auth_type=$2 AND tier IS NOT DISTINCT FROM $3::text AND (model_whitelist IS NULL OR model_whitelist @> $4::text[]) ORDER BY (SELECT count(*) FROM probe_runs r WHERE r.upstream_id=u.id AND r.status IN ('queued','running','third_party')),u.id LIMIT 1`, u.platform, u.authType, u.tier, referenceModels).Scan(&refID)
+		authTypes := listing.AuthTypeEquivalents(u.platform, u.authType)
+		err := tx.QueryRow(ctx, `SELECT u.id FROM upstreams u WHERE is_reference AND platform=$1 AND status IN ('ready','listed') AND health='healthy' AND sub2api_account_id IS NOT NULL AND auth_type=ANY($2::text[]) AND tier IS NOT DISTINCT FROM $3::text AND (model_whitelist IS NULL OR model_whitelist @> $4::text[]) ORDER BY array_position($2::text[], auth_type),(SELECT count(*) FROM probe_runs r WHERE r.upstream_id=u.id AND r.status IN ('queued','running','third_party')),u.id LIMIT 1`, u.platform, authTypes[:len(authTypes)-1], u.tier, referenceModels).Scan(&refID)
 		if err == nil {
 			// 基线跑同一批题目，需要与目标运行一致地冻结降智模型集合，否则同一批次的两侧选题不同。
 			var refRunID int64
