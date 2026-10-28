@@ -32,15 +32,15 @@ func TestVendorAuthTypeCoverage(t *testing.T) {
 	wantSupported := map[string][]string{
 		"anthropic": {"oauth", "setup-token"}, "openai": {"oauth"}, "gemini": {"google_one", "oauth"},
 		"antigravity": {"oauth"}, "grok": {"oauth"},
-		"kimi":   {"oauth", "coding"},
-		"zhipu":  {"oauth", "oauth-intl", "coding", "coding-intl"},
+		"kimi":    {"oauth", "coding"},
+		"zhipu":   {"oauth", "oauth-intl", "coding", "coding-intl"},
 		"minimax": {"coding", "coding-intl"}, "opencode_go": {"go"},
 	}
 	wantOpen := map[string][]string{
 		"anthropic": {"oauth", "setup-token"}, "openai": {"oauth"}, "gemini": {"google_one", "oauth"},
 		"antigravity": {"oauth"}, "grok": {"oauth"},
-		"kimi":   {"coding", "oauth"},
-		"zhipu":  {"coding", "coding-intl", "oauth", "oauth-intl"},
+		"kimi":    {"coding", "oauth"},
+		"zhipu":   {"coding", "coding-intl", "oauth", "oauth-intl"},
 		"minimax": {"coding", "coding-intl"}, "opencode_go": {"go"},
 	}
 	for _, v := range vendors {
