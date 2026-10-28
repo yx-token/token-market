@@ -164,10 +164,10 @@ type Appeal struct {
 	SellerID    int64      `json:"seller_id"`
 	SellerEmail string     `json:"seller_email,omitempty"`
 	Reason      string     `json:"reason"`
-	Status     string     `json:"status"`
-	AdminNote  *string    `json:"admin_note,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	Status      string     `json:"status"`
+	AdminNote   *string    `json:"admin_note,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ResolvedAt  *time.Time `json:"resolved_at,omitempty"`
 }
 
 const appealColumns = `id, report_id, seller_id, reason, status, admin_note, created_at, resolved_at`

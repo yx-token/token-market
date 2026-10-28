@@ -81,7 +81,7 @@ describe('买家商家清单与 Key 调用顺序', () => {
     const context = await setup('/')
     const wrapper = mount(MarketView, { global: context.global })
     await flushPromises()
-    await button(wrapper, '选用开通').trigger('click')
+    await button(wrapper, '选用').trigger('click')
     await flushPromises()
     expect(merchants.add).toHaveBeenCalledWith(8)
     expect(buyer.createKey).not.toHaveBeenCalled()
@@ -114,7 +114,9 @@ describe('买家商家清单与 Key 调用顺序', () => {
         payment: { channel: 'alipay_f2f', kind: 'qrcode' as const, qr_code: 'local-test-payment' },
       }
       vi.mocked(buyer.purchasePack).mockResolvedValue({ recharge })
-      vi.mocked(buyer.getRecharge).mockResolvedValue({ ...recharge, status: 'credited', pack_checkout_status: 'pending' })
+      vi.mocked(buyer.getRecharge)
+        .mockResolvedValueOnce({ ...recharge, status: 'credited', pack_checkout_status: 'pending' })
+        .mockResolvedValueOnce({ ...recharge, status: 'credited', pack_checkout_status: 'failed' })
       vi.mocked(buyer.packs).mockResolvedValue([{
         id: 1, listing_id: 11, buyer_id: 30, buyer_key_id: 9, face_value: 20, remaining: 20,
         paid_amount: 20, status: 'active', recharge_id: 1,
@@ -128,7 +130,6 @@ describe('买家商家清单与 Key 调用顺序', () => {
       await vi.advanceTimersByTimeAsync(2000)
       await flushPromises()
       expect(context.router.currentRoute.value.path).toBe('/market/listings/11')
-      vi.mocked(buyer.getRecharge).mockResolvedValue({ ...recharge, status: 'credited', pack_checkout_status: 'failed' })
       await vi.advanceTimersByTimeAsync(2000)
       await flushPromises()
       expect(context.router.currentRoute.value.path).toBe('/buyer/wallet')
