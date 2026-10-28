@@ -150,6 +150,9 @@ var auditBodyOmittedRoutes = map[string]struct{}{
 	"POST /api/v1/auth/passkey/login/finish":           {},
 	"POST /api/v1/user/passkeys/register/finish":       {},
 	"POST /api/v1/admin/accounts/import/codex-session": {},
+	"POST /api/v1/admin/kimi/oauth/device-code":        {},
+	"POST /api/v1/admin/kimi/oauth/poll":               {},
+	"POST /api/v1/admin/kimi/oauth/refresh-token":      {},
 	// GLM flow IDs can retrieve a successful OAuth result until flow expiry.
 	"POST /api/v1/admin/zhipu/oauth/poll":                       {},
 	"POST /api/v1/admin/zhipu/oauth/exchange-code":              {},

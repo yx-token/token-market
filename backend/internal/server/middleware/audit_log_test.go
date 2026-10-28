@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -189,10 +190,44 @@ func TestOllamaCloudUsageSessionRouteOmitsAuditBody(t *testing.T) {
 	require.NotContains(t, logs[0].RequestBody, "audit-canary")
 }
 
-func TestZhipuOAuthAuditOmitsFlowCredentialsAndPreservesRequest(t *testing.T) {
+func TestOAuthAuditBodyPolicyPreservesRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, path := range []string{"poll", "exchange-code"} {
-		t.Run(path, func(t *testing.T) {
+	for _, testCase := range []struct {
+		path string
+		body string
+		omit bool
+	}{
+		{
+			path: "/api/v1/admin/zhipu/oauth/poll",
+			body: `{"session_id":"audit-canary-session","proxy_id":7}`,
+			omit: true,
+		},
+		{
+			path: "/api/v1/admin/zhipu/oauth/exchange-code",
+			body: `{"session_id":"audit-canary-session","callback_url":"zcode://oauth/callback?code=audit-canary-code&state=s"}`,
+			omit: true,
+		},
+		{
+			path: "/api/v1/admin/kimi/oauth/device-code",
+			body: `{"proxy_id":7,"device_code":"audit-canary-device","user_code":"audit-canary-user"}`,
+			omit: true,
+		},
+		{
+			path: "/api/v1/admin/kimi/oauth/poll",
+			body: `{"session_id":"audit-canary-session","proxy_id":7}`,
+			omit: true,
+		},
+		{
+			path: "/api/v1/admin/kimi/oauth/refresh-token",
+			body: `{"refresh_token":"audit-canary-refresh","device_id":"audit-canary-device","proxy_id":7}`,
+			omit: true,
+		},
+		{
+			path: "/api/v1/admin/zhipu/oauth/init",
+			body: `{"provider":"bigmodel","proxy_id":7}`,
+		},
+	} {
+		t.Run(testCase.path, func(t *testing.T) {
 			repository := &auditCaptureRepository{}
 			auditService := service.NewAuditLogService(repository, nil)
 			auditService.Start()
@@ -205,18 +240,15 @@ func TestZhipuOAuthAuditOmitsFlowCredentialsAndPreservesRequest(t *testing.T) {
 				c.Next()
 			})
 			router.Use(gin.HandlerFunc(NewAuditLogMiddleware(auditService)))
-			route := "/api/v1/admin/zhipu/oauth/" + path
-			router.POST(route, func(c *gin.Context) {
-				var body struct {
-					SessionID   string `json:"session_id"`
-					CallbackURL string `json:"callback_url"`
-				}
+			router.POST(testCase.path, func(c *gin.Context) {
+				var body map[string]any
 				require.NoError(t, c.ShouldBindJSON(&body))
-				require.Equal(t, "audit-canary-session", body.SessionID)
-				require.Contains(t, body.CallbackURL, "audit-canary-code")
-				c.JSON(http.StatusOK, gin.H{"status": "pending"})
+				rawBody, err := json.Marshal(body)
+				require.NoError(t, err)
+				require.JSONEq(t, testCase.body, string(rawBody))
+				c.JSON(http.StatusOK, gin.H{"authorize_url": "https://example.com/oauth?state=response-canary-state", "state": "response-canary-state"})
 			})
-			request := httptest.NewRequest(http.MethodPost, route, bytes.NewBufferString(`{"session_id":"audit-canary-session","callback_url":"zcode://oauth/callback?code=audit-canary-code&state=s"}`))
+			request := httptest.NewRequest(http.MethodPost, testCase.path, bytes.NewBufferString(testCase.body))
 			request.Header.Set("Content-Type", "application/json")
 			recorder := httptest.NewRecorder()
 			router.ServeHTTP(recorder, request)
@@ -227,8 +259,15 @@ func TestZhipuOAuthAuditOmitsFlowCredentialsAndPreservesRequest(t *testing.T) {
 			logs := append([]*service.AuditLog(nil), repository.logs...)
 			repository.mu.Unlock()
 			require.Len(t, logs, 1)
-			require.Equal(t, "<credential-bearing body omitted>", logs[0].RequestBody)
+			if testCase.omit {
+				require.Equal(t, "<credential-bearing body omitted>", logs[0].RequestBody)
+			} else {
+				require.JSONEq(t, testCase.body, logs[0].RequestBody)
+			}
 			require.NotContains(t, logs[0].RequestBody, "audit-canary")
+			rawLog, err := json.Marshal(logs[0])
+			require.NoError(t, err)
+			require.NotContains(t, string(rawLog), "response-canary")
 		})
 	}
 }

@@ -296,7 +296,8 @@ func (s *ZhipuOAuthService) complete(ctx context.Context, client *zhipu.Client, 
 // No code, poll token, nonce or private key is persisted.
 func (s *ZhipuOAuthService) BuildResult(tokens *zhipu.TokenSet, key *zhipu.DerivedKey) *ZhipuOAuthResult {
 	creds := map[string]any{
-		"api_key": key.Credential, "access_token": tokens.AccessToken, "zcode_jwt": tokens.ZCodeJWT,
+		"account_mode": "coding",
+		"api_key":      key.Credential, "access_token": tokens.AccessToken, "zcode_jwt": tokens.ZCodeJWT,
 		"oauth_provider": string(tokens.Provider), "zhipu_organization": key.OrganizationID,
 		"zhipu_project": key.ProjectID, "client_version": s.version,
 		"refresh_token": nil, "zai_oauth_access_token": nil,
