@@ -109,8 +109,8 @@ func (s *Server) startOAuth(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var opts listing.AuthorizationOptions
-	if r.ContentLength > 0 {
-		if err := httpx.Decode(r, &opts); err != nil {
+	if r.ContentLength != 0 {
+		if err := decodeOAuth(r, &opts); err != nil {
 			return err
 		}
 	}
@@ -126,13 +126,15 @@ func (s *Server) completeOAuth(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	var in struct {
-		Code string `json:"code"`
-	}
-	if err := httpx.Decode(r, &in); err != nil {
+	var in oauthCompleteInput
+	if err := decodeOAuth(r, &in); err != nil {
 		return err
 	}
-	u, err := s.Listings.CompleteAuthorization(r.Context(), httpx.MustUser(r).UserID, id, in.Code)
+	input, err := in.value()
+	if err != nil {
+		return err
+	}
+	u, err := s.Listings.CompleteAuthorization(r.Context(), httpx.MustUser(r).UserID, id, input)
 	if err != nil {
 		return err
 	}
@@ -145,8 +147,8 @@ func (s *Server) reauthorize(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var opts listing.AuthorizationOptions
-	if r.ContentLength > 0 {
-		if err := httpx.Decode(r, &opts); err != nil {
+	if r.ContentLength != 0 {
+		if err := decodeOAuth(r, &opts); err != nil {
 			return err
 		}
 	}
@@ -154,8 +156,14 @@ func (s *Server) reauthorize(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return ok(w, map[string]any{"auth_url": st.AuthURL, "expires_at": st.ExpiresAt,
-		"next": "submit the code via /api/seller/upstreams/{id}/oauth/complete"})
+	next := "submit the code via /api/seller/upstreams/{id}/oauth/complete"
+	if st.Flow == "device-code" || st.Flow == "init-poll" {
+		next = "poll via /api/seller/upstreams/{id}/oauth/poll"
+	}
+	return ok(w, struct {
+		*listing.AuthorizationStart
+		Next string `json:"next"`
+	}{st, next})
 }
 
 func (s *Server) submitCodingKey(w http.ResponseWriter, r *http.Request) error {

@@ -283,6 +283,14 @@ func (s *Service) AdminCompleteAuthorization(ctx context.Context, upstreamID int
 	return s.CompleteAuthorization(ctx, sellerID, upstreamID, code)
 }
 
+func (s *Service) AdminPollAuthorization(ctx context.Context, upstreamID int64) (*AuthorizationPoll, error) {
+	sellerID, _, err := s.adminSellerID(ctx, upstreamID)
+	if err != nil {
+		return nil, err
+	}
+	return s.PollAuthorization(ctx, sellerID, upstreamID)
+}
+
 // AdminSubmitCodingKey 管理端代提交 Coding Plan Key。
 func (s *Service) AdminSubmitCodingKey(ctx context.Context, upstreamID int64, in CodingKeyInput) (*Upstream, error) {
 	sellerID, _, err := s.adminSellerID(ctx, upstreamID)

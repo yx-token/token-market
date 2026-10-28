@@ -6,6 +6,23 @@ import (
 	"testing"
 )
 
+func TestCodingOAuthCapabilityCompatibility(t *testing.T) {
+	for _, platform := range []string{"kimi", "zhipu"} {
+		capability := ModelCapability{Platform: platform, ContextWindow: 100000,
+			ContextWindowByAuth: map[string]int{"coding": 200000, "coding-intl": 300000}}
+		if capability.ContextForAuth("oauth") != 200000 || capability.ContextForAuth("oauth-intl") != 300000 {
+			t.Fatalf("OAuth did not inherit Coding Plan capability: %+v", capability)
+		}
+		capability.ContextWindowByAuth["oauth-intl"] = 400000
+		if capability.ContextForAuth("oauth-intl") != 400000 {
+			t.Fatal("explicit OAuth capability did not take precedence")
+		}
+	}
+	if _, err := Update(context.Background(), &memoryDB{}, []byte(`{"model_capabilities":[{"platform":"zhipu","model":"*","context_window_by_auth":{"oauth-intl":200000}}]}`)); err != nil {
+		t.Fatalf("international OAuth capability rejected: %v", err)
+	}
+}
+
 func TestCapabilityDefaultsOfficialFacts(t *testing.T) {
 	defaults := CapabilityDefaults()
 	if len(defaults) < 40 {

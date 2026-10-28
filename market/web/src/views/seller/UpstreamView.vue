@@ -16,9 +16,9 @@ import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
 import ResetCreditsPanel from '@/components/ResetCreditsPanel.vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
+import SellerOAuthPanel from '@/components/SellerOAuthPanel.vue'
 import UpstreamModelWhitelist from '@/components/UpstreamModelWhitelist.vue'
 import { authTypeText, isKeyAuthType, label, upstreamName } from '@/utils/labels'
-import { takesProjectID } from '@/utils/authGuides'
 import { dateTime, money, ms, multiplier, percent } from '@/utils/format'
 import { appealableReport } from '@/utils/inspection'
 import { errorText } from '@/api/errors'
@@ -223,29 +223,13 @@ async function changePrice() {
 
 // ---- 上游操作 ----
 const showReauth = ref(false)
-const reauthURL = ref('')
-const reauthCode = ref('')
-const reauthProject = ref('')
-const reauthWithProject = computed(() => !!u.value && takesProjectID(u.value.platform, u.value.auth_type))
 function startReauth() {
-  reauthURL.value = ''
-  reauthCode.value = ''
-  reauthProject.value = ''
   showReauth.value = true
 }
-async function getReauthLink() {
-  const opts = reauthWithProject.value && reauthProject.value.trim() ? { project_id: reauthProject.value.trim() } : undefined
-  const res = await run(() => seller.reauthorize(upstreamId.value, opts))
-  if (res) {
-    reauthURL.value = res.auth_url
-    window.open(res.auth_url, '_blank', 'noopener')
-  }
-}
-async function completeReauth() {
-  if (await run(() => seller.completeOAuth(upstreamId.value, reauthCode.value.trim()), '重新授权成功')) {
-    showReauth.value = false
-    reload()
-  }
+function completeReauth() {
+  toast.success('重新授权成功')
+  showReauth.value = false
+  reload()
 }
 
 // 用卡后额度窗口会变化，重新挂载额度面板以重新读取
@@ -596,22 +580,10 @@ function runStatusText(status: string) {
     </ModalDialog>
 
     <ModalDialog v-model:open="showReauth" title="重新授权">
-      <p class="text-sm text-ink-600">请用<b>同一个官方账号</b>登录授权，然后粘贴授权码或回调地址。</p>
-      <div v-if="reauthWithProject">
-        <label class="label" for="reauth-project">GCP 项目 ID（可选）</label>
-        <input id="reauth-project" v-model="reauthProject" class="input font-mono" placeholder="与原来使用的项目相同" autocomplete="off" />
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <button class="btn-secondary" :disabled="busy" @click="getReauthLink">{{ reauthURL ? '重新获取授权链接' : '获取授权链接' }}</button>
-        <a v-if="reauthURL" :href="reauthURL" target="_blank" rel="noopener" class="link break-all text-xs">{{ reauthURL }}</a>
-      </div>
-      <div>
-        <label class="label" for="reauth-code">授权码或回调地址</label>
-        <textarea id="reauth-code" v-model="reauthCode" class="input" rows="3" />
-      </div>
+      <p class="text-sm text-ink-600">请用<b>同一个官方账号</b>登录并完成授权。</p>
+      <SellerOAuthPanel v-if="showReauth && u" :upstream-id="upstreamId" :platform="u.platform" :auth-type="u.auth_type" reauthorize @ready="completeReauth" />
       <template #footer>
         <button class="btn-secondary" @click="showReauth = false">取消</button>
-        <button class="btn-primary" :disabled="busy || !reauthCode.trim()" @click="completeReauth">提交</button>
       </template>
     </ModalDialog>
 

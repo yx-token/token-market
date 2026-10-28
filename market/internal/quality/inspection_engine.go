@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/inspection"
+	"github.com/yx-token/token-market/market/internal/listing"
 )
 
 func inspectionItemKey(it Item) string { return it.CheckKey }
@@ -508,6 +509,7 @@ func (e *Engine) inspectPeerPerformance(ctx context.Context, u *upstreamRow, mod
 // 只比较同模板版本与冻结难度参数的基线历史，换题不能自动归为官方下降。
 func (e *Engine) attributeInspection(ctx context.Context, run runRow, u *upstreamRow, a Assessment) (string, error) {
 	var compared, declined int
+	authTypes := listing.AuthTypeEquivalents(u.platform, u.authType)
 	err := e.DB.QueryRow(ctx, `WITH current AS (
  SELECT pr.item_id,pr.generator_version,pr.passed,instance->'parameters' AS parameters
  FROM probe_runs reference JOIN probe_results pr ON pr.run_id=reference.id
@@ -522,13 +524,13 @@ func (e *Engine) attributeInspection(ctx context.Context, run runRow, u *upstrea
  JOIN probe_runs target ON target.batch_id=reference.batch_id AND target.trigger<>'reference'
  CROSS JOIN LATERAL jsonb_array_elements(target.execution_snapshot->'instances') instance
  JOIN upstreams x ON x.id=reference.upstream_id
- WHERE reference.trigger='reference' AND x.platform=$2 AND x.auth_type=$3 AND x.tier IS NOT DISTINCT FROM $4::text AND reference.model=$5
+ WHERE reference.trigger='reference' AND x.platform=$2 AND x.auth_type=ANY($3::text[]) AND x.tier IS NOT DISTINCT FROM $4::text AND reference.model=$5
  AND pr.created_at BETWEEN now()-interval '7 days' AND now()-interval '3 hours' AND pr.error_class IS NULL
  AND NOT (pr.flags && ARRAY['refusal','truncated','stop_error'])
  AND (instance->>'item_id')::bigint=pr.item_id AND (instance->>'instance_idx')::int=pr.instance_idx
  GROUP BY pr.item_id,pr.generator_version,instance->'parameters' HAVING count(*)>=5
  ) SELECT count(*),count(*) FILTER(WHERE h.rate>=.8 AND c.passed IS FALSE) FROM current c JOIN historical h
- ON c.item_id=h.item_id AND c.generator_version=h.generator_version AND c.parameters=h.parameters`, run.id, u.platform, u.authType, u.tier, run.model).Scan(&compared, &declined)
+ ON c.item_id=h.item_id AND c.generator_version=h.generator_version AND c.parameters=h.parameters`, run.id, u.platform, authTypes[:len(authTypes)-1], u.tier, run.model).Scan(&compared, &declined)
 	if err != nil {
 		return "", err
 	}

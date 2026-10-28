@@ -191,6 +191,9 @@ func (s *Service) ImportAccount(ctx context.Context, sellerID, upstreamID int64,
 	if !vendor.SupportsAuthType(u.AuthType) {
 		return nil, httpx.BadRequest("UNSUPPORTED_AUTH_TYPE", "this authorization method is not open")
 	}
+	if isCodingPlanAuthType(u.Platform, u.AuthType) && IsOAuthAuthType(u.Platform, u.AuthType) {
+		return nil, httpx.BadRequest("IMPORT_OAUTH_UNSUPPORTED", "Coding Plan OAuth accounts must connect through official authorization, not account import")
+	}
 	a, err := parseImportedAccount(in)
 	if err != nil {
 		return nil, err

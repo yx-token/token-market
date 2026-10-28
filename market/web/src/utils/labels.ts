@@ -21,6 +21,7 @@ const table: Record<string, Record<string, Label>> = {
     composite: { text: '全模型', tone: 'gray' },
   },
   authType: {
+    'oauth-intl': { text: 'OAuth 授权 · 国际站', tone: 'blue' },
     oauth: { text: 'OAuth 授权', tone: 'blue' },
     'setup-token': { text: 'Setup Token', tone: 'blue' },
     google_one: { text: 'Google One', tone: 'blue' },
@@ -253,6 +254,9 @@ export function label(kind: keyof typeof table | string, value: string | null | 
 
 // 同一接入方式在不同厂商下的具体名称
 const authTypeNames: Record<string, string> = {
+  'kimi:oauth': 'OAuth 授权（Coding Plan）',
+  'zhipu:oauth': 'OAuth 授权 · 国内站（BigModel）',
+  'zhipu:oauth-intl': 'OAuth 授权 · 国际站（Z.ai）',
   'gemini:oauth': 'GCP Code Assist',
   'gemini:google_one': 'Google One 个人订阅',
   'zhipu:coding': 'Coding Plan 国内站',

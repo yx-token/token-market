@@ -354,7 +354,7 @@ func ListPolicies(ctx context.Context, db DB) ([]Policy, error) {
 // EffectivePolicy 返回上游适用的策略：先找精确匹配接入方式的，再找厂商通用的，最后叠加单上游覆盖。
 func EffectivePolicy(ctx context.Context, db DB, upstreamID int64, platform, authType string) (*Policy, error) {
 	p, err := scanPolicy(db.QueryRow(ctx, "SELECT "+policyColumns+` FROM detection_policies
-		WHERE platform = $1 AND auth_type IN ($2, '') ORDER BY (auth_type = $2) DESC LIMIT 1`, platform, authType))
+		WHERE platform = $1 AND auth_type = ANY($2::text[]) ORDER BY array_position($2::text[], auth_type) LIMIT 1`, platform, listing.AuthTypeEquivalents(platform, authType)))
 	if errors.Is(err, pgx.ErrNoRows) {
 		// 没有配置策略的厂商视为不检测
 		p = &Policy{Platform: platform, DefaultGrade: "B", Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1},
@@ -410,20 +410,15 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	if _, err := listing.GetVendor(ctx, db, platform); err != nil {
 		return nil, err
 	}
-	p, err := scanPolicy(db.QueryRow(ctx, "SELECT "+policyColumns+" FROM detection_policies WHERE platform = $1 AND auth_type = $2", platform, authType))
+	p, err := scanPolicy(db.QueryRow(ctx, "SELECT "+policyColumns+` FROM detection_policies WHERE platform = $1 AND auth_type = ANY($2::text[])
+		ORDER BY array_position($2::text[], auth_type) LIMIT 1`, platform, listing.AuthTypeEquivalents(platform, authType)))
 	if errors.Is(err, pgx.ErrNoRows) {
-		// 新建接入方式级策略时以厂商通用策略为模板
-		p, err = scanPolicy(db.QueryRow(ctx, "SELECT "+policyColumns+" FROM detection_policies WHERE platform = $1 AND auth_type = ''", platform))
-		if errors.Is(err, pgx.ErrNoRows) {
-			p = &Policy{Platform: platform, IntervalMinutes: 360, JitterMinutes: 30, Suites: []string{"availability", "latency", "iq"},
-				DailyBudgetUSD: 1, Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1}, AutoPause: true, DefaultGrade: "B"}
-		} else if err != nil {
-			return nil, err
-		}
-		p.AuthType = authType
+		p = &Policy{Platform: platform, IntervalMinutes: 360, JitterMinutes: 30, Suites: []string{"availability", "latency", "iq"},
+			DailyBudgetUSD: 1, Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1}, AutoPause: true, DefaultGrade: "B"}
 	} else if err != nil {
 		return nil, err
 	}
+	p.AuthType = authType
 	if p.Models == nil {
 		p.Models = []string{}
 	}

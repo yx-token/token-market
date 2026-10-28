@@ -67,8 +67,8 @@ func (s *Service) QuoteFor(ctx context.Context, u *Upstream) (grade string, mult
 
 func policyDefaultGrade(ctx context.Context, db DB, platform, authType string) (string, error) {
 	var g string
-	err := db.QueryRow(ctx, `SELECT default_grade FROM detection_policies WHERE platform = $1 AND auth_type IN ($2, '')
-		ORDER BY (auth_type = $2) DESC LIMIT 1`, platform, authType).Scan(&g)
+	err := db.QueryRow(ctx, `SELECT default_grade FROM detection_policies WHERE platform = $1 AND auth_type = ANY($2::text[])
+		ORDER BY array_position($2::text[], auth_type) LIMIT 1`, platform, AuthTypeEquivalents(platform, authType)).Scan(&g)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "B", nil
 	}

@@ -448,7 +448,20 @@ export interface UpstreamDetail extends Upstream {
 export interface AuthorizationStart {
   auth_url: string
   expires_at: string
+  flow: 'link-code' | 'device-code' | 'init-poll'
+  user_code?: string
+  verification_uri?: string
+  verification_uri_complete?: string
+  interval?: number
 }
+
+export interface AuthorizationPoll {
+  status: 'pending' | 'slow_down' | 'ready' | 'expired' | 'denied'
+  interval: number
+  upstream?: Upstream
+}
+
+export type AuthorizationComplete = { code: string } | { callback_url: string }
 
 export interface AuthorizationOptions {
   /** Gemini Code Assist 的 GCP 项目 ID，留空时自动探测 */

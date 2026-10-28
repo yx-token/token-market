@@ -177,11 +177,11 @@ func (s *Store) ListSupplyAccounts(ctx context.Context) ([]FusedAccount, error) 
 	}
 	defer func() { _ = rows.Close() }()
 	type up struct {
-		ID, SellerID                           int64
-		Code, Name, AccountEmail, SellerEmail  string
-		Platform, Status, Health               string
-		Grade                                  sql.NullString
-		EngineID                               sql.NullInt64
+		ID, SellerID                          int64
+		Code, Name, AccountEmail, SellerEmail string
+		Platform, Status, Health              string
+		Grade                                 sql.NullString
+		EngineID                              sql.NullInt64
 	}
 	var ups []up
 	for rows.Next() {

@@ -6,7 +6,7 @@ import OnboardingWizard from '@/components/OnboardingWizard.vue'
 import { market, seller } from '@/api'
 import type { MarketConfig, Proxy, Upstream } from '@/api/types'
 
-vi.mock('@/api', () => ({ market: { config: vi.fn() }, seller: { proxies: vi.fn(), createUpstream: vi.fn(), importAccount: vi.fn(), upstream: vi.fn(), completeOAuth: vi.fn(), submitCodingKey: vi.fn(), upstreamModels: vi.fn(), refreshUpstreamModels: vi.fn(), setUpstreamModels: vi.fn(), retryVerification: vi.fn() } }))
+vi.mock('@/api', () => ({ market: { config: vi.fn() }, seller: { proxies: vi.fn(), createUpstream: vi.fn(), importAccount: vi.fn(), upstream: vi.fn(), startOAuth: vi.fn(), oauthPoll: vi.fn(), completeOAuth: vi.fn(), submitCodingKey: vi.fn(), upstreamModels: vi.fn(), refreshUpstreamModels: vi.fn(), setUpstreamModels: vi.fn(), retryVerification: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 const connected = { success: true, message: 'ok', latency_ms: 120 }
@@ -31,6 +31,36 @@ describe('onboarding proxy selection', () => {
     vi.mocked(seller.setUpstreamModels).mockResolvedValue({ id: 10, status: 'ready', platform: 'anthropic', auth_type: 'oauth' } as Upstream)
     vi.mocked(seller.proxies).mockResolvedValue([proxy(1), proxy(2, { status: 'assigned', assigned_upstream_id: 7 }), proxy(3, { status: 'disabled' }), proxy(4, { sub2api_proxy_id: undefined })])
     vi.mocked(seller.createUpstream).mockResolvedValue({ id: 10, platform: 'anthropic', auth_type: 'oauth', proxy_id: 1 } as Awaited<ReturnType<typeof seller.createUpstream>>)
+  })
+
+  it('只展示服务端开放的接入方式，不自行添加未开放的 OAuth', async () => {
+    const wrapper = await openWizard(false)
+    await wrapper.setProps({ vendors: [{ platform: 'kimi', auth_types: ['coding'], consignment_min: 0.1, consignment_max: 2, self_reserve_supported: true }] })
+    await wrapper.findAll('button').find((button) => button.text().includes('Kimi'))!.trigger('click')
+    expect(wrapper.findAll('input[type="radio"]').map((input) => input.attributes('value'))).toEqual(['coding'])
+    await wrapper.setProps({ vendors: [{ platform: 'kimi', auth_types: ['coding', 'oauth'], consignment_min: 0.1, consignment_max: 2, self_reserve_supported: true }] })
+    expect(wrapper.findAll('input[type="radio"]').map((input) => input.attributes('value'))).toEqual(['coding', 'oauth'])
+    expect(wrapper.text()).toContain('OAuth 授权（Coding Plan）')
+    wrapper.unmount()
+  })
+
+  it('Kimi 授权中关闭弹窗会立刻取消请求，重新打开不会沿用旧设备码', async () => {
+    const wrapper = await openWizard(false)
+    await wrapper.setProps({ open: false, resume: { id: 7, platform: 'kimi', auth_type: 'oauth', proxy_id: 1, status: 'draft' } as Upstream })
+    vi.mocked(seller.startOAuth).mockResolvedValue({ flow: 'device-code', auth_url: '', expires_at: new Date(Date.now() + 60000).toISOString(), user_code: 'ABCD', verification_uri_complete: 'https://auth.kimi.com/device' })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text() === '获取设备码')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('ABCD')
+    const signal = vi.mocked(seller.startOAuth).mock.calls[0]![2]!
+    await wrapper.setProps({ open: false })
+    expect(signal.aborted).toBe(true)
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('ABCD')
+    expect(wrapper.text()).toContain('获取设备码')
+    wrapper.unmount()
   })
 
   it('requires explicit selection and excludes occupied, disabled and pending proxies', async () => {

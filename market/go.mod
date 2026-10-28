@@ -23,6 +23,7 @@ require (
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
+	golang.org/x/net v0.62.0
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 )

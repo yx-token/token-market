@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
@@ -16,8 +17,10 @@ import (
 // oauthSpec 描述一个厂商在 sub2api 中的授权接口，以及如何把换到的令牌转成账号凭证。
 // 各字段对照 sub2api 0.2.14 前端的调用方式（frontend/src/composables/use*OAuth.ts）。
 type oauthSpec struct {
+	flow         string
 	startPath    string
 	exchangePath string
+	pollPath     string
 	stateFrom    string         // response：授权链接接口直接返回 state；url：从授权链接的 query 中解析；none：不需要
 	params       map[string]any // 授权链接与换取令牌都要带上的固定参数（例如 Gemini 的 oauth_type）
 	projectID    bool           // 是否接受卖家填写 GCP 项目 ID（Gemini Code Assist）
@@ -28,7 +31,31 @@ type oauthSpec struct {
 	tier         func(tok map[string]any) string
 }
 
+const (
+	oauthLinkCode   = "link-code"
+	oauthDeviceCode = "device-code"
+	oauthInitPoll   = "init-poll"
+)
+
+func (spec oauthSpec) flowKind() string {
+	if spec.flow == "" {
+		return oauthLinkCode
+	}
+	return spec.flow
+}
+
 var oauthSpecs = map[string]map[string]oauthSpec{
+	"kimi": {
+		"oauth": {
+			flow: oauthDeviceCode, startPath: "/api/v1/admin/kimi/oauth/device-code", pollPath: "/api/v1/admin/kimi/oauth/poll",
+			stateFrom: "none", accountType: "oauth", credentials: kimiCredentials,
+			extra: pick(), identity: none, tier: none,
+		},
+	},
+	"zhipu": {
+		"oauth":      zhipuSpec("bigmodel"),
+		"oauth-intl": zhipuSpec("zai"),
+	},
 	"anthropic": {
 		"oauth": {
 			startPath: "/api/v1/admin/accounts/generate-auth-url", exchangePath: "/api/v1/admin/accounts/exchange-code",
@@ -83,6 +110,66 @@ var oauthSpecs = map[string]map[string]oauthSpec{
 	},
 }
 
+func zhipuSpec(provider string) oauthSpec {
+	return oauthSpec{
+		flow: oauthInitPoll, startPath: "/api/v1/admin/zhipu/oauth/init",
+		exchangePath: "/api/v1/admin/zhipu/oauth/exchange-code", pollPath: "/api/v1/admin/zhipu/oauth/poll",
+		stateFrom: "none", params: map[string]any{"provider": provider}, accountType: "oauth",
+		credentials: func(tok map[string]any) map[string]any {
+			creds := copyAll(nested("credentials")(tok))
+			creds["account_mode"] = "coding"
+			if str(creds, "api_protocol") == "" {
+				creds["api_protocol"] = "anthropic"
+			}
+			if str(creds, "base_url") == "" {
+				if str(creds, "api_protocol") == "chat_completions" {
+					creds["base_url"] = "https://open.bigmodel.cn/api/coding/paas/v4"
+					if provider == "zai" {
+						creds["base_url"] = "https://api.z.ai/api/coding/paas/v4"
+					}
+				} else {
+					creds["base_url"] = "https://open.bigmodel.cn/api/anthropic"
+					if provider == "zai" {
+						creds["base_url"] = "https://api.z.ai/api/anthropic"
+					}
+				}
+			}
+			return creds
+		},
+		extra:    nested("display"),
+		identity: func(tok map[string]any) string { return first("email", "username")(nested("display")(tok)) },
+		tier:     none,
+	}
+}
+
+func kimiCredentials(tok map[string]any) map[string]any {
+	creds := pick("access_token", "refresh_token", "token_type", "scope", "device_id", "client_id")(tok)
+	expires, _ := strconv.ParseInt(str(tok, "expires_at"), 10, 64)
+	creds["expires_at"] = time.Unix(expires, 0).UTC().Format(time.RFC3339)
+	creds["base_url"] = "https://api.kimi.com/coding/v1"
+	creds["account_mode"] = "coding"
+	return creds
+}
+
+func normalizeCredentials(spec oauthSpec, tok map[string]any) (map[string]any, error) {
+	creds := spec.credentials(tok)
+	if str(creds, "access_token") == "" {
+		return nil, errors.New("sub2api returned no access token")
+	}
+	switch spec.flowKind() {
+	case oauthDeviceCode:
+		expires, _ := strconv.ParseInt(str(tok, "expires_at"), 10, 64)
+		if str(creds, "refresh_token") == "" || expires <= 0 || str(creds, "device_id") == "" || str(creds, "client_id") == "" {
+			return nil, errors.New("sub2api returned incomplete Kimi credentials")
+		}
+	case oauthInitPoll:
+		if str(creds, "api_key") == "" {
+			return nil, errors.New("sub2api returned no derived API key")
+		}
+	}
+	return creds, nil
+}
+
 // geminiSpec 是 Gemini 两种订阅账号的授权方式；两者都用 sub2api 内置的 Gemini CLI 客户端，只是 oauth_type 不同。
 func geminiSpec(oauthType string, projectID bool) oauthSpec {
 	return oauthSpec{
@@ -118,7 +205,7 @@ var codingSpecs = map[string]map[string]codingSpec{
 }
 
 // authTypeOrder 是各接入方式在列表中的先后顺序。
-var authTypeOrder = []string{"google_one", "oauth", "setup-token", "coding", "coding-intl", "go"}
+var authTypeOrder = []string{"google_one", "oauth", "oauth-intl", "setup-token", "coding", "coding-intl", "go"}
 
 // privacyPlatforms 是 sub2api 支持 set-privacy 的平台（仅 OAuth 账号）。
 var privacyPlatforms = map[string]bool{"openai": true, "antigravity": true}
@@ -135,6 +222,25 @@ func IsCodingAuthType(platform, authType string) bool {
 	return ok
 }
 
+func isCodingPlanAuthType(platform, authType string) bool {
+	return IsCodingAuthType(platform, authType) || ((platform == "kimi" || platform == "zhipu") && IsOAuthAuthType(platform, authType))
+}
+
+func AuthTypeEquivalents(platform, authType string) []string {
+	if authType == "" {
+		return []string{""}
+	}
+	authTypes := []string{authType}
+	if platform == "kimi" || platform == "zhipu" {
+		if authType == "oauth" {
+			authTypes = append(authTypes, "coding")
+		} else if platform == "zhipu" && authType == "oauth-intl" {
+			authTypes = append(authTypes, "coding-intl")
+		}
+	}
+	return append(authTypes, "")
+}
+
 // SupportedAuthTypes 返回本系统为平台实现了的全部接入方式；厂商配置只能在其中选择开放哪些。
 func SupportedAuthTypes(platform string) []string {
 	var out []string
@@ -147,9 +253,14 @@ func SupportedAuthTypes(platform string) []string {
 }
 
 type oauthStart struct {
-	AuthURL   string
-	SessionID string
-	State     string
+	AuthURL                 string
+	SessionID               string
+	State                   string
+	UserCode                string
+	VerificationURI         string
+	VerificationURIComplete string
+	ExpiresIn               int
+	Interval                int
 }
 
 func startOAuth(ctx context.Context, admin *adminclient.Client, spec oauthSpec, proxyID *int64, projectID string) (*oauthStart, error) {
@@ -168,8 +279,32 @@ func startOAuth(ctx context.Context, admin *adminclient.Client, spec oauthSpec, 
 		return nil, err
 	}
 	out := &oauthStart{AuthURL: str(resp, "auth_url"), SessionID: str(resp, "session_id")}
-	if out.AuthURL == "" || out.SessionID == "" {
-		return nil, errors.New("sub2api returned no auth_url or session_id")
+	out.ExpiresIn, _ = strconv.Atoi(str(resp, "expires_in"))
+	out.Interval, _ = strconv.Atoi(str(resp, "interval"))
+	if out.SessionID == "" {
+		return nil, errors.New("sub2api returned no authorization session")
+	}
+	switch spec.flowKind() {
+	case oauthDeviceCode:
+		out.AuthURL = ""
+		out.UserCode, out.VerificationURI = str(resp, "user_code"), str(resp, "verification_uri")
+		out.VerificationURIComplete = str(resp, "verification_uri_complete")
+		if out.UserCode == "" || out.VerificationURI == "" {
+			return nil, errors.New("sub2api returned no device verification information")
+		}
+	case oauthInitPoll:
+		out.AuthURL = str(resp, "authorize_url")
+	}
+	if spec.flowKind() != oauthDeviceCode && out.AuthURL == "" {
+		return nil, errors.New("sub2api returned no authorization URL")
+	}
+	if spec.flowKind() != oauthLinkCode {
+		if out.ExpiresIn <= 0 {
+			return nil, errors.New("sub2api returned invalid authorization expiry")
+		}
+		out.Interval = max(1, out.Interval)
+	} else if out.ExpiresIn <= 0 {
+		out.ExpiresIn = 30 * 60
 	}
 	switch spec.stateFrom {
 	case "response":
@@ -207,6 +342,26 @@ func parseAuthorizationInput(input string) (code, state string, err error) {
 }
 
 func exchangeOAuth(ctx context.Context, admin *adminclient.Client, spec oauthSpec, sessionID, storedState, input string, proxyID *int64) (map[string]any, error) {
+	if spec.flowKind() == oauthDeviceCode {
+		return nil, httpx.BadRequest("AUTH_POLL_REQUIRED", "device authorization must be completed by polling")
+	}
+	if spec.flowKind() == oauthInitPoll {
+		if strings.TrimSpace(input) == "" {
+			return nil, httpx.BadRequest("EMPTY_CODE", "authorization callback is required")
+		}
+		body := map[string]any{"session_id": sessionID, "callback_url": strings.TrimSpace(input)}
+		if proxyID != nil {
+			body["proxy_id"] = *proxyID
+		}
+		var tok map[string]any
+		if err := admin.Post(ctx, spec.exchangePath, body, "", &tok); err != nil {
+			return nil, err
+		}
+		if _, err := normalizeCredentials(spec, tok); err != nil {
+			return nil, err
+		}
+		return tok, nil
+	}
 	code, state, err := parseAuthorizationInput(input)
 	if err != nil {
 		return nil, err
@@ -234,10 +389,22 @@ func exchangeOAuth(ctx context.Context, admin *adminclient.Client, spec oauthSpe
 	if err := admin.Post(ctx, spec.exchangePath, body, "", &tok); err != nil {
 		return nil, err
 	}
-	if str(tok, "access_token") == "" {
-		return nil, errors.New("sub2api returned no access token")
+	if _, err := normalizeCredentials(spec, tok); err != nil {
+		return nil, err
 	}
 	return tok, nil
+}
+
+func pollOAuth(ctx context.Context, admin *adminclient.Client, spec oauthSpec, sessionID string, proxyID *int64) (map[string]any, error) {
+	body := map[string]any{"session_id": sessionID}
+	if proxyID != nil {
+		body["proxy_id"] = *proxyID
+	}
+	var result map[string]any
+	if err := admin.Post(ctx, spec.pollPath, body, "", &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // ---- 凭证构建工具 ----

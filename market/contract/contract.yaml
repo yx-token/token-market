@@ -67,7 +67,10 @@ jsonb_keys:
   audit_logs.extra:
     read: [account_id, result_code, trigger_window, windows_reset, error_code]
   accounts.credentials:
-    write: [account_scheduling_threshold, account_mode, api_protocol, base_url, zhipu_organization, zhipu_project]
+    write: [account_scheduling_threshold, account_mode, api_protocol, base_url, zhipu_organization, zhipu_project,
+            access_token, refresh_token, expires_at, token_type, scope, device_id, client_id,
+            api_key, oauth_provider, zcode_jwt, zai_oauth_access_token, client_version,
+            business_expiry_unknown, business_expires_at, oauth_expires_at, zcode_jwt_expires_at, user_info]
 
 # 依赖的枚举值。数据库 CHECK 约束删除其中的值视为冲突，新增值视为提示。
 enums:
@@ -116,6 +119,11 @@ admin_api:
   - {method: POST,   path: /api/v1/admin/antigravity/oauth/exchange-code,   request: [session_id, state, code, proxy_id]}
   - {method: POST,   path: /api/v1/admin/grok/oauth/auth-url,               request: [proxy_id]}
   - {method: POST,   path: /api/v1/admin/grok/oauth/exchange-code,          request: [session_id, state, code, proxy_id]}
+  - {method: POST,   path: /api/v1/admin/kimi/oauth/device-code,           request: [proxy_id]}
+  - {method: POST,   path: /api/v1/admin/kimi/oauth/poll,                  request: [session_id, proxy_id]}
+  - {method: POST,   path: /api/v1/admin/zhipu/oauth/init,                 request: [provider, proxy_id]}
+  - {method: POST,   path: /api/v1/admin/zhipu/oauth/poll,                 request: [session_id, proxy_id]}
+  - {method: POST,   path: /api/v1/admin/zhipu/oauth/exchange-code,        request: [session_id, callback_url, proxy_id]}
 user_api:
   - {method: POST,   path: /api/v1/auth/login,   request: [email, password]}
   - {method: POST,   path: /api/v1/auth/refresh, request: [refresh_token]}

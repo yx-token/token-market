@@ -349,7 +349,17 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 		return pc, nil, err
 	}
 
-	// 默认等级取法与 quality.EffectivePolicy 一致：精确匹配接入方式的策略优先，其次厂商通用
+	authEquivalents := map[string]map[string][]string{}
+	for platform := range pc.Vendors {
+		authEquivalents[platform] = map[string][]string{}
+		for _, authType := range listing.SupportedAuthTypes(platform) {
+			authEquivalents[platform][authType] = listing.AuthTypeEquivalents(platform, authType)
+		}
+	}
+	authEquivalentsJSON, err := json.Marshal(authEquivalents)
+	if err != nil {
+		return pc, nil, err
+	}
 	rows, err = db.Query(ctx, `SELECT u.id, u.platform, u.auth_type, u.status, u.health, u.is_reference, u.sub2api_account_id,
 			u.probe_group_id, COALESCE(u.grade, ''), u.self_reserve_percent,
 			u.auto_reset_enabled, u.auto_reset_5h_percent, u.auto_reset_7d_percent,
@@ -359,13 +369,16 @@ func LoadPlanInputs(ctx context.Context, db DB, st settings.Settings) (PlanConte
 				EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(q.gates) = 'array' THEN q.gates ELSE '[]'::jsonb END) gate WHERE gate->>'confirmed' = 'true')
 		FROM upstreams u
 		LEFT JOIN listings l ON l.upstream_id = u.id AND l.closed_at IS NULL
+		CROSS JOIN LATERAL (SELECT ARRAY(SELECT jsonb_array_elements_text(COALESCE($1::jsonb -> u.platform -> u.auth_type,
+			jsonb_build_array(u.auth_type, ''))))) equivalents(auth_types)
 		LEFT JOIN LATERAL (SELECT dp.default_grade FROM detection_policies dp
-			WHERE dp.platform = u.platform AND dp.auth_type IN (u.auth_type, '') ORDER BY (dp.auth_type = u.auth_type) DESC LIMIT 1) p ON true
+			WHERE dp.platform = u.platform AND dp.auth_type = ANY(equivalents.auth_types)
+			ORDER BY array_position(equivalents.auth_types, dp.auth_type) LIMIT 1) p ON true
 		LEFT JOIN LATERAL (SELECT qv.gates, r.summary->>'inspection_mode' AS inspection_mode FROM quality_verdicts qv
 			LEFT JOIN probe_runs r ON r.id = qv.run_id
 			WHERE qv.upstream_id = u.id ORDER BY qv.created_at DESC, qv.id DESC LIMIT 1) q ON true
 		WHERE u.sub2api_account_id IS NOT NULL AND u.status IN ('verifying', 'verify_failed', 'ready', 'listed', 'suspended')
-		ORDER BY u.id`)
+		ORDER BY u.id`, authEquivalentsJSON)
 	if err != nil {
 		return pc, nil, err
 	}

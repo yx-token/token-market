@@ -142,6 +142,16 @@ func (f *zhipuOAuthFixture) allowPoll(t *testing.T, id string) {
 	require.NoError(t, f.service.sessions.Save(context.Background(), id, "test", s))
 }
 
+func TestZhipuOAuthBuildResultUsesCodingAccountMode(t *testing.T) {
+	for _, provider := range []zhipu.Provider{zhipu.ProviderBigModel, zhipu.ProviderZai} {
+		t.Run(string(provider), func(t *testing.T) {
+			oauthService := &ZhipuOAuthService{version: "test"}
+			result := oauthService.BuildResult(&zhipu.TokenSet{Provider: provider}, &zhipu.DerivedKey{Credential: "derived.secret"})
+			require.Equal(t, "coding", result.Credentials["account_mode"])
+		})
+	}
+}
+
 func TestZhipuOAuthInitAndPollLifecycle(t *testing.T) {
 	for _, provider := range []zhipu.Provider{zhipu.ProviderBigModel, zhipu.ProviderZai} {
 		t.Run(string(provider), func(t *testing.T) {
@@ -167,6 +177,7 @@ func TestZhipuOAuthInitAndPollLifecycle(t *testing.T) {
 			result, err := f.service.Poll(ctx, init.SessionID, nil)
 			require.NoError(t, err)
 			require.Equal(t, "success", result.Status)
+			require.Equal(t, "coding", result.Result.Credentials["account_mode"])
 			require.Equal(t, "derived.secret", result.Result.Credentials["api_key"])
 			require.Equal(t, "org", result.Result.Credentials["zhipu_organization"])
 			require.NotContains(t, result.Result.Credentials["user_info"], "password")

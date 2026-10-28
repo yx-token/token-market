@@ -11,6 +11,18 @@ export interface AuthGuide {
 }
 
 export const authGuides: Record<string, AuthGuide> = {
+  'kimi:oauth': {
+    summary: '已开通 Kimi Coding Plan 的会员账号，无需 API Key。',
+    how: '打开 Kimi 官方设备授权页，登录订阅账号并确认设备码。授权完成后本页会自动接入。',
+  },
+  'zhipu:oauth': {
+    summary: '智谱国内站 BigModel（bigmodel.cn）的 GLM Coding Plan 订阅账号，无需 API Key。',
+    how: '打开官方授权页，用已开通 GLM Coding Plan 的 BigModel 国内站账号登录并授权；如未自动完成，可粘贴完整回调地址。',
+  },
+  'zhipu:oauth-intl': {
+    summary: 'Z.ai 国际站（z.ai）的 GLM Coding Plan 订阅账号，无需 API Key。',
+    how: '打开官方授权页，用已开通 GLM Coding Plan 的 Z.ai 国际站账号登录并授权；国内站与国际站订阅不互通。',
+  },
   'anthropic:oauth': { summary: 'Claude Pro / Max 订阅账号，完整授权（推理与账号资料）。' },
   'anthropic:setup-token': { summary: 'Claude Pro / Max 订阅账号，只授权推理，与 claude setup-token 相同。' },
   'openai:oauth': { summary: 'ChatGPT Plus / Pro / Team 订阅账号（Codex 额度）。授权后平台会关闭训练数据使用。' },

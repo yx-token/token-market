@@ -7,8 +7,9 @@ import type { Proxy, Upstream, VendorView } from '@/api/types'
 import { useAction } from '@/composables/useAsync'
 import ModalDialog from '@/components/ModalDialog.vue'
 import ModelWhitelistSelector from '@/components/ModelWhitelistSelector.vue'
+import SellerOAuthPanel from '@/components/SellerOAuthPanel.vue'
 import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
-import { authGuides, takesProjectID, takesTeam } from '@/utils/authGuides'
+import { authGuides, takesTeam } from '@/utils/authGuides'
 import { useToast } from '@/stores/toast'
 import { accountImportChoices } from '@/utils/accountImport'
 
@@ -25,8 +26,6 @@ const modelsValid = ref(false)
 const platform = ref('')
 const authType = ref('')
 const upstream = ref<Upstream | null>(null)
-const authURL = ref('')
-const code = ref('')
 const entryMode = ref<'authorize' | 'import'>('authorize')
 const importText = ref('')
 const importIndex = ref(0)
@@ -68,7 +67,6 @@ async function readImportFile(event: Event) {
   } catch (e) { toast.error(e) }
   finally { input.value = '' }
 }
-const projectID = ref('')
 const apiKey = ref('')
 const team = ref({ organization: '', project: '' })
 const proxies = ref<Proxy[]>([])
@@ -102,18 +100,14 @@ const vendor = computed(() => props.vendors.find((v) => v.platform === platform.
 const currentType = computed(() => upstream.value?.auth_type ?? authType.value)
 const isOAuth = computed(() => !isKeyAuthType(currentType.value))
 const guide = computed(() => authGuides[`${platform.value}:${currentType.value}`])
-const withProject = computed(() => takesProjectID(platform.value, currentType.value))
 const withTeam = computed(() => takesTeam(platform.value, currentType.value))
 
 watch(open, (v) => {
   if (!v) return
-  code.value = ''
   entryMode.value = 'authorize'
   importText.value = ''
   importIndex.value = 0
   apiKey.value = ''
-  authURL.value = ''
-  projectID.value = ''
   team.value = { organization: '', project: '' }
   selectedModels.value = []
   modelsValid.value = false
@@ -153,14 +147,10 @@ async function create() {
   emit('done')
 }
 
-async function getLink() {
-  if (!upstream.value) return
-  const opts = withProject.value && projectID.value.trim() ? { project_id: projectID.value.trim() } : undefined
-  const res = await run(() => seller.startOAuth(upstream.value!.id, opts))
-  if (res) {
-    authURL.value = res.auth_url
-    window.open(res.auth_url, '_blank', 'noopener')
-  }
+function authorized(u: Upstream) {
+  upstream.value = u
+  step.value = u.status === 'selecting_models' ? 'models' : 'done'
+  emit('done')
 }
 
 async function submit() {
@@ -175,12 +165,10 @@ async function submit() {
   const importing = mode.value === 'import'
   const u = await run(() => importing
     ? seller.importAccount(id, importPreview.value.data, importIndex.value)
-    : (isOAuth.value ? seller.completeOAuth(id, code.value.trim()) : seller.submitCodingKey(id, body)))
+    : seller.submitCodingKey(id, body))
   if (u) {
-    upstream.value = u
-    step.value = u.status === 'selecting_models' ? 'models' : 'done'
+    authorized(u)
     importText.value = ''
-    emit('done')
   } else if (importing && pendingProxy.value) {
     // 代理检测通过后账号创建仍可能失败，此时代理已绑定，刷新以显示正确的代理提示。
     seller.upstream(id).then((d) => { if (upstream.value?.id === id) upstream.value = d }).catch(() => {})
@@ -305,25 +293,7 @@ async function startVerification() {
         <p class="hint">{{ pendingProxy ? '' : '导入账号沿用本上游已绑定的代理，导出文件中的代理不会被使用。' }}分组和调度配置不会被导入；导入后仍需通过隐私设置检查并选择挂售模型，Coding Plan 会校验官方订阅额度。</p>
       </template>
 
-      <template v-else-if="isOAuth">
-        <div v-if="withProject">
-          <label class="label" for="project">GCP 项目 ID（可选）</label>
-          <input id="project" v-model="projectID" class="input font-mono" placeholder="例如 my-project-123456" autocomplete="off" />
-          <p class="hint">{{ guide?.how }}修改后需要重新获取授权链接。</p>
-        </div>
-        <ol class="list-decimal space-y-2 pl-5 text-sm text-ink-600">
-          <li>点击下面的按钮打开官方授权页面，用要挂出的账号登录并同意授权。</li>
-          <li>授权完成后，把页面显示的授权码，或浏览器地址栏中的完整回调地址粘贴到下面。</li>
-        </ol>
-        <div class="flex flex-wrap items-center gap-2">
-          <button type="button" class="xm-btn xm-btn-ghost" :disabled="busy" @click="getLink">{{ authURL ? '重新获取授权链接' : '获取授权链接' }}</button>
-          <a v-if="authURL" :href="authURL" target="_blank" rel="noopener" class="link break-all text-xs">{{ authURL }}</a>
-        </div>
-        <div>
-          <label class="label" for="code">授权码或回调地址</label>
-          <textarea id="code" v-model="code" class="input" rows="3" placeholder="code#state 或 https://…?code=…&state=…" />
-        </div>
-      </template>
+      <SellerOAuthPanel v-else-if="isOAuth && open && upstream" :upstream-id="upstream.id" :platform="platform" :auth-type="currentType" :disabled="busy" @ready="authorized" />
 
       <template v-else>
         <dl v-if="guide" class="kv">
@@ -381,7 +351,7 @@ async function startVerification() {
     <template #footer>
       <button type="button" class="xm-btn xm-btn-ghost" @click="open = false">关闭</button>
       <button v-if="step === 'choose'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || loadingProxies || proxyLoadError || !platform || !authType || (requireSellerProxy && !proxyID)" @click="create">下一步</button>
-      <button v-else-if="step === 'authorize'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || (mode === 'import' ? !canImport : (isOAuth ? !code.trim() : !apiKey.trim()))" @click="submit">{{ mode === 'import' ? '导入账号' : '提交' }}</button>
+      <button v-else-if="step === 'authorize' && (mode === 'import' || !isOAuth)" type="button" class="xm-btn xm-btn-primary" :disabled="busy || (mode === 'import' ? !canImport : !apiKey.trim())" @click="submit">{{ mode === 'import' ? '导入账号' : '提交' }}</button>
       <button v-else-if="step === 'models'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || !modelsValid" @click="submitModels">保存挂售模型</button>
       <template v-else>
         <button v-if="upstream?.status === 'ready' || upstream?.status === 'verify_failed'" type="button" class="xm-btn xm-btn-ghost" :disabled="busy" @click="startVerification">主动发起检测</button>

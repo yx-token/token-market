@@ -240,8 +240,13 @@ func (s *Service) proxySub2APIID(ctx context.Context, u *Upstream) (*int64, erro
 }
 
 type AuthorizationStart struct {
-	AuthURL   string    `json:"auth_url"`
-	ExpiresAt time.Time `json:"expires_at"`
+	AuthURL                 string    `json:"auth_url"`
+	ExpiresAt               time.Time `json:"expires_at"`
+	Flow                    string    `json:"flow"`
+	UserCode                string    `json:"user_code,omitempty"`
+	VerificationURI         string    `json:"verification_uri,omitempty"`
+	VerificationURIComplete string    `json:"verification_uri_complete,omitempty"`
+	Interval                int       `json:"interval,omitempty"`
 }
 
 // AuthorizationOptions 是开始授权时卖家可选填写的参数。
@@ -269,15 +274,11 @@ func (o AuthorizationOptions) validate(spec oauthSpec) (AuthorizationOptions, er
 
 // StartAuthorization 生成厂商授权链接。卖家在官方页面登录后把回调地址或授权码提交回来。
 func (s *Service) StartAuthorization(ctx context.Context, sellerID, upstreamID int64, opts AuthorizationOptions) (*AuthorizationStart, error) {
-	release, err := s.lockAccountModels(ctx, upstreamID)
+	u, release, err := s.lockSellerOAuth(ctx, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
-	if err != nil {
-		return nil, err
-	}
 	spec, ok := oauthSpecs[u.Platform][u.AuthType]
 	if !ok {
 		return nil, httpx.BadRequest("NOT_OAUTH", "this upstream is not authorized via oauth")
@@ -304,15 +305,11 @@ func (s *Service) StartAuthorization(ctx context.Context, sellerID, upstreamID i
 // StartReauthorization 授权失效（令牌被撤销、密码修改等）时重新授权：沿用原 sub2api 账号，
 // 换到新令牌后只更新凭证，上游状态、挂单与质量记录都保持不变。必须是同一个官方账号。
 func (s *Service) StartReauthorization(ctx context.Context, sellerID, upstreamID int64, opts AuthorizationOptions) (*AuthorizationStart, error) {
-	release, err := s.lockAccountModels(ctx, upstreamID)
+	u, release, err := s.lockSellerOAuth(ctx, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
-	if err != nil {
-		return nil, err
-	}
 	spec, ok := oauthSpecs[u.Platform][u.AuthType]
 	if !ok {
 		return nil, httpx.BadRequest("NOT_OAUTH", "this upstream is not authorized via oauth")
@@ -326,7 +323,6 @@ func (s *Service) StartReauthorization(ctx context.Context, sellerID, upstreamID
 	return s.beginOAuth(ctx, u, spec, opts)
 }
 
-// beginOAuth 向 sub2api 申请授权链接并保存授权会话（30 分钟有效）。
 func (s *Service) beginOAuth(ctx context.Context, u *Upstream, spec oauthSpec, opts AuthorizationOptions) (*AuthorizationStart, error) {
 	proxyID, err := s.proxySub2APIID(ctx, u)
 	if err != nil {
@@ -336,43 +332,60 @@ func (s *Service) beginOAuth(ctx context.Context, u *Upstream, spec oauthSpec, o
 	if err != nil {
 		return nil, fmt.Errorf("start oauth: %w", err)
 	}
-	expires := s.now().Add(30 * time.Minute)
-	if _, err := s.DB.Exec(ctx, `INSERT INTO upstream_oauth_sessions (upstream_id, session_id, state, auth_type, auth_url, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+	expires := s.now().Add(time.Duration(start.ExpiresIn) * time.Second)
+	kind := spec.flowKind()
+	if kind == oauthLinkCode {
+		kind = "link"
+	}
+	var nextPollAt *time.Time
+	if spec.flowKind() != oauthLinkCode {
+		next := s.now().Add(time.Duration(start.Interval) * time.Second)
+		nextPollAt = &next
+	}
+	if _, err := s.DB.Exec(ctx, `INSERT INTO upstream_oauth_sessions
+		(upstream_id, session_id, state, auth_type, auth_url, expires_at, kind, provider, user_code, verification_uri, interval_seconds, next_poll_at, last_status)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, NULLIF($8, ''), NULLIF($9, ''), NULLIF($10, ''), $11, $12, 'pending')
 		ON CONFLICT (upstream_id) DO UPDATE SET session_id = EXCLUDED.session_id, state = EXCLUDED.state,
-			auth_type = EXCLUDED.auth_type, auth_url = EXCLUDED.auth_url, expires_at = EXCLUDED.expires_at, created_at = now()`,
-		u.ID, start.SessionID, start.State, u.AuthType, start.AuthURL, expires); err != nil {
+			auth_type = EXCLUDED.auth_type, auth_url = EXCLUDED.auth_url, expires_at = EXCLUDED.expires_at,
+			kind = EXCLUDED.kind, provider = EXCLUDED.provider, user_code = EXCLUDED.user_code,
+			verification_uri = EXCLUDED.verification_uri, interval_seconds = EXCLUDED.interval_seconds,
+			next_poll_at = EXCLUDED.next_poll_at, last_status = EXCLUDED.last_status, created_at = now()`,
+		u.ID, start.SessionID, start.State, u.AuthType, start.AuthURL, expires, kind, str(spec.params, "provider"),
+		start.UserCode, start.VerificationURI, start.Interval, nextPollAt); err != nil {
 		return nil, err
 	}
-	return &AuthorizationStart{AuthURL: start.AuthURL, ExpiresAt: expires}, nil
+	s.auditOAuth(ctx, u, "start")
+	return &AuthorizationStart{AuthURL: start.AuthURL, ExpiresAt: expires, Flow: spec.flowKind(),
+		UserCode: start.UserCode, VerificationURI: start.VerificationURI,
+		VerificationURIComplete: start.VerificationURIComplete, Interval: start.Interval}, nil
 }
 
 // CompleteAuthorization 用卖家提交的授权码换取令牌并在 sub2api 中创建账号；
 // 已有账号的上游（重新授权）只更新凭证。
 func (s *Service) CompleteAuthorization(ctx context.Context, sellerID, upstreamID int64, input string) (*Upstream, error) {
-	release, err := s.lockAccountModels(ctx, upstreamID)
+	u, release, err := s.lockSellerOAuth(ctx, sellerID, upstreamID)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	u, err := GetSellerUpstream(ctx, s.DB, sellerID, upstreamID)
-	if err != nil {
-		return nil, err
-	}
 	spec, ok := oauthSpecs[u.Platform][u.AuthType]
 	if !ok {
 		return nil, httpx.BadRequest("NOT_OAUTH", "this upstream is not authorized via oauth")
 	}
+	if spec.flowKind() == oauthDeviceCode {
+		return nil, httpx.BadRequest("AUTH_POLL_REQUIRED", "device authorization must be completed by polling")
+	}
 	reauth := u.Sub2APIAccountID != nil
-	if !reauth && u.Status != StatusAuthorizing {
+	if (!reauth && u.Status != StatusAuthorizing) || u.Status == StatusRemoving || u.Status == StatusRemoved {
 		return nil, ErrBadState
 	}
 	var sessionID string
 	var state *string
 	var expires time.Time
-	err = s.DB.QueryRow(ctx, "SELECT session_id, state, expires_at FROM upstream_oauth_sessions WHERE upstream_id = $1", u.ID).
+	err = s.DB.QueryRow(ctx, "SELECT session_id, state, expires_at FROM upstream_oauth_sessions WHERE upstream_id = $1 AND auth_type = $2", u.ID, u.AuthType).
 		Scan(&sessionID, &state, &expires)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && s.now().After(expires)) {
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !s.now().Before(expires)) {
+		_, _ = s.DB.Exec(ctx, "DELETE FROM upstream_oauth_sessions WHERE upstream_id = $1", u.ID)
 		return nil, httpx.BadRequest("AUTH_SESSION_EXPIRED", "authorization session expired, please start again")
 	}
 	if err != nil {
@@ -392,12 +405,23 @@ func (s *Service) CompleteAuthorization(ctx context.Context, sellerID, upstreamI
 		if errors.As(err, &he) {
 			return nil, err
 		}
-		return nil, httpx.BadRequest("AUTH_EXCHANGE_FAILED", "authorization failed: "+err.Error())
+		return nil, httpx.BadRequest("AUTH_EXCHANGE_FAILED", "authorization failed, please restart authorization")
 	}
-	if reauth {
+	updated, err := s.finishOAuth(ctx, u, spec, tok, proxyID)
+	if err == nil {
+		s.auditOAuth(ctx, u, "complete")
+	}
+	return updated, err
+}
+
+func (s *Service) finishOAuth(ctx context.Context, u *Upstream, spec oauthSpec, tok map[string]any, proxyID *int64) (*Upstream, error) {
+	creds, err := normalizeCredentials(spec, tok)
+	if err != nil {
+		return nil, httpx.BadRequest("AUTH_EXCHANGE_FAILED", "authorization returned incomplete credentials, please restart authorization")
+	}
+	if u.Sub2APIAccountID != nil {
 		return s.applyReauthorization(ctx, u, spec, tok)
 	}
-
 	if id := spec.identity(tok); id != "" {
 		if err := s.claimIdentity(ctx, u.ID, u.Platform+":"+id); err != nil {
 			return nil, err
@@ -406,7 +430,7 @@ func (s *Service) CompleteAuthorization(ctx context.Context, sellerID, upstreamI
 	if err := s.saveAccountProfile(ctx, u.ID, spec, tok); err != nil {
 		return nil, err
 	}
-	if err := s.createAccount(ctx, u, spec.accountType, spec.credentials(tok), spec.extra(tok), proxyID); err != nil {
+	if err := s.createAccount(ctx, u, spec.accountType, creds, spec.extra(tok), proxyID); err != nil {
 		_ = setUpstreamStatus(ctx, s.DB, u.ID, StatusFailed, strPtr("account creation failed"))
 		return nil, err
 	}
@@ -431,7 +455,10 @@ func (s *Service) applyReauthorization(ctx context.Context, u *Upstream, spec oa
 			return nil, httpx.Conflict("IDENTITY_MISMATCH", "please authorize the same account that was originally listed")
 		}
 	}
-	creds := spec.credentials(tok)
+	creds, err := normalizeCredentials(spec, tok)
+	if err != nil {
+		return nil, err
+	}
 	// sub2api 更新凭证是整体替换（敏感键除外），窗口阈值存放在凭证里，需要一并带上
 	if SupportsSelfReserve(u.Platform) {
 		creds["account_scheduling_threshold"] = 100 - u.SelfReservePercent
@@ -582,6 +609,9 @@ func (s *Service) claimIdentity(ctx context.Context, upstreamID int64, identity 
 // saveAccountProfile 保存从令牌信息中识别出的订阅档位与官方账号邮箱，识别不到的项保持原值。
 func (s *Service) saveAccountProfile(ctx context.Context, upstreamID int64, spec oauthSpec, tok map[string]any) error {
 	tier, email := spec.tier(tok), AccountEmail(tok)
+	if spec.flowKind() == oauthInitPoll {
+		email = AccountEmail(nested("display")(tok))
+	}
 	if tier == "" && email == "" {
 		return nil
 	}
