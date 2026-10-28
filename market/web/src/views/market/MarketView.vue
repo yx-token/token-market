@@ -45,6 +45,65 @@ const heroQ = ref('')
 const viewMode = ref<'grid' | 'list'>('grid')
 const showAllBrands = ref(false)
 const trendTab = ref<'hot' | 'price'>('hot')
+const guideOpen = ref(false)
+
+const GUIDE_STEPS = [
+  {
+    n: '01',
+    title: '挑选商品',
+    desc: '用左侧筛选或顶部搜索锁定模型，对比倍率、成功率与响应速度。',
+  },
+  {
+    n: '02',
+    title: '选用开通',
+    desc: '点击「选用」登录后加入商家，平台会为你签发可调用的 API Key。',
+  },
+  {
+    n: '03',
+    title: '充值余额',
+    desc: '按量通道按实际用量扣费；余额不足时先在钱包充值即可继续调用。',
+  },
+  {
+    n: '04',
+    title: '配置调用',
+    desc: '把 Edge 地址与 API Key 填进你的客户端或代码，即可像官网一样调用。',
+  },
+  {
+    n: '05',
+    title: '查看用量',
+    desc: '在买家中心查看用量统计与账单，订单与结算记录可随时追溯。',
+  },
+] as const
+
+function openGuide() {
+  guideOpen.value = true
+}
+
+function closeGuide() {
+  guideOpen.value = false
+  if (route.hash === '#guide') {
+    router.replace({ path: route.path, query: route.query, hash: '' })
+  }
+}
+
+function guideGoFeed() {
+  closeGuide()
+  requestAnimationFrame(() => document.getElementById('feed')?.scrollIntoView({ behavior: 'smooth' }))
+}
+
+function guideGoPublish() {
+  closeGuide()
+  goPublish()
+}
+
+function guideGoWallet() {
+  closeGuide()
+  if (!auth.loggedIn) {
+    loginModal.show({ redirect: '/buyer/wallet' })
+    return
+  }
+  router.push('/buyer/wallet')
+}
 
 const MODEL_TYPES = [
   { id: 'all', label: '大语言模型' },
@@ -460,10 +519,17 @@ onMounted(() => {
   listings.load()
   pools.load()
   void discoveryStore.ensure()
-  if (route.hash === '#guide') {
-    requestAnimationFrame(() => document.getElementById('guide')?.scrollIntoView({ behavior: 'smooth' }))
-  }
 })
+
+watch(
+  () => route.hash,
+  (hash) => {
+    if (hash !== '#guide') return
+    guideOpen.value = true
+    requestAnimationFrame(() => document.getElementById('guide')?.scrollIntoView({ behavior: 'smooth' }))
+  },
+  { immediate: true },
+)
 
 watch(
   () => route.query,
@@ -483,7 +549,8 @@ watch(
         <div class="mh-hero-main">
           <div class="mh-hero-copy">
             <span class="mh-hero-pill">闲置 Token 交易市场</span>
-            <h1>你的 <em>Token</em>，我负责。</h1>
+            <h1>别让你的<em>Token</em>落了灰</h1>
+            <p class="mh-hero-lead">闲猫连接供需双方，提供安全、便捷、透明的 AI Token 交易服务</p>
             <div class="mh-hero-search-row">
               <form class="mh-hero-search" @submit.prevent="heroSearch">
                 <span class="mh-hero-search-ico" aria-hidden="true">
@@ -495,7 +562,7 @@ watch(
                 <input
                   v-model="heroQ"
                   type="search"
-                  placeholder="搜索模型或供应商，例如：GPT-4o、Claude、DeepSeek…"
+                  placeholder="搜索你需要的模型，例如：GPT-4o、Claude、通义千问…"
                   aria-label="搜索商品"
                 />
                 <button type="submit" class="mh-hero-go">搜索</button>
@@ -510,42 +577,14 @@ watch(
           </div>
 
           <div class="mh-hero-art" aria-hidden="true">
-            <div class="mh-hero-glow" />
-            <svg class="mh-hero-orbit" viewBox="0 0 320 220" fill="none">
-              <ellipse
-                class="mh-hero-orbit-ring"
-                cx="160"
-                cy="112"
-                rx="128"
-                ry="78"
-                transform="rotate(-18 160 112)"
-              />
-              <circle class="mh-hero-spark" cx="48" cy="96" r="3" />
-              <circle class="mh-hero-spark" cx="268" cy="78" r="2.5" />
-              <circle class="mh-hero-spark" cx="236" cy="168" r="2" />
-              <circle class="mh-hero-spark" cx="92" cy="172" r="2.5" />
-              <circle class="mh-hero-spark" cx="180" cy="42" r="2" />
-            </svg>
-            <div class="mh-hero-ticket">
-              <span class="mh-hero-ticket-chip">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
-                  <rect x="6" y="6" width="12" height="12" rx="2.2" fill="#fff" />
-                  <rect x="9" y="9" width="6" height="6" rx="1" fill="#F0C000" />
-                  <path d="M9 4v2M12 4v2M15 4v2M9 18v2M12 18v2M15 18v2M4 9h2M4 12h2M4 15h2M18 9h2M18 12h2M18 15h2" stroke="#fff" stroke-width="1.6" stroke-linecap="round" />
-                </svg>
-              </span>
-              <strong>API Token</strong>
-            </div>
-            <div class="mh-hero-orbits">
-              <span
-                v-for="(b, i) in popularBrands.slice(0, 6)"
-                :key="b.label"
-                class="mh-hero-chip"
-                :class="'p' + (i + 1)"
-              >
-                <img :src="b.icon" alt="" />
-              </span>
-            </div>
+            <img
+              class="mh-hero-art-img"
+              src="/assets/hero-api-token-v2.png"
+              alt=""
+              width="1024"
+              height="587"
+              decoding="async"
+            />
           </div>
         </div>
 
@@ -591,12 +630,14 @@ watch(
         <svg class="mh-hero-wave" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true">
           <path
             d="M0 36C160 72 320 8 480 40C640 72 800 12 960 44C1120 76 1280 16 1440 48V80H0V36Z"
-            fill="#f5f6f8"
+            fill="#fafbfc"
           />
         </svg>
       </section>
 
+      <div class="mh-body">
       <div class="mh-primary">
+        <div class="mh-board">
         <section class="mh-popular-wrap" aria-label="热门模型">
           <div class="mh-section-head">
             <h2>热门模型</h2>
@@ -729,6 +770,7 @@ watch(
             </div>
           </section>
         </div>
+        </div>
       </div>
 
       <aside class="mh-rail" aria-label="市场资讯">
@@ -759,11 +801,10 @@ watch(
           <div class="mh-guide-copy">
             <strong>新手入门指南</strong>
             <p>3 分钟了解如何选购与使用 Token</p>
-            <a href="#guide" class="mh-guide-btn">查看教程</a>
+            <button type="button" class="mh-guide-btn" @click="openGuide">查看教程</button>
           </div>
           <div class="mh-guide-art" aria-hidden="true">
-            <span class="coin c1">🪙</span>
-            <span class="coin c2">🪙</span>
+            <img class="mh-guide-art-img" src="/assets/guide-ai-coins.png" alt="" />
           </div>
         </div>
 
@@ -794,6 +835,7 @@ watch(
           </ul>
         </div>
       </aside>
+      </div>
     </div>
 
     <ModalDialog :open="!!created" title="Key 已创建" @update:open="(v: boolean) => !v && (created = null)">
@@ -812,6 +854,36 @@ watch(
       <template #footer>
         <RouterLink class="btn-secondary" to="/buyer/keys" @click="created = null">去买家中心</RouterLink>
         <button type="button" class="btn-primary" @click="created = null">知道了</button>
+      </template>
+    </ModalDialog>
+
+    <ModalDialog :open="guideOpen" title="新手入门指南" size="wide" @update:open="(v: boolean) => !v && closeGuide()">
+      <div class="mh-guide-dialog">
+        <p class="mh-guide-dialog-lead">从挑商品到发出第一次调用，按这 5 步走一遍即可。</p>
+        <ol class="mh-guide-steps">
+          <li v-for="step in GUIDE_STEPS" :key="step.n" class="mh-guide-step">
+            <span class="mh-guide-step-n" aria-hidden="true">{{ step.n }}</span>
+            <div class="mh-guide-step-body">
+              <strong>{{ step.title }}</strong>
+              <p>{{ step.desc }}</p>
+            </div>
+          </li>
+        </ol>
+        <div class="mh-guide-tips">
+          <div class="mh-guide-tip">
+            <strong>买家提示</strong>
+            <span>选用后 Key 可在「我的订单 / API Key」随时复制；平台担保交易，用量与结算可查。</span>
+          </div>
+          <div class="mh-guide-tip">
+            <strong>卖家提示</strong>
+            <span>有闲置额度？点「发布」上架按量通道或订阅套餐，检测合格后可进入保障池。</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <button type="button" class="btn-secondary" @click="guideGoPublish">去发布</button>
+        <button type="button" class="btn-secondary" @click="guideGoWallet">去充值</button>
+        <button type="button" class="btn-primary" @click="guideGoFeed">去逛市场</button>
       </template>
     </ModalDialog>
   </div>

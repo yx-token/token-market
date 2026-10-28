@@ -28,7 +28,6 @@ const displayName = computed(() => {
 type NavItem = { id: string; label: string; to: string; auth?: boolean }
 
 const navItems: NavItem[] = [
-  { id: 'home', label: '首页', to: '/' },
   { id: 'market', label: '市场', to: '/' },
   { id: 'publish', label: '发布', to: '/seller/publish', auth: true },
   { id: 'orders', label: '我的订单', to: '/buyer/bills', auth: true },
@@ -37,7 +36,6 @@ const navItems: NavItem[] = [
 
 function navOn(item: NavItem) {
   if (item.id === 'market') return route.path === '/' || route.path.startsWith('/market')
-  if (item.id === 'home') return false
   if (item.id === 'publish') return route.path.startsWith('/seller/publish')
   if (item.id === 'orders') return route.path.startsWith('/buyer')
   return false
@@ -121,14 +119,6 @@ function goPublish() {
             </svg>
           </button>
         </form>
-
-        <button type="button" class="mh-bell" aria-label="通知" title="通知">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-            <path d="M6.5 10.5a5.5 5.5 0 0 1 11 0v3.2l1.2 2.3H5.3l1.2-2.3v-3.2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-            <path d="M10 18.5a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
-          <span class="mh-bell-dot" aria-hidden="true">3</span>
-        </button>
 
         <a v-if="auth.canConsole" class="mh-admin" href="/open-admin?to=/admin/dashboard" title="运营控制台">控制台</a>
 
