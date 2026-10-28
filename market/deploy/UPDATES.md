@@ -2,7 +2,7 @@
 
 ## 单进程模式（推荐，`MARKET_EMBED=1`）
 
-管理后台「系统更新」走宿主接口 `/api/v1/admin/system/*`，从本仓 Release（默认 `UPDATE_GITHUB_REPO=yx-token/token-market`）下载 **`sub2api_*` 宿主包**：
+站内更新统一入口为管理后台「系统设置 → 系统更新」Tab，走宿主接口 `/api/v1/admin/system/*`，从本仓 Release（默认 `UPDATE_GITHUB_REPO=yx-token/token-market`）下载 **`sub2api_*` 宿主包**：
 
 - 替换宿主二进制（内嵌管理端 `/admin` + `/admin-assets`）
 - 若包内含 `market-web/` 且设置了 `TM_HTTP_WEB_DIR`，同步 C 端静态
@@ -10,7 +10,7 @@
 
 Docker 部署也可不点站内更新，直接改 `ENGINE_IMAGE` / `TM_IMAGE` 后 pull + up。
 
-更新完成后按提示重启宿主进程（或 `./tm.sh sub2api up -d`）。
+安装完成后按页面提示点击「立即重启」，页面会等待服务恢复并刷新。若重启失败或服务长时间未恢复，请检查服务日志，再手动重启宿主进程（或 `./tm.sh sub2api restart sub2api`）。
 
 ## 双进程 / 独立 market-api（legacy）
 

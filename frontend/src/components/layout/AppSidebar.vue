@@ -1020,7 +1020,6 @@ const adminNavItems = computed((): NavItem[] => {
             { path: '/admin/market/audit', label: t('nav.marketAudit'), icon: ChartIcon },
             { path: '/admin/market/identities', label: t('nav.marketIdentities'), icon: ShieldIcon },
             { path: '/admin/market/settings', label: t('nav.marketSettings'), icon: CogIcon },
-            { path: '/admin/market/system-update', label: t('nav.marketSystemUpdate'), icon: CogIcon },
           ],
         },
       ],

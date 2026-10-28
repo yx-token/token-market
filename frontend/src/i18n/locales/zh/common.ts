@@ -259,7 +259,6 @@ export default {
     marketAudit: '账本审计',
     marketIdentities: '身份对照',
     marketSettings: '交易参数',
-    marketSystemUpdate: '系统更新',
     marketCategoriesFull: '市场分类',
     marketPlatformSettings: '交易参数',
     marketSupplyAccountsHint: '市场上游与引擎账号的对照；linked=已写入引擎可供调度。',

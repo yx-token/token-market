@@ -259,7 +259,6 @@ export default {
     marketAudit: 'Ledger & Audit',
     marketIdentities: 'Identity Map',
     marketSettings: 'Trade Settings',
-    marketSystemUpdate: 'System Update',
     marketCategoriesFull: 'Market Categories',
     marketPlatformSettings: 'Trade Settings',
     marketSupplyAccountsHint: 'Market upstreams vs engine accounts; linked means schedulable in the engine.',

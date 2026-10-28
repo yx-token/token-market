@@ -592,12 +592,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '货架开关', titleKey: 'nav.marketExtras' }
       },
       {
-        path: 'system-update',
-        name: 'MarketAdminSystemUpdate',
-        component: () => import('@/market-admin/SystemUpdateView.vue'),
-        meta: { title: '系统更新', titleKey: 'nav.marketSystemUpdate' }
-      },
-      {
         path: 'identities',
         name: 'MarketAdminIdentities',
         component: () => import('@/market-admin/IdentitiesView.vue'),
