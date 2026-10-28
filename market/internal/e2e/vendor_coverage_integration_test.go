@@ -27,17 +27,29 @@ func TestVendorAuthTypeCoverage(t *testing.T) {
 		Supported []string `json:"supported_auth_types"`
 	}
 	admin.must("GET", "/api/admin/vendors", nil, &vendors)
-	want := map[string][]string{
+	// supported_auth_types 按 authTypeOrder（oauth 在 coding 之前）排列；
+	// 迁移按 array_append 追加，所以已开放列表里 oauth 排在既有值之后。
+	wantSupported := map[string][]string{
 		"anthropic": {"oauth", "setup-token"}, "openai": {"oauth"}, "gemini": {"google_one", "oauth"},
-		"antigravity": {"oauth"}, "grok": {"oauth"}, "kimi": {"coding"}, "zhipu": {"coding", "coding-intl"},
+		"antigravity": {"oauth"}, "grok": {"oauth"},
+		"kimi":   {"oauth", "coding"},
+		"zhipu":  {"oauth", "oauth-intl", "coding", "coding-intl"},
+		"minimax": {"coding", "coding-intl"}, "opencode_go": {"go"},
+	}
+	wantOpen := map[string][]string{
+		"anthropic": {"oauth", "setup-token"}, "openai": {"oauth"}, "gemini": {"google_one", "oauth"},
+		"antigravity": {"oauth"}, "grok": {"oauth"},
+		"kimi":   {"coding", "oauth"},
+		"zhipu":  {"coding", "coding-intl", "oauth", "oauth-intl"},
 		"minimax": {"coding", "coding-intl"}, "opencode_go": {"go"},
 	}
 	for _, v := range vendors {
-		if !slices.Equal(v.Supported, want[v.Platform]) || !slices.Equal(v.AuthTypes, want[v.Platform]) {
-			t.Fatalf("%s: open %v, supported %v, want %v", v.Platform, v.AuthTypes, v.Supported, want[v.Platform])
+		if !slices.Equal(v.Supported, wantSupported[v.Platform]) || !slices.Equal(v.AuthTypes, wantOpen[v.Platform]) {
+			t.Fatalf("%s: open %v, supported %v, want open %v / supported %v",
+				v.Platform, v.AuthTypes, v.Supported, wantOpen[v.Platform], wantSupported[v.Platform])
 		}
 	}
-	if len(vendors) != len(want) {
+	if len(vendors) != len(wantOpen) {
 		t.Fatalf("vendors: %+v", vendors)
 	}
 	admin.expect(400, "PUT", "/api/admin/vendors/kimi", map[string]any{"auth_types": []string{"coding-intl"}})
