@@ -77,8 +77,8 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 	bind("withdrawals", func(c *gin.Context) (any, error) { return store.ListWithdrawals(c.Request.Context()) })
 	bind("appeals", func(c *gin.Context) (any, error) { return store.ListAppeals(c.Request.Context()) })
 	// 以下路径与 frontend/src/market-admin 一致；已去掉 policies/providers/categories/quality/payments/hot-searches 别名。
-	bind("detection-policies", func(c *gin.Context) (any, error) { return store.ListPolicies(c.Request.Context()) })
-	bind("detection-providers", func(c *gin.Context) (any, error) { return store.ListProviders(c.Request.Context()) })
+	// detection-policies / detection-providers 的读取走 relay（见 registerIdleCatRelay）：编辑弹窗依赖 flows、third_party、
+	// thresholds、has_api_key、max_runs_per_hour 等完整字段，这里的简表只有 3~4 列，保存时会把没回显的配置当空值覆盖掉。
 	bind("probe-items", func(c *gin.Context) (any, error) { return store.ListProbeItems(c.Request.Context()) })
 	bind("probe-runs", func(c *gin.Context) (any, error) { return store.ListProbeRuns(c.Request.Context()) })
 	bind("market-categories", func(c *gin.Context) (any, error) { return store.ListCategories(c.Request.Context()) })
@@ -148,6 +148,8 @@ func registerIdleCatRelay(admin *gin.RouterGroup) {
 		"PUT pools/:id",
 		"POST pools/:id/sync",
 		"PUT detection-providers/:name",
+		"GET detection-policies",
+		"GET detection-providers",
 		"PUT detection-policies/:platform",
 		"GET third-party-checks",
 		"PUT upstreams/:id/detection-override",
