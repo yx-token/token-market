@@ -86,6 +86,9 @@ function submit() {
     </div>
     <p v-if="status" role="status" class="hint">{{ status }}</p>
     <p v-if="error" role="alert" class="callout callout-err">{{ error }}</p>
+    <p v-if="guide?.guideURL" class="hint">
+      <a :href="guide.guideURL" target="_blank" rel="noopener noreferrer" class="link">{{ guide.guideText || '前往官方页面' }}</a>
+    </p>
     <details v-if="flow === 'init-poll' && active" class="border border-ink-200 bg-paper/60 p-3">
       <summary class="cursor-pointer text-sm font-medium text-ink-700">手动粘贴回调地址</summary>
       <div class="mt-3 space-y-3">

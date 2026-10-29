@@ -256,14 +256,20 @@ func TestThirdPartyDetection(t *testing.T) {
 		t.Fatalf("纯第三方运行不应生成内部题且须正常结案：%v %s %s %d %d", flows, source, identityStatus, internal, submitted)
 	}
 
-	// 检测站关闭后不再追加第三方检测
+	// 检测站关闭后不提交远端任务，但要保留可见的跳过原因。
 	admin.must("PUT", "/api/admin/detection-providers/bazaarlink", map[string]any{"enabled": false}, nil)
-	admin.must("POST", fmt.Sprintf("/api/admin/upstreams/%d/probe", good), nil, nil)
+	var disabledRun struct {
+		RunID int64 `json:"run_id"`
+	}
+	admin.must("POST", fmt.Sprintf("/api/admin/upstreams/%d/probe", good), nil, &disabledRun)
 	wait(good)
 	var n int
 	mustScan(t, e.app.DB.QueryRow(ctx, "SELECT count(*) FROM third_party_checks WHERE upstream_id = $1", good), &n)
-	if n != 2 {
-		t.Fatalf("disabled provider should not get new checks: %d", n)
+	var disabledIdentity string
+	mustScan(t, e.app.DB.QueryRow(ctx, `SELECT c.status,c.error,r.summary->'identity'->>'status'
+		FROM third_party_checks c JOIN probe_runs r ON r.id=c.run_id WHERE c.run_id=$1`, disabledRun.RunID), &status, &errMsg, &disabledIdentity)
+	if n != 3 || status != "skipped" || !strings.Contains(errMsg, "disabled") || disabledIdentity != "inconclusive" || len(bl.APIKeys()) != 3 {
+		t.Fatalf("disabled provider should leave a skipped check without submission: count=%d status=%s error=%s identity=%s keys=%d", n, status, errMsg, disabledIdentity, len(bl.APIKeys()))
 	}
 
 	admin.must("PUT", "/api/admin/detection-providers/bazaarlink", map[string]any{"enabled": true}, nil)

@@ -110,18 +110,6 @@ func (s *Store) ListAppeals(ctx context.Context) ([]map[string]any, error) {
 		ORDER BY a.id DESC LIMIT 200`)
 }
 
-func (s *Store) ListPolicies(ctx context.Context) ([]map[string]any, error) {
-	return s.queryMaps(ctx, `
-		SELECT platform, auth_type, enabled
-		FROM detection_policies ORDER BY platform, auth_type`)
-}
-
-func (s *Store) ListProviders(ctx context.Context) ([]map[string]any, error) {
-	return s.queryMaps(ctx, `
-		SELECT name, name AS label, enabled, base_url
-		FROM detection_providers ORDER BY name`)
-}
-
 func (s *Store) ListProbeItems(ctx context.Context) ([]map[string]any, error) {
 	return s.queryMaps(ctx, `
 		SELECT id, suite, check_key, status, weight

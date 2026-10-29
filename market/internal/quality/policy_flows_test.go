@@ -60,7 +60,7 @@ func TestPolicyFlowsLegacyClientInheritsDegradation(t *testing.T) {
 	if err := json.Unmarshal(legacy, &flows); err != nil {
 		t.Fatal(err)
 	}
-	flows.backfillDegradation()
+	flows.backfillDegradation(false)
 	if err := flows.normalize([]ThirdPartyCheck{{Provider: "bazaarlink"}}); err != nil {
 		t.Fatalf("旧调用方保存策略不应被拒绝：%v", err)
 	}

@@ -2,7 +2,7 @@
 /**
  * 检测策略：TablePageLayout + filter-grid + DataTable；策略列表 / 单个上游覆盖。
  */
-import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
+import { computed, onMounted, reactive, ref, toRaw, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
@@ -172,6 +172,7 @@ const columns: Column[] = [
   { key: 'intelligence', label: '测智', class: 'col-flow' },
   { key: 'degradation', label: '降智', class: 'col-flow' },
   { key: 'identity', label: '身份', class: 'col-flow' },
+  { key: 'third_party', label: '第三方', class: 'col-flow' },
   { key: 'budget', label: '预算', class: 'col-budget' },
   { key: 'actions', label: '操作', class: 'col-ops' },
 ]
@@ -188,11 +189,12 @@ function emptyFlow(enabled: boolean): FlowPolicy {
 }
 
 function policyFlows(p: Policy): DetectionFlows {
-  if (p.flows) return structuredClone(p.flows)
+  if (p.flows) return structuredClone(toRaw(p.flows))
   const models = (p.models || []).map((model) => ({ model, expected_pass_rate: null as number | null }))
+  // 总开关只管上架以外的检测；测智与降智流程开关不继承它，与后端 legacy 和 0030 迁移一致。
   return {
     intelligence: {
-      enabled: p.enabled,
+      enabled: true,
       scheduled_enabled: p.scheduled_enabled,
       interval_minutes: p.interval_minutes,
       triggers: TRIGGER_OPTS.map((t) => t.value),
@@ -200,7 +202,7 @@ function policyFlows(p: Policy): DetectionFlows {
       models: structuredClone(models),
     },
     degradation: {
-      enabled: p.enabled,
+      enabled: true,
       scheduled_enabled: false,
       interval_minutes: p.interval_minutes,
       triggers: TRIGGER_OPTS.map((t) => t.value),
@@ -221,7 +223,13 @@ function policyFlows(p: Policy): DetectionFlows {
 function flowSummary(p: Policy, flow: keyof DetectionFlows) {
   const config = policyFlows(p)[flow]
   if (!config) return '—'
-  return `${config.enabled ? '开' : '关'} · ${config.scheduled_enabled ? `每 ${config.interval_minutes} 分` : '定时关'}`
+  let schedule = '定时关'
+  if (config.scheduled_enabled) {
+    schedule = `每 ${config.interval_minutes} 分`
+    if (!p.enabled) schedule = '总检测关'
+    else if (!p.scheduled_enabled) schedule = '总定时关'
+  }
+  return `${config.enabled ? '开' : '关'} · ${schedule}`
 }
 
 const filtered = computed(() => {
@@ -285,6 +293,21 @@ watch(tab, () => {
 function platLabel(p: string) {
   return PLATFORM_LABEL[p] || p
 }
+
+function providerLabel(name: string) {
+  return providers.value.find((provider) => provider.name === name)?.label ?? name
+}
+
+function providerDisabled(name: string) {
+  const provider = providers.value.find((item) => item.name === name)
+  return provider ? !provider.enabled : false
+}
+
+const disabledThirdParty = computed(() =>
+  Object.entries(thirdParty)
+    .filter(([name, config]) => config.enabled && providerDisabled(name))
+    .map(([name]) => providerLabel(name)),
+)
 
 function policyPath(platform: string, authType: string) {
   const q = authType ? `?auth_type=${encodeURIComponent(authType)}` : ''
@@ -403,6 +426,10 @@ async function save() {
     return
   }
   for (const flow of [form.flows.intelligence, form.flows.degradation, form.flows.identity]) {
+    if (flow.scheduled_enabled && !flow.enabled) {
+      error.value = '流程定时检测需要先启用该流程'
+      return
+    }
     if (!Number.isInteger(Number(flow.interval_minutes)) || Number(flow.interval_minutes) < 10) {
       error.value = '检测周期需为至少 10 分钟的整数'
       return
@@ -453,6 +480,7 @@ async function save() {
       .filter(([, t]) => t.enabled)
       .map(([provider, t]) => ({
         provider,
+        // 已废弃：仅为旧配置与回退版本保留；执行触发类型以 flows.identity.triggers 为准。
         triggers: [...(flows.identity.triggers || [])],
         model: t.model.trim() || undefined,
         format: t.format || undefined,
@@ -697,6 +725,12 @@ onMounted(load)
             <template #cell-intelligence="{ row }">{{ flowSummary(row, 'intelligence') }}</template>
             <template #cell-degradation="{ row }">{{ flowSummary(row, 'degradation') }}</template>
             <template #cell-identity="{ row }">{{ flowSummary(row, 'identity') }}</template>
+            <template #cell-third_party="{ row }">
+              <span v-if="!row.third_party?.length" class="hint">—</span>
+              <span v-for="site in row.third_party ?? []" :key="site.provider" class="mr-2">
+                {{ providerLabel(site.provider) }}<span v-if="providerDisabled(site.provider)" class="hint">（已停用）</span>
+              </span>
+            </template>
             <template #cell-budget="{ row }">{{ row.daily_budget_usd }}</template>
             <template #cell-actions="{ row }">
               <div class="table-ops">
@@ -817,8 +851,10 @@ onMounted(load)
           <button type="button" class="y-link" @click="closeModal">关闭</button>
         </header>
         <div class="y-modal__body">
+          <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
           <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 开启检测</label>
           <label class="y-check"><input v-model="form.scheduled" type="checkbox" :disabled="!form.enabled" /> 开启定时检测</label>
+          <p class="hint">定时执行需同时开启总检测、总定时检测，以及对应流程和流程定时。</p>
           <div class="y-field-row y-field-row--4">
             <label class="y-field"><span>抖动(分)</span><input v-model.number="form.jitter" type="number" class="input w-full" /></label>
             <label class="y-field"><span>每日预算$</span><input v-model.number="form.budget" type="number" class="input w-full" step="0.1" /></label>
@@ -837,7 +873,7 @@ onMounted(load)
             <h4>{{ key === 'intelligence' ? '测智' : key === 'degradation' ? '降智检测' : '身份核验' }}</h4>
             <label class="y-check"><input v-model="form.flows[key].enabled" type="checkbox" /> 启用</label>
             <label class="y-check">
-              <input v-model="form.flows[key].scheduled_enabled" type="checkbox" /> 定时
+              <input v-model="form.flows[key].scheduled_enabled" type="checkbox" :disabled="!form.enabled || !form.scheduled" /> 定时
             </label>
             <label class="y-field">
               <span>周期（分钟）</span>
@@ -860,8 +896,11 @@ onMounted(load)
             </label>
           </div>
 
-          <div v-if="form.flows.identity.enabled && form.flows.identity.source === 'third_party'" class="flow-block">
+          <div v-if="form.flows.identity.enabled && form.flows.identity.source === 'third_party'" data-testid="third-party-config" class="flow-block">
             <h4>第三方检测站</h4>
+            <p v-if="disabledThirdParty.length" data-testid="disabled-provider-warning" class="hint">
+              检测站 {{ disabledThirdParty.join('、') }} 已停用，执行时会跳过；请先启用检测站，或在本策略中取消选择。
+            </p>
             <div v-for="pr in providers" :key="pr.name" class="tp-row">
               <template v-if="thirdParty[pr.name]">
                 <label class="y-check">

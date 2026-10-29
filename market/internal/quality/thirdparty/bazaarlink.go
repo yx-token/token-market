@@ -180,6 +180,8 @@ func (b *bazaarLink) Poll(ctx context.Context, id string) (*Result, error) {
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, ErrRunNotFound
+	case resp.StatusCode == http.StatusTooManyRequests:
+		return nil, &RateLimitedError{RetryAfter: retryAfter(resp.Header, data)}
 	case resp.StatusCode != http.StatusOK:
 		return nil, fmt.Errorf("bazaarlink poll: http %d: %s", resp.StatusCode, errorText(data))
 	}

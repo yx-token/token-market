@@ -19,8 +19,14 @@ cd "$ROOT"
 SUB2API_REPO="${SUB2API_REPO:-$(cd "$ROOT/.." && pwd)}"
 FRONTEND_DIR="${FRONTEND_DIR:-$SUB2API_REPO/frontend}"
 BACKEND_DIR="${BACKEND_DIR:-$SUB2API_REPO/backend}"
-DATA="$ROOT/data/dev"
-PG_DSN_BASE="postgres://tm:tm@127.0.0.1:55432"
+DATA="${DEV_DATA_DIR:-$ROOT/data/dev}"
+# 端口与容器名可覆盖：同一台机器上已有别的项目占用默认端口时，
+# 用 DEV_PG_PORT / DEV_REDIS_PORT / DEV_PG_CONTAINER / DEV_REDIS_CONTAINER 起一套隔离环境。
+PG_PORT="${DEV_PG_PORT:-55432}"
+REDIS_PORT="${DEV_REDIS_PORT:-56379}"
+PG_CONTAINER="${DEV_PG_CONTAINER:-tm-test-pg}"
+REDIS_CONTAINER="${DEV_REDIS_CONTAINER:-tm-test-redis}"
+PG_DSN_BASE="postgres://tm:tm@127.0.0.1:$PG_PORT"
 MARKET_DB=tm_dev
 FAKE_DB=tm_dev_sub2api
 ENGINE_DB="${ENGINE_DB:-tm_sub2api_live}"
@@ -38,10 +44,10 @@ KEYS="$DATA/pay-keys"
 mkdir -p "$DATA"
 
 ensure_containers() {
-  docker start tm-test-pg >/dev/null 2>&1 || docker run -d --name tm-test-pg -e POSTGRES_USER=tm -e POSTGRES_PASSWORD=tm -e POSTGRES_DB=tm -p 55432:5432 postgres:16-alpine >/dev/null
-  docker start tm-test-redis >/dev/null 2>&1 || docker run -d --name tm-test-redis -p 56379:6379 redis:7-alpine >/dev/null
+  docker start "$PG_CONTAINER" >/dev/null 2>&1 || docker run -d --name "$PG_CONTAINER" -e POSTGRES_USER=tm -e POSTGRES_PASSWORD=tm -e POSTGRES_DB=tm -p "$PG_PORT":5432 postgres:16-alpine >/dev/null
+  docker start "$REDIS_CONTAINER" >/dev/null 2>&1 || docker run -d --name "$REDIS_CONTAINER" -p "$REDIS_PORT":6379 redis:7-alpine >/dev/null
   for _ in $(seq 1 30); do
-    docker exec tm-test-pg pg_isready -U tm >/dev/null 2>&1 && return
+    docker exec "$PG_CONTAINER" pg_isready -U tm >/dev/null 2>&1 && return
     sleep 1
   done
   echo "PostgreSQL 未就绪" >&2
@@ -50,8 +56,8 @@ ensure_containers() {
 
 ensure_db() {
   local exists
-  exists="$(docker exec tm-test-pg psql -U tm -d tm -Atc "SELECT 1 FROM pg_database WHERE datname = '$1'")"
-  [[ "$exists" == "1" ]] || docker exec tm-test-pg psql -U tm -d tm -qc "CREATE DATABASE $1"
+  exists="$(docker exec "$PG_CONTAINER" psql -U tm -d tm -Atc "SELECT 1 FROM pg_database WHERE datname = '$1'")"
+  [[ "$exists" == "1" ]] || docker exec "$PG_CONTAINER" psql -U tm -d tm -qc "CREATE DATABASE $1"
 }
 
 # 后台拉起进程；Linux 用 setsid 脱进程组，macOS 回退 nohup
@@ -97,12 +103,22 @@ ensure_engine_admin_key() {
     -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"]["access_token"])')"
   curl -fsS -X POST "$ENGINE/api/v1/admin/compliance/accept" -H "Authorization: Bearer $tok" \
     -H 'Content-Type: application/json' \
-    -d '{"phrase":"我已阅读、理解并同意 闲猫 部署与运营合规承诺","language":"zh"}' >/dev/null || true
+    -d '{"phrase":"我已阅读、理解并同意 Sub2API 部署与运营合规承诺","language":"zh"}' >/dev/null || true
   key="$(curl -fsS -X POST "$ENGINE/api/v1/admin/settings/admin-api-key/regenerate" -H "Authorization: Bearer $tok" \
     | python3 -c 'import sys,json; d=json.load(sys.stdin); x=d.get("data") or d; print(x.get("key") or x.get("admin_api_key") or "")')"
   [[ -n "$key" ]] || { echo "无法生成引擎 Admin API Key" >&2; exit 1; }
   printf '%s' "$key" >"$key_file"
   echo "$key"
+}
+
+# 全新环境首次启动真实引擎会停在安装向导；带上 AUTO_SETUP 变量让它按本脚本的库/Redis/管理员自动安装。
+# 已安装（DATA_DIR 下有 config.yaml / .installed）后这些变量不会被读取。
+export_engine_auto_setup() {
+  export AUTO_SETUP=true
+  export DATABASE_HOST=127.0.0.1 DATABASE_PORT="$PG_PORT" DATABASE_USER=tm DATABASE_PASSWORD=tm DATABASE_DBNAME="$ENGINE_DB" DATABASE_SSLMODE=disable
+  export REDIS_HOST=127.0.0.1 REDIS_PORT="$REDIS_PORT" REDIS_DB=3
+  export ADMIN_EMAIL="$ADMIN_EMAIL" ADMIN_PASSWORD="$ADMIN_PASSWORD"
+  export JWT_SECRET=dev-engine-jwt-secret-dev-engine-jwt-secret
 }
 
 start_real_engine() {
@@ -120,11 +136,12 @@ start_real_engine() {
   [[ -s "$DATA/engine-admin-key" ]] && admin_key="$(cat "$DATA/engine-admin-key")"
   (
     export DATA_DIR="$sdata" SERVER_HOST=127.0.0.1 SERVER_PORT=18080 SERVER_MODE=release TZ=Asia/Shanghai
+    export_engine_auto_setup
     export MARKET_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
     export MARKET_ENGINE_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
     export TM_ENV=dev
     export TM_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
-    export TM_REDIS_ADDR=127.0.0.1:56379 TM_REDIS_DB=2
+    export TM_REDIS_ADDR=127.0.0.1:$REDIS_PORT TM_REDIS_DB=2
     export TM_CRYPTO_ACTIVE_KEY_ID=k1 TM_CRYPTO_KEYS="k1:ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleS0="
     export TM_CRYPTO_HASH_PEPPER=dev-pepper
     export TM_AUTH_JWT_SECRET=dev-jwt-secret-dev-jwt-secret-dev-jwt-secret
@@ -142,11 +159,12 @@ start_real_engine() {
     sleep 0.4
     (
       export DATA_DIR="$sdata" SERVER_HOST=127.0.0.1 SERVER_PORT=18080 SERVER_MODE=release TZ=Asia/Shanghai
+      export_engine_auto_setup
       export MARKET_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
       export MARKET_ENGINE_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
       export TM_ENV=dev
       export TM_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
-      export TM_REDIS_ADDR=127.0.0.1:56379 TM_REDIS_DB=2
+      export TM_REDIS_ADDR=127.0.0.1:$REDIS_PORT TM_REDIS_DB=2
       export TM_CRYPTO_ACTIVE_KEY_ID=k1 TM_CRYPTO_KEYS="k1:ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleS0="
       export TM_CRYPTO_HASH_PEPPER=dev-pepper
       export TM_AUTH_JWT_SECRET=dev-jwt-secret-dev-jwt-secret-dev-jwt-secret
@@ -164,7 +182,7 @@ start_real_engine() {
 market_env() {
   export TM_ENV=dev
   export TM_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
-  export TM_REDIS_ADDR=127.0.0.1:56379 TM_REDIS_DB=2
+  export TM_REDIS_ADDR=127.0.0.1:$REDIS_PORT TM_REDIS_DB=2
   if [[ "$USE_REAL_ENGINE" == "1" ]]; then
     export TM_SUB2API_BASE_URL="$ENGINE"
     export TM_SUB2API_ADMIN_API_KEY="$(ensure_engine_admin_key)"
@@ -322,7 +340,7 @@ except Exception:
     code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$API/api/seller/upstreams/$id/oauth/complete" \
       -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
       -d "{\"code\":\"https://cb.dev/callback?code=demo-$platform-$i&state=$state\"}" || true)"
-    [[ "$code" == "200" || "$code" == "201" ]] || echo "  跳过 $platform OAuth 演示完成（HTTP $code）"
+    [[ "$code" == "200" || "$code" == "201" ]] || echo "  跳过 ${platform} OAuth 演示完成（HTTP ${code}）"
   done
   # 等出站把账号落到替身，供给融合页才能显示 linked
   login_admin
@@ -333,7 +351,7 @@ except Exception:
   done
   # 引擎 SPA 登录：替身库写入明文密码的管理员（与市场管理员同邮箱）。
   # users_email_unique_active 是部分唯一索引，不能用 ON CONFLICT (email)。
-  docker exec tm-test-pg psql -U tm -d "$FAKE_DB" -qc \
+  docker exec "$PG_CONTAINER" psql -U tm -d "$FAKE_DB" -qc \
     "UPDATE users SET password_hash='$ADMIN_PASSWORD', role='admin', status='active', username='admin'
      WHERE email='$ADMIN_EMAIL' AND deleted_at IS NULL;
      INSERT INTO users (email, password_hash, username, notes, balance, concurrency, status, role)
@@ -437,8 +455,8 @@ case "${1:-}" in
   down) down ;;
   reset)
     down
-    docker exec tm-test-pg psql -U tm -d tm -qc "DROP DATABASE IF EXISTS $MARKET_DB WITH (FORCE)" -c "DROP DATABASE IF EXISTS $FAKE_DB WITH (FORCE)"
-    docker exec tm-test-redis redis-cli -n 2 flushdb >/dev/null
+    docker exec "$PG_CONTAINER" psql -U tm -d tm -qc "DROP DATABASE IF EXISTS $MARKET_DB WITH (FORCE)" -c "DROP DATABASE IF EXISTS $FAKE_DB WITH (FORCE)"
+    docker exec "$REDIS_CONTAINER" redis-cli -n 2 flushdb >/dev/null
     rm -rf "$DATA"
     echo "已重置"
     ;;

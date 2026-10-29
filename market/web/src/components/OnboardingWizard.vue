@@ -305,6 +305,12 @@ async function startVerification() {
             <dt>官方地址</dt>
             <dd class="font-mono text-[12.5px]">{{ guide.endpoint }}</dd>
           </template>
+          <template v-if="guide.guideURL">
+            <dt>指引</dt>
+            <dd>
+              <a :href="guide.guideURL" target="_blank" rel="noopener noreferrer" class="link">{{ guide.guideText || '前往官方页面' }}</a>
+            </dd>
+          </template>
         </dl>
         <p class="text-sm text-ink-600">平台会向官方查询订阅窗口用量来确认这是订阅 key（不接受按量付费 key 或中转 key），请求固定发往上面的官方地址。</p>
         <div>
