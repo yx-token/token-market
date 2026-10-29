@@ -256,6 +256,7 @@ export default {
     marketUsers: '用户管理',
     marketOrg: '组织管理',
     marketRisk: '风控异常',
+    marketReviews: '评价管理',
     marketAudit: '账本审计',
     marketIdentities: '身份对照',
     marketSettings: '交易参数',

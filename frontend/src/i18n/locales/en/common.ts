@@ -256,6 +256,7 @@ export default {
     marketUsers: 'Users',
     marketOrg: 'Organization',
     marketRisk: 'Risk & Anomalies',
+    marketReviews: 'Reviews',
     marketAudit: 'Ledger & Audit',
     marketIdentities: 'Identity Map',
     marketSettings: 'Trade Settings',

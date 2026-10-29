@@ -38,6 +38,9 @@ type Item struct {
 	Description      *string   `json:"description,omitempty"`
 	Categories       []string  `json:"categories,omitempty"`
 	Models           []string  `json:"models"` // 空数组表示存量上游未声明，实际不限制模型
+	// 商家评价摘要（无评价时 RatingCount=0，前端不展示假星）
+	SellerAvgRating   float64 `json:"seller_avg_rating"`
+	SellerRatingCount int     `json:"seller_rating_count"`
 }
 
 type Filter struct {
@@ -157,6 +160,48 @@ func (s *Service) list(ctx context.Context, f Filter, limit, offset int, withMet
 	}
 	for i := range items {
 		items[i].InspectionView = views[items[i].UpstreamID]
+	}
+	sellerIDs := make([]int64, 0, len(items))
+	seen := map[int64]struct{}{}
+	for _, it := range items {
+		if _, ok := seen[it.SellerID]; ok || it.SellerID <= 0 {
+			continue
+		}
+		seen[it.SellerID] = struct{}{}
+		sellerIDs = append(sellerIDs, it.SellerID)
+	}
+	if len(sellerIDs) > 0 {
+		statsRows, err := s.DB.Query(ctx, `
+			SELECT seller_id, avg_rating::float8, rating_count FROM seller_rating_stats
+			WHERE seller_id = ANY($1)`, sellerIDs)
+		if err != nil {
+			return nil, err
+		}
+		type st struct {
+			avg float64
+			n   int
+		}
+		m := map[int64]st{}
+		for statsRows.Next() {
+			var sid int64
+			var avg float64
+			var n int
+			if err := statsRows.Scan(&sid, &avg, &n); err != nil {
+				statsRows.Close()
+				return nil, err
+			}
+			m[sid] = st{avg: avg, n: n}
+		}
+		statsRows.Close()
+		if err := statsRows.Err(); err != nil {
+			return nil, err
+		}
+		for i := range items {
+			if v, ok := m[items[i].SellerID]; ok {
+				items[i].SellerAvgRating = v.avg
+				items[i].SellerRatingCount = v.n
+			}
+		}
 	}
 	return items, nil
 }

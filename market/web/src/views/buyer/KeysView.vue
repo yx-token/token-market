@@ -50,16 +50,23 @@ const revealing = ref(0)
 const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
 
 onMounted(async () => {
-  keys.load()
   packs.load()
   await cfg.ensure()
-  const [, ps] = await Promise.all([loadMerchantListings(), market.pools().catch(() => null)])
+  const [, ps] = await Promise.all([keys.load(), loadMerchantListings(), market.pools().catch(() => null)])
   pools.value = ps ?? []
   const pre = Number(route.query.listing)
   if (pre) {
     const l = listings.value.find((x) => x.listing_id === pre)
     if (!l) {
       toast.info('该挂单不在商家清单中或暂不可用，请先去市场加入商家。')
+      return
+    }
+    // 已有启用中且路由含该挂单的 Key：不再自动打开创建表单
+    const existing = (keys.data.value ?? []).find(
+      (k) => k.status === 'active' && (k.hops ?? []).some((h) => h.listing_id === pre),
+    )
+    if (existing) {
+      toast.info(`已有 Key「${existing.name}」含此挂单，无需重复创建`)
       return
     }
     openCreate()

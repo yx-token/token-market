@@ -26,6 +26,7 @@ const sections: Record<string, { title: string; items: NavItem[] }> = {
       { to: '/buyer/wallet', text: '钱包' },
       { to: '/buyer/usage', text: '用量明细' },
       { to: '/buyer/bills', text: '账单' },
+      { to: '/buyer/reviews', text: '我的评价' },
     ],
   },
   seller: {
@@ -38,6 +39,7 @@ const sections: Record<string, { title: string; items: NavItem[] }> = {
       { to: '/seller/proxies', text: '代理 IP' },
       { to: '/seller/usage', text: '用量' },
       { to: '/seller/earnings', text: '收益与提现' },
+      { to: '/seller/reviews', text: '买家评价' },
     ],
   },
 }
@@ -85,10 +87,10 @@ function logout() {
   <div v-else class="xm-market flex min-h-screen flex-col" :class="{ 'is-browse': isMarketBrowse }">
     <MarketMasthead />
 
-    <!-- 市场浏览：全宽一屏（无页脚），中间列表自滚 -->
-    <main v-if="isMarketBrowse" class="min-w-0 flex-1 overflow-hidden">
+    <!-- 市场浏览：整页原生滚动（避免内外层交接卡顿） -->
+    <main v-if="isMarketBrowse" class="min-w-0 flex-1 overflow-visible">
       <RouterView v-slot="{ Component, route: r }">
-        <div :key="r.path" class="page-enter h-full">
+        <div :key="r.path" class="page-enter">
           <component :is="Component" />
         </div>
       </RouterView>

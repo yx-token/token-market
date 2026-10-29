@@ -65,6 +65,41 @@ export interface MarketItem {
   appraisal?: InspectionAppraisal
   quality_checks?: Record<string, InspectionCheckResult>
   last_checked_at?: string | null
+  seller_avg_rating?: number
+  seller_rating_count?: number
+}
+
+export interface SellerRatingStats {
+  seller_id: number
+  avg_rating: number
+  rating_count: number
+}
+
+export interface ReviewItem {
+  id: number
+  buyer_id: number
+  buyer_mask?: string
+  seller_id: number
+  listing_id?: number | null
+  parent_id?: number | null
+  rating?: number | null
+  content: string
+  tags: string[]
+  status: string
+  created_at: string
+  updated_at: string
+  hide_reason?: string | null
+  follow_up?: ReviewItem | null
+}
+
+export interface ReviewEligible {
+  seller_id: number
+  seller_email?: string
+  listing_id?: number | null
+  can_review: boolean
+  can_follow_up: boolean
+  existing_id?: number | null
+  existing_rating?: number | null
 }
 
 export interface PoolItem {

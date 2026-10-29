@@ -231,6 +231,8 @@ export type FeedSku = {
   inspectionMode?: string
   qualityChecks?: Record<string, InspectionCheckResult>
   lastCheckedAt?: string | null
+  sellerAvgRating?: number
+  sellerRatingCount?: number
 }
 
 /** 合并服务端运营配置与本地默认（服务端缺字段时保留默认） */

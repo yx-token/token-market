@@ -83,6 +83,10 @@ function goPublish() {
   if (auth.loggedIn) router.push('/seller/publish')
   else loginModal.show({ redirect: '/seller/publish' })
 }
+
+function goBuyer() {
+  router.push('/buyer/keys')
+}
 </script>
 
 <template>
@@ -131,9 +135,9 @@ function goPublish() {
             </svg>
           </button>
           <div class="user-menu-drop" role="menu">
-            <RouterLink role="menuitem" to="/buyer/keys">买家中心</RouterLink>
-            <button role="menuitem" type="button" @click="goPublish">发布闲置</button>
-            <button role="menuitem" type="button" @click="logout">退出登录</button>
+            <button class="user-menu-item" role="menuitem" type="button" @click="goBuyer">买家中心</button>
+            <button class="user-menu-item" role="menuitem" type="button" @click="goPublish">发布闲置</button>
+            <button class="user-menu-item" role="menuitem" type="button" @click="logout">退出登录</button>
           </div>
         </div>
         <button v-else type="button" class="mh-login" @click="loginModal.show({ redirect: route.fullPath })">

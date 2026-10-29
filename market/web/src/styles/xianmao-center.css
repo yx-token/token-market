@@ -190,8 +190,9 @@
 }
 .xm-market .xm-btn:hover { filter: brightness(0.97); }
 .xm-market .xm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.xm-market .xm-btn-primary { background: #ffe60f; color: #1f1f1f; }
-.xm-market .xm-btn-dark { background: #1f1f1f; color: #ffe60f; }
+.xm-market .xm-btn-primary { background: var(--yellow-btn, #ffd400); color: #1f1f1f; }
+.xm-market .xm-btn-primary:hover { background: var(--yellow-hover, #f0c200); }
+.xm-market .xm-btn-dark { background: #1f1f1f; color: var(--yellow-btn, #ffd400); }
 .xm-market .xm-btn-ghost { background: #fff; border: 1px solid rgba(0, 0, 0, 0.08); }
 .xm-market .xm-btn-sm { padding: 7px 12px; font-size: 12px; border-radius: 9px; }
 .xm-market .xm-btn-danger { color: #b91c1c; }

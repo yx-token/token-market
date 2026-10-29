@@ -1726,11 +1726,12 @@ html:not(.is-console) .console-tp-card {
 }
 .yh-modal-panel--market .btn-primary {
   border: none !important;
-  background: #ffe60f !important;
+  background: var(--yellow-btn, #ffd400) !important;
   color: #1f1f1f !important;
 }
 .yh-modal-panel--market .btn-primary:hover {
-  filter: brightness(0.97);
+  background: var(--yellow-hover, #f0c200) !important;
+  filter: none;
   transform: none !important;
   box-shadow: none !important;
 }
@@ -1772,11 +1773,12 @@ html.is-market .btn-ghost {
 }
 html.is-market .btn-primary {
   border: none !important;
-  background: #ffe60f !important;
+  background: var(--yellow-btn, #ffd400) !important;
   color: #1f1f1f !important;
 }
 html.is-market .btn-primary:hover {
-  filter: brightness(0.97);
+  background: var(--yellow-hover, #f0c200) !important;
+  filter: none;
   transform: none !important;
   box-shadow: none !important;
 }

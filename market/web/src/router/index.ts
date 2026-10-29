@@ -19,6 +19,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/buyer/store-credits', name: 'buyer-store-credits', component: () => import('@/views/buyer/StoreCreditsView.vue'), meta: { auth: true } },
   { path: '/buyer/usage', name: 'buyer-usage', component: () => import('@/views/buyer/UsageView.vue'), meta: { auth: true } },
   { path: '/buyer/bills', name: 'buyer-bills', component: () => import('@/views/buyer/BillsView.vue'), meta: { auth: true } },
+  { path: '/buyer/reviews', name: 'buyer-reviews', component: () => import('@/views/buyer/ReviewsView.vue'), meta: { auth: true } },
 
   { path: '/seller', redirect: '/seller/publish' },
   { path: '/seller/publish', name: 'seller-publish', component: () => import('@/views/seller/PublishView.vue'), meta: { auth: true } },
@@ -35,6 +36,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/seller/listings', name: 'seller-listings', component: () => import('@/views/seller/ListingsView.vue'), meta: { auth: true } },
   { path: '/seller/credits', name: 'seller-credits', component: () => import('@/views/seller/StoreCreditsView.vue'), meta: { auth: true } },
   { path: '/seller/earnings', name: 'seller-earnings', component: () => import('@/views/seller/EarningsView.vue'), meta: { auth: true } },
+  { path: '/seller/reviews', name: 'seller-reviews', component: () => import('@/views/seller/ReviewsView.vue'), meta: { auth: true } },
 
   // 用闲猫会话换发管理端 token，再整页进入 /admin（sub2api 壳）
   {

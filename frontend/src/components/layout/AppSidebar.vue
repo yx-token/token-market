@@ -1017,6 +1017,7 @@ const adminNavItems = computed((): NavItem[] => {
             { path: '/admin/market/users', label: t('nav.marketUsers'), icon: ShieldIcon },
             { path: '/admin/market/org', label: t('nav.marketOrg'), icon: FolderIcon },
             { path: '/admin/market/risk', label: t('nav.marketRisk'), icon: ShieldIcon },
+            { path: '/admin/market/reviews', label: t('nav.marketReviews'), icon: ChartIcon },
             { path: '/admin/market/audit', label: t('nav.marketAudit'), icon: ChartIcon },
             { path: '/admin/market/identities', label: t('nav.marketIdentities'), icon: ShieldIcon },
             { path: '/admin/market/settings', label: t('nav.marketSettings'), icon: CogIcon },

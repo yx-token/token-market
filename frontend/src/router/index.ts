@@ -610,6 +610,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '风控', titleKey: 'nav.marketRisk' }
       },
       {
+        path: 'reviews',
+        name: 'MarketAdminReviews',
+        component: () => import('@/market-admin/ReviewsView.vue'),
+        meta: { title: '评价管理', titleKey: 'nav.marketReviews' }
+      },
+      {
         path: 'audit',
         name: 'MarketAdminAudit',
         component: () => import('@/market-admin/AuditView.vue'),

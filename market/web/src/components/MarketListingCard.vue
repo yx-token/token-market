@@ -84,18 +84,17 @@ const sellerLabel = computed(() => {
 })
 
 const sellerScore = computed(() => {
-  if (props.sku.pool) return '5.0'
-  if (props.sku.grade === 'S') return '4.9'
-  if (props.sku.grade === 'A') return '4.7'
-  if (props.sku.grade === 'B') return '4.4'
-  return props.sku.success > 0 ? (4 + props.sku.success).toFixed(1) : '4.5'
+  if (props.sku.pool) return ''
+  const n = props.sku.sellerRatingCount ?? 0
+  if (n <= 0) return ''
+  return Number(props.sku.sellerAvgRating ?? 0).toFixed(1)
 })
 
 const dealCount = computed(() => {
-  if (props.sku.pool) return '成交 2.1万'
-  const n = Math.max(12, Math.round((props.sku.success || 0.9) * (props.sku.sellerId || 80) * 3))
-  if (n >= 10000) return `成交 ${(n / 10000).toFixed(1)}万`
-  return `成交 ${n}`
+  if (props.sku.pool) return '平台保障'
+  const n = props.sku.sellerRatingCount ?? 0
+  if (n <= 0) return '暂无评价'
+  return `${n} 条评价`
 })
 
 function detailHref(sku: FeedSku) {
@@ -152,7 +151,7 @@ function onBuy(e: Event) {
       <div class="sku-seller">
         <span class="sku-seller-av" aria-hidden="true">{{ sellerLabel.slice(0, 1) }}</span>
         <span class="sku-seller-name">{{ sellerLabel }}</span>
-        <span class="sku-seller-score">★ {{ sellerScore }}</span>
+        <span v-if="sellerScore" class="sku-seller-score">★ {{ sellerScore }}</span>
         <span class="sku-seller-deals">{{ dealCount }}</span>
       </div>
       <button type="button" class="sku-buy" :disabled="busy" @click="onBuy">

@@ -4,11 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { buyer, market } from '@/api'
 import { merchants } from '@/api/merchants'
 import { isTested } from '@/api/market-detection'
-import type { MarketItem, PoolItem } from '@/api/types'
+import type { BuyerKey, MarketItem, PoolItem } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
 import MarketListingCard from '@/components/MarketListingCard.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
-import SearchSelect from '@/components/common/SearchSelect.vue'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
 import { useLoginModal } from '@/stores/loginModal'
@@ -26,6 +25,7 @@ import {
   type MarketAction,
   type PlatBrand,
 } from '@/market/config'
+import { buildDemoFeedSkus, isDemoFeedId } from '@/market/demoFeed'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,11 +36,23 @@ const appCfg = useConfig()
 const discoveryStore = useMarketDiscovery()
 const cfg = computed(() => discoveryStore.cfg)
 const openingId = ref('')
-const created = ref<{ key: string; platform: string; title: string } | null>(null)
+const created = ref<{ key: string; platform: string; title: string; reused?: boolean } | null>(null)
 const edgeBase = computed(() => appCfg.config.edge_url || window.location.origin)
 const createdSample = computed(() =>
   created.value ? sampleRequest(created.value.platform, edgeBase.value, created.value.key, appCfg.config.price_models ?? []) : null,
 )
+
+/** 已有启用中、且路由正好指向该保障池的 Key（默认分组或单跳 chain）。 */
+function findPoolKey(keys: BuyerKey[] | null | undefined, poolName: string): BuyerKey | undefined {
+  const list = (keys ?? []).filter((k) => k.status === 'active')
+  const exact = list.filter((k) => {
+    const hops = k.hops ?? []
+    if (k.route_type === 'default') return (hops[0]?.pool || '') === poolName
+    return hops.length === 1 && hops[0]?.pool === poolName
+  })
+  if (!exact.length) return undefined
+  return exact.reduce((a, b) => (a.id >= b.id ? a : b))
+}
 const heroQ = ref('')
 const viewMode = ref<'grid' | 'list'>('grid')
 const showAllBrands = ref(false)
@@ -127,11 +139,19 @@ const PROVIDERS = [
 ] as const
 
 const STOCK_BUCKETS = [
-  { id: '', label: '不限' },
+  { id: '', label: '额度不限' },
   { id: 'any', label: '1 亿以下' },
   { id: 'mid', label: '1 亿 – 10 亿' },
   { id: 'hi', label: '10 亿 – 50 亿' },
   { id: 'pack', label: '50 亿以上' },
+] as const
+
+const PRICE_PRESETS = [
+  { id: '', label: '价格不限', min: '', max: '' },
+  { id: 'le05', label: '≤ 0.50×', min: '', max: '0.5' },
+  { id: 'le08', label: '≤ 0.80×', min: '', max: '0.8' },
+  { id: 'le10', label: '≤ 1.00×', min: '', max: '1' },
+  { id: 'gt10', label: '> 1.00×', min: '1', max: '' },
 ] as const
 
 async function copy(text: string) {
@@ -140,6 +160,10 @@ async function copy(text: string) {
 }
 
 async function quickOpen(sku: FeedSku) {
+  if (isDemoFeedId(sku.id)) {
+    toast.info('演示商品，仅用于布局预览')
+    return
+  }
   if (sku.kind === 'pack') return
   if (!auth.loggedIn) {
     loginModal.show({ redirect: '/' })
@@ -155,15 +179,37 @@ async function quickOpen(sku: FeedSku) {
       await router.push({ path: '/buyer/keys', query: { listing: sku.listingId } })
       return
     }
-    const name = sku.title.slice(0, 64) || (sku.pool ? '平台保障池' : `卖家挂单 #${sku.listingId}`)
-    const body = sku.poolName
-      ? { name, route: { type: 'default' as const, pool: sku.poolName }, limits: {} }
-      : { name, route: { type: 'chain' as const, hops: [{ listing_id: sku.listingId! }] }, limits: {} }
-    const res = await buyer.createKey(body)
+    if (!sku.poolName) throw new Error('保障池信息暂不可用，请刷新后重试')
+
+    // 同一保障池已有可用 Key：复用，避免每次「选用」都新建
+    const existing = findPoolKey(await buyer.keys(), sku.poolName)
+    if (existing) {
+      if (existing.recoverable) {
+        const secret = await buyer.keySecret(existing.id)
+        created.value = {
+          key: secret.key,
+          platform: existing.platform || sku.apiPlatform || '',
+          title: sku.title,
+          reused: true,
+        }
+      } else {
+        toast.info('已有可用 Key，请到买家中心查看')
+        await router.push('/buyer/keys')
+      }
+      return
+    }
+
+    const name = sku.title.slice(0, 64) || '平台保障池'
+    const res = await buyer.createKey({
+      name,
+      route: { type: 'default', pool: sku.poolName },
+      limits: {},
+    })
     created.value = {
       key: res.key,
       platform: res.detail.platform || sku.apiPlatform || '',
       title: sku.title,
+      reused: false,
     }
   } catch (e) {
     toast.error(e instanceof Error ? e.message : '开通失败')
@@ -280,17 +326,49 @@ function providerOn(p: { label: string; plat?: string; q?: string }) {
   return false
 }
 
-function toggleProvider(p: { label: string; plat?: string; q?: string }) {
-  if (providerOn(p) && (p.plat || p.q)) {
+const modelTypeValue = computed(() => {
+  for (const t of MODEL_TYPES) {
+    if (modelTypeOn(t.id)) return t.id
+  }
+  return 'all'
+})
+
+const providerValue = computed(() => {
+  const hit = PROVIDERS.find((p) => providerOn(p))
+  return hit?.label ?? ''
+})
+
+function onProviderSelect(label: string) {
+  if (!label) {
     const query = { ...route.query } as Record<string, string>
     delete query.plat
     delete query.q
     router.replace({ query })
     return
   }
+  const p = PROVIDERS.find((x) => x.label === label)
+  if (!p) return
   if (p.plat) applyAction({ plat: p.plat })
   else if (p.q) applyAction({ q: p.q })
-  else resetFilters()
+  else {
+    const query = { ...route.query } as Record<string, string>
+    delete query.plat
+    delete query.q
+    router.replace({ query })
+  }
+}
+
+const pricePresetValue = computed(() => {
+  const min = state.priceMin
+  const max = state.priceMax
+  const hit = PRICE_PRESETS.find((p) => p.min === min && p.max === max)
+  return hit?.id ?? ''
+})
+
+function onPricePreset(id: string) {
+  const p = PRICE_PRESETS.find((x) => x.id === id) ?? PRICE_PRESETS[0]
+  state.priceMin = p.min
+  state.priceMax = p.max
 }
 
 function heroSearch() {
@@ -300,19 +378,6 @@ function heroSearch() {
   else delete query.q
   router.push({ path: '/', query })
   document.getElementById('feed')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-const modelOptions = computed(() =>
-  modelChoices.value.map((model) => ({ value: model, text: model })),
-)
-
-function setModel(event: Event) {
-  const model = (event.target as HTMLInputElement | HTMLSelectElement).value.trim()
-  applyModel(model)
-}
-
-function onModelPick(value: string | string[]) {
-  applyModel(typeof value === 'string' ? value.trim() : '')
 }
 
 function applyModel(model: string) {
@@ -371,6 +436,8 @@ function toSku(it: MarketItem): FeedSku {
     inspectionMode: it.inspection_mode,
     qualityChecks: it.quality_checks,
     lastCheckedAt: it.last_checked_at,
+    sellerAvgRating: it.seller_avg_rating,
+    sellerRatingCount: it.seller_rating_count,
   }
 }
 
@@ -403,10 +470,13 @@ function hasCat(s: FeedSku, id: string) {
   return (s.categories ?? []).includes(id)
 }
 
+const demoSkus = buildDemoFeedSkus(42)
+
 const allSkus = computed(() => {
   const listingSkus = (listings.data.value ?? []).map(toSku)
   const poolSkus = (pools.data.value ?? []).filter((p) => p.market_published).map(toPoolSku)
-  return [...poolSkus, ...listingSkus]
+  // 演示商品靠前，方便预览弹性栅格
+  return [...demoSkus, ...poolSkus, ...listingSkus]
 })
 
 const popularBrands = computed(() => {
@@ -663,94 +733,69 @@ watch(
         </section>
 
         <div class="mh-layout">
-          <aside id="market-filters" class="mh-side mh-filters" aria-label="筛选条件">
-            <h2 class="mh-filter-title">筛选条件</h2>
-            <div class="mh-filter-block">
-              <h3>模型类型</h3>
-              <label v-for="t in MODEL_TYPES" :key="t.id" class="mh-check">
-                <input type="checkbox" :checked="modelTypeOn(t.id)" @change="setModelType(t.id)" />
-                <span>{{ t.label }}</span>
-              </label>
-            </div>
-            <div class="mh-filter-block">
-              <h3>模型提供方</h3>
-              <label v-for="p in PROVIDERS" :key="p.label" class="mh-check">
-                <input type="checkbox" :checked="providerOn(p)" @change="toggleProvider(p)" />
-                <span>{{ p.label }}</span>
-              </label>
-            </div>
-            <div class="mh-filter-block">
-              <h3>价格区间</h3>
-              <div class="mh-price-row">
-                <input v-model="state.priceMin" type="number" step="0.01" min="0" placeholder="¥0" aria-label="最低价" />
-                <span>—</span>
-                <input v-model="state.priceMax" type="number" step="0.01" min="0" placeholder="¥1000" aria-label="最高价" />
-              </div>
-              <input
-                class="mh-price-slider"
-                type="range"
-                min="0"
-                max="2"
-                step="0.05"
-                :value="state.priceMax || 1"
-                aria-label="价格滑块"
-                @input="state.priceMax = String(($event.target as HTMLInputElement).value)"
-              />
-            </div>
-            <div class="mh-filter-block">
-              <h3>可用额度</h3>
-              <label v-for="s in STOCK_BUCKETS" :key="s.id || 'any-all'" class="mh-check">
-                <input v-model="state.stock" type="radio" name="stock" :value="s.id" />
-                <span>{{ s.label }}</span>
-              </label>
-            </div>
-            <div class="mh-filter-block">
-              <h3>挂售模型</h3>
-              <input
-                id="f-model"
-                class="sr-only"
-                :value="state.model"
-                list="market-models"
-                aria-hidden="true"
-                tabindex="-1"
-                @change="setModel"
-              />
-              <datalist id="market-models">
-                <option v-for="model in modelChoices" :key="model" :value="model" />
-              </datalist>
-              <SearchSelect
-                id="f-model-select"
-                :model-value="state.model"
-                :options="modelOptions"
-                allow-empty
-                creatable
-                placeholder="搜索或选择模型"
-                @update:model-value="onModelPick"
-              />
-            </div>
-            <button type="button" class="mh-reset" @click="resetFilters">重置</button>
-          </aside>
-
           <section id="feed" class="mh-main" aria-label="商品列表">
-            <div class="mh-toolbar">
-              <div class="mh-tabs" role="tablist">
-                <button type="button" class="mh-tab" :class="{ on: state.feedTab === 'all' }" @click="state.feedTab = 'all'">全部商品</button>
-                <button type="button" class="mh-tab" :class="{ on: state.feedTab === 'hot' }" @click="state.feedTab = 'hot'">热门推荐</button>
-                <button type="button" class="mh-tab" :class="{ on: state.feedTab === 'new' }" @click="state.feedTab = 'new'">最新上架</button>
-              </div>
-              <div class="mh-tools">
-                <span class="mh-count">{{ feedSkus.length }} 个</span>
-                <select v-model="state.sort" class="mh-select" aria-label="排序">
-                  <option value="default">默认排序</option>
-                  <option value="price">价格从低到高</option>
-                  <option value="price_desc">价格从高到低</option>
-                  <option value="success">服务质量优先</option>
-                  <option value="ttft">响应更快</option>
-                </select>
-                <div class="mh-view-toggle" role="group" aria-label="视图">
-                  <button type="button" :class="{ on: viewMode === 'grid' }" aria-label="网格" @click="viewMode = 'grid'">▦</button>
-                  <button type="button" :class="{ on: viewMode === 'list' }" aria-label="列表" @click="viewMode = 'list'">☰</button>
+            <div class="mh-feed-chrome">
+              <div class="mh-toolbar">
+                <div class="mh-tabs" role="tablist">
+                  <button type="button" class="mh-tab" :class="{ on: state.feedTab === 'all' }" @click="state.feedTab = 'all'">全部商品</button>
+                  <button type="button" class="mh-tab" :class="{ on: state.feedTab === 'hot' }" @click="state.feedTab = 'hot'">热门推荐</button>
+                  <button type="button" class="mh-tab" :class="{ on: state.feedTab === 'new' }" @click="state.feedTab = 'new'">最新上架</button>
                 </div>
+                <div class="mh-tools">
+                  <span class="mh-count">{{ feedSkus.length }} 个<span v-if="demoSkus.length" class="mh-demo-tag">含演示 {{ demoSkus.length }}</span></span>
+                  <select v-model="state.sort" class="mh-select mh-select--tool" aria-label="排序">
+                    <option value="default">默认排序</option>
+                    <option value="price">价格从低到高</option>
+                    <option value="price_desc">价格从高到低</option>
+                    <option value="success">服务质量优先</option>
+                    <option value="ttft">响应更快</option>
+                  </select>
+                  <div class="mh-view-toggle" role="group" aria-label="视图">
+                    <button type="button" :class="{ on: viewMode === 'grid' }" aria-label="网格" @click="viewMode = 'grid'">▦</button>
+                    <button type="button" :class="{ on: viewMode === 'list' }" aria-label="列表" @click="viewMode = 'list'">☰</button>
+                  </div>
+                </div>
+              </div>
+
+              <div id="market-filters" class="mh-filterbar" aria-label="筛选条件">
+                <select
+                  class="mh-select mh-select--sm"
+                  aria-label="模型类型"
+                  :value="modelTypeValue"
+                  @change="setModelType(($event.target as HTMLSelectElement).value)"
+                >
+                  <option v-for="t in MODEL_TYPES" :key="t.id" :value="t.id">{{ t.label }}</option>
+                </select>
+                <select
+                  class="mh-select mh-select--sm"
+                  aria-label="模型提供方"
+                  :value="providerValue"
+                  @change="onProviderSelect(($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="">全部提供方</option>
+                  <option v-for="p in PROVIDERS" :key="p.label" :value="p.label">{{ p.label }}</option>
+                </select>
+                <select
+                  class="mh-select mh-select--sm"
+                  aria-label="价格区间"
+                  :value="pricePresetValue"
+                  @change="onPricePreset(($event.target as HTMLSelectElement).value)"
+                >
+                  <option v-for="p in PRICE_PRESETS" :key="p.id || 'any'" :value="p.id">{{ p.label }}</option>
+                </select>
+                <select v-model="state.stock" class="mh-select mh-select--sm" aria-label="可用额度">
+                  <option v-for="s in STOCK_BUCKETS" :key="s.id || 'stock-any'" :value="s.id">{{ s.label }}</option>
+                </select>
+                <select
+                  class="mh-select mh-select--sm mh-select--model"
+                  aria-label="挂售模型"
+                  :value="state.model"
+                  @change="applyModel(($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="">全部模型</option>
+                  <option v-for="m in modelChoices" :key="m" :value="m">{{ m }}</option>
+                </select>
+                <button type="button" class="mh-filter-reset" @click="resetFilters">重置</button>
               </div>
             </div>
 
@@ -797,6 +842,47 @@ watch(
           </ol>
         </div>
 
+        <div class="mh-widget mh-promise">
+          <h3>平台承诺</h3>
+          <ul>
+            <li>
+              <span class="g-ico" aria-hidden="true">卖</span>
+              <div>
+                <strong>万亿流量，包卖 Token</strong>
+                <span>闲置交给闲猫，流量压阵保证出手</span>
+              </div>
+            </li>
+            <li>
+              <span class="g-ico" aria-hidden="true">价</span>
+              <div>
+                <strong>价格裸奔，一分不坑</strong>
+                <span>倍率公开晾晒，用多少扣多少</span>
+              </div>
+            </li>
+            <li>
+              <span class="g-ico" aria-hidden="true">账</span>
+              <div>
+                <strong>资金进保险柜</strong>
+                <span>货款先托管，跑完用量再放行</span>
+              </div>
+            </li>
+            <li>
+              <span class="g-ico" aria-hidden="true">质</span>
+              <div>
+                <strong>质量不过检，分文不收</strong>
+                <span>公开验货，失败免单烂货出局</span>
+              </div>
+            </li>
+            <li>
+              <span class="g-ico" aria-hidden="true">隐</span>
+              <div>
+                <strong>对话内容零留存</strong>
+                <span>聊天不落盘，Key 随时可停用</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+
         <div id="guide" class="mh-widget mh-guide">
           <div class="mh-guide-copy">
             <strong>新手入门指南</strong>
@@ -814,22 +900,43 @@ watch(
             <li>
               <span class="g-ico" aria-hidden="true">保</span>
               <div>
-                <strong>交易保障</strong>
-                <span>订单、用量与结算记录可查询</span>
+                <strong>交易全程可追溯</strong>
+                <span>订单用量结算，一笔都跑不掉</span>
               </div>
             </li>
             <li>
               <span class="g-ico" aria-hidden="true">服</span>
               <div>
-                <strong>服务支持</strong>
-                <span>问题反馈与工单处理入口</span>
+                <strong>工单秒级接住</strong>
+                <span>问题反馈直达，不玩消失</span>
               </div>
             </li>
             <li>
               <span class="g-ico" aria-hidden="true">透</span>
               <div>
-                <strong>用量透明</strong>
-                <span>可查看用量统计与费用记录</span>
+                <strong>用量账单裸奔看</strong>
+                <span>花了多少、扣在哪，随时翻</span>
+              </div>
+            </li>
+            <li>
+              <span class="g-ico" aria-hidden="true">速</span>
+              <div>
+                <strong>开通即用不等待</strong>
+                <span>选用当下发 Key，马上开干</span>
+              </div>
+            </li>
+            <li>
+              <span class="g-ico" aria-hidden="true">退</span>
+              <div>
+                <strong>异常用量可申诉</strong>
+                <span>扣费不对劲，工单打到底</span>
+              </div>
+            </li>
+            <li>
+              <span class="g-ico" aria-hidden="true">稳</span>
+              <div>
+                <strong>通道稳定性盯盘</strong>
+                <span>挂单质量巡检，差的直接下架</span>
               </div>
             </li>
           </ul>
@@ -838,8 +945,14 @@ watch(
       </div>
     </div>
 
-    <ModalDialog :open="!!created" title="Key 已创建" @update:open="(v: boolean) => !v && (created = null)">
-      <p class="text-sm text-emerald-700">「{{ created?.title }}」已开通，可立即调用。</p>
+    <ModalDialog
+      :open="!!created"
+      :title="created?.reused ? '已有可用 Key' : 'Key 已创建'"
+      @update:open="(v: boolean) => !v && (created = null)"
+    >
+      <p class="text-sm text-emerald-700">
+        「{{ created?.title }}」{{ created?.reused ? '沿用现有 Key，可立即调用。' : '已开通，可立即调用。' }}
+      </p>
       <p class="text-sm text-amber-700">稍后也可以在买家中心再次查看和复制这个 Key。</p>
       <div class="flex items-center gap-2">
         <code class="flex-1 break-all rounded-xl border border-black/10 !bg-[#fafafa] !px-3 !py-2 text-sm">{{ created?.key }}</code>

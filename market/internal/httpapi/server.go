@@ -29,6 +29,7 @@ import (
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/platform/ratelimit"
 	"github.com/yx-token/token-market/market/internal/quality"
+	"github.com/yx-token/token-market/market/internal/review"
 	"github.com/yx-token/token-market/market/internal/risk"
 	"github.com/yx-token/token-market/market/internal/scheduling"
 	"github.com/yx-token/token-market/market/internal/settings"
@@ -49,6 +50,7 @@ type Server struct {
 	Payments *merchants.Store
 	Market   *market.Service
 	Quality  *quality.Engine
+	Reviews  *review.Service
 	Replica  *replica.Reader
 	Risk     *risk.Service
 	Kicker   listing.Kicker
@@ -193,6 +195,10 @@ func (s *Server) adminRoutes() []route {
 		{"POST /api/admin/risk-events/{id}/resolve", s.resolveRisk},
 		{"GET /api/admin/ledger", s.platformLedger},
 		{"GET /api/admin/sub2api/status", s.sub2apiStatus},
+		{"GET /api/admin/reviews", s.adminListReviews},
+		{"POST /api/admin/reviews/{id}/hide", s.adminHideReview},
+		{"POST /api/admin/reviews/{id}/unhide", s.adminUnhideReview},
+		{"POST /api/admin/reviews/{id}/delete", s.adminDeleteReview},
 		{"GET /api/admin/audit-logs", s.auditLogs},
 		{"GET /api/admin/org/units", s.listOrgUnits},
 		{"POST /api/admin/org/units", s.createOrgUnit},
@@ -249,6 +255,8 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 		{"GET /api/market/pools", s.marketPools},
 		{"GET /api/market/credit-offers", s.marketCreditOffers},
 		{"GET /api/market/vendors", s.marketVendors},
+		{"GET /api/market/sellers/{id}/rating", s.marketSellerRating},
+		{"GET /api/market/sellers/{id}/reviews", s.marketSellerReviews},
 	}
 	user := []route{
 		{"POST /api/auth/refresh", s.refreshToken},
@@ -285,7 +293,12 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 		{"GET /api/buyer/usage", s.buyerUsage},
 		{"GET /api/buyer/usage/{rid}", s.buyerRequestDetail},
 		{"GET /api/buyer/bills", s.buyerBills},
+		{"GET /api/buyer/reviews", s.myReviews},
+		{"GET /api/buyer/reviews/eligible", s.reviewEligible},
+		{"POST /api/buyer/reviews", s.createReview},
+		{"POST /api/buyer/reviews/{id}/follow-up", s.followUpReview},
 
+		{"GET /api/seller/reviews", s.sellerMyReviews},
 		{"GET /api/seller/vendors", s.marketVendors},
 		{"GET /api/seller/credit-offers", s.sellerCreditOffers},
 		{"POST /api/seller/credit-offers", s.createCreditOffer},

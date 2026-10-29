@@ -22,6 +22,9 @@ export const market = {
   pools: () => http.get<T.PoolItem[] | null>('/api/market/pools'),
   vendors: () => http.get<T.VendorView[] | null>('/api/market/vendors'),
   prices: () => http.get<T.Price[] | null>('/api/market/prices'),
+  sellerRating: (id: number) => http.get<T.SellerRatingStats>(`/api/market/sellers/${id}/rating`),
+  sellerReviews: (id: number, q?: Query) =>
+    http.get<{ stats: T.SellerRatingStats; items: T.ReviewItem[] | null }>(`/api/market/sellers/${id}/reviews`, q),
 }
 
 export const buyer = {
@@ -53,6 +56,16 @@ export const buyer = {
   usage: (q?: Query) => http.get<T.UsageItem[] | null>('/api/buyer/usage', q),
   requestDetail: (rid: string) => http.get<T.AttemptView[] | null>(`/api/buyer/usage/${encodeURIComponent(rid)}`),
   bills: (days = 30) => http.get<T.BillDay[] | null>('/api/buyer/bills', { days }),
+  reviews: () => http.get<T.ReviewItem[] | null>('/api/buyer/reviews'),
+  reviewEligible: (seller_id?: number) =>
+    http.get<T.ReviewEligible | T.ReviewEligible[] | null>(
+      '/api/buyer/reviews/eligible',
+      seller_id ? { seller_id } : undefined,
+    ),
+  createReview: (body: { seller_id: number; listing_id?: number; rating: number; content?: string; tags?: string[] }) =>
+    http.post<T.ReviewItem>('/api/buyer/reviews', body),
+  followUpReview: (id: number, body: { content: string; tags?: string[] }) =>
+    http.post<T.ReviewItem>(`/api/buyer/reviews/${id}/follow-up`, body),
 }
 
 export const seller = {
@@ -125,6 +138,8 @@ export const seller = {
   redeemResetCredit: (id: number, request_id: string, expected_available: number) =>
     http.post<T.ResetCreditEvent>(`/api/seller/upstreams/${id}/reset-credits/redeem`, { request_id, expected_available }, 120000),
   setAutoReset: (id: number, body: T.AutoResetInput) => http.put<T.Upstream>(`/api/seller/upstreams/${id}/auto-reset`, body),
+  reviews: (q?: Query) =>
+    http.get<{ stats: T.SellerRatingStats; items: T.ReviewItem[] | null }>('/api/seller/reviews', q),
 }
 
 export const admin = {
@@ -219,6 +234,11 @@ export const admin = {
   ledger: () => http.get<T.PlatformLedger>('/api/admin/ledger'),
   sub2apiStatus: () => http.get<T.Sub2APIStatus>('/api/admin/sub2api/status'),
   auditLogs: (q?: Query) => http.get<T.AuditLog[] | null>('/api/admin/audit-logs', q),
+  reviews: (q?: Query) =>
+    http.get<{ items: T.ReviewItem[] | null; total: number }>('/api/admin/reviews', q),
+  hideReview: (id: number, reason = '') => http.post<{ status: string }>(`/api/admin/reviews/${id}/hide`, { reason }),
+  unhideReview: (id: number) => http.post<{ status: string }>(`/api/admin/reviews/${id}/unhide`),
+  deleteReview: (id: number, reason = '') => http.post<{ status: string }>(`/api/admin/reviews/${id}/delete`, { reason }),
   orgUnits: () => http.get<T.OrgUnit[] | null>('/api/admin/org/units'),
   createOrgUnit: (body: Record<string, unknown>) => http.post<T.OrgUnit>('/api/admin/org/units', body),
   updateOrgUnit: (id: number, body: Record<string, unknown>) => http.put<T.OrgUnit>(`/api/admin/org/units/${id}`, body),
