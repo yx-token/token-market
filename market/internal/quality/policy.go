@@ -3,9 +3,11 @@
 package quality
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -148,8 +150,8 @@ func legacyPolicyFlows(p *Policy) PolicyFlows {
 
 // backfillDegradation 给没有降智配置的旧调用方补一份继承自测智的配置，口径与 0033 迁移一致：
 // 迁移时同样复制模型、周期与触发类型，避免线上已有的限定型号降智题因新流程没有模型而静默停跑。
-func (f *PolicyFlows) backfillDegradation() {
-	if f.Degradation.IntervalMinutes != 0 {
+func (f *PolicyFlows) backfillDegradation(configured bool) {
+	if configured || f.Degradation.IntervalMinutes != 0 {
 		return
 	}
 	f.Degradation = IntelligenceFlowPolicy{
@@ -163,6 +165,37 @@ func (f *PolicyFlows) backfillDegradation() {
 		Models: append([]IntelligenceModel{}, f.Intelligence.Models...),
 	}
 }
+
+type policyFlowPresence struct {
+	intelligence bool
+	degradation  bool
+	identity     bool
+}
+
+func (p policyFlowPresence) any() bool { return p.intelligence || p.degradation || p.identity }
+
+func decodePolicyFlows(raw []byte, flows *PolicyFlows) (policyFlowPresence, error) {
+	if err := json.Unmarshal(raw, flows); err != nil {
+		return policyFlowPresence{}, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return policyFlowPresence{}, err
+	}
+	var presence policyFlowPresence
+	_, presence.intelligence = fields["intelligence"]
+	_, presence.degradation = fields["degradation"]
+	_, presence.identity = fields["identity"]
+	return presence, nil
+}
+
+// minIntervalMinutes 是三条流程中最短的检测周期。
+func (f PolicyFlows) minIntervalMinutes() int {
+	return min(f.Intelligence.IntervalMinutes, f.Degradation.IntervalMinutes, f.Identity.IntervalMinutes)
+}
+
+// maxJitterMinutes 是随机抖动的上限，与 engine.go scheduleDue 的钳位口径一致：抖动不超过流程周期的一半。
+func (f PolicyFlows) maxJitterMinutes() int { return f.minIntervalMinutes() / 2 }
 
 func (f *PolicyFlows) normalize(thirdParty []ThirdPartyCheck) error {
 	for _, flow := range []*FlowPolicy{&f.Intelligence.FlowPolicy, &f.Degradation.FlowPolicy, &f.Identity.FlowPolicy} {
@@ -221,10 +254,11 @@ func (f *PolicyFlows) normalize(thirdParty []ThirdPartyCheck) error {
 	return nil
 }
 
-// ThirdPartyCheck 是策略中的一项第三方检测：在哪些检测类型中执行，以及检测站的结论如何折算成平台的判定。
+// ThirdPartyCheck 是策略中的一项第三方检测站及其处置规则；触发类型由身份核验流程统一配置。
 type ThirdPartyCheck struct {
-	Provider string   `json:"provider"`
-	Triggers []string `json:"triggers"`         // onboarding / scheduled / recovery / seller_manual / admin / adaptive / appeal
+	Provider string `json:"provider"`
+	// 已废弃：仅用于兼容旧配置解析，不再参与执行；执行触发类型以 Flows.Identity.Triggers 为准。
+	Triggers []string `json:"triggers"`
 	Model    string   `json:"model,omitempty"`  // 为空时使用本次内部探测的模型
 	Format   string   `json:"format,omitempty"` // openai / anthropic，为空时按平台推断
 	// 身份不一致（其他家族或伪装）与仅具体型号不一致时的处置：degraded / suspected / ignore
@@ -232,7 +266,7 @@ type ThirdPartyCheck struct {
 	OnSubmodelMismatch string `json:"on_submodel_mismatch"`
 }
 
-// Applies 判断该检测项是否在某种检测类型中执行。
+// Applies 仅供 legacy 策略把检测站触发类型聚合到身份核验流程。
 func (c ThirdPartyCheck) Applies(trigger string) bool {
 	for _, t := range c.Triggers {
 		if t == trigger {
@@ -303,35 +337,44 @@ const policyColumns = `id, platform, auth_type, enabled, scheduled_enabled, inte
 	daily_budget_usd::float8, thresholds, auto_pause, default_grade, third_party, version, updated_at, item_parallelism, full_triggers, token_budgets, flows`
 
 func scanPolicy(row pgx.Row) (*Policy, error) {
+	p, _, err := scanPolicyRow(row)
+	if err != nil {
+		return nil, err
+	}
+	// 读取侧保留历史无效数据的安全兜底；更新走 scanPolicyRow，按流程键判断并拒绝显式 0，不再持久化这份兜底。
+	if p.Flows.Intelligence.IntervalMinutes == 0 && p.Flows.Degradation.IntervalMinutes == 0 && p.Flows.Identity.IntervalMinutes == 0 {
+		p.Flows = legacyPolicyFlows(p)
+	} else {
+		p.Flows.backfillDegradation(false)
+	}
+	return p, nil
+}
+
+func scanPolicyRow(row pgx.Row) (*Policy, policyFlowPresence, error) {
 	var p Policy
 	var th, tp, budgets, flows []byte
 	if err := row.Scan(&p.ID, &p.Platform, &p.AuthType, &p.Enabled, &p.ScheduledEnabled, &p.IntervalMinutes, &p.JitterMinutes,
 		&p.Suites, &p.Models, &p.DailyBudgetUSD, &th, &p.AutoPause, &p.DefaultGrade, &tp,
 		&p.Version, &p.UpdatedAt, &p.ItemParallelism, &p.FullTriggers, &budgets, &flows); err != nil {
-		return nil, err
+		return nil, policyFlowPresence{}, err
 	}
 	if err := json.Unmarshal(th, &p.Thresholds); err != nil {
-		return nil, err
+		return nil, policyFlowPresence{}, err
 	}
 	if err := json.Unmarshal(tp, &p.ThirdParty); err != nil {
-		return nil, err
+		return nil, policyFlowPresence{}, err
 	}
 	if err := json.Unmarshal(budgets, &p.TokenBudgets); err != nil {
-		return nil, err
+		return nil, policyFlowPresence{}, err
 	}
 	if p.ThirdParty == nil {
 		p.ThirdParty = []ThirdPartyCheck{}
 	}
-	if err := json.Unmarshal(flows, &p.Flows); err != nil {
-		return nil, err
+	presence, err := decodePolicyFlows(flows, &p.Flows)
+	if err != nil {
+		return nil, policyFlowPresence{}, err
 	}
-	// 兼容尚未填流程的旧调用方；迁移已为存量策略写入完整配置。
-	if p.Flows.Intelligence.IntervalMinutes == 0 && p.Flows.Degradation.IntervalMinutes == 0 && p.Flows.Identity.IntervalMinutes == 0 {
-		p.Flows = legacyPolicyFlows(&p)
-	} else {
-		p.Flows.backfillDegradation()
-	}
-	return &p, nil
+	return &p, presence, nil
 }
 
 func ListPolicies(ctx context.Context, db DB) ([]Policy, error) {
@@ -403,6 +446,27 @@ type PolicyInput struct {
 	AutoPause        *bool                   `json:"auto_pause"`
 	DefaultGrade     *string                 `json:"default_grade"`
 	ThirdParty       *[]ThirdPartyCheck      `json:"third_party"`
+
+	degradationConfigured bool
+}
+
+func (in *PolicyInput) UnmarshalJSON(raw []byte) error {
+	type input PolicyInput
+	var decoded input
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	var fields struct {
+		Flows map[string]json.RawMessage `json:"flows"`
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	*in = PolicyInput(decoded)
+	_, in.degradationConfigured = fields.Flows["degradation"]
+	return nil
 }
 
 // UpsertPolicy 创建或修改策略，修改后版本号加一，worker 在下一轮读取新策略（约 1 分钟内生效）。
@@ -410,11 +474,12 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	if _, err := listing.GetVendor(ctx, db, platform); err != nil {
 		return nil, err
 	}
-	p, err := scanPolicy(db.QueryRow(ctx, "SELECT "+policyColumns+` FROM detection_policies WHERE platform = $1 AND auth_type = ANY($2::text[])
+	p, flowPresence, err := scanPolicyRow(db.QueryRow(ctx, "SELECT "+policyColumns+` FROM detection_policies WHERE platform = $1 AND auth_type = ANY($2::text[])
 		ORDER BY array_position($2::text[], auth_type) LIMIT 1`, platform, listing.AuthTypeEquivalents(platform, authType)))
 	if errors.Is(err, pgx.ErrNoRows) {
 		p = &Policy{Platform: platform, IntervalMinutes: 360, JitterMinutes: 30, Suites: []string{"availability", "latency", "iq"},
 			DailyBudgetUSD: 1, Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1}, AutoPause: true, DefaultGrade: "B"}
+		flowPresence = policyFlowPresence{}
 	} else if err != nil {
 		return nil, err
 	}
@@ -474,14 +539,16 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	if in.TokenBudgets != nil {
 		p.TokenBudgets = *in.TokenBudgets
 	}
-	if p.Flows.Intelligence.IntervalMinutes == 0 && p.Flows.Degradation.IntervalMinutes == 0 && p.Flows.Identity.IntervalMinutes == 0 {
+	// 旧策略须在顶层补丁之后回填，避免顶层新值与实际执行的 flows 分叉。
+	if !flowPresence.any() {
 		p.Flows = legacyPolicyFlows(p)
 	}
 	if in.Flows != nil {
 		p.Flows = *in.Flows
-		// 只带两条流程的旧调用方保存时补一份继承自测智的降智配置，与迁移口径一致。
-		p.Flows.backfillDegradation()
+		flowPresence.degradation = in.degradationConfigured
 	}
+	// 只带两条流程的旧调用方保存时补一份继承自测智的降智配置，与迁移口径一致。
+	p.Flows.backfillDegradation(flowPresence.degradation)
 	if p.ItemParallelism < 1 || p.ItemParallelism > 8 {
 		return nil, httpx.BadRequest("INVALID_PARALLELISM", "题目并发上限须为 1–8")
 	}
@@ -527,8 +594,14 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	switch {
 	case p.ScheduledEnabled && !p.Enabled:
 		return nil, httpx.BadRequest("INVALID_POLICY", "scheduled detection requires detection to be enabled")
-	case p.IntervalMinutes < 10 || p.JitterMinutes < 0 || p.JitterMinutes >= p.IntervalMinutes:
-		return nil, httpx.BadRequest("INVALID_INTERVAL", "interval must be >= 10 minutes and jitter smaller than interval")
+	// 顶层 interval_minutes 是不再展示的历史字段，只需满足库约束（>= 10），不再参与抖动比较。
+	case p.IntervalMinutes < 10:
+		return nil, httpx.BadRequest("INVALID_INTERVAL", "interval must be >= 10 minutes")
+	case p.JitterMinutes < 0:
+		return nil, httpx.BadRequest("INVALID_JITTER", "随机抖动不能为负数")
+	case p.JitterMinutes > p.Flows.maxJitterMinutes():
+		return nil, httpx.BadRequest("INVALID_JITTER", fmt.Sprintf("随机抖动不能超过 %d 分钟：调度时抖动按最短流程周期（%d 分钟）的一半取值，请调小抖动或加长流程周期",
+			p.Flows.maxJitterMinutes(), p.Flows.minIntervalMinutes()))
 	case p.DailyBudgetUSD < 0:
 		return nil, httpx.BadRequest("INVALID_BUDGET", "daily_budget_usd must be >= 0")
 	}
