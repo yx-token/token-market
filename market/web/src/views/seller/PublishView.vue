@@ -482,10 +482,18 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
 
       <template v-if="isOAuth">
         <SellerOAuthPanel v-if="upstream" :upstream-id="upstream.id" :platform="platform" :auth-type="authType" :disabled="busy" @ready="authorized" />
-        <p v-else class="xm-hint">{{ guide?.how || '点击开始授权后，在官方页面登录要接入的订阅账号。' }}</p>
+        <template v-else>
+          <p class="xm-hint">{{ guide?.how || '点击开始授权后，在官方页面登录要接入的订阅账号。' }}</p>
+          <p v-if="guide?.guideURL" class="xm-hint mb-2">
+            <a :href="guide.guideURL" target="_blank" rel="noopener noreferrer" class="link">{{ guide.guideText || '前往官方页面' }}</a>
+          </p>
+        </template>
       </template>
       <template v-else>
         <p class="xm-hint mb-2">{{ guide?.how || '粘贴官方 Coding Plan 订阅 Key，平台会校验窗口用量。' }}</p>
+        <p v-if="guide?.guideURL" class="xm-hint mb-2">
+          <a :href="guide.guideURL" target="_blank" rel="noopener noreferrer" class="link">{{ guide.guideText || '前往官方页面' }}</a>
+        </p>
         <label class="xm-field-label">Coding Plan Key</label>
         <input v-model="apiKey" type="password" class="xm-input" autocomplete="off" />
         <div v-if="withTeam" class="mt-3 grid gap-3 sm:grid-cols-2">
