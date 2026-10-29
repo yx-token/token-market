@@ -52,7 +52,7 @@ const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
 onMounted(async () => {
   packs.load()
   await cfg.ensure()
-  const [, ps] = await Promise.all([keys.load(), loadMerchantListings(), market.pools().catch(() => null)])
+  const [, , ps] = await Promise.all([keys.load(), loadMerchantListings(), market.pools().catch(() => null)])
   pools.value = ps ?? []
   const pre = Number(route.query.listing)
   if (pre) {

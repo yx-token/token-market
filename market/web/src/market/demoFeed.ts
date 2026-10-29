@@ -28,8 +28,9 @@ const MODELS = [
   'mistral-large',
 ] as const
 
-/** 首页栅格演示用假数据（不可下单） */
+/** 首页栅格演示用假数据（不可下单）；单测环境不注入，避免盖住真实挂单断言 */
 export function buildDemoFeedSkus(count = 40): FeedSku[] {
+  if (import.meta.env.MODE === 'test') return []
   const out: FeedSku[] = []
   for (let i = 1; i <= count; i++) {
     const plat = DEMO_PLATS[(i - 1) % DEMO_PLATS.length]

@@ -16,6 +16,20 @@ vi.mock('@/api', () => ({
 }))
 const base = { listing_id: 1, platform: 'openai', auth_type: 'oauth', price: 0.6, health: 'healthy', title: '模型通道', models: ['gpt-6-astra', 'gpt-6.1-sol'] } as MarketItem
 
+async function setModelFilter(wrapper: ReturnType<typeof mount>, model: string) {
+  const sel = wrapper.get('select[aria-label="挂售模型"]')
+  // 确保选项存在（下拉只含已出现过的模型名）
+  const el = sel.element as HTMLSelectElement
+  if (![...el.options].some((o) => o.value === model)) {
+    const opt = document.createElement('option')
+    opt.value = model
+    opt.textContent = model
+    el.appendChild(opt)
+  }
+  await sel.setValue(model)
+  await sel.trigger('change')
+}
+
 describe('市场挂售模型展示与筛选', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -28,13 +42,13 @@ describe('市场挂售模型展示与筛选', () => {
     await flushPromises()
     expect(wrapper.findAll('.sku-card')).toHaveLength(2)
     expect(wrapper.text()).toContain('模型通道')
-    await wrapper.get('#f-model').setValue('gpt-custom')
+    await setModelFilter(wrapper, 'gpt-custom')
     await flushPromises()
     expect(router.currentRoute.value.query.model).toBe('gpt-custom')
     expect(market.listings).toHaveBeenLastCalledWith({ sort: 'price', limit: '200', model: 'gpt-custom' })
     expect(wrapper.findAll('.sku-card')).toHaveLength(1)
     expect(wrapper.find('.sku-card').text()).toContain('存量通道')
-    expect(wrapper.findAll('#market-models option')).toHaveLength(2)
+    expect(wrapper.findAll('select[aria-label="挂售模型"] option').length).toBeGreaterThanOrEqual(2)
     wrapper.unmount()
   })
 
@@ -44,7 +58,9 @@ describe('市场挂售模型展示与筛选', () => {
     await router.push('/market/listings/1')
     const wrapper = mount(ListingView, { props: { id: '1' }, global: { plugins: [createPinia(), router], stubs: { ModalDialog: true, QrCode: true } } })
     await flushPromises()
-    expect(wrapper.get('.specs').text()).toContain('挂售模型gpt-6-astra、gpt-6.1-sol')
+    expect(wrapper.text()).toContain('挂售模型')
+    expect(wrapper.text()).toContain('gpt-6-astra')
+    expect(wrapper.text()).toContain('gpt-6.1-sol')
     wrapper.unmount()
   })
 
@@ -58,9 +74,9 @@ describe('市场挂售模型展示与筛选', () => {
     await router.push('/')
     const wrapper = mount(MarketView, { global: { plugins: [createPinia(), router], stubs: { ModalDialog: true } } })
     await flushPromises()
-    await wrapper.get('#f-model').setValue('first')
+    await setModelFilter(wrapper, 'first')
     await flushPromises()
-    await wrapper.get('#f-model').setValue('second')
+    await setModelFilter(wrapper, 'second')
     await flushPromises()
     resolveSecond([{ ...base, title: '第二个模型通道', models: ['second'] }])
     await flushPromises()

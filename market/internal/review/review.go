@@ -54,13 +54,13 @@ type SellerStats struct {
 }
 
 type Eligible struct {
-	SellerID      int64   `json:"seller_id"`
-	SellerEmail   string  `json:"seller_email,omitempty"`
-	ListingID     *int64  `json:"listing_id,omitempty"`
-	CanReview     bool    `json:"can_review"`
-	CanFollowUp   bool    `json:"can_follow_up"`
-	ExistingID    *int64  `json:"existing_id,omitempty"`
-	ExistingStars *int    `json:"existing_rating,omitempty"`
+	SellerID      int64  `json:"seller_id"`
+	SellerEmail   string `json:"seller_email,omitempty"`
+	ListingID     *int64 `json:"listing_id,omitempty"`
+	CanReview     bool   `json:"can_review"`
+	CanFollowUp   bool   `json:"can_follow_up"`
+	ExistingID    *int64 `json:"existing_id,omitempty"`
+	ExistingStars *int   `json:"existing_rating,omitempty"`
 }
 
 type CreateInput struct {

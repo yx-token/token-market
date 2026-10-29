@@ -348,8 +348,8 @@ function onProviderSelect(label: string) {
   }
   const p = PROVIDERS.find((x) => x.label === label)
   if (!p) return
-  if (p.plat) applyAction({ plat: p.plat })
-  else if (p.q) applyAction({ q: p.q })
+  if ('plat' in p && p.plat) applyAction({ plat: p.plat })
+  else if ('q' in p && p.q) applyAction({ q: p.q })
   else {
     const query = { ...route.query } as Record<string, string>
     delete query.plat
