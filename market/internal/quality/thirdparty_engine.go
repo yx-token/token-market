@@ -48,8 +48,9 @@ func (e *Engine) submitThirdParty(ctx context.Context, run runRow, u *upstreamRo
 		if err != nil {
 			return err
 		}
-		if provider == nil || !provider.enabled {
-			continue
+		timeoutMinutes := 60
+		if provider != nil {
+			timeoutMinutes = provider.timeoutMinutes
 		}
 		model := site.Model
 		if model == "" && len(run.models) > 0 {
@@ -66,7 +67,7 @@ func (e *Engine) submitThirdParty(ctx context.Context, run runRow, u *upstreamRo
 			format = DefaultFormat(u.platform)
 		}
 		var checkID int64
-		err = e.DB.QueryRow(ctx, `INSERT INTO third_party_checks(run_id,upstream_id,provider,model,format,config,deadline) VALUES($1,$2,$3,$4,$5,$6,now()+make_interval(mins=>$7)) ON CONFLICT(run_id,provider) DO UPDATE SET run_id=EXCLUDED.run_id RETURNING id`, run.id, u.id, site.Provider, model, format, mustJSON(site), provider.timeoutMinutes).Scan(&checkID)
+		err = e.DB.QueryRow(ctx, `INSERT INTO third_party_checks(run_id,upstream_id,provider,model,format,config,deadline) VALUES($1,$2,$3,$4,$5,$6,now()+make_interval(mins=>$7)) ON CONFLICT(run_id,provider) DO UPDATE SET run_id=EXCLUDED.run_id RETURNING id`, run.id, u.id, site.Provider, model, format, mustJSON(site), timeoutMinutes).Scan(&checkID)
 		if err != nil {
 			return err
 		}
@@ -159,7 +160,7 @@ func (e *Engine) advanceThirdParty(ctx context.Context) error {
 
 func (e *Engine) failCheck(ctx context.Context, id int64, status, msg string) error {
 	_, err := e.DB.Exec(ctx, `UPDATE third_party_checks SET status = $2, outcome = 'inconclusive', verdict = 'inconclusive', error = $3,
-		finished_at = now() WHERE id = $1`, id, status, truncateStr(msg, 500))
+		finished_at = now() WHERE id = $1 AND status IN ('pending','running')`, id, status, truncateStr(msg, 500))
 	return err
 }
 
@@ -203,11 +204,18 @@ func (e *Engine) submitCheck(ctx context.Context, c tpCheckRow) error {
 		return nil
 	}
 	defer func() { _, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, -c.id) }()
-	var current string
-	if err := conn.QueryRow(ctx, `SELECT status FROM third_party_checks WHERE id=$1`, c.id).Scan(&current); err != nil {
+	var due, expired bool
+	if err := conn.QueryRow(ctx, `SELECT status,attempts,deadline,next_attempt_at<=now(),deadline<=now()
+		FROM third_party_checks WHERE id=$1`, c.id).Scan(&c.status, &c.attempts, &c.deadline, &due, &expired); err != nil {
 		return err
 	}
-	if current != "pending" {
+	if c.status != "pending" {
+		return nil
+	}
+	if expired {
+		return e.failCheck(ctx, c.id, "timeout", "no result before deadline")
+	}
+	if !due {
 		return nil
 	}
 
@@ -218,13 +226,33 @@ func (e *Engine) submitCheck(ctx context.Context, c tpCheckRow) error {
 	if row == nil || !row.enabled {
 		return e.failCheck(ctx, c.id, "skipped", "provider is disabled")
 	}
+	if strings.TrimSpace(c.model) == "" {
+		return e.failCheck(ctx, c.id, "failed", "third-party detection requires a model; configure third_party.model or an upstream model whitelist")
+	}
+	// 不同运行也共享检测站额度，串行检查与提交，防止同时越过每小时上限。
+	if err := conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(1718645352,hashtext($1))`, c.provider).Scan(&claimed); err != nil {
+		return err
+	}
+	if !claimed {
+		return nil
+	}
+	defer func() {
+		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(1718645352,hashtext($1))`, c.provider)
+	}()
 	var recent int
 	if err := e.DB.QueryRow(ctx, `SELECT count(*) FROM third_party_checks WHERE provider = $1 AND submitted_at > now() - interval '1 hour'`,
 		c.provider).Scan(&recent); err != nil {
 		return err
 	}
 	if recent >= row.maxRunsPerHour {
-		_, err := e.DB.Exec(ctx, "UPDATE third_party_checks SET next_attempt_at = now() + interval '1 minute' WHERE id = $1", c.id)
+		_, err := e.DB.Exec(ctx, `UPDATE third_party_checks SET next_attempt_at = now() + interval '1 minute',
+			error = 'provider hourly submission limit reached' WHERE id = $1`, c.id)
+		return err
+	}
+	ctx, cancel := context.WithDeadline(ctx, c.deadline)
+	defer cancel()
+	// 上次提交中断或撤销失败时先回收旧令牌，避免重试覆盖其哈希后无法追踪。
+	if err := e.revokeCheckToken(ctx, c.id); err != nil {
 		return err
 	}
 	base := strings.TrimRight(e.EdgePublicURL, "/")
@@ -256,33 +284,34 @@ func (e *Engine) submitCheck(ctx context.Context, c tpCheckRow) error {
 		return fmt.Errorf("publish edge token: %w", err)
 	}
 	if _, err := e.DB.Exec(ctx, "UPDATE third_party_checks SET token_hash = $2, token_revoked = false WHERE id = $1", c.id, hash); err != nil {
-		return err
+		return errors.Join(err, e.Edge.Delete(context.WithoutCancel(ctx), hash))
 	}
 	// 留出 Edge 收到配置变更通知的时间，避免检测站的第一批请求被当成无效 Key
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(time.Second):
+	if err := e.wait(ctx, time.Second); err != nil {
+		return err
 	}
 	extID, err := prov.Submit(ctx, thirdparty.Target{BaseURL: base + "/v1", APIKey: token, Model: c.model, ClaimedModel: c.model, Format: c.format})
 	if err != nil {
-		_ = e.Edge.Delete(ctx, hash)
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cleanupCancel()
+		cleanupErr := e.revokeCheckToken(cleanupCtx, c.id)
 		var rl *thirdparty.RateLimitedError
 		if errors.As(err, &rl) {
-			_, err := e.DB.Exec(ctx, `UPDATE third_party_checks SET token_revoked = true, next_attempt_at = now() + make_interval(secs => $2)
-				WHERE id = $1`, c.id, rl.RetryAfter.Seconds())
-			return err
+			_, updateErr := e.DB.Exec(cleanupCtx, `UPDATE third_party_checks SET error=$3, next_attempt_at = now() + make_interval(secs => $2)
+				WHERE id = $1`, c.id, max(1, rl.RetryAfter.Seconds()), truncateStr(err.Error(), 500))
+			return errors.Join(cleanupErr, updateErr)
 		}
 		attempts := c.attempts + 1
 		if attempts >= 3 {
-			return errors.Join(err, e.failCheck(ctx, c.id, "failed", err.Error()))
+			_, updateErr := e.DB.Exec(cleanupCtx, `UPDATE third_party_checks SET attempts=$2 WHERE id=$1`, c.id, attempts)
+			return errors.Join(err, cleanupErr, updateErr, e.failCheck(cleanupCtx, c.id, "failed", err.Error()))
 		}
-		_, uerr := e.DB.Exec(ctx, `UPDATE third_party_checks SET token_revoked = true, attempts = $2, error = $3,
+		_, uerr := e.DB.Exec(cleanupCtx, `UPDATE third_party_checks SET attempts = $2, error = $3,
 			next_attempt_at = now() + make_interval(mins => $2) WHERE id = $1`, c.id, attempts, truncateStr(err.Error(), 500))
-		return errors.Join(err, uerr)
+		return errors.Join(err, cleanupErr, uerr)
 	}
 	_, err = e.DB.Exec(ctx, `UPDATE third_party_checks SET status = 'running', external_id = $2, submitted_at = now(), attempts = 0, error = NULL,
-		next_attempt_at = now() + interval '30 seconds' WHERE id = $1`, c.id, extID)
+		next_attempt_at = now() + interval '30 seconds' WHERE id = $1 AND status='pending'`, c.id, extID)
 	return err
 }
 
@@ -294,14 +323,22 @@ func (e *Engine) pollCheck(ctx context.Context, c tpCheckRow) error {
 	if prov == nil || c.externalID == nil {
 		return e.failCheck(ctx, c.id, "failed", "provider is not available")
 	}
+	ctx, cancel := context.WithDeadline(ctx, c.deadline)
+	defer cancel()
 	res, err := prov.Poll(ctx, *c.externalID)
+	var limited *thirdparty.RateLimitedError
 	switch {
 	case errors.Is(err, thirdparty.ErrRunNotFound):
 		return e.failCheck(ctx, c.id, "failed", "the run is no longer available at the provider")
+	case errors.As(err, &limited):
+		_, updateErr := e.DB.Exec(ctx, `UPDATE third_party_checks SET error=$3,
+			next_attempt_at=now()+make_interval(secs=>$2) WHERE id=$1`, c.id, max(1, limited.RetryAfter.Seconds()), truncateStr(err.Error(), 500))
+		return updateErr
 	case err != nil:
 		attempts := c.attempts + 1
 		if attempts >= 30 {
-			return errors.Join(err, e.failCheck(ctx, c.id, "failed", err.Error()))
+			_, updateErr := e.DB.Exec(ctx, `UPDATE third_party_checks SET attempts=$2 WHERE id=$1`, c.id, attempts)
+			return errors.Join(err, updateErr, e.failCheck(ctx, c.id, "failed", err.Error()))
 		}
 		_, uerr := e.DB.Exec(ctx, `UPDATE third_party_checks SET attempts = $2, error = $3, next_attempt_at = now() + interval '30 seconds'
 			WHERE id = $1`, c.id, attempts, truncateStr(err.Error(), 500))
@@ -319,7 +356,24 @@ func (e *Engine) pollCheck(ctx context.Context, c tpCheckRow) error {
 		report = &res.ReportURL
 	}
 	_, err = e.DB.Exec(ctx, `UPDATE third_party_checks SET status = $2, outcome = $3, verdict = $4, summary = $5, report_url = $6,
-		error = NULLIF($7, ''), finished_at = now() WHERE id = $1`, c.id, status, res.Outcome, verdict, mustJSON(res.Summary), report, res.Error)
+		error = NULLIF($7, ''), finished_at = now() WHERE id = $1 AND status='running'`, c.id, status, res.Outcome, verdict, mustJSON(res.Summary), report, res.Error)
+	return err
+}
+
+func (e *Engine) revokeCheckToken(ctx context.Context, id int64) error {
+	var hash *string
+	if err := e.DB.QueryRow(ctx, `SELECT token_hash FROM third_party_checks WHERE id=$1 AND NOT token_revoked`, id).Scan(&hash); errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if hash == nil {
+		return nil
+	}
+	if err := e.Edge.Delete(ctx, *hash); err != nil {
+		return err
+	}
+	_, err := e.DB.Exec(ctx, `UPDATE third_party_checks SET token_revoked=true WHERE id=$1`, id)
 	return err
 }
 
@@ -410,6 +464,9 @@ func (e *Engine) finishRun(ctx context.Context, run runRow, summary []byte) erro
 	})
 	if err != nil {
 		return err
+	}
+	if len(results) == 0 && containsAny(run.flows, "identity") && run.identitySource == "third_party" {
+		results = []tpResult{{Status: "skipped", Outcome: "inconclusive", Verdict: "inconclusive", Error: "no third-party detection providers configured"}}
 	}
 	u, err := e.loadUpstream(ctx, run.upstreamID)
 	if err != nil {

@@ -912,7 +912,7 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, tim
 	return e.conclude(ctx, run, u, p, assessment, nil)
 }
 
-func (e *Engine) failUnobservedRun(ctx context.Context, run runRow, u *upstreamRow, a Assessment) (bool, error) {
+func (e *Engine) failUnobservedRun(ctx context.Context, run runRow, u *upstreamRow, a Assessment, tp ...tpResult) (bool, error) {
 	if !containsAny([]string{"onboarding", "appeal", "recovery"}, run.trigger) || a.Verdict == "unavailable" || a.Verdict == "degraded" {
 		return false, nil
 	}
@@ -929,6 +929,9 @@ func (e *Engine) failUnobservedRun(ctx context.Context, run runRow, u *upstreamR
 		return false, nil
 	}
 	summary := e.buildSummary(run, u, a, "")
+	if len(tp) > 0 {
+		summary["third_party"] = tp
+	}
 	summary["incomplete"] = true
 	return true, e.failRunWithSummary(ctx, run, "目标流程没有有效结论，可稍后重试："+strings.Join(incomplete, "、"), summary)
 }
@@ -983,7 +986,7 @@ func (e *Engine) conclude(ctx context.Context, run runRow, u *upstreamRow, p *Po
 			tpCause = c.Provider
 		}
 	}
-	if incomplete, err := e.failUnobservedRun(ctx, run, u, a); incomplete {
+	if incomplete, err := e.failUnobservedRun(ctx, run, u, a, tp...); incomplete {
 		return err
 	}
 	decision, failedChecks, err := e.finalizeInspection(ctx, run, u, &a)

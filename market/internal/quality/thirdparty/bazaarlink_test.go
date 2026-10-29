@@ -8,10 +8,59 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yx-token/token-market/market/internal/quality/thirdparty"
 	"github.com/yx-token/token-market/market/internal/testutil/fakebazaar"
 )
+
+func TestBazaarLinkFactoryOptionsAndPollRateLimit(t *testing.T) {
+	options := map[string]any{"run_context_check": false, "bias_fingerprint": true, "effort_verification": false, "client_mimicry": "claude-code", "lang": "zh"}
+	factory, ok := thirdparty.Lookup("bazaarlink")
+	if !ok || len(thirdparty.Known()) != 1 || len(factory.Options) != len(options) {
+		t.Fatalf("registered factory mismatch: %+v", factory)
+	}
+	for key := range options {
+		if factory.Options[key] == "" {
+			t.Fatalf("option %q is implemented but not advertised", key)
+		}
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Retry-After", "120")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		for key, want := range map[string]any{"baseUrl": "https://edge.test/v1", "apiKey": "temporary", "modelId": "m", "claimedModel": "m",
+			"upstreamFormat": "openai", "sync": false, "runContextCheck": false, "biasFingerprint": true, "effortVerification": false, "clientMimicry": "claude-code", "lang": "zh"} {
+			if body[key] != want {
+				t.Errorf("request field %s=%v want %v", key, body[key], want)
+			}
+		}
+		_, _ = w.Write([]byte(`{"runId":"option-test"}`))
+	}))
+	t.Cleanup(srv.Close)
+	p, err := thirdparty.New(factory.Name, thirdparty.Config{BaseURL: srv.URL, Options: options}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Name() != factory.Name {
+		t.Fatalf("provider name %q differs from factory %q", p.Name(), factory.Name)
+	}
+	id, err := p.Submit(context.Background(), thirdparty.Target{BaseURL: "https://edge.test/v1", APIKey: "temporary", Model: "m", ClaimedModel: "m", Format: "openai"})
+	if err != nil || id != "option-test" {
+		t.Fatalf("submit: %s %v", id, err)
+	}
+	_, err = p.Poll(context.Background(), id)
+	var limited *thirdparty.RateLimitedError
+	if !errors.As(err, &limited) || limited.RetryAfter != 2*time.Minute {
+		t.Fatalf("poll retry-after not preserved: %v", err)
+	}
+}
 
 // target 是一个按 Anthropic Messages 协议作答的被测端点。
 func target(t *testing.T, answer string) *httptest.Server {
