@@ -105,7 +105,12 @@ func TestSellerProxyOnboarding(t *testing.T) {
 	if upstream.ProxyID == nil || *upstream.ProxyID != proxy.ID {
 		t.Fatalf("selected proxy was not bound: %+v", upstream)
 	}
-	seller.expect(409, "POST", "/api/seller/upstreams", create)
+	// 卖家自有代理可以同时绑定多个账号。
+	var second listing.Upstream
+	seller.must("POST", "/api/seller/upstreams", create, &second)
+	if second.ProxyID == nil || *second.ProxyID != proxy.ID {
+		t.Fatalf("seller proxy must be shareable: %+v", second)
+	}
 	seller.expect(409, "POST", fmt.Sprintf("/api/seller/proxies/%d/disable", proxy.ID), nil)
 	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/start", upstream.ID), nil, nil)
 	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/complete", upstream.ID), map[string]string{"code": "seller-proxy-account"}, &upstream)
@@ -116,12 +121,16 @@ func TestSellerProxyOnboarding(t *testing.T) {
 	if err := e.replica.QueryRow(e.ctx, "SELECT proxy_id FROM accounts WHERE id = $1", upstream.Sub2APIAccountID).Scan(&actualProxyID); err != nil || actualProxyID != *proxy.Sub2APIProxyID {
 		t.Fatalf("sub2api account must use selected proxy: %d, %v", actualProxyID, err)
 	}
+	seller.must("DELETE", fmt.Sprintf("/api/seller/upstreams/%d", second.ID), nil, nil)
 	seller.must("DELETE", fmt.Sprintf("/api/seller/upstreams/%d", upstream.ID), nil, nil)
-	seller.expect(409, "POST", "/api/seller/upstreams", create) // 移除中仍然占用
+	seller.expect(409, "POST", fmt.Sprintf("/api/seller/proxies/%d/disable", proxy.ID), nil) // 移除中仍然占用
 	if err := e.app.Admin.DeleteAccount(e.ctx, *upstream.Sub2APIAccountID); err != nil {
 		t.Fatal(err)
 	}
 	e.schedule()
+	if released, err := e.app.Proxies.Get(e.ctx, proxy.ID); err != nil || released.Status != "available" || released.AssignedUpstreamCount != 0 {
+		t.Fatalf("proxy must be released after its last account is removed: %+v, %v", released, err)
+	}
 	// 移除完成后代理可再次用于 Coding Plan，并下发同一个代理。
 	create["platform"], create["auth_type"] = "kimi", "coding"
 	seller.must("POST", "/api/seller/upstreams", create, &upstream)
@@ -157,15 +166,20 @@ func TestSellerProxyConcurrencyAndPlatformFallback(t *testing.T) {
 	for status := range statuses {
 		counts[status]++
 	}
-	if counts[201] != 1 || counts[409] != 1 {
-		t.Fatalf("exactly one account should claim a proxy: %v", counts)
+	if counts[201] != 2 {
+		t.Fatalf("concurrent accounts should share a seller proxy: %v", counts)
 	}
 	var accounts []listing.Upstream
 	seller.must("GET", "/api/seller/upstreams", nil, &accounts)
-	if len(accounts) != 1 {
-		t.Fatalf("rejected creation must roll back its draft: %+v", accounts)
+	if len(accounts) != 2 {
+		t.Fatalf("both accounts must be created: %+v", accounts)
 	}
-	seller.must("DELETE", fmt.Sprintf("/api/seller/upstreams/%d", accounts[0].ID), nil, nil)
+	if shared, err := e.app.Proxies.Get(e.ctx, proxy.ID); err != nil || shared.AssignedUpstreamCount != 2 {
+		t.Fatalf("shared proxy must list both accounts: %+v, %v", shared, err)
+	}
+	for _, account := range accounts {
+		seller.must("DELETE", fmt.Sprintf("/api/seller/upstreams/%d", account.ID), nil, nil)
+	}
 	admin.must("PUT", "/api/admin/settings", map[string]any{"require_seller_proxy": false}, nil)
 	// 平台没有库存时不能借用卖家自己的空闲代理。
 	seller.expect(503, "POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"})
