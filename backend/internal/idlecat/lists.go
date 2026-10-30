@@ -62,9 +62,17 @@ func (s *Store) ListPools(ctx context.Context) ([]map[string]any, error) {
 func (s *Store) ListProxies(ctx context.Context) ([]map[string]any, error) {
 	return s.queryMaps(ctx, `
 		SELECT p.id, p.name, p.protocol, p.host, p.port, p.status, p.seller_id,
-			COALESCE(u.email, '') AS seller_email
+			COALESCE(u.email, '') AS seller_email, p.username, p.region, p.sub2api_proxy_id,
+			p.created_at, p.connection_report, p.quality_report, p.connection_checked_at, p.quality_checked_at,
+			assigned.ids AS assigned_upstream_ids, assigned.count AS assigned_upstream_count,
+			assigned.first_id AS assigned_upstream_id
 		FROM proxies p
 		LEFT JOIN users u ON u.id = p.seller_id
+		CROSS JOIN LATERAL (
+			SELECT COALESCE(jsonb_agg(up.id ORDER BY up.id), '[]'::jsonb) AS ids,
+				count(*)::int AS count, min(up.id) AS first_id
+			FROM upstreams up WHERE up.proxy_id = p.id AND up.status <> 'removed'
+		) assigned
 		ORDER BY p.id DESC LIMIT 500`)
 }
 

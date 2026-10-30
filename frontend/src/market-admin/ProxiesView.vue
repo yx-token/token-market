@@ -28,11 +28,23 @@ interface ProxyRow {
   sub2api_proxy_id?: number | null
   status: string
   assigned_upstream_id?: number | null
+  assigned_upstream_ids: number[]
+  assigned_upstream_count: number
   created_at?: string
   connection_report?: { success?: boolean; latency_ms?: number; ip_address?: string }
   quality_report?: { score?: number; grade?: string; exit_ip?: string }
   connection_checked_at?: string
   quality_checked_at?: string
+}
+
+function assignedUpstreamIDs(proxy: ProxyRow): number[] {
+  if (proxy.assigned_upstream_ids != null) return proxy.assigned_upstream_ids
+  if (proxy.assigned_upstream_count != null) return []
+  return proxy.assigned_upstream_id ? [proxy.assigned_upstream_id] : []
+}
+
+function assignedUpstreamCount(proxy: ProxyRow): number {
+  return Math.max(proxy.assigned_upstream_count ?? 0, assignedUpstreamIDs(proxy).length)
 }
 
 const STATUS_OPTIONS = [
@@ -158,13 +170,13 @@ const regionFilterOptions = computed(() => {
 const filtered = computed(() => {
   let list = rows.value
   if (queryParams.value.status) list = list.filter((p) => p.status === queryParams.value.status)
-  if (queryParams.value.owner === 'platform') list = list.filter((p) => !p.seller_id)
-  if (queryParams.value.owner === 'seller') list = list.filter((p) => !!p.seller_id)
+  if (queryParams.value.owner === 'platform') list = list.filter((p) => p.seller_id == null)
+  if (queryParams.value.owner === 'seller') list = list.filter((p) => p.seller_id != null)
   if (queryParams.value.seller_id) {
     list = list.filter((p) => String(p.seller_id || '') === queryParams.value.seller_id)
   }
-  if (queryParams.value.bind === 'bound') list = list.filter((p) => !!p.assigned_upstream_id)
-  if (queryParams.value.bind === 'unbound') list = list.filter((p) => !p.assigned_upstream_id)
+  if (queryParams.value.bind === 'bound') list = list.filter((p) => assignedUpstreamCount(p) > 0)
+  if (queryParams.value.bind === 'unbound') list = list.filter((p) => assignedUpstreamCount(p) === 0)
   if (queryParams.value.protocol) list = list.filter((p) => p.protocol === queryParams.value.protocol)
   if (queryParams.value.region) {
     list = list.filter((p) => String(p.region || '').trim() === queryParams.value.region)
@@ -172,7 +184,7 @@ const filtered = computed(() => {
   const kw = queryParams.value.keyword.trim().toLowerCase()
   if (kw) {
     list = list.filter((p) =>
-      [p.id, p.name, p.host, p.region, p.seller_id, p.seller_email, p.protocol, p.assigned_upstream_id]
+      [p.id, p.name, p.host, p.region, p.seller_id, p.seller_email, p.protocol, ...assignedUpstreamIDs(p)]
         .map((v) => String(v ?? '').toLowerCase())
         .some((s) => s.includes(kw)),
     )
@@ -191,8 +203,9 @@ const allStats = computed(() => {
   return {
     total: all.length,
     ready: all.filter((p) => p.status === 'ready').length,
-    seller: all.filter((p) => !!p.seller_id).length,
-    unbound: all.filter((p) => !p.assigned_upstream_id).length,
+    seller: all.filter((p) => p.seller_id != null).length,
+    unbound: all.filter((p) => assignedUpstreamCount(p) === 0).length,
+    accounts: all.reduce((sum, p) => sum + assignedUpstreamCount(p), 0),
   }
 })
 
@@ -237,7 +250,7 @@ function statusTone(s: string) {
 }
 
 function ownerLabel(p: ProxyRow) {
-  if (!p.seller_id) return '平台'
+  if (p.seller_id == null) return '平台'
   return sellerAccount(p.seller_email, p.seller_id)
 }
 
@@ -342,6 +355,7 @@ async function save() {
 
 function toggle(p: ProxyRow) {
   const off = p.status === 'disabled'
+  if (!off && assignedUpstreamCount(p)) return
   return run(`代理 ${p.name} 已${off ? '启用' : '停用'}`, () =>
     marketSend('POST', `${MARKET_API_PREFIX}/proxies/${p.id}/${off ? 'enable' : 'disable'}`),
   )
@@ -376,7 +390,7 @@ onMounted(load)
       <template #title>
         <div class="page-heading">
           <h2 class="y-title">卖家代理</h2>
-          <p class="y-page-desc">管理平台库存与卖家代理；账号独占绑定，移除后释放</p>
+          <p class="y-page-desc">卖家自有代理可绑定多个账号，平台代理按账号独占；全部绑定账号移除完成后释放</p>
         </div>
       </template>
 
@@ -423,6 +437,12 @@ onMounted(load)
               <div>
                 <div class="stat-card__label">未绑定</div>
                 <div class="stat-card__value">{{ allStats.unbound.toLocaleString() }}</div>
+              </div>
+            </article>
+            <article class="stat-card stat-card--blue">
+              <div>
+                <div class="stat-card__label">绑定账号总数</div>
+                <div class="stat-card__value">{{ allStats.accounts.toLocaleString() }}</div>
               </div>
             </article>
           </div>
@@ -542,7 +562,8 @@ onMounted(load)
             </div>
           </template>
           <template #cell-bind="{ row }">
-            {{ row.assigned_upstream_id ? '已绑定上游' : '未绑定' }}
+            <div>{{ assignedUpstreamCount(row) ? `已绑定 ${assignedUpstreamCount(row)} 个账号` : '未绑定' }}</div>
+            <div v-for="upstreamID in assignedUpstreamIDs(row)" :key="upstreamID" class="row-sub">账号 #{{ upstreamID }}</div>
           </template>
           <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
           <template #cell-actions="{ row }">
@@ -575,7 +596,7 @@ onMounted(load)
               <button
                 type="button"
                 class="y-link"
-                :disabled="busy || (!!row.assigned_upstream_id && row.status !== 'disabled')"
+                :disabled="busy || (assignedUpstreamCount(row) > 0 && row.status !== 'disabled')"
                 @click="toggle(row)"
               >
                 {{ row.status === 'disabled' ? '启用' : '停用' }}
@@ -697,7 +718,7 @@ onMounted(load)
 
 .stats-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
 }
 

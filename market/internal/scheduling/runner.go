@@ -377,7 +377,7 @@ func (r *Runner) completeRemoval(ctx context.Context, upstreamID int64) error {
 	if _, err := tx.Exec(ctx, `UPDATE upstreams SET status = 'removed', removed_at = now(), updated_at = now() WHERE id = $1`, upstreamID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE proxies SET status = 'available', assigned_upstream_id = NULL WHERE assigned_upstream_id = $1`, upstreamID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE upstreams SET proxy_id = NULL WHERE id = $1 AND status = 'removed'`, upstreamID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

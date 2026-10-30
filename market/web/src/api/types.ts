@@ -687,7 +687,7 @@ export interface VendorConfig {
 
 export interface Proxy {
   id: number
-  seller_id?: number
+  seller_id?: number | null
   name: string
   protocol: string
   host: string
@@ -697,6 +697,8 @@ export interface Proxy {
   sub2api_proxy_id?: number
   status: string
   assigned_upstream_id?: number
+  assigned_upstream_ids: number[]
+  assigned_upstream_count: number
   created_at: string
   connection_report?: ProxyTestResult
   quality_report?: ProxyQualityResult

@@ -33,12 +33,25 @@ func (s *Store) SetProxyDisabled(ctx context.Context, id int64, disabled bool) e
 	if disabled {
 		status = "disabled"
 	}
-	res, err := s.Market.ExecContext(ctx, `
-		UPDATE proxies SET status = $2 WHERE id = $1 AND assigned_upstream_id IS NULL`, id, status)
+	tx, err := s.Market.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return err
 	}
-	return rowsChanged(res)
+	defer func() { _ = tx.Rollback() }()
+	var lockedID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM proxies WHERE id = $1 FOR UPDATE`, id).Scan(&lockedID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `
+		UPDATE proxies SET status = $2 WHERE id = $1
+		AND NOT EXISTS (SELECT 1 FROM upstreams WHERE proxy_id = proxies.id AND status <> 'removed')`, id, status)
+	if err != nil {
+		return err
+	}
+	if err := rowsChanged(res); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetPoolEnabled 开关默认分组。关闭时同时下架市场发布。

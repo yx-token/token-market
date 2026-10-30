@@ -3,9 +3,11 @@ package listing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
@@ -277,8 +279,8 @@ func (s *Service) bindImportedProxy(ctx context.Context, u *Upstream, in *import
 	if err != nil {
 		return err
 	}
-	if p.Status != "available" || p.AssignedUpstreamID != nil {
-		return httpx.Conflict("PROXY_IN_USE", "proxy is assigned or disabled")
+	if p.Status != "available" && p.Status != "assigned" {
+		return httpx.Conflict("PROXY_IN_USE", "proxy is disabled")
 	}
 	if p, err = proxies.CheckProxy(ctx, &u.SellerID, p.ID, false); err != nil {
 		return err
@@ -295,15 +297,17 @@ func (s *Service) bindImportedProxy(ctx context.Context, u *Upstream, in *import
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	tag, err := tx.Exec(ctx, `UPDATE proxies SET status = 'assigned', assigned_upstream_id = $2
-		WHERE id = $1 AND status = 'available' AND assigned_upstream_id IS NULL`, p.ID, u.ID)
+	var lockedID int64
+	err = tx.QueryRow(ctx, `SELECT id FROM proxies WHERE id = $1 AND seller_id = $2
+		AND status IN ('available', 'assigned') FOR UPDATE`, p.ID, u.SellerID).Scan(&lockedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return httpx.Conflict("PROXY_IN_USE", "proxy is disabled or unavailable")
+	}
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
-		return httpx.Conflict("PROXY_IN_USE", "proxy is assigned or disabled")
-	}
-	if tag, err = tx.Exec(ctx, `UPDATE upstreams SET proxy_id = $2 WHERE id = $1 AND proxy_id IS NULL`, u.ID, p.ID); err != nil {
+	tag, err := tx.Exec(ctx, `UPDATE upstreams SET proxy_id = $2 WHERE id = $1 AND proxy_id IS NULL AND status <> 'removed'`, u.ID, p.ID)
+	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {

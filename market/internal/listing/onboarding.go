@@ -139,8 +139,8 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 		if err != nil {
 			return nil, err
 		}
-		if p.Status != "available" || p.AssignedUpstreamID != nil {
-			return nil, httpx.Conflict("PROXY_IN_USE", "proxy is assigned or disabled")
+		if p.Status != "available" && p.Status != "assigned" {
+			return nil, httpx.Conflict("PROXY_IN_USE", "proxy is disabled")
 		}
 		if p.Sub2APIProxyID == nil {
 			return nil, httpx.Conflict("PROXY_NOT_SYNCED", "synchronize the proxy before selecting it")
@@ -151,16 +151,14 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 		proxyID = p.ID
 	} else if !proxyFromImport {
 		err = tx.QueryRow(ctx, `SELECT id FROM proxies WHERE seller_id IS NULL AND status = 'available'
-			AND assigned_upstream_id IS NULL AND sub2api_proxy_id IS NOT NULL
+			AND NOT EXISTS (SELECT 1 FROM upstreams WHERE proxy_id = proxies.id AND status <> 'removed')
+			AND sub2api_proxy_id IS NOT NULL
 			ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&proxyID)
 	}
 	switch {
 	case proxyFromImport:
 		// 导入账号时再登记、检测并绑定导出文件中的代理。
 	case err == nil:
-		if _, err := tx.Exec(ctx, `UPDATE proxies SET status = 'assigned', assigned_upstream_id = $2 WHERE id = $1`, proxyID, id); err != nil {
-			return nil, err
-		}
 		if _, err := tx.Exec(ctx, `UPDATE upstreams SET proxy_id = $2 WHERE id = $1`, id, proxyID); err != nil {
 			return nil, err
 		}
@@ -892,9 +890,6 @@ func (s *Service) remove(ctx context.Context, u *Upstream) error {
 	next := StatusRemoving
 	if u.Sub2APIAccountID == nil {
 		next = StatusRemoved
-		if _, err := tx.Exec(ctx, `UPDATE proxies SET status = 'available', assigned_upstream_id = NULL WHERE assigned_upstream_id = $1`, u.ID); err != nil {
-			return err
-		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE upstreams SET status = $2, identity_hash = NULL, updated_at = now(),
 		removed_at = CASE WHEN $2 = 'removed' THEN now() ELSE removed_at END WHERE id = $1`, u.ID, next); err != nil {

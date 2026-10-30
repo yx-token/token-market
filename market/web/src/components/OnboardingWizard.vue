@@ -12,6 +12,7 @@ import { authTypeText, isKeyAuthType, label } from '@/utils/labels'
 import { authGuides, takesTeam } from '@/utils/authGuides'
 import { useToast } from '@/stores/toast'
 import { accountImportChoices } from '@/utils/accountImport'
+import { assignedUpstreamCount, canSelectSellerProxy } from '@/utils/proxyBindings'
 
 const props = defineProps<{ vendors: VendorView[]; resume?: Upstream | null }>()
 const emit = defineEmits<{ done: [] }>()
@@ -75,10 +76,10 @@ const proxyID = ref<number | '' | 'import'>('')
 const requireSellerProxy = ref(true)
 const loadingProxies = ref(false)
 const proxyLoadError = ref(false)
-const idleProxies = computed(() => proxies.value.filter((p) => p.status === 'available' && !p.assigned_upstream_id && p.sub2api_proxy_id))
+const selectableProxies = computed(() => proxies.value.filter(canSelectSellerProxy))
 // 只有最近一次连通性检测成功的代理可以选择，后端同样校验。
-const availableProxies = computed(() => idleProxies.value.filter((p) => p.connection_report?.success))
-const untestedCount = computed(() => idleProxies.value.length - availableProxies.value.length)
+const availableProxies = computed(() => selectableProxies.value.filter((p) => p.connection_report?.success))
+const untestedCount = computed(() => selectableProxies.value.length - availableProxies.value.length)
 
 async function loadProxyChoices() {
   loadingProxies.value = true
@@ -206,7 +207,7 @@ async function startVerification() {
 <template>
   <ModalDialog v-model:open="open" title="接入上游" wide>
     <template v-if="step === 'choose'">
-      <p class="text-sm text-ink-500">只接受官方订阅账号（OAuth 授权）与国产 Coding Plan 订阅 key。每个账号独占一个代理 IP，账号凭证由底层网关保管。</p>
+      <p class="text-sm text-ink-500">只接受官方订阅账号（OAuth 授权）与国产 Coding Plan 订阅 key。卖家自有代理可绑定多个账号，平台代理按账号独占，账号凭证由底层网关保管。</p>
       <div v-if="vendors.length === 0" class="callout callout-warn">平台暂未开放任何厂商接入。</div>
       <div>
         <div class="label">厂商</div>
@@ -236,16 +237,16 @@ async function startVerification() {
       <div>
         <label class="label" for="onboarding-proxy">代理 IP{{ requireSellerProxy ? '（必选）' : '（可由平台关联）' }}</label>
         <select id="onboarding-proxy" v-model="proxyID" class="input" :disabled="loadingProxies || proxyLoadError">
-          <option value="">{{ requireSellerProxy ? '请选择连通性检测通过的空闲代理' : '由平台自动关联专用代理' }}</option>
+          <option value="">{{ requireSellerProxy ? '请选择连通性检测通过的代理' : '由平台自动关联专用代理' }}</option>
           <option value="import">使用 sub2api 导入文件中的代理（导入时检测连通性）</option>
-          <option v-for="p in availableProxies" :key="p.id" :value="p.id">{{ p.name }} · {{ proxyAddress(p) }}{{ p.region ? ` · ${p.region}` : '' }}</option>
+          <option v-for="p in availableProxies" :key="p.id" :value="p.id">{{ p.name }} · {{ proxyAddress(p) }}{{ p.region ? ` · ${p.region}` : '' }} · 已绑定 {{ assignedUpstreamCount(p) }} 个账号</option>
         </select>
         <p v-if="loadingProxies" class="hint" role="status">正在加载代理列表…</p>
         <p v-else-if="proxyLoadError" class="hint text-red-600" role="alert">代理列表加载失败，请重试。</p>
         <p v-else-if="proxyID === 'import'" class="hint">接入时只能导入 sub2api 账号：导入前会登记并检测文件中该账号的代理，连通性检测通过才会导入。</p>
-        <p v-else-if="availableProxies.length === 0" class="hint">暂无连通性检测通过的空闲代理，请先添加代理并在列表中检测连接，或使用导入文件中的代理。</p>
-        <p v-else class="hint">仅显示你自己配置、连通性检测通过的空闲代理，绑定后其他账号无法选择。</p>
-        <p v-if="!loadingProxies && !proxyLoadError && untestedCount > 0" class="hint">另有 {{ untestedCount }} 个空闲代理尚未检测或检测未通过，在代理列表检测连接成功后才能选择。</p>
+        <p v-else-if="availableProxies.length === 0" class="hint">暂无连通性检测通过的代理，请先添加代理并在列表中检测连接，或使用导入文件中的代理。</p>
+        <p v-else class="hint">仅显示你自己配置、已同步且连通性检测通过的代理，同一代理可绑定多个账号。</p>
+        <p v-if="!loadingProxies && !proxyLoadError && untestedCount > 0" class="hint">另有 {{ untestedCount }} 个代理尚未检测或检测未通过，在代理列表检测连接成功后才能选择。</p>
         <div class="mt-2 flex items-center gap-3 text-sm">
           <RouterLink to="/seller/proxies" class="link" @click="open = false">配置代理 IP 列表</RouterLink>
           <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="loadingProxies || busy" @click="loadProxyChoices">刷新列表</button>

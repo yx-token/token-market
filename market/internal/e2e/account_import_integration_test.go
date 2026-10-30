@@ -224,7 +224,7 @@ func TestAccountImportWithExportedProxy(t *testing.T) {
 		t.Fatalf("sub2api account must use the imported proxy: %d", accountProxyID)
 	}
 
-	// 同一卖家已登记的地址直接复用并重新检测；已绑定其他账号的代理不能再用。
+	// 同一卖家已登记的地址直接复用并重新检测；已绑定其他账号的代理也可以共用。
 	var own listing.Proxy
 	seller.must("POST", "/api/seller/proxies", listing.CreateProxyInput{Name: "own", Protocol: "socks5", Host: "203.0.113.60", Port: 1080, Username: "user", Password: secret}, &own)
 	reuse := create("anthropic", "oauth")
@@ -232,8 +232,14 @@ func TestAccountImportWithExportedProxy(t *testing.T) {
 	if reuse.ProxyID == nil || *reuse.ProxyID != own.ID {
 		t.Fatalf("registered seller proxy must be reused: %+v", reuse)
 	}
-	busy := create("anthropic", "oauth")
-	expectCode(409, "PROXY_IN_USE", busy, file("busy-token", "203.0.113.50", exported("203.0.113.50")))
+	shared := create("anthropic", "oauth")
+	seller.must("POST", importPath(shared), file("shared-token", "203.0.113.50", exported("203.0.113.50")), &shared)
+	if shared.ProxyID == nil || *shared.ProxyID != proxy.ID {
+		t.Fatalf("bound seller proxy must be shareable on import: %+v", shared)
+	}
+	if proxy, err = e.app.Proxies.Get(e.ctx, proxy.ID); err != nil || proxy.AssignedUpstreamCount != 2 {
+		t.Fatalf("shared proxy must list both accounts: %+v, %v", proxy, err)
+	}
 	var count int
 	mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT count(*) FROM proxies WHERE seller_id = $1", u.SellerID), &count)
 	if count != 3 {

@@ -18,23 +18,25 @@ import (
 )
 
 type Proxy struct {
-	ID                  int64                           `json:"id"`
-	SellerID            *int64                          `json:"seller_id,omitempty"`
-	SellerEmail         string                          `json:"seller_email,omitempty"`
-	Name                string                          `json:"name"`
-	Protocol            string                          `json:"protocol"`
-	Host                string                          `json:"host"`
-	Port                int                             `json:"port"`
-	Username            *string                         `json:"username,omitempty"`
-	Region              *string                         `json:"region,omitempty"`
-	Sub2APIProxyID      *int64                          `json:"sub2api_proxy_id,omitempty"`
-	Status              string                          `json:"status"`
-	AssignedUpstreamID  *int64                          `json:"assigned_upstream_id,omitempty"`
-	CreatedAt           time.Time                       `json:"created_at"`
-	ConnectionReport    *adminclient.ProxyTestResult    `json:"connection_report,omitempty"`
-	QualityReport       *adminclient.ProxyQualityResult `json:"quality_report,omitempty"`
-	ConnectionCheckedAt *time.Time                      `json:"connection_checked_at,omitempty"`
-	QualityCheckedAt    *time.Time                      `json:"quality_checked_at,omitempty"`
+	ID                    int64                           `json:"id"`
+	SellerID              *int64                          `json:"seller_id,omitempty"`
+	SellerEmail           string                          `json:"seller_email,omitempty"`
+	Name                  string                          `json:"name"`
+	Protocol              string                          `json:"protocol"`
+	Host                  string                          `json:"host"`
+	Port                  int                             `json:"port"`
+	Username              *string                         `json:"username,omitempty"`
+	Region                *string                         `json:"region,omitempty"`
+	Sub2APIProxyID        *int64                          `json:"sub2api_proxy_id,omitempty"`
+	Status                string                          `json:"status"`
+	AssignedUpstreamID    *int64                          `json:"assigned_upstream_id,omitempty"`
+	AssignedUpstreamIDs   []int64                         `json:"assigned_upstream_ids"`
+	AssignedUpstreamCount int                             `json:"assigned_upstream_count"`
+	CreatedAt             time.Time                       `json:"created_at"`
+	ConnectionReport      *adminclient.ProxyTestResult    `json:"connection_report,omitempty"`
+	QualityReport         *adminclient.ProxyQualityResult `json:"quality_report,omitempty"`
+	ConnectionCheckedAt   *time.Time                      `json:"connection_checked_at,omitempty"`
+	QualityCheckedAt      *time.Time                      `json:"quality_checked_at,omitempty"`
 }
 
 type CreateProxyInput struct {
@@ -47,14 +49,23 @@ type CreateProxyInput struct {
 	Region   string `json:"region"`
 }
 
-const proxyColumns = `id, seller_id, name, protocol, host, port, username, region, sub2api_proxy_id, status, assigned_upstream_id, created_at, connection_report, quality_report, connection_checked_at, quality_checked_at`
+const proxyColumns = `id, seller_id, name, protocol, host, port, username, region, sub2api_proxy_id, status,
+	ARRAY(SELECT up.id FROM upstreams up WHERE up.proxy_id = proxies.id AND up.status <> 'removed' ORDER BY up.id),
+	created_at, connection_report, quality_report, connection_checked_at, quality_checked_at`
 
 func scanProxy(row pgx.Row) (*Proxy, error) {
 	var p Proxy
 	var connection, quality []byte
-	err := row.Scan(&p.ID, &p.SellerID, &p.Name, &p.Protocol, &p.Host, &p.Port, &p.Username, &p.Region, &p.Sub2APIProxyID, &p.Status, &p.AssignedUpstreamID, &p.CreatedAt, &connection, &quality, &p.ConnectionCheckedAt, &p.QualityCheckedAt)
+	err := row.Scan(&p.ID, &p.SellerID, &p.Name, &p.Protocol, &p.Host, &p.Port, &p.Username, &p.Region, &p.Sub2APIProxyID, &p.Status, &p.AssignedUpstreamIDs, &p.CreatedAt, &connection, &quality, &p.ConnectionCheckedAt, &p.QualityCheckedAt)
 	if err != nil {
 		return nil, err
+	}
+	if p.AssignedUpstreamIDs == nil {
+		p.AssignedUpstreamIDs = []int64{}
+	}
+	p.AssignedUpstreamCount = len(p.AssignedUpstreamIDs)
+	if p.AssignedUpstreamCount > 0 {
+		p.AssignedUpstreamID = &p.AssignedUpstreamIDs[0]
 	}
 	if len(connection) > 0 {
 		if err := json.Unmarshal(connection, &p.ConnectionReport); err != nil {
@@ -71,7 +82,10 @@ func scanProxy(row pgx.Row) (*Proxy, error) {
 
 // ProxyService 管理平台和卖家代理库存，并同步到 sub2api。
 type ProxyService struct {
-	DB      DB
+	DB interface {
+		DB
+		Begin(context.Context) (pgx.Tx, error)
+	}
 	Admin   *adminclient.Client
 	Keyring *crypto.Keyring
 }
@@ -211,10 +225,7 @@ func (s *ProxyService) SyncSeller(ctx context.Context, sellerID, id int64) (*Pro
 }
 
 func (s *ProxyService) SetSellerDisabled(ctx context.Context, sellerID, id int64, disabled bool) (*Proxy, error) {
-	if _, err := s.GetSeller(ctx, sellerID, id); err != nil {
-		return nil, err
-	}
-	return s.SetDisabled(ctx, id, disabled)
+	return s.setDisabled(ctx, &sellerID, id, disabled)
 }
 
 // Sync 把尚未同步的代理创建到 sub2api（幂等）。
@@ -263,27 +274,65 @@ func (s *ProxyService) sync(ctx context.Context, id int64, password string) erro
 
 // SetDisabled 停用或启用一个未分配的代理。
 func (s *ProxyService) SetDisabled(ctx context.Context, id int64, disabled bool) (*Proxy, error) {
+	return s.setDisabled(ctx, nil, id, disabled)
+}
+
+func (s *ProxyService) lock(ctx context.Context, sellerID *int64, id int64) (pgx.Tx, *Proxy, error) {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	var lockedID int64
+	err = tx.QueryRow(ctx, `SELECT id FROM proxies WHERE id = $1 AND ($2::bigint IS NULL OR seller_id = $2) FOR UPDATE`, id, sellerID).Scan(&lockedID)
+	if err == nil {
+		var p *Proxy
+		p, err = scanProxy(tx.QueryRow(ctx, "SELECT "+proxyColumns+" FROM proxies WHERE id = $1", id))
+		if err == nil {
+			return tx, p, nil
+		}
+	}
+	_ = tx.Rollback(context.WithoutCancel(ctx))
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = httpx.NotFound("PROXY_NOT_FOUND", "proxy not found")
+	}
+	return nil, nil, err
+}
+
+func (s *ProxyService) setDisabled(ctx context.Context, sellerID *int64, id int64, disabled bool) (*Proxy, error) {
+	tx, p, err := s.lock(ctx, sellerID, id)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if p.AssignedUpstreamCount > 0 {
+		return nil, httpx.Conflict("PROXY_IN_USE", "proxy is assigned to an upstream")
+	}
 	status := "available"
 	if disabled {
 		status = "disabled"
 	}
-	tag, err := s.DB.Exec(ctx, `UPDATE proxies SET status = $2 WHERE id = $1 AND assigned_upstream_id IS NULL`, id, status)
+	tag, err := tx.Exec(ctx, `UPDATE proxies SET status = $2 WHERE id = $1
+		AND NOT EXISTS (SELECT 1 FROM upstreams WHERE proxy_id = proxies.id AND status <> 'removed')`, id, status)
 	if err != nil {
 		return nil, err
 	}
 	if tag.RowsAffected() == 0 {
 		return nil, httpx.Conflict("PROXY_IN_USE", "proxy is assigned to an upstream or does not exist")
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
 	return s.Get(ctx, id)
 }
 
 // UpdateSeller 更新卖家未绑定账号的代理（名称/地区/账号密码；改主机端口会清掉 sub2api 同步以便重试）。
 func (s *ProxyService) UpdateSeller(ctx context.Context, sellerID, id int64, in CreateProxyInput) (*Proxy, error) {
-	p, err := s.GetSeller(ctx, sellerID, id)
+	tx, p, err := s.lock(ctx, &sellerID, id)
 	if err != nil {
 		return nil, err
 	}
-	if p.AssignedUpstreamID != nil {
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if p.AssignedUpstreamCount > 0 {
 		return nil, httpx.Conflict("PROXY_IN_USE", "proxy is assigned to an upstream")
 	}
 	in, err = normalizeProxyInput(in)
@@ -306,21 +355,30 @@ func (s *ProxyService) UpdateSeller(ctx context.Context, sellerID, id int64, in 
 		region = in.Region
 	}
 	hostChanged := !strings.EqualFold(p.Host, in.Host) || p.Port != in.Port || p.Protocol != in.Protocol
+	var tag pgconn.CommandTag
 	if in.Password != "" {
-		_, err = s.DB.Exec(ctx, `UPDATE proxies SET name=$2, protocol=$3, host=$4, port=$5, username=$6, region=$7, password_enc=$8,
+		tag, err = tx.Exec(ctx, `UPDATE proxies SET name=$2, protocol=$3, host=$4, port=$5, username=$6, region=$7, password_enc=$8,
 			sub2api_proxy_id = CASE WHEN $9 THEN NULL ELSE sub2api_proxy_id END
-			WHERE id=$1 AND seller_id=$10 AND assigned_upstream_id IS NULL`,
+			WHERE id=$1 AND seller_id=$10
+			AND NOT EXISTS (SELECT 1 FROM upstreams WHERE proxy_id = proxies.id AND status <> 'removed')`,
 			id, in.Name, in.Protocol, in.Host, in.Port, user, region, passEnc, hostChanged, sellerID)
 	} else {
-		_, err = s.DB.Exec(ctx, `UPDATE proxies SET name=$2, protocol=$3, host=$4, port=$5, username=$6, region=$7,
+		tag, err = tx.Exec(ctx, `UPDATE proxies SET name=$2, protocol=$3, host=$4, port=$5, username=$6, region=$7,
 			sub2api_proxy_id = CASE WHEN $8 THEN NULL ELSE sub2api_proxy_id END
-			WHERE id=$1 AND seller_id=$9 AND assigned_upstream_id IS NULL`,
+			WHERE id=$1 AND seller_id=$9
+			AND NOT EXISTS (SELECT 1 FROM upstreams WHERE proxy_id = proxies.id AND status <> 'removed')`,
 			id, in.Name, in.Protocol, in.Host, in.Port, user, region, hostChanged, sellerID)
 	}
 	if err != nil {
 		if isUnique(err) {
 			return nil, httpx.Conflict("PROXY_EXISTS", "proxy address already registered")
 		}
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, httpx.Conflict("PROXY_IN_USE", "proxy is assigned to an upstream or does not exist")
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	out, err := s.Get(ctx, id)
@@ -335,22 +393,27 @@ func (s *ProxyService) UpdateSeller(ctx context.Context, sellerID, id int64, in 
 
 // DeleteSeller 删除卖家未绑定账号的代理，并尽量清理 sub2api 侧记录。
 func (s *ProxyService) DeleteSeller(ctx context.Context, sellerID, id int64) error {
-	p, err := s.GetSeller(ctx, sellerID, id)
+	tx, p, err := s.lock(ctx, &sellerID, id)
 	if err != nil {
 		return err
 	}
-	if p.AssignedUpstreamID != nil {
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if p.AssignedUpstreamCount > 0 {
 		return httpx.Conflict("PROXY_IN_USE", "proxy is assigned to an upstream")
 	}
-	if p.Sub2APIProxyID != nil {
-		_ = s.Admin.DeleteProxy(ctx, *p.Sub2APIProxyID)
-	}
-	tag, err := s.DB.Exec(ctx, `DELETE FROM proxies WHERE id = $1 AND seller_id = $2 AND assigned_upstream_id IS NULL`, id, sellerID)
+	tag, err := tx.Exec(ctx, `DELETE FROM proxies WHERE id = $1 AND seller_id = $2
+		AND NOT EXISTS (SELECT 1 FROM upstreams WHERE proxy_id = proxies.id AND status <> 'removed')`, id, sellerID)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return httpx.Conflict("PROXY_IN_USE", "proxy is assigned to an upstream or does not exist")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if p.Sub2APIProxyID != nil {
+		_ = s.Admin.DeleteProxy(ctx, *p.Sub2APIProxyID)
 	}
 	return nil
 }

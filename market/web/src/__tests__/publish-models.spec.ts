@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { seller } from '@/api'
-import type { Upstream, UpstreamDetail } from '@/api/types'
+import { market, seller } from '@/api'
+import type { MarketConfig, Proxy, Upstream, UpstreamDetail } from '@/api/types'
 import PublishView from '@/views/seller/PublishView.vue'
 
 vi.mock('@/api', () => ({
@@ -28,11 +28,42 @@ async function openPage(path = '/seller/publish') {
 describe('发布向导的模型选择步骤', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(market.config).mockResolvedValue({ require_seller_proxy: false, commission_rate: 0.2 } as MarketConfig)
+    vi.mocked(seller.proxies).mockResolvedValue([])
     vi.mocked(seller.createUpstream).mockResolvedValue({ ...base, status: 'draft' })
     vi.mocked(seller.submitCodingKey).mockResolvedValue(base)
     vi.mocked(seller.upstream).mockResolvedValue({ ...base, status: 'verifying' } as UpstreamDetail)
     vi.mocked(seller.upstreamModels).mockResolvedValue({ catalog: ['glm-5', 'glm-4.7'], whitelist: null, fetched_at: null })
     vi.mocked(seller.setUpstreamModels).mockResolvedValue({ ...base, status: 'verifying' })
+  })
+
+  it('only offers synchronized connected seller proxies, including already assigned ones', async () => {
+    const proxy: Proxy = { id: 1, seller_id: 1, name: 'shared', protocol: 'http', host: 'proxy.test', port: 8080, status: 'assigned', sub2api_proxy_id: 1, created_at: '', assigned_upstream_ids: [71, 72], assigned_upstream_count: 2, connection_report: { success: true, message: 'ok', latency_ms: 1 } }
+    vi.mocked(market.config).mockResolvedValue({ require_seller_proxy: true, commission_rate: 0.2 } as MarketConfig)
+    vi.mocked(seller.proxies).mockResolvedValue([
+      proxy,
+      { ...proxy, id: 2, status: 'available', assigned_upstream_ids: [], assigned_upstream_count: 0 },
+      { ...proxy, id: 3, seller_id: null },
+      { ...proxy, id: 4, seller_id: undefined },
+      { ...proxy, id: 5, status: 'disabled' },
+      { ...proxy, id: 6, sub2api_proxy_id: undefined },
+      { ...proxy, id: 7, connection_report: undefined },
+      { ...proxy, id: 8, connection_report: { success: false, message: 'failed', latency_ms: 0 } },
+      { ...proxy, id: 9, status: 'pending' },
+    ])
+    const wrapper = await openPage()
+    const select = wrapper.get('select.xm-input')
+    expect(select.findAll('option').map((option) => option.attributes('value'))).toEqual(['', '1', '2'])
+    expect(select.get('option[value="1"]').text()).toContain('已绑定 2 个账号')
+    await wrapper.findAll('button').find((button) => button.text() === '下一步')!.trigger('click')
+    expect(wrapper.get('.xm-pub-panel h2').text()).toBe('配置出口代理')
+    await select.setValue('1')
+    await wrapper.findAll('button').find((button) => button.text() === '下一步')!.trigger('click')
+    await wrapper.get('input[type="password"]').setValue('订阅密钥')
+    await wrapper.findAll('button').find((button) => button.text() === '完成接入，选择模型')!.trigger('click')
+    await flushPromises()
+    expect(seller.createUpstream).toHaveBeenCalledWith('zhipu', 'coding', 1)
+    wrapper.unmount()
   })
 
   it('接入完成后选择模型，确认后启动检测轮询', async () => {
