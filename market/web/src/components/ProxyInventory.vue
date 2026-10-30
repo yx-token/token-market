@@ -13,6 +13,7 @@ import RefreshButton from '@/components/RefreshButton.vue'
 import ProxyDiagnosticReport from '@/components/ProxyDiagnosticReport.vue'
 import { options } from '@/utils/labels'
 import { dateTime } from '@/utils/format'
+import { assignedUpstreamCount, assignedUpstreamIDs } from '@/utils/proxyBindings'
 
 const props = defineProps<{ scope: 'seller' | 'admin' }>()
 const isSeller = computed(() => props.scope === 'seller')
@@ -47,9 +48,9 @@ onMounted(proxies.load)
 const filtered = computed(() => {
   let rows = proxies.data.value ?? []
   if (queryParams.status) rows = rows.filter((p) => p.status === queryParams.status)
-  if (!isSeller.value && queryParams.owner === 'platform') rows = rows.filter((p) => !p.seller_id)
-  if (!isSeller.value && queryParams.owner === 'seller') rows = rows.filter((p) => !!p.seller_id)
-  rows = filterByKeyword(rows, queryParams.keyword, ['id', 'name', 'host', 'region', 'seller_id', 'assigned_upstream_id'] as (keyof Proxy)[])
+  if (!isSeller.value && queryParams.owner === 'platform') rows = rows.filter((p) => p.seller_id == null)
+  if (!isSeller.value && queryParams.owner === 'seller') rows = rows.filter((p) => p.seller_id != null)
+  rows = filterByKeyword(rows.map((p) => ({ ...p, assigned_upstream_ids: assignedUpstreamIDs(p) })), queryParams.keyword, ['id', 'name', 'host', 'region', 'seller_id', 'assigned_upstream_ids'])
   return rows
 })
 const { pageNum, pageSize, total, pageRows, resetPage } = useClientPage(filtered)
@@ -76,6 +77,7 @@ function openCreate() {
 }
 
 function openEdit(p: Proxy) {
+  if (assignedUpstreamCount(p)) return
   editing.value = p
   Object.assign(form, {
     name: p.name,
@@ -93,7 +95,7 @@ async function save() {
   if (!valid.value) return
   const body = { ...form, port: Number(form.port) }
   if (editing.value) {
-    if (!isSeller.value) return
+    if (!isSeller.value || assignedUpstreamCount(editing.value)) return
     const saved = await run(() => seller.updateProxy(editing.value!.id, body), '代理已更新')
     if (saved) {
       show.value = false
@@ -112,7 +114,7 @@ async function save() {
 
 async function removeProxy(p: Proxy) {
   if (!isSeller.value) return
-  if (p.assigned_upstream_id) return
+  if (assignedUpstreamCount(p)) return
   if (!confirm(`删除代理「${p.name}」？此操作不可恢复。`)) return
   if (await run(() => seller.deleteProxy(p.id), '已删除')) await proxies.load()
 }
@@ -143,7 +145,7 @@ async function check(p: Proxy, quality: boolean) {
     :is="isSeller ? MarketListPage : ConsoleListPage"
     :id="isSeller ? 'seller-proxies-page' : 'console-proxies-page'"
     :title="isSeller ? '我的代理 IP' : '代理 IP'"
-    :description="isSeller ? '先配置代理列表，接入账号时选择一个空闲代理。每个账号独占一个代理，账号移除完成后释放。' : '管理平台库存与卖家提供的代理。由平台关联时仅分配平台的空闲代理，每个账号独占一个。'"
+    :description="isSeller ? '先配置代理列表，接入账号时选择连接成功的代理。卖家自有代理可绑定多个账号，全部账号移除完成后释放。' : '管理平台库存与卖家提供的代理。卖家自有代理可绑定多个账号，平台代理按账号独占。'"
   >
     <template #actions>
       <RefreshButton :loading="proxies.loading.value" @click="proxies.load()" />
@@ -178,7 +180,7 @@ async function check(p: Proxy, quality: boolean) {
       </div>
     </template>
 
-    <p v-if="isSeller" class="mb-5 text-xs leading-relaxed text-ink-500">请使用固定出口 IP。已绑定的代理需先移除对应账号，再更换代理。</p>
+    <p v-if="isSeller" class="mb-5 text-xs leading-relaxed text-ink-500">请使用固定出口 IP。编辑、停用或删除代理前，需先完成移除全部绑定账号。</p>
     <p v-if="checking" :class="isSeller ? 'callout mb-4' : 'console-notice'" role="status">正在{{ checking.quality ? '检测代理质量，逐项探测 AI 站点，可能需要 1–3 分钟' : '检测连通性和出口地区' }}…</p>
 
     <DataTable class="proxy-table" :columns="columns" :rows="pageRows" :loading="proxies.loading.value" row-key="id" empty="还没有代理 IP，请先添加">
@@ -189,7 +191,7 @@ async function check(p: Proxy, quality: boolean) {
           <div class="mt-1 text-[11px] text-ink-500">#{{ row.id }} · {{ dateTime(row.created_at) }}</div>
         </div>
       </template>
-      <template #cell-owner="{ row }">{{ row.seller_id ? `卖家 #${row.seller_id}` : '平台' }}</template>
+      <template #cell-owner="{ row }">{{ row.seller_id != null ? `卖家 #${row.seller_id}` : '平台' }}</template>
       <template #cell-region="{ row }">
         <div>{{ row.region || '—' }}</div>
         <div class="font-mono text-xs text-ink-500">{{ row.quality_checked_at && (!row.connection_checked_at || row.quality_checked_at > row.connection_checked_at) ? row.quality_report?.exit_ip : row.connection_report?.ip_address }}</div>
@@ -205,8 +207,11 @@ async function check(p: Proxy, quality: boolean) {
       <template #cell-status="{ row }">
         <StatusBadge kind="proxyStatus" :value="row.status" />
         <div class="mt-1.5 text-xs">
-          <RouterLink v-if="row.assigned_upstream_id && isSeller" :to="`/seller/upstreams/${row.assigned_upstream_id}`" class="link">账号 #{{ row.assigned_upstream_id }}</RouterLink>
-          <span v-else class="text-ink-500">{{ row.assigned_upstream_id ? `账号 #${row.assigned_upstream_id}` : '未绑定账号' }}</span>
+          <div class="text-ink-500">{{ assignedUpstreamCount(row) ? `已绑定 ${assignedUpstreamCount(row)} 个账号` : '未绑定账号' }}</div>
+          <div v-for="upstreamID in assignedUpstreamIDs(row)" :key="upstreamID">
+            <RouterLink v-if="isSeller" :to="`/seller/upstreams/${upstreamID}`" class="link">账号 #{{ upstreamID }}</RouterLink>
+            <span v-else class="text-ink-500">账号 #{{ upstreamID }}</span>
+          </div>
         </div>
         <div class="mt-1 text-[11px]" :class="row.sub2api_proxy_id ? 'text-ink-500' : 'text-amber-700'">{{ row.sub2api_proxy_id ? '连接已就绪' : '连接配置待重试' }}</div>
       </template>
@@ -216,10 +221,10 @@ async function check(p: Proxy, quality: boolean) {
           <button type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy || !row.sub2api_proxy_id" @click="check(row, true)">质量检测</button>
           <button v-if="row.connection_report || row.quality_report" type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" @click="viewReport(row)">查看报告</button>
           <button v-if="!row.sub2api_proxy_id" type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy" @click="act(() => api.syncProxy(row.id), '连接配置已就绪')">重试连接</button>
-          <button v-if="isSeller && !row.assigned_upstream_id" type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="busy" @click="openEdit(row)">编辑</button>
-          <button v-if="row.status !== 'disabled'" type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy || !!row.assigned_upstream_id" @click="act(() => api.setProxyDisabled(row.id, true), '已停用')">停用</button>
+          <button v-if="isSeller && !assignedUpstreamCount(row)" type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="busy" @click="openEdit(row)">编辑</button>
+          <button v-if="row.status !== 'disabled'" type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy || assignedUpstreamCount(row) > 0" @click="act(() => api.setProxyDisabled(row.id, true), '已停用')">停用</button>
           <button v-else type="button" :class="isSeller ? 'xm-btn xm-btn-ghost xm-btn-sm' : 'btn-ghost btn-sm'" :disabled="busy" @click="act(() => api.setProxyDisabled(row.id, false), '已启用')">启用</button>
-          <button v-if="isSeller && !row.assigned_upstream_id" type="button" class="xm-btn xm-btn-ghost xm-btn-sm text-red-600" :disabled="busy" @click="removeProxy(row)">删除</button>
+          <button v-if="isSeller && !assignedUpstreamCount(row)" type="button" class="xm-btn xm-btn-ghost xm-btn-sm text-red-600" :disabled="busy" @click="removeProxy(row)">删除</button>
         </div>
       </template>
     </DataTable>

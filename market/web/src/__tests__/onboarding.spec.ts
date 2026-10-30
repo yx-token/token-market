@@ -10,7 +10,7 @@ vi.mock('@/api', () => ({ market: { config: vi.fn() }, seller: { proxies: vi.fn(
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 const connected = { success: true, message: 'ok', latency_ms: 120 }
-const proxy = (id: number, extra: Partial<Proxy> = {}): Proxy => ({ id, name: `proxy-${id}`, protocol: 'socks5', host: '203.0.113.10', port: 1080, status: 'available', sub2api_proxy_id: id, created_at: '', connection_report: connected, ...extra })
+const proxy = (id: number, extra: Partial<Proxy> = {}): Proxy => ({ id, seller_id: 1, name: `proxy-${id}`, protocol: 'socks5', host: '203.0.113.10', port: 1080, status: 'available', sub2api_proxy_id: id, created_at: '', connection_report: connected, assigned_upstream_ids: [], assigned_upstream_count: 0, ...extra })
 const dialog = defineComponent({ template: '<div><slot /><slot name="footer" /></div>' })
 
 async function openWizard(required = true) {
@@ -29,7 +29,7 @@ describe('onboarding proxy selection', () => {
     vi.clearAllMocks()
     vi.mocked(seller.upstreamModels).mockResolvedValue({ catalog: ['claude-sonnet-4-5', 'claude-opus-4-1'], whitelist: null, fetched_at: null })
     vi.mocked(seller.setUpstreamModels).mockResolvedValue({ id: 10, status: 'ready', platform: 'anthropic', auth_type: 'oauth' } as Upstream)
-    vi.mocked(seller.proxies).mockResolvedValue([proxy(1), proxy(2, { status: 'assigned', assigned_upstream_id: 7 }), proxy(3, { status: 'disabled' }), proxy(4, { sub2api_proxy_id: undefined })])
+    vi.mocked(seller.proxies).mockResolvedValue([proxy(1), proxy(2, { status: 'assigned', assigned_upstream_id: 7, assigned_upstream_ids: [7, 8], assigned_upstream_count: 2 }), proxy(3, { status: 'disabled' }), proxy(4, { sub2api_proxy_id: undefined }), proxy(5, { seller_id: null }), proxy(6, { seller_id: undefined }), proxy(7, { status: 'pending' })])
     vi.mocked(seller.createUpstream).mockResolvedValue({ id: 10, platform: 'anthropic', auth_type: 'oauth', proxy_id: 1 } as Awaited<ReturnType<typeof seller.createUpstream>>)
   })
 
@@ -63,17 +63,18 @@ describe('onboarding proxy selection', () => {
     wrapper.unmount()
   })
 
-  it('requires explicit selection and excludes occupied, disabled and pending proxies', async () => {
+  it('requires explicit selection and allows assigned seller proxies but excludes platform, disabled and pending proxies', async () => {
     const wrapper = await openWizard()
     const select = wrapper.get('#onboarding-proxy')
-    expect(select.findAll('option').map((o) => o.attributes('value'))).toEqual(['', 'import', '1'])
+    expect(select.findAll('option').map((o) => o.attributes('value'))).toEqual(['', 'import', '1', '2'])
+    expect(select.get('option[value="2"]').text()).toContain('已绑定 2 个账号')
     const next = wrapper.findAll('button').find((b) => b.text() === '下一步')!
     expect(next.attributes('disabled')).toBeDefined()
-    await select.setValue('1')
+    await select.setValue('2')
     expect(next.attributes('disabled')).toBeUndefined()
     await next.trigger('click')
     await flushPromises()
-    expect(seller.createUpstream).toHaveBeenCalledWith('anthropic', 'oauth', 1)
+    expect(seller.createUpstream).toHaveBeenCalledWith('anthropic', 'oauth', 2)
     expect(wrapper.text()).toContain('上游 #10')
     wrapper.unmount()
   })
@@ -86,7 +87,7 @@ describe('onboarding proxy selection', () => {
     ])
     const wrapper = await openWizard()
     expect(wrapper.get('#onboarding-proxy').findAll('option').map((o) => o.attributes('value'))).toEqual(['', 'import', '3'])
-    expect(wrapper.text()).toContain('另有 2 个空闲代理尚未检测或检测未通过')
+    expect(wrapper.text()).toContain('另有 2 个代理尚未检测或检测未通过')
     wrapper.unmount()
   })
 

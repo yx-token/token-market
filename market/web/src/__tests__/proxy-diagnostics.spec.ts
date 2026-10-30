@@ -11,7 +11,7 @@ vi.mock('@/api', () => ({
   admin: { proxies: vi.fn(), testProxy: vi.fn(), checkProxyQuality: vi.fn() },
 }))
 
-const proxy: Proxy = { id: 1, name: 'test proxy', protocol: 'http', host: 'proxy.test', port: 8080, status: 'available', sub2api_proxy_id: 1, created_at: '' }
+const proxy: Proxy = { id: 1, seller_id: 1, name: 'test proxy', protocol: 'http', host: 'proxy.test', port: 8080, status: 'available', sub2api_proxy_id: 1, created_at: '', assigned_upstream_ids: [], assigned_upstream_count: 0 }
 const checked: Proxy = { ...proxy, region: 'US', quality_checked_at: '2026-10-10T00:00:00Z', quality_report: {
   grade: 'B', score: 80, summary: '部分站点触发人机验证', exit_ip: '203.0.113.25', country: 'United States', base_latency_ms: 100,
   passed_count: 1, failed_count: 0, warn_count: 0, challenge_count: 1, checked_at: 1791590400,
@@ -71,6 +71,40 @@ describe('proxy diagnostics', () => {
     await flushPromises()
     expect(seller.proxies).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('80 分')
+    wrapper.unmount()
+  })
+
+  it.each([
+    { assigned_upstream_ids: [71, 72], assigned_upstream_count: 2 },
+    { assigned_upstream_ids: [], assigned_upstream_count: 2 },
+    { assigned_upstream_ids: [71, 72], assigned_upstream_count: 0 },
+  ])('blocks editing, disabling and deletion while any binding remains: %j', async (bindings) => {
+    vi.mocked(seller.proxies).mockResolvedValue([{ ...proxy, ...bindings }])
+    const wrapper = await inventory('seller')
+    expect(wrapper.text()).toContain('已绑定 2 个账号')
+    expect(wrapper.findAll('button').some((button) => ['编辑', '删除'].includes(button.text()))).toBe(false)
+    expect(wrapper.findAll('button').find((button) => button.text() === '停用')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('a').map((link) => link.text()).filter((text) => text.startsWith('账号 #'))).toEqual(bindings.assigned_upstream_ids.map((id) => `账号 #${id}`))
+    wrapper.unmount()
+  })
+
+  it('ignores a stale legacy binding after all accounts are removed', async () => {
+    vi.mocked(seller.proxies).mockResolvedValue([{ ...proxy, assigned_upstream_id: 71 }])
+    const wrapper = await inventory('seller')
+    expect(wrapper.text()).toContain('未绑定账号')
+    expect(wrapper.text()).not.toContain('账号 #71')
+    expect(wrapper.findAll('button').filter((button) => ['编辑', '删除'].includes(button.text()))).toHaveLength(2)
+    expect(wrapper.findAll('button').find((button) => button.text() === '停用')!.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('finds a proxy by its second account', async () => {
+    vi.mocked(seller.proxies).mockResolvedValue([{ ...proxy, assigned_upstream_ids: [71, 98765], assigned_upstream_count: 2 }])
+    const wrapper = await inventory('seller')
+    await wrapper.get('#proxy-keyword').setValue('98765')
+    expect(wrapper.text()).toContain('test proxy')
+    await wrapper.get('#proxy-keyword').setValue('no-match')
+    expect(wrapper.text()).not.toContain('test proxy')
     wrapper.unmount()
   })
 })

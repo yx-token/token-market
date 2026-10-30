@@ -18,6 +18,7 @@ import MarketDetectionSummary from '@/components/MarketDetectionSummary.vue'
 import ModelWhitelistSelector from '@/components/ModelWhitelistSelector.vue'
 import SellerOAuthPanel from '@/components/SellerOAuthPanel.vue'
 import { privacyBlocksListing, sellerUntested } from '@/components/seller/listingGate'
+import { assignedUpstreamCount, canSelectSellerProxy } from '@/utils/proxyBindings'
 import '@/styles/seller-center.css'
 
 const route = useRoute()
@@ -58,11 +59,7 @@ const quote = ref<Quote | null>(null)
 const listing = ref<Listing | null>(null)
 
 const availableProxies = computed(() =>
-  proxies.value.filter((p) => p.status === 'available' && !p.assigned_upstream_id && p.sub2api_proxy_id),
-)
-/** 已占用代理：有登记但不在空闲列表，避免用户以为「没代理」 */
-const occupiedProxies = computed(() =>
-  proxies.value.filter((p) => p.assigned_upstream_id || p.status === 'assigned'),
+  proxies.value.filter((p) => canSelectSellerProxy(p) && p.connection_report?.success),
 )
 const vendor = computed(() => vendors.value.find((v) => v.platform === platform.value))
 const isOAuth = computed(() => !isKeyAuthType(authType.value))
@@ -146,11 +143,7 @@ async function nextFromProxy() {
     return
   }
   if (requireSellerProxy.value && !proxyID.value) {
-    if (occupiedProxies.value.length && !availableProxies.value.length) {
-      toast.error('现有代理都已绑定账号。新接入请再添加空闲代理；若给已有上游挂单，请选上方「已就绪的上游」')
-    } else {
-      toast.error('请选择空闲代理，或先去「代理 IP」登记')
-    }
+    toast.error('请选择连接成功的卖家自有代理，或先去「代理 IP」登记并检测连接')
     return
   }
   step.value = 1
@@ -396,7 +389,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     <!-- 0 代理 -->
     <section v-if="step === 0" class="xm-pub-panel">
       <h2>配置出口代理</h2>
-      <p class="sub">授权与调用走同一固定代理；每个代理同时只能绑一个账号。</p>
+      <p class="sub">授权与调用走同一固定代理；卖家自有代理可同时绑定多个账号。</p>
 
       <div v-if="readyUpstreams.length" class="mb-4">
         <label class="xm-field-label">或从已就绪的上游继续挂单</label>
@@ -411,29 +404,17 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       <template v-if="!resumeUpstreamID">
         <label class="xm-field-label">选择代理{{ requireSellerProxy ? '（必选）' : '（可由平台关联）' }}</label>
         <select v-model="proxyID" class="xm-input" :disabled="!!upstream">
-          <option value="">{{ requireSellerProxy ? '请选择空闲代理' : '由平台自动关联' }}</option>
+          <option value="">{{ requireSellerProxy ? '请选择连通性检测通过的代理' : '由平台自动关联' }}</option>
           <option v-for="p in availableProxies" :key="p.id" :value="p.id">
-            {{ p.name }} · {{ p.protocol }}://{{ p.host.includes(':') ? `[${p.host}]` : p.host }}:{{ p.port }}{{ p.region ? ` · ${p.region}` : '' }}
+            {{ p.name }} · {{ p.protocol }}://{{ p.host.includes(':') ? `[${p.host}]` : p.host }}:{{ p.port }}{{ p.region ? ` · ${p.region}` : '' }} · 已绑定 {{ assignedUpstreamCount(p) }} 个账号
           </option>
         </select>
-        <p v-if="!availableProxies.length && occupiedProxies.length" class="xm-hint !text-[#b45309]">
-          你有 {{ occupiedProxies.length }} 条代理，但都已分配给账号
-          <template v-for="(p, i) in occupiedProxies" :key="p.id">
-            <template v-if="i">、</template>
-            <RouterLink
-              v-if="p.assigned_upstream_id"
-              :to="`/seller/upstreams/${p.assigned_upstream_id}?from=publish`"
-              class="font-bold underline underline-offset-2"
-            >#{{ p.assigned_upstream_id }}</RouterLink>
-            <span v-else>#?</span>
-          </template>
-          。每个代理同时只能绑一个号——新接入请
-          <RouterLink to="/seller/proxies" class="font-bold underline underline-offset-2">再添加空闲代理</RouterLink>
-          ；若要给已有上游挂单，用上方「已就绪的上游」。
+        <p v-if="availableProxies.length" class="xm-hint">
+          仅显示你自己配置、已同步且连通性检测通过的代理，同一代理可绑定多个账号。平台代理由平台按账号独占关联。
         </p>
         <p v-else class="xm-hint">
-          暂无代理？
-          <RouterLink to="/seller/proxies" class="font-bold underline underline-offset-2">去登记代理 IP</RouterLink>
+          暂无可用代理，请先
+          <RouterLink to="/seller/proxies" class="font-bold underline underline-offset-2">登记代理 IP 并检测连接</RouterLink>
         </p>
       </template>
 
