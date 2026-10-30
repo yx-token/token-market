@@ -18,7 +18,7 @@ func TestSetProxyDisabledLocksBeforeGuardedWrite(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			mock.ExpectBegin()
 			lock := mock.ExpectQuery(regexp.QuoteMeta("SELECT id FROM proxies WHERE id = $1 FOR UPDATE")).WithArgs(int64(17))
 			if outcome == "missing" {
@@ -62,7 +62,7 @@ func TestListProxiesExposesBindingsAndOriginalFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	now := time.Now().UTC().Truncate(time.Second)
 	mock.ExpectQuery(`(?s)SELECT p.id,.*p.username, p.region, p.sub2api_proxy_id,.*p.created_at, p.connection_report, p.quality_report, p.connection_checked_at, p.quality_checked_at,.*assigned.ids AS assigned_upstream_ids, assigned.count AS assigned_upstream_count,.*assigned.first_id AS assigned_upstream_id.*jsonb_agg\(up.id ORDER BY up.id\).*count\(\*\)::int.*min\(up.id\).*up.proxy_id = p.id AND up.status <> 'removed'`).WillReturnRows(
 		sqlmock.NewRows([]string{"id", "region", "username", "sub2api_proxy_id", "assigned_upstream_ids", "assigned_upstream_count", "assigned_upstream_id", "created_at", "connection_report"}).

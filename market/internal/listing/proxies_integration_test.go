@@ -128,7 +128,7 @@ func TestProxyWritesRecheckBindingsAfterLockWait(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer writer.Rollback(context.Background())
+			defer func() { _ = writer.Rollback(context.Background()) }()
 			if _, err := writer.Exec(ctx, `INSERT INTO upstreams(seller_id,platform,auth_type,proxy_id) VALUES($1,'openai','oauth',$2)`, sellerID, proxyID); err != nil {
 				t.Fatal(err)
 			}
