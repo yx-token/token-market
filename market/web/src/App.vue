@@ -6,6 +6,7 @@ import { useLoginModal } from '@/stores/loginModal'
 import ToastHost from '@/components/ToastHost.vue'
 import MarketMasthead from '@/components/MarketMasthead.vue'
 import LoginModal from '@/components/LoginModal.vue'
+import SupportChat from '@/components/SupportChat.vue'
 
 const auth = useAuth()
 const loginModal = useLoginModal()
@@ -148,5 +149,6 @@ function logout() {
       </div>
     </footer>
     <ToastHost />
+    <SupportChat />
   </div>
 </template>

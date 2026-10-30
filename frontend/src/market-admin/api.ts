@@ -27,23 +27,61 @@ function resolvePath(path: string): string {
   return `${MARKET_API_PREFIX}/${path}`
 }
 
-export async function marketSend<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+function mergeAbortSignal(signal: AbortSignal | undefined, timeoutMs: number | undefined): {
+  signal?: AbortSignal
+  cancel: () => void
+} {
+  if ((!timeoutMs || timeoutMs <= 0) && !signal) return { cancel: () => undefined }
+  const ac = new AbortController()
+  const onAbort = () => ac.abort()
+  if (signal) {
+    if (signal.aborted) ac.abort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  if (timeoutMs && timeoutMs > 0) {
+    timer = setTimeout(() => ac.abort(), timeoutMs)
+  }
+  return {
+    signal: ac.signal,
+    cancel: () => {
+      if (timer) clearTimeout(timer)
+      if (signal) signal.removeEventListener('abort', onAbort)
+    },
+  }
+}
+
+export async function marketSend<T = unknown>(
+  method: string,
+  path: string,
+  body?: unknown,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<T> {
   const token = sessionToken()
   if (!token) throw new Error('登录已失效，请重新进入控制台')
   const url = resolvePath(path)
-  const res = await fetch(url, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
-  const payload = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(payload?.error?.message || payload?.message || `请求失败 ${res.status}`)
-  return (payload?.data ?? payload) as T
+  const merged = mergeAbortSignal(opts?.signal, opts?.timeoutMs)
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: merged.signal,
+    })
+    const payload = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(payload?.error?.message || payload?.message || `请求失败 ${res.status}`)
+    return (payload?.data ?? payload) as T
+  } finally {
+    merged.cancel()
+  }
 }
 
-export async function marketGet<T = unknown>(path: string): Promise<T> {
-  return marketSend<T>('GET', path)
+export async function marketGet<T = unknown>(
+  path: string,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<T> {
+  return marketSend<T>('GET', path, undefined, opts)
 }

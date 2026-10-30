@@ -17,6 +17,7 @@ export const consolePathResources: Record<string, string[]> = {
   '/admin/ops/categories': ['console.ops.categories'],
   '/admin/ops/hot-searches': ['console.ops.hot'],
   '/admin/ops/extras': ['console.ops.extras'],
+  '/admin/ops/support': ['console.ops.extras', 'console.govern.users', 'console.duty.overview'],
   '/admin/users': ['console.govern.users'],
   '/admin/payments': ['console.govern.payments'],
   '/admin/settings': ['console.govern.settings'],

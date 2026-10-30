@@ -31,6 +31,7 @@ import (
 	"github.com/yx-token/token-market/market/internal/quality"
 	"github.com/yx-token/token-market/market/internal/review"
 	"github.com/yx-token/token-market/market/internal/risk"
+	"github.com/yx-token/token-market/market/internal/support"
 	"github.com/yx-token/token-market/market/internal/scheduling"
 	"github.com/yx-token/token-market/market/internal/settings"
 	"github.com/yx-token/token-market/market/internal/sub2api/replica"
@@ -51,6 +52,7 @@ type Server struct {
 	Market   *market.Service
 	Quality  *quality.Engine
 	Reviews  *review.Service
+	Support  *support.Service
 	Replica  *replica.Reader
 	Risk     *risk.Service
 	Kicker   listing.Kicker
@@ -199,6 +201,13 @@ func (s *Server) adminRoutes() []route {
 		{"POST /api/admin/reviews/{id}/hide", s.adminHideReview},
 		{"POST /api/admin/reviews/{id}/unhide", s.adminUnhideReview},
 		{"POST /api/admin/reviews/{id}/delete", s.adminDeleteReview},
+		{"GET /api/admin/support/alerts", s.adminSupportAlerts},
+		{"GET /api/admin/support/conversations", s.adminSupportList},
+		{"GET /api/admin/support/conversations/{id}", s.adminSupportGet},
+		{"POST /api/admin/support/conversations/{id}/messages", s.adminSupportPostMessage},
+		{"POST /api/admin/support/conversations/{id}/close", s.adminSupportClose},
+		{"POST /api/admin/support/conversations/{id}/read", s.adminSupportMarkRead},
+		{"POST /api/admin/support/conversations/{id}/typing", s.adminSupportTyping},
 		{"GET /api/admin/audit-logs", s.auditLogs},
 		{"GET /api/admin/org/units", s.listOrgUnits},
 		{"POST /api/admin/org/units", s.createOrgUnit},
@@ -298,6 +307,13 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 		{"POST /api/buyer/reviews", s.createReview},
 		{"POST /api/buyer/reviews/{id}/follow-up", s.followUpReview},
 
+		{"GET /api/support/conversation", s.supportMine},
+		{"GET /api/support/conversation/messages", s.supportPoll},
+		{"POST /api/support/conversation/messages", s.supportPostMessage},
+		{"POST /api/support/conversation/read", s.supportMarkRead},
+		{"POST /api/support/conversation/typing", s.supportTyping},
+		{"POST /api/support/conversation/close", s.supportClose},
+
 		{"GET /api/seller/reviews", s.sellerMyReviews},
 		{"GET /api/seller/vendors", s.marketVendors},
 		{"GET /api/seller/credit-offers", s.sellerCreditOffers},
@@ -390,6 +406,22 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 		if s.EngineProxyURL != "" {
 			if target, err := url.Parse(s.EngineProxyURL); err == nil {
 				proxy := httputil.NewSingleHostReverseProxy(target)
+				// 长轮询（客服 alerts 等）可能挂起数十秒；关闭响应头超时，并避免默认缓冲。
+				proxy.Transport = &http.Transport{
+					Proxy:                 http.ProxyFromEnvironment,
+					ResponseHeaderTimeout: 0,
+					IdleConnTimeout:       90 * time.Second,
+					MaxIdleConns:          100,
+					MaxIdleConnsPerHost:   16,
+					ForceAttemptHTTP2:     true,
+				}
+				proxy.FlushInterval = -1
+				proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+					if r.Context().Err() != nil {
+						return
+					}
+					w.WriteHeader(http.StatusBadGateway)
+				}
 				// 宿主的在线升级 / 回滚会用上游社区版本替换二进制；宿主只能随发布镜像升级（同 sub2api-admin nginx）。
 				engineUpdateDisabled := httpx.Handler(func(http.ResponseWriter, *http.Request) error {
 					return httpx.Forbidden("ENGINE_UPDATE_DISABLED", "online update is disabled; upgrade the engine image")

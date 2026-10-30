@@ -17,6 +17,7 @@ import (
 	"github.com/yx-token/token-market/market/internal/sub2api/compatguard"
 	"github.com/yx-token/token-market/market/internal/sub2api/ops"
 	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
+	"github.com/yx-token/token-market/market/internal/support"
 )
 
 // Run 在持有领导锁后跑兼容守卫、ops 发送、调度、入账与周期 job，直到 ctx 取消。
@@ -120,6 +121,13 @@ func Run(ctx context.Context, a *app.App, cfg *config.Config, log *slog.Logger) 
 			n, err := a.Risk.Detect(ctx)
 			if n > 0 {
 				log.Warn("risk events detected", "count", n)
+			}
+			return err
+		}},
+		{"support.close_idle", time.Minute, func(ctx context.Context) error {
+			n, err := (&support.Service{DB: a.DB}).CloseIdle(ctx)
+			if n > 0 {
+				log.Info("support conversations auto-closed", "count", n)
 			}
 			return err
 		}},

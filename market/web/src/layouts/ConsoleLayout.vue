@@ -83,6 +83,7 @@ const navItems: NavNode[] = [
       { key: 'market-hot', text: '热搜与筛选', to: '/admin/ops/hot-searches', icon: 'search' },
       { key: 'market-categories', text: '市场分类', to: '/admin/ops/categories', icon: 'filter' },
       { key: 'market-extras', text: '货架开关', to: '/admin/ops/extras', icon: 'settings' },
+      { key: 'support', text: '官方客服', to: '/admin/ops/support', icon: 'activity' },
     ],
   },
   {

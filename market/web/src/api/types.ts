@@ -1477,3 +1477,48 @@ export interface ConsoleAccess {
   resource_ids: string[]
   menu_paths: string[]
 }
+
+export interface SupportConversation {
+  id: number
+  user_id: number
+  user_email?: string
+  status: 'open' | 'closed' | string
+  last_message_at: string
+  last_preview: string
+  last_sender: 'user' | 'staff' | 'system' | string
+  user_unread_count: number
+  staff_unread_count: number
+  awaiting_staff_since?: string | null
+  user_last_read_msg_id?: number
+  staff_last_read_msg_id?: number
+  user_typing?: boolean
+  staff_typing?: boolean
+  peer_typing?: boolean
+  overdue?: boolean
+  waiting_minutes?: number
+  created_at: string
+  updated_at: string
+}
+
+export interface SupportMessage {
+  id: number
+  conversation_id: number
+  sender: 'user' | 'staff' | 'system' | string
+  sender_user_id?: number | null
+  body: string
+  created_at: string
+}
+
+export interface SupportConversationBundle {
+  conversation: SupportConversation
+  messages: SupportMessage[]
+}
+
+export interface SupportAlerts {
+  pending_count: number
+  overdue_count: number
+  pending_alert_threshold: number
+  reply_timeout_minutes: number
+  pending_alert_fired: boolean
+  overdue_conversations: SupportConversation[]
+}

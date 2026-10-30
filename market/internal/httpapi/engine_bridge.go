@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,7 +13,11 @@ import (
 )
 
 // ServeAdmin 用现有管理处理函数执行一次请求。引擎进程通过它承接尚未单独重写的闲猫管理接口。
-func ServeAdmin(a *app.App, method, rest, rawQuery string, body []byte, adminID int64) (int, []byte) {
+// ctx 需传入上游 HTTP 请求上下文，便于长轮询在客户端断开时立刻结束。
+func ServeAdmin(a *app.App, ctx context.Context, method, rest, rawQuery string, body []byte, adminID int64) (int, []byte) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s := &Server{
 		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, IAM: a.IAM,
 		Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools, Keys: a.Keys,
@@ -27,7 +32,7 @@ func ServeAdmin(a *app.App, method, rest, rawQuery string, body []byte, adminID 
 	if rawQuery != "" {
 		path += "?" + rawQuery
 	}
-	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	req := httptest.NewRequestWithContext(ctx, method, path, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(httpx.WithUser(req.Context(), auth.Claims{UserID: adminID, IsAdmin: true}))
 	rec := httptest.NewRecorder()

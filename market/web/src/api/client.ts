@@ -74,8 +74,10 @@ export async function request<T>(method: string, path: string, body?: unknown, q
 }
 
 export const http = {
-  get: <T>(path: string, q?: Query, timeoutMs?: number) => request<T>('GET', path, undefined, q, timeoutMs),
-  post: <T>(path: string, body?: unknown, timeoutMs?: number, signal?: AbortSignal) => request<T>('POST', path, body ?? {}, undefined, timeoutMs, signal),
+  get: <T>(path: string, q?: Query, timeoutMs?: number, signal?: AbortSignal) =>
+    request<T>('GET', path, undefined, q, timeoutMs, signal),
+  post: <T>(path: string, body?: unknown, timeoutMs?: number, signal?: AbortSignal) =>
+    request<T>('POST', path, body ?? {}, undefined, timeoutMs, signal),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body ?? {}),
   del: <T>(path: string) => request<T>('DELETE', path),
 }

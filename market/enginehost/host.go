@@ -106,7 +106,7 @@ func ServeAdmin(ctx context.Context, method, rest, rawQuery string, body []byte,
 	if err != nil {
 		return 0, nil, err
 	}
-	status, payload := httpapi.ServeAdmin(m, method, rest, rawQuery, body, adminID)
+	status, payload := httpapi.ServeAdmin(m, ctx, method, rest, rawQuery, body, adminID)
 	return status, payload, nil
 }
 

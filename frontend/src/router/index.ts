@@ -616,6 +616,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '评价管理', titleKey: 'nav.marketReviews' }
       },
       {
+        path: 'support',
+        name: 'MarketAdminSupport',
+        component: () => import('@/market-admin/SupportWorkbench.vue'),
+        meta: { title: '官方客服', titleKey: 'nav.marketSupport' }
+      },
+      {
         path: 'audit',
         name: 'MarketAdminAudit',
         component: () => import('@/market-admin/AuditView.vue'),

@@ -22,6 +22,8 @@
 | 设置 / 热搜 | `settings`, `market-discovery`（读/写均 relay → market `settings.Load`/`Update`、`LoadDiscovery`/`SaveDiscovery`） |
 | 身份 | `identities` |
 | 质检项 | `inspection/checks`（relay） |
+| 评价 | `reviews`（relay） |
+| 官方客服 | `support/alerts`, `support/conversations`, `support/conversations/:id`（relay） |
 
 ## 已删除的别名（勿再用）
 

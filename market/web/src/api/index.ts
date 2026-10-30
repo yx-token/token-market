@@ -68,6 +68,39 @@ export const buyer = {
     http.post<T.ReviewItem>(`/api/buyer/reviews/${id}/follow-up`, body),
 }
 
+export const support = {
+  conversation: () => http.get<T.SupportConversationBundle>('/api/support/conversation'),
+  /** 长轮询同步：有新消息/已读/输入中/未读变化时立刻返回，最多等 wait_ms */
+  sync: (
+    opts: {
+      after_id?: number
+      peer_read?: number
+      peer_typing?: boolean
+      unread?: number
+      status?: string
+      wait_ms?: number
+    } = {},
+    signal?: AbortSignal,
+  ) =>
+    http.get<T.SupportConversationBundle>(
+      '/api/support/conversation/messages',
+      {
+        after_id: opts.after_id ?? 0,
+        peer_read: opts.peer_read ?? 0,
+        peer_typing: opts.peer_typing ? 1 : 0,
+        unread: opts.unread ?? 0,
+        status: opts.status || undefined,
+        wait_ms: opts.wait_ms ?? 0,
+      },
+      (opts.wait_ms ?? 0) > 0 ? (opts.wait_ms ?? 0) + 5000 : undefined,
+      signal,
+    ),
+  send: (body: string) => http.post<T.SupportMessage>('/api/support/conversation/messages', { body }),
+  markRead: () => http.post<{ status: string }>('/api/support/conversation/read'),
+  typing: (typing: boolean) => http.post<{ status: string }>('/api/support/conversation/typing', { typing }),
+  close: () => http.post<{ status: string }>('/api/support/conversation/close'),
+}
+
 export const seller = {
   upstreamModels: (id: number) => http.get<T.UpstreamModels>(`/api/seller/upstreams/${id}/models`),
   refreshUpstreamModels: (id: number) => http.post<T.UpstreamModels>(`/api/seller/upstreams/${id}/models/refresh`, {}, 30000),
