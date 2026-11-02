@@ -100,6 +100,15 @@ var poolPlatforms = map[string]bool{
 	"kimi": true, "zhipu": true, "minimax": true, "opencode_go": true, "composite": true,
 }
 
+func engineProfitControlSupported(platform string) bool {
+	switch platform {
+	case "anthropic", "openai", "gemini", "antigravity", "grok":
+		return true
+	default:
+		return false
+	}
+}
+
 // defaultMarketTitle 从上架时的分组名生成市场展示标题。
 func defaultMarketTitle(name, platform string) string {
 	title := strings.TrimPrefix(name, "tm-pool-")
@@ -124,12 +133,16 @@ type PoolInput struct {
 	MarketDescription *string  `json:"market_description"`
 }
 
-type PoolService struct {
-	DB   DB
-	Prov *provision.Provisioner
+type groupProvisioner interface {
+	EnsureGroup(ctx context.Context, spec provision.GroupSpec) (int64, error)
 }
 
-// Create 创建默认分组，并在 sub2api 中创建开启利润控制的同名分组。
+type PoolService struct {
+	DB   DB
+	Prov groupProvisioner
+}
+
+// Create 创建默认分组，并按平台支持情况同步 sub2api 利润控制配置。
 func (s *PoolService) Create(ctx context.Context, in PoolInput) (*Pool, error) {
 	if !strings.HasPrefix(in.Name, "tm-pool-") {
 		return nil, httpx.BadRequest("INVALID_NAME", "pool name must start with tm-pool-")
@@ -187,7 +200,7 @@ func (s *PoolService) ensureGroup(ctx context.Context, id int64) (int64, error) 
 		Platform:           p.Platform,
 		RateMultiplier:     p.SellMultiplier,
 		Exclusive:          true, // 只有被授权的影子用户才能绑定
-		ProfitControl:      true,
+		ProfitControl:      engineProfitControlSupported(p.Platform),
 		ProfitMinMargin:    p.MinMargin,
 		ProfitSafetyBuffer: p.SafetyBuffer,
 		Description:        "token-market default pool",
@@ -248,7 +261,7 @@ func (s *PoolService) Update(ctx context.Context, id int64, in PoolInput) (*Pool
 		return nil, err
 	}
 	if p.Sub2APIGroupID != nil {
-		rate, margin, buffer, on := p.SellMultiplier, p.MinMargin, p.SafetyBuffer, true
+		rate, margin, buffer, on := p.SellMultiplier, p.MinMargin, p.SafetyBuffer, engineProfitControlSupported(p.Platform)
 		if _, err := ops.Enqueue(ctx, s.DB, ops.NewOp{
 			Type:   opshandlers.TypeGroupUpdate,
 			Target: fmt.Sprintf("group:%d", *p.Sub2APIGroupID),
