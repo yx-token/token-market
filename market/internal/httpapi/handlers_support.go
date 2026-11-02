@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -64,6 +66,10 @@ func (s *Server) supportPoll(w http.ResponseWriter, r *http.Request) error {
 	hint := parseSyncHint(r)
 	out, err := s.supportSvc().WaitSyncMine(r.Context(), httpx.MustUser(r).UserID, hint, parseWaitMS(r))
 	if err != nil {
+		// 客户端中止长轮询属正常，勿打 500
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil
+		}
 		return err
 	}
 	return ok(w, out)
@@ -114,6 +120,9 @@ func (s *Server) adminSupportGet(w http.ResponseWriter, r *http.Request) error {
 	hint := parseSyncHint(r)
 	out, err := s.supportSvc().WaitAdminGet(r.Context(), id, hint, parseWaitMS(r))
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil
+		}
 		return err
 	}
 	return ok(w, out)
@@ -182,6 +191,9 @@ func (s *Server) adminSupportAlerts(w http.ResponseWriter, r *http.Request) erro
 	unread, _ := strconv.Atoi(r.URL.Query().Get("unread"))
 	out, err := s.supportSvc().WaitAlerts(r.Context(), pending, overdue, unread, parseWaitMS(r))
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil
+		}
 		return err
 	}
 	return ok(w, out)

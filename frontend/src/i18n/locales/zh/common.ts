@@ -254,6 +254,7 @@ export default {
     marketCategories: '分类',
     marketExtras: '货架开关',
     marketSupport: '官方客服',
+    marketSupportMobile: '客服快捷回复',
     marketSupportUnread: '条未读',
     marketSupportPending: '条待回复',
     marketSupportOverdue: '条已超时',
