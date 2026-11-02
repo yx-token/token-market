@@ -16,6 +16,11 @@ vi.mock('@/api/admin', () => ({
   }
 }))
 
+vi.mock('@/auth/storageKeys', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/auth/storageKeys')>(),
+  AUTH_TOKEN_KEY: 'engine_auth_token'
+}))
+
 vi.mock('@/composables/useClipboard', () => ({
   useClipboard: () => ({
     copyToClipboard: vi.fn()
@@ -251,6 +256,19 @@ describe.each([
     const [url, options] = vi.mocked(globalThis.fetch).mock.calls[0]
     expect(String(url)).toContain('/admin/accounts/1/test')
     expect(JSON.parse(String(options?.body))).toMatchObject({ model_id: 'native-selected' })
+    wrapper.unmount()
+  })
+
+  it('uses the engine auth token for the streaming test request', async () => {
+    localStorage.removeItem('auth_token')
+    localStorage.setItem('engine_auth_token', 'engine-test-token')
+    const wrapper = await openModal()
+    const startButton = wrapper.findAll('button').find(button => button.text().includes('admin.accounts.startTest'))!
+    await startButton.trigger('click')
+    await flushPromises()
+
+    const [, options] = vi.mocked(globalThis.fetch).mock.calls[0]
+    expect(options?.headers).toMatchObject({ Authorization: 'Bearer engine-test-token' })
     wrapper.unmount()
   })
 
