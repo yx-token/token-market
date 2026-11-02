@@ -130,7 +130,7 @@ func (s *Service) PostUserMessage(ctx context.Context, userID int64, body string
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	reopened := conv.Status == StatusClosed
 	if reopened {
@@ -255,12 +255,13 @@ func (s *Service) AdminList(ctx context.Context, status, q string, limit, offset
 	}
 	args := []any{}
 	where := []string{"1=1"}
-	if status == StatusOpen || status == StatusClosed {
+	switch status {
+	case StatusOpen, StatusClosed:
 		args = append(args, status)
 		where = append(where, "c.status = $"+itoa(len(args)))
-	} else if status == "pending" {
+	case "pending":
 		where = append(where, "c.status = 'open' AND c.awaiting_staff_since IS NOT NULL")
-	} else if status == "overdue" {
+	case "overdue":
 		args = append(args, time.Now().Add(-ReplyTimeout))
 		where = append(where, "c.status = 'open' AND c.awaiting_staff_since IS NOT NULL AND c.awaiting_staff_since <= $"+itoa(len(args)))
 	}
@@ -335,7 +336,7 @@ func (s *Service) PostStaffMessage(ctx context.Context, staffUserID, conversatio
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var msg Message
 	err = tx.QueryRow(ctx, `
@@ -430,7 +431,7 @@ func (s *Service) closeWithNote(ctx context.Context, conversationID int64, note 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var status string
 	err = tx.QueryRow(ctx, `SELECT status FROM support_conversations WHERE id = $1 FOR UPDATE`, conversationID).Scan(&status)
@@ -571,7 +572,7 @@ func (s *Service) createWithWelcome(ctx context.Context, userID int64) (*Convers
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var id int64
 	err = tx.QueryRow(ctx, `
