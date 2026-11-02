@@ -800,3 +800,13 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .sidebar {
+    transition: none;
+  }
+}

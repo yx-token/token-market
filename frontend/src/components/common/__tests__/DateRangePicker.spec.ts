@@ -93,4 +93,27 @@ describe('DateRangePicker', () => {
       }
     ])
   })
+
+  it('forwards ids and accessible names to both datetimerange inputs', async () => {
+    const wrapper = mount(DateRangePicker, {
+      props: {
+        startDate: '',
+        endDate: '',
+        mode: 'datetimerange',
+        id: 'listing-created-at',
+        ariaLabel: '按创建时间筛选'
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+    await wrapper.vm.$nextTick()
+
+    const start = wrapper.get('input#listing-created-at')
+    const end = wrapper.get('input#listing-created-at-end')
+    expect(start.attributes('aria-label')).toBe('按创建时间筛选')
+    expect(end.attributes('aria-label')).toBe('按创建时间筛选')
+  })
 })

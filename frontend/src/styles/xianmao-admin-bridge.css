@@ -6,16 +6,18 @@
   --color-primary-light: #e6eefa;
   --color-primary-bg: rgba(5, 85, 206, 0.05);
   --color-text-primary: #262626;
-  --color-text-secondary: #868686;
+  --color-text-secondary: #64748b;
   --color-text-placeholder: #c5c5c5;
   --color-border: #e8e8e8;
   --color-bg-page: #f2f4f7;
-  --color-bg-container: #f2f6fc;
-  --color-surface: #ffffff;
+  --color-bg-elevated: #ffffff;
+  --color-bg-secondary: #f2f6fc;
+  --color-bg-container: var(--color-bg-secondary);
+  --color-surface: var(--color-bg-elevated);
   --color-white: #ffffff;
-  --color-success: #52c41a;
-  --color-warning: #faad14;
-  --color-error: #ff4d4f;
+  --color-success: #237804;
+  --color-warning: #ad4e00;
+  --color-error: #cf1322;
   --shadow-level-1: 0px 4px 16px 0px rgba(38, 38, 38, 0.2);
   --shadow-level-2: 0px 2px 8px 0px rgba(38, 38, 38, 0.2);
   --shadow-level-3: 0px 2px 4px 0px rgba(38, 38, 38, 0.2);
@@ -39,8 +41,11 @@
   display: grid;
   grid-template-columns: var(--console-side-width, 256px) minmax(0, 1fr);
   height: 100vh;
+  height: 100dvh;
   max-height: 100vh;
+  max-height: 100dvh;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
   background: var(--color-bg-page, #f2f4f7);
   color: var(--color-text-primary, #262626);
@@ -52,29 +57,62 @@
 }
 
 .console-app .sidebar {
-  position: sticky !important;
-  top: 0;
-  left: auto !important;
-  z-index: 1;
   display: flex;
   flex-direction: column;
-  width: var(--console-side-width, 256px) !important;
-  min-width: var(--console-side-width, 256px) !important;
-  max-width: var(--console-side-width, 256px) !important;
-  height: 100vh;
-  max-height: 100vh;
-  margin: 0 !important;
+  box-sizing: border-box;
   padding: 0;
+  margin: 0;
   border: none;
   border-right: 1px solid rgba(15, 23, 42, 0.06);
   border-radius: 0;
-  box-sizing: border-box;
-  /* 与主内容区同属液态玻璃：半透明白底 + 模糊，不再用实心白 */
-  background: rgba(255, 255, 255, 0.55) !important;
-  backdrop-filter: blur(24px) saturate(1.8) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(1.8) !important;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.35);
-  transform: none !important;
+}
+
+/* 桌面（≥1024px）：侧栏作为网格列，sticky 固定在视口内 */
+@media (min-width: 1024px) {
+  .console-app .sidebar {
+    position: sticky;
+    top: 0;
+    left: auto;
+    z-index: 1;
+    width: var(--console-side-width, 256px);
+    min-width: var(--console-side-width, 256px);
+    max-width: var(--console-side-width, 256px);
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    transform: none;
+  }
+}
+
+/* 移动（<1024px）：侧栏脱离网格成为抽屉，由 AppSidebar 的 is-mobile-open 控制位移。
+   位移用类而非内联 style，避免被桌面 transform 覆盖。 */
+@media (max-width: 1023.98px) {
+  .console-app .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 50;
+    width: min(80vw, 280px);
+    min-width: 0;
+    max-width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    transform: translateX(-100%);
+    transition: transform 0.24s ease;
+  }
+  .console-app .sidebar.is-mobile-open {
+    transform: translateX(0);
+  }
+  .console-app .sidebar .sidebar-resizer {
+    display: none;
+  }
 }
 
 .console-app .sidebar-footer {
@@ -82,11 +120,13 @@
   border-top-color: rgba(15, 23, 42, 0.06) !important;
 }
 
-.console-app.is-side-collapsed .sidebar,
-.console-app .sidebar.is-collapsed {
-  width: 72px !important;
-  min-width: 72px !important;
-  max-width: 72px !important;
+@media (min-width: 1024px) {
+  .console-app.is-side-collapsed .sidebar,
+  .console-app .sidebar.is-collapsed {
+    width: 72px;
+    min-width: 72px;
+    max-width: 72px;
+  }
 }
 
 .console-app .sidebar-header {
@@ -293,10 +333,13 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   max-height: 100vh;
+  max-height: 100dvh;
   min-height: 0;
   overflow: hidden;
   background: transparent;
+  container: console-main / inline-size;
 }
 
 /* 顶栏 + 页签固定，仅下方内容区滚动 */
@@ -367,10 +410,17 @@
 }
 
 .console-app .btn-secondary {
-  background: var(--color-white, #ffffff) !important;
+  background: var(--color-bg-elevated, #ffffff) !important;
   border: 1px solid var(--color-border, #e8e8e8) !important;
   color: var(--color-text-primary, #262626) !important;
   box-shadow: none !important;
+}
+
+html.dark .console-app .btn-secondary,
+.dark .console-app .btn-secondary {
+  background: var(--color-bg-elevated, #1c1c1c) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  color: #f5f5f5 !important;
 }
 
 .console-app .y-page {
@@ -419,7 +469,7 @@
   padding: 4px 8px;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
   background: rgba(255, 255, 255, 0.35);
-  color: var(--color-text-secondary, #868686);
+  color: var(--color-text-secondary, #64748b);
   font-size: var(--font-size-caption, 12px);
 }
 
@@ -436,7 +486,7 @@
   font-size: var(--font-size-caption, 12px);
   font-weight: 500;
   color: #64748b;
-  background: rgba(242, 246, 252, 0.72);
+  background: var(--color-bg-secondary, #f2f6fc);
   border-bottom: 1px solid rgba(15, 23, 42, 0.06);
 }
 
@@ -447,8 +497,16 @@
   background: transparent;
 }
 
-.console-app .y-page tbody tr:nth-child(even) td:not(.el-table__cell) {
+.console-app .y-page tbody tr:nth-child(even) td:not(.el-table__cell):not(.sticky-col):not(.y-col-op) {
   background: rgba(242, 244, 247, 0.45);
+}
+
+.console-app .y-page tbody td.sticky-col {
+  background: var(--color-surface, #ffffff);
+}
+
+.console-app .y-page tbody tr:hover td.sticky-col {
+  background: #f2f4f7;
 }
 
 .console-app .y-btn {
@@ -466,7 +524,7 @@
 }
 
 .console-app .y-btn.y-btn--ghost {
-  background: var(--color-white, #ffffff);
+  background: var(--color-bg-elevated, #ffffff);
   color: var(--color-text-primary, #262626);
   border-color: var(--color-border, #e8e8e8);
 }
@@ -541,7 +599,7 @@
   padding: 0 8px;
   border: 1px solid var(--color-border, #e8e8e8);
   border-radius: 8px;
-  background: var(--color-white, #ffffff);
+  background: var(--color-bg-elevated, #ffffff);
   color: var(--color-text-primary, #262626);
   font-size: 13px;
 }
@@ -553,7 +611,7 @@
 
 .console-app .y-page .filter-label {
   width: 4rem;
-  color: var(--color-text-secondary, #868686);
+  color: var(--color-text-secondary, #64748b);
   font-size: 12px;
   font-weight: 600;
 }
@@ -566,10 +624,10 @@
   padding: 0 10px;
   border: 1px solid var(--color-border, #e8e8e8);
   border-radius: 8px;
-  background: var(--color-white, #ffffff);
+  background: var(--color-bg-elevated, #ffffff);
   color: var(--color-text-primary, #262626);
   font-size: 13px;
-  line-height: 30px;
+  line-height: normal;
   box-shadow: none;
   box-sizing: border-box;
 }
@@ -583,10 +641,10 @@
   padding: 0 10px;
   border: 1px solid var(--color-border, #e8e8e8);
   border-radius: 8px;
-  background: var(--color-white, #ffffff);
+  background: var(--color-bg-elevated, #ffffff);
   color: var(--color-text-primary, #262626);
   font-size: 13px;
-  line-height: 30px;
+  line-height: normal;
   box-shadow: none;
   box-sizing: border-box;
 }
@@ -604,7 +662,7 @@
   border-radius: 8px !important;
   box-sizing: border-box;
   box-shadow: 0 0 0 1px var(--color-border, #e8e8e8) inset !important;
-  background: var(--color-white, #ffffff) !important;
+  background: var(--color-bg-elevated, #ffffff) !important;
 }
 
 .console-app .y-page .filter-item .el-date-editor.el-range-editor:hover,
@@ -628,7 +686,7 @@
 .console-app .y-page .list-filter .el-range-separator {
   line-height: 30px !important;
   font-size: 13px !important;
-  color: var(--color-text-secondary, #868686);
+  color: var(--color-text-secondary, #64748b);
 }
 
 .console-app .y-page .filter-item .el-range__icon,
@@ -636,7 +694,7 @@
 .console-app .y-page .list-filter .el-range__icon,
 .console-app .y-page .list-filter .el-range__close-icon {
   font-size: 14px;
-  color: var(--color-text-secondary, #868686);
+  color: var(--color-text-secondary, #64748b);
 }
 
 .console-app .y-page .list-filter .filter-input,
@@ -676,7 +734,7 @@
 .console-app .y-page .filter-item .date-picker-chevron {
   display: inline-flex;
   align-items: center;
-  color: var(--color-text-secondary, #868686);
+  color: var(--color-text-secondary, #64748b);
 }
 
 .console-app .y-page .filter-item .relative {
@@ -706,7 +764,7 @@
   justify-content: center;
   gap: 6px;
   padding: 48px 16px;
-  color: var(--color-text-secondary, #868686);
+  color: var(--color-text-secondary, #64748b);
   font-size: 13px;
 }
 
@@ -722,8 +780,8 @@
   padding: 0 var(--spacing-sm, 8px);
   border: 1px solid var(--color-border, #e8e8e8);
   border-radius: var(--border-radius-sm, 4px);
-  background: var(--color-white, #ffffff);
-  color: var(--color-text-secondary, #868686);
+  background: var(--color-bg-elevated, #ffffff);
+  color: var(--color-text-secondary, #64748b);
   font-size: var(--font-size-caption, 12px);
 }
 
@@ -765,7 +823,7 @@
 
 .console-app .y-page-desc {
   margin: 0;
-  color: var(--color-text-secondary, #868686);
+  color: var(--color-text-secondary, #64748b);
   font-size: var(--font-size-caption, 12px);
   line-height: 20px;
 }
@@ -784,7 +842,7 @@
 
 .console-app .page-hero p {
   margin: var(--spacing-xs, 4px) 0 0;
-  color: var(--color-text-secondary, #868686);
+  color: var(--color-text-secondary, #64748b);
   font-size: var(--font-size-body, 14px);
   line-height: 22px;
 }
@@ -800,7 +858,7 @@
   padding: 0 10px;
   border: 1px solid var(--color-border, #e8e8e8);
   border-radius: 999px;
-  background: var(--color-white, #ffffff);
+  background: var(--color-bg-elevated, #ffffff);
   color: #64748b;
   font-size: 13px;
   font-weight: 600;
@@ -821,7 +879,7 @@
   padding: 0 var(--spacing-sm, 8px);
   border-radius: 999px;
   background: var(--color-bg-container, #f2f6fc);
-  color: var(--color-text-secondary, #868686);
+  color: var(--color-text-secondary, #64748b);
   font-size: var(--font-size-caption, 12px);
 }
 
@@ -852,12 +910,15 @@
 .console-app .console-body-slot input[type='number']:not(.el-input__inner):not(.filter-input),
 .console-app .console-body-slot input[type='date']:not(.el-input__inner):not(.filter-input),
 .console-app .console-body-slot input[type='password']:not(.el-input__inner):not(.filter-input) {
-  height: 28px;
+  height: 32px;
+  padding: 5px 10px;
   border: 1px solid var(--color-border, #e8e8e8) !important;
   border-radius: 8px !important;
-  background: var(--color-white, #ffffff) !important;
+  background: var(--color-bg-elevated, #ffffff) !important;
   color: var(--color-text-primary, #262626) !important;
+  line-height: normal;
   box-shadow: none !important;
+  box-sizing: border-box;
 }
 
 .console-app .y-page .filter-input {
@@ -866,10 +927,10 @@
   padding: 0 10px !important;
   border: 1px solid var(--color-border, #e8e8e8) !important;
   border-radius: 8px !important;
-  background: var(--color-white, #ffffff) !important;
+  background: var(--color-bg-elevated, #ffffff) !important;
   color: var(--color-text-primary, #262626) !important;
   font-size: 13px !important;
-  line-height: 30px !important;
+  line-height: normal !important;
   box-shadow: none !important;
   box-sizing: border-box !important;
 }
@@ -891,7 +952,6 @@
   border-color: var(--color-primary, #0555ce) !important;
   box-shadow: 0 0 0 3px rgba(5, 85, 206, 0.12) !important;
   outline: none;
-  line-height: 30px;
 }
 
 .console-app .card .rounded-lg.bg-blue-100,
@@ -922,7 +982,7 @@
 
 .console-app .card .text-gray-500,
 .console-app .card .text-gray-400 {
-  color: var(--color-text-secondary, #868686) !important;
+  color: var(--color-text-secondary, #64748b) !important;
 }
 
 .console-app .card .text-gray-900,
@@ -938,8 +998,13 @@ html.dark .console-app,
   --color-text-placeholder: #a3a3a3;
   --color-border: #333333;
   --color-bg-page: #000000;
-  --color-bg-container: #111111;
-  --color-surface: #111111;
+  --color-bg-elevated: #1c1c1c;
+  --color-bg-secondary: #111111;
+  --color-bg-container: var(--color-bg-secondary);
+  --color-surface: var(--color-bg-elevated);
+  --color-success: #95de64;
+  --color-warning: #ffc53d;
+  --color-error: #ff7875;
   --color-primary-light: rgba(5, 85, 206, 0.28);
   --color-primary-bg: rgba(5, 85, 206, 0.16);
   --glass-bg: rgba(17, 17, 17, 0.72);
@@ -1111,7 +1176,7 @@ html.dark .console-app .page-hero p,
 
 html.dark .console-app .y-page thead th,
 .dark .console-app .y-page thead th {
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: var(--color-bg-secondary, #111111) !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
   color: #d4d4d4 !important;
 }
@@ -1122,9 +1187,19 @@ html.dark .console-app .y-page tbody td,
   color: #f5f5f5 !important;
 }
 
-html.dark .console-app .y-page tbody tr:nth-child(even) td:not(.el-table__cell),
-.dark .console-app .y-page tbody tr:nth-child(even) td:not(.el-table__cell) {
+html.dark .console-app .y-page tbody tr:nth-child(even) td:not(.el-table__cell):not(.sticky-col):not(.y-col-op),
+.dark .console-app .y-page tbody tr:nth-child(even) td:not(.el-table__cell):not(.sticky-col):not(.y-col-op) {
   background: rgba(255, 255, 255, 0.04) !important;
+}
+
+html.dark .console-app .y-page tbody td.sticky-col,
+.dark .console-app .y-page tbody td.sticky-col {
+  background: #111111;
+}
+
+html.dark .console-app .y-page tbody tr:hover td.sticky-col,
+.dark .console-app .y-page tbody tr:hover td.sticky-col {
+  background: #1c1c1c;
 }
 
 html.dark .console-app .y-btn.y-btn--ghost,
@@ -1300,10 +1375,6 @@ html.dark .tab-context-menu .menu-item:hover,
   color: #93c5fd !important;
 }
 
-.console-app .sidebar {
-  position: relative;
-}
-
 .sidebar-resizer {
   position: absolute;
   top: 0;
@@ -1336,7 +1407,7 @@ html.dark .tab-context-menu .menu-item:hover,
   background: transparent;
   padding: 4px 0;
   font-size: 12px;
-  color: var(--color-text-secondary, #868686);
+  color: var(--color-text-secondary, #64748b);
 }
 
 .sidebar-axis-btn.is-on {
@@ -1397,15 +1468,53 @@ html.dark .tab-context-menu .menu-item:hover,
   display: none;
 }
 
-@media (max-width: 900px) {
-  .console-app {
-    grid-template-columns: 1fr;
+/* 移动断点统一为 1024px（Tailwind lg）：侧栏脱离网格，主列占满 */
+@media (max-width: 1023.98px) {
+  .console-app,
+  .console-app.is-side-collapsed {
+    grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.console-date-popper.el-popper {
+  --el-bg-color-overlay: #ffffff;
+  --el-fill-color-blank: #ffffff;
+  --el-text-color-primary: #262626;
+  --el-text-color-regular: #262626;
+  --el-text-color-secondary: #64748b;
+  --el-border-color-light: #e8e8e8;
+  --el-border-color-lighter: #e8e8e8;
+  --el-color-primary: #0555ce;
+  background: #ffffff;
+  color: #262626;
+}
+
+html.dark .console-date-popper.el-popper,
+.dark .console-date-popper.el-popper {
+  --el-bg-color-overlay: #1c1c1c;
+  --el-fill-color-blank: #1c1c1c;
+  --el-text-color-primary: #f5f5f5;
+  --el-text-color-regular: #f5f5f5;
+  --el-text-color-secondary: #d4d4d4;
+  --el-border-color-light: #333333;
+  --el-border-color-lighter: #333333;
+  background: #1c1c1c;
+  color: #f5f5f5;
+  border-color: #333333;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console-app,
   .console-app .sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: min(80vw, 280px);
-    z-index: 50;
+    transition: none;
+  }
+
+  .console-page {
+    animation: none;
+  }
+
+  .console-body-slot,
+  .tab-scroll {
+    scroll-behavior: auto;
   }
 }

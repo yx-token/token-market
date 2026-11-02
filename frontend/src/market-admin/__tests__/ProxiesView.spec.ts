@@ -20,7 +20,10 @@ const select = defineComponent({
 const proxy = { id: 1, seller_id: 5, name: 'shared-proxy', protocol: 'http', host: 'proxy.test', port: 8080, status: 'assigned', sub2api_proxy_id: 1, assigned_upstream_ids: [71, 98765], assigned_upstream_count: 2 }
 
 async function page() {
-  const wrapper = mount(ProxiesView, { global: { stubs: { Icon: true, Pagination: true, Select: select } } })
+  const wrapper = mount(ProxiesView, {
+    attachTo: document.body,
+    global: { stubs: { Icon: true, Pagination: true, Select: select } },
+  })
   await flushPromises()
   return wrapper
 }
@@ -81,5 +84,60 @@ describe('market admin proxy bindings', () => {
     expect(wrapper.find('tbody').text()).toContain('shared-proxy')
     await wrapper.get('input.filter-input').setValue('71')
     expect(wrapper.find('tbody').text()).not.toContain('released')
+  })
+
+  it('默认折叠较多绑定账号并显示停用按钮的禁用原因', async () => {
+    api.get.mockResolvedValue([
+      { ...proxy, assigned_upstream_ids: [71, 72, 73, 74, 75], assigned_upstream_count: 5 },
+    ])
+    const wrapper = await page()
+    const row = wrapper.get('tbody tr')
+    const preview = row.get('.binding-account-preview')
+
+    expect(preview.text()).toContain('账号 #71')
+    expect(preview.text()).toContain('账号 #72')
+    expect(preview.text()).toContain('账号 #73')
+    expect(preview.text()).not.toContain('账号 #74')
+    expect(preview.text()).not.toContain('账号 #75')
+
+    const details = row.get('details.binding-accounts')
+    expect(details.get('summary').text()).toBe('另有 2 个')
+    expect(details.attributes('open')).toBeUndefined()
+    await details.get('summary').trigger('click')
+    expect((details.element as HTMLDetailsElement).open).toBe(true)
+    expect(row.get('.disable-reason').text()).toContain('需全部解绑后才能停用')
+  })
+
+  it('保存失败时在活动弹窗内播报错误并保留表单', async () => {
+    api.send.mockRejectedValue(new Error('代理保存失败'))
+    const wrapper = await page()
+    const open = wrapper.findAll('button').find((button) => button.text() === '添加代理')!
+    await open.trigger('click')
+    await flushPromises()
+
+    const currentDialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!
+    const values: Array<[string, string]> = [
+      ['input[placeholder="例如 美国固定 IP 01"]', '待保留的代理名称'],
+      ['input[placeholder="203.0.113.10"]', '198.51.100.8'],
+      ['input[placeholder="1080"]', '1080'],
+    ]
+    for (const [selector, value] of values) {
+      const input = currentDialog().querySelector<HTMLInputElement>(selector)!
+      input.value = value
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    await flushPromises()
+    const save = Array.from(currentDialog().querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === '添加',
+    )!
+    save.click()
+    await flushPromises()
+
+    expect(currentDialog().getAttribute('aria-modal')).toBe('true')
+    expect(currentDialog().querySelector('[role="alert"]')?.textContent).toContain('代理保存失败')
+    expect(
+      currentDialog().querySelector<HTMLInputElement>('input[placeholder="例如 美国固定 IP 01"]')?.value,
+    ).toBe('待保留的代理名称')
+    expect(api.get).toHaveBeenCalledOnce()
   })
 })

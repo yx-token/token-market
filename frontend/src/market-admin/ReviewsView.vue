@@ -8,6 +8,8 @@ import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
@@ -42,6 +44,16 @@ const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
 const msg = ref('')
+const pendingAction = ref<{ action: 'hide' | 'delete'; review: ReviewItem } | null>(null)
+const detailReview = ref<ReviewItem | null>(null)
+const actionMessage = computed(() => {
+  const pending = pendingAction.value
+  if (!pending) return ''
+  const target = `评价 #${pending.review.id}，商家 ${userLabel(pending.review.seller_id)}`
+  return pending.action === 'hide'
+    ? `确认隐藏${target}？`
+    : `确认删除${target}？删除后不计入均分。`
+})
 
 const STATUS_OPTIONS = [
   { value: '', label: '全部' },
@@ -173,8 +185,7 @@ async function run(label: string, fn: () => Promise<unknown>) {
 }
 
 function hideReview(r: ReviewItem) {
-  const reason = window.prompt('隐藏原因（可选）', r.hide_reason || '') ?? ''
-  return run('已隐藏', () => marketSend('POST', `${MARKET_API_PREFIX}/reviews/${r.id}/hide`, { reason }))
+  if (!busy.value) pendingAction.value = { action: 'hide', review: r }
 }
 
 function unhideReview(r: ReviewItem) {
@@ -182,9 +193,17 @@ function unhideReview(r: ReviewItem) {
 }
 
 function deleteReview(r: ReviewItem) {
-  if (!window.confirm(`确认删除评价 #${r.id}？删除后不计入均分。`)) return
-  const reason = window.prompt('删除原因（可选）', '') ?? ''
-  return run('已删除', () => marketSend('POST', `${MARKET_API_PREFIX}/reviews/${r.id}/delete`, { reason }))
+  if (!busy.value) pendingAction.value = { action: 'delete', review: r }
+}
+
+async function confirmAction(reason = '') {
+  const pending = pendingAction.value
+  if (!pending || busy.value) return
+  pendingAction.value = null
+  const action = pending.action === 'hide' ? 'hide' : 'delete'
+  await run(pending.action === 'hide' ? '已隐藏' : '已删除', () =>
+    marketSend('POST', `${MARKET_API_PREFIX}/reviews/${pending.review.id}/${action}`, { reason }),
+  )
 }
 
 function handleQuery() {
@@ -235,15 +254,16 @@ onMounted(async () => {
         </button>
       </template>
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <p v-if="error" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
         <div class="section-block">
           <div class="section-title">筛选条件</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="review-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="review-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -253,23 +273,23 @@ onMounted(async () => {
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">状态</label>
-              <Select v-model="queryParams.status" class="flex-1 w-full min-w-0" size="sm" :options="STATUS_OPTIONS" />
+              <label class="filter-label" for="review-status">状态</label>
+              <Select id="review-status" v-model="queryParams.status" class="flex-1 w-full min-w-0" size="sm" :options="STATUS_OPTIONS" aria-label="评价状态" />
             </div>
             <div class="filter-item">
-              <label class="filter-label">星级</label>
-              <Select v-model="queryParams.rating" class="flex-1 w-full min-w-0" size="sm" :options="RATING_OPTIONS" />
+              <label class="filter-label" for="review-rating">星级</label>
+              <Select id="review-rating" v-model="queryParams.rating" class="flex-1 w-full min-w-0" size="sm" :options="RATING_OPTIONS" aria-label="评价星级" />
             </div>
             <div class="filter-item">
-              <label class="filter-label">商家 ID</label>
+              <label class="filter-label" for="review-seller-id">商家 ID</label>
               <div class="relative flex-1 w-full min-w-0">
-                <input v-model="queryParams.seller_id" class="filter-input w-full" placeholder="可选" @keyup.enter="handleQuery" />
+                <input id="review-seller-id" v-model="queryParams.seller_id" class="filter-input w-full" placeholder="可选" @keyup.enter="handleQuery" />
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">买家 ID</label>
+              <label class="filter-label" for="review-buyer-id">买家 ID</label>
               <div class="relative flex-1 w-full min-w-0">
-                <input v-model="queryParams.buyer_id" class="filter-input w-full" placeholder="可选" @keyup.enter="handleQuery" />
+                <input id="review-buyer-id" v-model="queryParams.buyer_id" class="filter-input w-full" placeholder="可选" @keyup.enter="handleQuery" />
               </div>
             </div>
             <div class="filter-actions lg:col-span-4">
@@ -304,7 +324,10 @@ onMounted(async () => {
             <span v-else>—</span>
           </template>
           <template #cell-content="{ row }">
-            <span class="detail-cell" :title="contentText(row)">{{ contentText(row) }}</span>
+            <button type="button" class="detail-cell detail-button" :aria-label="`查看评价 #${row.id} 详情`" @click="detailReview = row">
+              <span class="detail-cell__text">{{ contentText(row) }}</span>
+              <span class="detail-cell__action">查看详情</span>
+            </button>
             <div v-if="row.follow_up" class="follow-hint">有追评</div>
             <div v-if="row.listing_id" class="follow-hint">挂单 #{{ row.listing_id }}</div>
           </template>
@@ -344,27 +367,84 @@ onMounted(async () => {
         />
       </template>
     </TablePageLayout>
+
+    <ConfirmDialog
+      :show="pendingAction !== null"
+      :title="pendingAction?.action === 'hide' ? '隐藏评价' : '删除评价'"
+      :message="actionMessage"
+      :confirm-text="pendingAction?.action === 'hide' ? '确认隐藏' : '确认删除'"
+      cancel-text="取消"
+      :danger="pendingAction?.action === 'delete'"
+      :busy="busy"
+      reason
+      :reason-label="pendingAction?.action === 'hide' ? '隐藏原因（可选）' : '删除原因（可选）'"
+      :reason-initial-value="pendingAction?.action === 'hide' ? pendingAction.review.hide_reason || '' : ''"
+      @cancel="pendingAction = null"
+      @confirm="confirmAction"
+    />
+
+    <BaseDialog
+      :show="detailReview !== null"
+      :title="detailReview ? `评价 #${detailReview.id} 详情` : '评价详情'"
+      width="wide"
+      @close="detailReview = null"
+    >
+      <div v-if="detailReview" class="review-detail">
+        <p class="review-detail__content">{{ contentText(detailReview) }}</p>
+        <dl v-if="detailReview.hide_reason">
+          <dt>隐藏原因</dt>
+          <dd>{{ detailReview.hide_reason }}</dd>
+        </dl>
+        <dl v-if="detailReview.follow_up">
+          <dt>追评</dt>
+          <dd>{{ contentText(detailReview.follow_up) }}</dd>
+        </dl>
+      </div>
+    </BaseDialog>
   </section>
 </template>
 
 <style scoped>
 .detail-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  max-width: 28rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.detail-cell__text {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  max-width: 28rem;
-  font-size: 12px;
-  line-height: 1.4;
+  max-width: 100%;
 }
+.detail-cell__action { color: var(--color-primary, #2563eb); }
 .follow-hint {
   margin-top: 2px;
   font-size: 11px;
-  color: #888;
+  color: var(--color-text-secondary, #64748b);
+  overflow-wrap: anywhere;
 }
 .table-ops {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.review-detail { display: grid; gap: 16px; overflow-wrap: anywhere; }
+.review-detail__content { margin: 0; white-space: pre-wrap; }
+.review-detail dl { margin: 0; }
+.review-detail dt { font-size: 12px; font-weight: 600; color: var(--color-text-secondary, #64748b); }
+.review-detail dd { margin: 4px 0 0; white-space: pre-wrap; }
+@media (max-width: 767px) {
+  .detail-cell__text { overflow-wrap: anywhere; word-break: break-word; }
 }
 </style>

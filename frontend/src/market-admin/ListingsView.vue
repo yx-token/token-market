@@ -316,7 +316,7 @@ onMounted(() => {
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-if="error" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
 
         <div class="section-block">
           <div class="section-title">基本信息</div>
@@ -362,22 +362,25 @@ onMounted(() => {
 
         <div class="section-block mt-3">
           <div class="section-title">挂单信息</div>
-          <!-- filter-grid：lg 每项 1/4，弹性伸缩 -->
+          <!-- 常规筛选项弹性排列；日期范围在中小屏幕占整行。 -->
           <div class="filter-grid">
-            <div class="filter-item">
-              <label class="filter-label">创建时间</label>
+            <div class="filter-item filter-item--date-range sm:col-span-2">
+              <label class="filter-label" for="listing-filter-created-at">创建时间</label>
               <div class="flex flex-1 w-full min-w-0 items-center gap-2">
                 <DateRangePicker
+                  id="listing-filter-created-at"
                   mode="datetimerange"
+                  aria-label="按创建时间筛选挂单"
                   v-model:start-date="queryParams.startDate"
                   v-model:end-date="queryParams.endDate"
                 />
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">挂单 ID</label>
+              <label class="filter-label" for="listing-filter-keyword">挂单 ID</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="listing-filter-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -387,20 +390,24 @@ onMounted(() => {
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">用户</label>
+              <label class="filter-label" for="listing-filter-seller">用户</label>
               <Select
+                id="listing-filter-seller"
                 v-model="queryParams.seller_id"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按用户筛选挂单"
                 :options="sellerFilterOptions"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">状态</label>
+              <label class="filter-label" for="listing-filter-status">状态</label>
               <Select
+                id="listing-filter-status"
                 v-model="queryParams.status"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按状态筛选挂单"
                 :options="statusOptions"
               />
             </div>
@@ -424,9 +431,11 @@ onMounted(() => {
             {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
           </template>
           <template #cell-id="{ row }">{{ row.id }}</template>
-          <template #cell-title="{ row }">{{ row.title || '—' }}</template>
+          <template #cell-title="{ row }">
+            <span class="data-table-cell-truncate" :title="row.title || ''">{{ row.title || '—' }}</span>
+          </template>
           <template #cell-seller="{ row }">
-            <div>{{ sellerLabel(row) }}</div>
+            <span class="data-table-cell-truncate" :title="sellerLabel(row)">{{ sellerLabel(row) }}</span>
           </template>
           <template #cell-upstream_id="{ row }">{{ row.upstream_id || '—' }}</template>
           <template #cell-platform="{ row }">{{ row.platform || '—' }}</template>
@@ -485,7 +494,7 @@ onMounted(() => {
   gap: 12px;
 }
 
-/* 顶栏：白底卡片，左标题右操作（对齐参考） */
+/* 顶栏：主题卡片，左标题右操作（对齐参考） */
 #market-listings-page :deep(.y-header) {
   display: flex;
   align-items: center;
@@ -541,6 +550,10 @@ onMounted(() => {
   min-width: 0;
 }
 
+.filter-item--date-range {
+  min-width: 0;
+}
+
 .section-title {
   margin: 0 0 10px;
   font-size: 13px;
@@ -580,6 +593,15 @@ onMounted(() => {
 
 #market-listings-page :deep(.table-scroll-container table tbody tr:hover td) {
   background: #f5f7fa;
+}
+
+#market-listings-page :deep(.data-table-cell-truncate) {
+  display: inline-block;
+  max-width: min(20rem, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .status-cell {
@@ -707,5 +729,43 @@ onMounted(() => {
   margin-top: 2px;
   font-size: 12px;
   color: #8c8c8c;
+}
+
+:global(html.dark #market-listings-page .y-header),
+:global(html.dark #market-listings-page .stat-card) {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border);
+}
+
+:global(html.dark #market-listings-page .y-title),
+:global(html.dark #market-listings-page .stat-card__value),
+:global(html.dark #market-listings-page .table-scroll-container table tbody td) {
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-listings-page .y-page-desc),
+:global(html.dark #market-listings-page .stat-card__label),
+:global(html.dark #market-listings-page .row-sub) {
+  color: var(--color-text-secondary);
+}
+
+:global(html.dark #market-listings-page .table-scroll-container table thead th),
+:global(html.dark #market-listings-page .table-scroll-container table tbody tr:hover td) {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-listings-page .table-scroll-container table tbody td) {
+  border-color: var(--color-border);
+}
+
+@media (max-width: 768px) {
+  #market-listings-page :deep(.data-table-cell-truncate) {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 </style>

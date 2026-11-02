@@ -173,12 +173,13 @@ func TestUpdateStagesAllComponentsAndChecksBeforeActivation(t *testing.T) {
 	if err := validateRelease(filepath.Join(m.Runtime.Root, s.Target), "v1.1.0"); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Runtime.reconcile(time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if current, _ := m.Runtime.current(); current != s.Target {
-		t.Fatal("did not activate validated release")
-	}
+	eventually(t, func() bool {
+		if err := m.Runtime.reconcile(time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		current, _ := m.Runtime.current()
+		return current == s.Target
+	})
 	for _, name := range []string{"api", "worker", "edge"} {
 		if err := m.Runtime.report(name, s.Target, true); err != nil {
 			t.Fatal(err)

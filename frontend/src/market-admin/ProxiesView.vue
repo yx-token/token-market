@@ -5,6 +5,7 @@
 import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -45,6 +46,14 @@ function assignedUpstreamIDs(proxy: ProxyRow): number[] {
 
 function assignedUpstreamCount(proxy: ProxyRow): number {
   return Math.max(proxy.assigned_upstream_count ?? 0, assignedUpstreamIDs(proxy).length)
+}
+
+function bindingPreviewIDs(proxy: ProxyRow): number[] {
+  return assignedUpstreamIDs(proxy).slice(0, 3)
+}
+
+function hiddenBindingIDs(proxy: ProxyRow): number[] {
+  return assignedUpstreamIDs(proxy).slice(3)
 }
 
 const STATUS_OPTIONS = [
@@ -406,7 +415,7 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-if="error && !show" class="y-msg y-msg--error mb-2">{{ error }}</p>
         <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
         <p v-if="checking" class="y-msg mb-2">
           正在{{ checking.quality ? '检测代理质量（可能 1–3 分钟）' : '检测连通性和出口地区' }}…
@@ -541,11 +550,15 @@ onMounted(load)
           <template #cell-serial="{ row }">
             {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
           </template>
-          <template #cell-name="{ row }">{{ row.name || '—' }}</template>
-          <template #cell-endpoint="{ row }">
-            <span class="mono-cell" :title="endpoint(row)">{{ endpoint(row) }}</span>
+          <template #cell-name="{ row }">
+            <span class="data-table-cell-truncate" :title="row.name || '—'">{{ row.name || '—' }}</span>
           </template>
-          <template #cell-owner="{ row }">{{ ownerLabel(row) }}</template>
+          <template #cell-endpoint="{ row }">
+            <span class="mono-cell data-table-cell-truncate" :title="endpoint(row)">{{ endpoint(row) }}</span>
+          </template>
+          <template #cell-owner="{ row }">
+            <span class="data-table-cell-truncate" :title="ownerLabel(row)">{{ ownerLabel(row) }}</span>
+          </template>
           <template #cell-region="{ row }">
             <div>{{ row.region || '—' }}</div>
             <div v-if="exitIp(row)" class="row-sub mono-cell">{{ exitIp(row) }}</div>
@@ -563,7 +576,17 @@ onMounted(load)
           </template>
           <template #cell-bind="{ row }">
             <div>{{ assignedUpstreamCount(row) ? `已绑定 ${assignedUpstreamCount(row)} 个账号` : '未绑定' }}</div>
-            <div v-for="upstreamID in assignedUpstreamIDs(row)" :key="upstreamID" class="row-sub">账号 #{{ upstreamID }}</div>
+            <div class="binding-account-preview">
+              <div v-for="upstreamID in bindingPreviewIDs(row)" :key="upstreamID" class="row-sub">
+                账号 #{{ upstreamID }}
+              </div>
+            </div>
+            <details v-if="hiddenBindingIDs(row).length" class="binding-accounts">
+              <summary>另有 {{ hiddenBindingIDs(row).length }} 个</summary>
+              <div v-for="upstreamID in hiddenBindingIDs(row)" :key="upstreamID" class="binding-account-id">
+                账号 #{{ upstreamID }}
+              </div>
+            </details>
           </template>
           <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
           <template #cell-actions="{ row }">
@@ -602,6 +625,12 @@ onMounted(load)
                 {{ row.status === 'disabled' ? '启用' : '停用' }}
               </button>
             </div>
+            <div
+              v-if="assignedUpstreamCount(row) > 0 && row.status !== 'disabled'"
+              class="disable-reason"
+            >
+              仍有 {{ assignedUpstreamCount(row) }} 个绑定账号，需全部解绑后才能停用
+            </div>
           </template>
           <template #empty>
             <EmptyState
@@ -628,56 +657,57 @@ onMounted(load)
       </template>
     </TablePageLayout>
 
-    <div v-if="show" class="y-modal-mask" @click.self="closeModal">
-      <div class="y-modal" role="dialog" aria-label="添加代理">
-        <header class="y-modal__head">
-          <h3>添加代理 IP</h3>
-          <button type="button" class="y-link" @click="closeModal">关闭</button>
-        </header>
-        <div class="y-modal__body">
+    <BaseDialog
+      :show="show"
+      title="添加代理 IP"
+      :z-index="80"
+      close-on-click-outside
+      @close="closeModal"
+    >
+      <div class="dialog-form">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <label class="y-field">
+          <span>名称</span>
+          <input v-model="form.name" class="input w-full" placeholder="例如 美国固定 IP 01" />
+        </label>
+        <div class="y-field-row">
           <label class="y-field">
-            <span>名称</span>
-            <input v-model="form.name" class="input w-full" placeholder="例如 美国固定 IP 01" />
+            <span>协议</span>
+            <select v-model="form.protocol" class="input w-full">
+              <option v-for="p in ['socks5', 'socks5h', 'http', 'https']" :key="p" :value="p">{{ p }}</option>
+            </select>
           </label>
-          <div class="y-field-row">
-            <label class="y-field">
-              <span>协议</span>
-              <select v-model="form.protocol" class="input w-full">
-                <option v-for="p in ['socks5', 'socks5h', 'http', 'https']" :key="p" :value="p">{{ p }}</option>
-              </select>
-            </label>
-            <label class="y-field">
-              <span>地区（可选）</span>
-              <input v-model="form.region" class="input w-full" placeholder="us / jp …" />
-            </label>
-          </div>
-          <div class="y-field-row">
-            <label class="y-field">
-              <span>IP 或域名</span>
-              <input v-model="form.host" class="input w-full font-mono" placeholder="203.0.113.10" />
-            </label>
-            <label class="y-field">
-              <span>端口</span>
-              <input v-model="form.port" class="input w-full" type="number" min="1" max="65535" placeholder="1080" />
-            </label>
-          </div>
-          <div class="y-field-row">
-            <label class="y-field">
-              <span>用户名（可选）</span>
-              <input v-model="form.username" class="input w-full" autocomplete="off" />
-            </label>
-            <label class="y-field">
-              <span>密码（可选）</span>
-              <input v-model="form.password" class="input w-full" type="password" autocomplete="new-password" />
-            </label>
-          </div>
+          <label class="y-field">
+            <span>地区（可选）</span>
+            <input v-model="form.region" class="input w-full" placeholder="us / jp …" />
+          </label>
         </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy || !valid" @click="save">添加</button>
-        </footer>
+        <div class="y-field-row">
+          <label class="y-field">
+            <span>IP 或域名</span>
+            <input v-model="form.host" class="input w-full font-mono" placeholder="203.0.113.10" />
+          </label>
+          <label class="y-field">
+            <span>端口</span>
+            <input v-model="form.port" class="input w-full" type="number" min="1" max="65535" placeholder="1080" />
+          </label>
+        </div>
+        <div class="y-field-row">
+          <label class="y-field">
+            <span>用户名（可选）</span>
+            <input v-model="form.username" class="input w-full" autocomplete="off" />
+          </label>
+          <label class="y-field">
+            <span>密码（可选）</span>
+            <input v-model="form.password" class="input w-full" type="password" autocomplete="new-password" />
+          </label>
+        </div>
       </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+        <button type="button" class="btn btn-primary" :disabled="busy || !valid" @click="save">添加</button>
+      </template>
+    </BaseDialog>
   </section>
 </template>
 
@@ -728,33 +758,20 @@ onMounted(load)
   gap: 12px;
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  background: #f8fafc;
-}
-
-.stat-card--blue {
-  background: linear-gradient(135deg, #eff6ff, #f8fafc);
-}
-.stat-card--green {
-  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
-}
-.stat-card--cyan {
-  background: linear-gradient(135deg, #ecfeff, #f8fafc);
-}
-.stat-card--orange {
-  background: linear-gradient(135deg, #fff7ed, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-bg-secondary, #f8fafc);
 }
 
 .stat-card__label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary);
   line-height: 1.2;
 }
 
@@ -774,11 +791,33 @@ onMounted(load)
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-text-secondary, #8c8c8c);
 }
 
 .row-sub.warn {
   color: var(--color-warning, #faad14);
+}
+
+.binding-accounts,
+.binding-account-id {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #8c8c8c);
+}
+
+.binding-accounts summary {
+  width: max-content;
+  cursor: pointer;
+}
+
+.disable-reason {
+  max-width: 18rem;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .mono-cell {
@@ -821,26 +860,35 @@ onMounted(load)
 }
 
 #market-proxies-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-proxies-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary, #303133);
 }
 
 #market-proxies-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  background: var(--color-bg-secondary, #f5f7fa);
+}
+
+#market-proxies-page :deep(.data-table-cell-truncate) {
+  display: block;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #market-proxies-page :deep(th.col-name),
 #market-proxies-page :deep(td.col-name) {
   min-width: 7rem;
+  max-width: 14rem;
 }
 #market-proxies-page :deep(th.col-endpoint),
 #market-proxies-page :deep(td.col-endpoint) {
@@ -850,6 +898,7 @@ onMounted(load)
 #market-proxies-page :deep(th.col-owner),
 #market-proxies-page :deep(td.col-owner) {
   min-width: 10rem;
+  max-width: 16rem;
 }
 #market-proxies-page :deep(th.col-region),
 #market-proxies-page :deep(td.col-region),
@@ -873,54 +922,10 @@ onMounted(load)
   width: 18rem;
   box-sizing: border-box;
 }
-#market-proxies-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-proxies-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-proxies-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
 
-.y-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgb(15 23 42 / 45%);
-}
-.y-modal {
-  width: min(520px, 100%);
-  max-height: min(90vh, 720px);
-  overflow: auto;
-  border-radius: 12px;
-  background: var(--color-bg-elevated, #fff);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 18%);
-}
-.y-modal__head,
-.y-modal__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-}
-.y-modal__head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-.y-modal__foot {
-  justify-content: flex-end;
-}
-.y-modal__body {
+.dialog-form {
   display: grid;
   gap: 12px;
-  padding: 0 16px 16px;
 }
 .y-field {
   display: grid;
@@ -945,6 +950,19 @@ onMounted(load)
   .stats-row,
   .y-field-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  #market-proxies-page :deep(.mobile-card-value .data-table-cell-truncate),
+  #market-proxies-page :deep(.mobile-card-value .row-sub),
+  #market-proxies-page :deep(.mobile-card-value .binding-accounts),
+  #market-proxies-page :deep(.mobile-card-value .binding-account-id) {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 </style>

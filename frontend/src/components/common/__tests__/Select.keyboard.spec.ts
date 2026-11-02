@@ -52,4 +52,34 @@ describe('Select keyboard focus', () => {
     await press('Enter')
     expect(wrapper.emitted('update:modelValue')).toEqual([['beta']])
   })
+
+  it('links the trigger, listbox, and active option with stable ARIA IDs', async () => {
+    await open(false)
+    const trigger = wrapper.get('button')
+    const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!
+    const options = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'))
+
+    expect(trigger.attributes('aria-haspopup')).toBe('listbox')
+    expect(trigger.attributes('aria-controls')).toBe(listbox.id)
+    expect(trigger.attributes('aria-activedescendant')).toBe(options[0].id)
+    expect(new Set(options.map((option) => option.id)).size).toBe(options.length)
+
+    await press('ArrowDown')
+    expect(options[1].getAttribute('aria-disabled')).toBe('true')
+    expect(trigger.attributes('aria-activedescendant')).toBe(options[2].id)
+
+    await press('Enter')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['beta']])
+    expect(trigger.attributes('aria-activedescendant')).toBeUndefined()
+  })
+
+  it('does not select a disabled option on click', async () => {
+    await open(false)
+    const disabled = document.querySelectorAll<HTMLElement>('[role="option"]')[1]
+    disabled.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await nextTick()
+
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(wrapper.get('button').attributes('aria-expanded')).toBe('true')
+  })
 })

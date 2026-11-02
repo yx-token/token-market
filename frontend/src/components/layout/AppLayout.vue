@@ -10,7 +10,7 @@
     <div class="console-main-col">
       <AppHeader />
       <MarketPageTabs />
-      <main class="console-body-slot">
+      <main id="console-tab-panel" class="console-body-slot" role="tabpanel" aria-labelledby="console-tab-active">
         <slot />
       </main>
     </div>

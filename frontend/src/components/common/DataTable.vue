@@ -48,11 +48,15 @@
       <div
         v-for="(row, index) in sortedData"
         :key="resolveRowKey(row, index)"
+        data-test="data-table-mobile-card"
         class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900"
-        :class="{
-          'cursor-pointer': clickableRows,
-          'border-primary-300 bg-primary-50/40 dark:border-primary-700 dark:bg-primary-900/10': selectable && isRowSelected(row, index)
-        }"
+        :class="[
+          {
+            'cursor-pointer': clickableRows,
+            'border-primary-300 bg-primary-50/40 dark:border-primary-700 dark:bg-primary-900/10': selectable && isRowSelected(row, index)
+          },
+          resolveRowClass(row, index)
+        ]"
         @click="clickableRows && emit('rowClick', row)"
       >
         <div class="space-y-3">
@@ -76,7 +80,7 @@
             <span class="text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-dark-400">
               {{ column.label }}
             </span>
-            <div class="min-w-0 max-w-full text-right text-sm text-gray-900 dark:text-gray-100">
+            <div class="mobile-card-value min-w-0 max-w-full text-right text-sm text-gray-900 dark:text-gray-100">
               <slot :name="`cell-${column.key}`" :row="row" :value="row[column.key]" :expanded="actionsExpanded">
                 {{ column.formatter ? column.formatter(row[column.key], row) : row[column.key] }}
               </slot>
@@ -214,10 +218,13 @@
             :data-index="item.index"
             :ref="item.measure ? measureElement : undefined"
             class="hover:bg-gray-50 dark:hover:bg-dark-800"
-            :class="{
-              'cursor-pointer': clickableRows,
-              'bg-primary-50/40 dark:bg-primary-900/10': selectable && isRowSelected(item.row, item.index)
-            }"
+            :class="[
+              {
+                'cursor-pointer': clickableRows,
+                'bg-primary-50/40 dark:bg-primary-900/10': selectable && isRowSelected(item.row, item.index)
+              },
+              resolveRowClass(item.row, item.index)
+            ]"
             @click="clickableRows && emit('rowClick', item.row)"
           >
             <td v-if="selectable" class="w-11 min-w-11 px-3 py-4 text-center">
@@ -429,6 +436,11 @@ onUnmounted(() => {
   desktopViewportMediaQuery = null
 })
 
+type DataTableRowClass =
+  | string
+  | Record<string, boolean>
+  | Array<string | Record<string, boolean>>
+
 interface Props {
   columns: Column[]
   data: any[]
@@ -438,6 +450,7 @@ interface Props {
   expandableActions?: boolean
   actionsCount?: number // 操作按钮总数，用于判断是否需要展开功能
   rowKey?: string | ((row: any) => string | number)
+  rowClass?: DataTableRowClass | ((row: any, index: number) => DataTableRowClass)
   /**
    * Default sort configuration (only applied when there is no persisted sort state)
    */
@@ -483,6 +496,9 @@ const props = withDefaults(defineProps<Props>(), {
   selectable: false,
   selectedKeys: () => []
 })
+
+const resolveRowClass = (row: any, index: number): DataTableRowClass | undefined =>
+  typeof props.rowClass === 'function' ? props.rowClass(row, index) : props.rowClass
 
 const sortKey = ref<string>('')
 const sortOrder = ref<'asc' | 'desc'>('asc')
@@ -951,6 +967,18 @@ defineExpose({
 </script>
 
 <style scoped>
+.mobile-card-value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.data-table-cell-truncate {
+  max-width: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 表格横向滚动 */
 .table-wrapper {
   --select-col-width: 52px; /* 勾选列宽度：px-6 (24px*2) + checkbox (16px) */

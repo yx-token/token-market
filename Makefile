@@ -21,7 +21,22 @@ FRONTEND_CRITICAL_VITEST := \
 	src/views/admin/__tests__/SettingsView.spec.ts \
 	src/features/channel-monitor-v2/__tests__/designSystem.structure.spec.ts \
 	src/features/channel-monitor-v2/__tests__/monitorFormat.spec.ts \
-	src/features/channel-monitor-v2/__tests__/monitorZoom.spec.ts
+	src/features/channel-monitor-v2/__tests__/monitorZoom.spec.ts \
+	src/market-admin/__tests__ \
+	src/components/layout/__tests__/TablePageLayout.spec.ts \
+	src/components/common/__tests__/BaseDialog.spec.ts \
+	src/components/common/__tests__/BaseDialog.scrollLock.spec.ts \
+	src/components/common/__tests__/BaseDialog.ids.spec.ts \
+	src/components/common/__tests__/Select.spec.ts \
+	src/components/common/__tests__/Select.keyboard.spec.ts \
+	src/components/common/__tests__/ConfirmDialog.spec.ts \
+	src/components/common/__tests__/DataTable.layout.spec.ts \
+	src/components/common/__tests__/Pagination.responsive.spec.ts \
+	src/components/common/__tests__/Pagination.jump.spec.ts \
+	src/components/layout/__tests__/AppSidebar.interaction.spec.ts \
+	src/components/layout/__tests__/AppHeader.interaction.spec.ts \
+	src/components/layout/__tests__/MarketPageTabs.interaction.spec.ts \
+	src/components/layout/__tests__/ConsoleShell.spec.ts
 
 # 一键编译前后端
 build: build-backend build-frontend

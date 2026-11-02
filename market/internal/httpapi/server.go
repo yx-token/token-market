@@ -31,10 +31,10 @@ import (
 	"github.com/yx-token/token-market/market/internal/quality"
 	"github.com/yx-token/token-market/market/internal/review"
 	"github.com/yx-token/token-market/market/internal/risk"
-	"github.com/yx-token/token-market/market/internal/support"
 	"github.com/yx-token/token-market/market/internal/scheduling"
 	"github.com/yx-token/token-market/market/internal/settings"
 	"github.com/yx-token/token-market/market/internal/sub2api/replica"
+	"github.com/yx-token/token-market/market/internal/support"
 	"github.com/yx-token/token-market/market/internal/update"
 )
 

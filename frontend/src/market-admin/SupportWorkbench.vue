@@ -5,6 +5,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/icons/Icon.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
 
 defineOptions({ name: 'MarketAdminSupport' })
@@ -62,18 +63,28 @@ const q = ref('')
 const list = ref<Conversation[]>([])
 const total = ref(0)
 const selectedId = ref(0)
+const activeConversation = ref<Conversation | null>(null)
 const messages = ref<Message[]>([])
 const draft = ref('')
+const drafts = new Map<number, string>()
 const alerts = ref<Alerts | null>(null)
 const loadingList = ref(false)
 const loadingThread = ref(false)
 const sending = ref(false)
+const closing = ref(false)
+const closeConfirmationOpen = ref(false)
 const error = ref('')
+const threadError = ref('')
 const peerTyping = ref(false)
 const peerReadId = ref(0)
+const hasNewMessages = ref(false)
+const newMessageAnnouncement = ref('')
 const listEl = ref<HTMLElement | null>(null)
 let typingTimer: ReturnType<typeof setTimeout> | null = null
 let typingSent = false
+let typingConversationId = 0
+let openRequestId = 0
+let openAbort: AbortController | null = null
 let threadAbort: AbortController | null = null
 let threadGen = 0
 let alertsAbort: AbortController | null = null
@@ -196,7 +207,25 @@ function startResize(kind: DragKind, e: MouseEvent) {
   dragCleanup = onUp
 }
 
-const selected = computed(() => list.value.find((c) => c.id === selectedId.value) || null)
+const selected = computed<Conversation | null>(() => {
+  const id = selectedId.value
+  if (!id) return null
+  if (activeConversation.value?.id === id) return activeConversation.value
+  const known =
+    list.value.find((c) => c.id === id) ||
+    alerts.value?.overdue_conversations.find((c) => c.id === id)
+  if (known) return known
+  return {
+    id,
+    user_id: 0,
+    status: 'open',
+    last_message_at: '',
+    last_preview: '',
+    last_sender: '',
+    user_unread_count: 0,
+    staff_unread_count: 0,
+  }
+})
 const lastMsgId = computed(() => messages.value.reduce((m, x) => Math.max(m, x.id), 0))
 const lastOwnId = computed(() => {
   let id = 0
@@ -288,19 +317,24 @@ function senderLabel(sender: string) {
 }
 
 async function openHistory() {
-  if (!selectedId.value) return
+  const conversationId = selectedId.value
+  if (!conversationId) return
+  const requestId = openRequestId
   historyOpen.value = true
   // 重新拉全量，避免侧栏截断后漏看早期消息
   try {
     const bundle = await marketGet<{ conversation: Conversation; messages: Message[] }>(
-      `${MARKET_API_PREFIX}/support/conversations/${selectedId.value}`,
+      `${MARKET_API_PREFIX}/support/conversations/${conversationId}`,
     )
-    messages.value = bundle.messages ?? []
+    if (requestId !== openRequestId || selectedId.value !== conversationId) return
+    if (bundle.conversation.id !== conversationId) return
+    messages.value = (bundle.messages ?? []).filter((m) => m.conversation_id === conversationId)
     applyConv(bundle.conversation)
   } catch {
     /* 仍展示当前内存中的消息 */
   }
   await nextTick()
+  if (!historyOpen.value || selectedId.value !== conversationId) return
   const el = historyEl.value
   if (el) el.scrollTop = el.scrollHeight
 }
@@ -328,16 +362,51 @@ function receiptOf(m: Message) {
 }
 
 function applyConv(c: Conversation) {
-  peerTyping.value = !!c.peer_typing
-  peerReadId.value = Number(c.user_last_read_msg_id ?? 0)
+  if (selectedId.value === c.id) {
+    activeConversation.value = { ...activeConversation.value, ...c }
+    peerTyping.value = !!c.peer_typing
+    peerReadId.value = Number(c.user_last_read_msg_id ?? 0)
+  }
   const idx = list.value.findIndex((x) => x.id === c.id)
   if (idx >= 0) list.value[idx] = { ...list.value[idx], ...c }
 }
 
-async function scrollBottom() {
+function isNearBottom() {
+  const el = listEl.value
+  if (!el) return true
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= 80
+}
+
+async function scrollBottom(conversationId = selectedId.value) {
   await nextTick()
+  if (selectedId.value !== conversationId) return
   const el = listEl.value
   if (el) el.scrollTop = el.scrollHeight
+  hasNewMessages.value = false
+}
+
+async function appendMessages(rows: Message[], announce = false) {
+  const conversationId = selectedId.value
+  const known = new Set(messages.value.map((m) => m.id))
+  const add = rows.filter((m) => m.conversation_id === conversationId && !known.has(m.id))
+  if (!add.length) return 0
+  const shouldScroll = isNearBottom()
+  messages.value = [...messages.value, ...add]
+  if (announce) {
+    newMessageAnnouncement.value = `收到 ${add.length} 条新消息，当前共 ${messages.value.length} 条`
+  }
+  if (shouldScroll) await scrollBottom(conversationId)
+  else hasNewMessages.value = true
+  return add.length
+}
+
+function onMessagesScroll() {
+  if (isNearBottom()) hasNewMessages.value = false
+}
+
+async function jumpToLatest() {
+  await scrollBottom()
+  listEl.value?.focus({ preventScroll: true })
 }
 
 async function loadAlerts() {
@@ -346,6 +415,26 @@ async function loadAlerts() {
   } catch {
     /* ignore */
   }
+}
+
+function clearActiveConversation() {
+  if (selectedId.value) drafts.set(selectedId.value, draft.value)
+  openRequestId += 1
+  openAbort?.abort()
+  openAbort = null
+  stopThreadLoop()
+  selectedId.value = 0
+  activeConversation.value = null
+  messages.value = []
+  draft.value = ''
+  loadingThread.value = false
+  threadError.value = ''
+  peerTyping.value = false
+  peerReadId.value = 0
+  hasNewMessages.value = false
+  newMessageAnnouncement.value = ''
+  historyOpen.value = false
+  closeConfirmationOpen.value = false
 }
 
 async function loadList(keepSelection = true, silent = false) {
@@ -363,7 +452,7 @@ async function loadList(keepSelection = true, silent = false) {
     // 回复后会话会离开「待回复/已超时」筛选；钉住当前会话，方便连续回多条
     const pinned =
       keepSelection && prevId
-        ? list.value.find((c) => c.id === prevId) || selected.value
+        ? list.value.find((c) => c.id === prevId) || activeConversation.value
         : null
     list.value = res.items ?? []
     total.value = Number(res.total ?? list.value.length)
@@ -375,9 +464,7 @@ async function loadList(keepSelection = true, silent = false) {
     } else if (list.value.length) {
       await openConversation(list.value[0].id)
     } else {
-      selectedId.value = 0
-      messages.value = []
-      peerTyping.value = false
+      clearActiveConversation()
     }
   } catch (e) {
     if (!silent) error.value = e instanceof Error ? e.message : '加载失败'
@@ -386,29 +473,59 @@ async function loadList(keepSelection = true, silent = false) {
   }
 }
 
+function isCurrentOpen(requestId: number, conversationId: number, ac: AbortController) {
+  return requestId === openRequestId && selectedId.value === conversationId && !ac.signal.aborted
+}
+
 async function openConversation(id: number) {
-  if (selectedId.value && selectedId.value !== id) await clearTyping()
+  if (!id) return
+  const requestId = ++openRequestId
+  openAbort?.abort()
+  const ac = new AbortController()
+  openAbort = ac
   stopThreadLoop()
-  if (selectedId.value !== id) historyOpen.value = false
+  const previousId = selectedId.value
+  if (previousId && previousId !== id) {
+    drafts.set(previousId, draft.value)
+    void clearTyping(previousId)
+  }
+  if (previousId !== id) historyOpen.value = false
   selectedId.value = id
+  if (previousId !== id) draft.value = drafts.get(id) ?? ''
+  activeConversation.value = null
+  messages.value = []
   loadingThread.value = true
+  threadError.value = ''
+  peerTyping.value = false
+  peerReadId.value = 0
+  hasNewMessages.value = false
+  newMessageAnnouncement.value = ''
   error.value = ''
   try {
     const bundle = await marketGet<{ conversation: Conversation; messages: Message[] }>(
       `${MARKET_API_PREFIX}/support/conversations/${id}`,
+      { signal: ac.signal },
     )
-    messages.value = bundle.messages ?? []
+    if (!isCurrentOpen(requestId, id, ac)) return
+    if (bundle.conversation.id !== id) throw new Error('会话响应不匹配，请重试')
+    activeConversation.value = bundle.conversation
+    messages.value = (bundle.messages ?? []).filter((m) => m.conversation_id === id)
     applyConv(bundle.conversation)
+    await scrollBottom(id)
     await marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${id}/read`).catch(() => null)
+    if (!isCurrentOpen(requestId, id, ac)) return
     window.dispatchEvent(new CustomEvent('market-support-alerts-refresh'))
     const idx = list.value.findIndex((c) => c.id === id)
     if (idx >= 0) list.value[idx].staff_unread_count = 0
-    await scrollBottom()
     void threadLoop()
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载会话失败'
+    if (!isCurrentOpen(requestId, id, ac)) return
+    threadError.value = e instanceof Error ? e.message : '加载会话失败'
   } finally {
-    loadingThread.value = false
+    if (requestId === openRequestId) {
+      loadingThread.value = false
+      if (openAbort === ac) openAbort = null
+    }
   }
 }
 
@@ -429,8 +546,10 @@ async function threadLoop() {
         after_id: String(lastMsgId.value),
         peer_read: String(peerReadId.value),
         peer_typing: peerTyping.value ? '1' : '0',
-        unread: String(list.value.find((c) => c.id === id)?.staff_unread_count ?? 0),
-        status: selected.value?.status || 'open',
+        unread: String(
+          list.value.find((c) => c.id === id)?.staff_unread_count ?? activeConversation.value?.staff_unread_count ?? 0,
+        ),
+        status: activeConversation.value?.status || 'open',
         wait_ms: String(WAIT_MS),
       })
       const bundle = await marketGet<{ conversation: Conversation; messages: Message[] }>(
@@ -438,26 +557,21 @@ async function threadLoop() {
         { signal: ac.signal, timeoutMs: WAIT_MS + 8000 },
       )
       if (gen !== threadGen || selectedId.value !== id) break
+      if (bundle.conversation.id !== id) continue
       applyConv(bundle.conversation)
-      const rows = bundle.messages ?? []
-      if (rows.length) {
-        const known = new Set(messages.value.map((m) => m.id))
-        const add = rows.filter((m) => !known.has(m.id))
-        if (add.length) {
-          messages.value = [...messages.value, ...add]
-          // 仅前台可见时标已读，避免后台页签把顶栏未读角标瞬间清掉
-          if (document.visibilityState === 'visible') {
-            await marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${id}/read`).catch(() => null)
-            window.dispatchEvent(new CustomEvent('market-support-alerts-refresh'))
-          }
-          await scrollBottom()
+      const added = await appendMessages(bundle.messages ?? [], true)
+      if (added) {
+        // 仅前台可见时标已读，避免后台页签把顶栏未读角标瞬间清掉
+        if (document.visibilityState === 'visible') {
+          await marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${id}/read`).catch(() => null)
+          window.dispatchEvent(new CustomEvent('market-support-alerts-refresh'))
         }
         void loadList(true, true)
       } else if (bundle.conversation.staff_unread_count !== undefined) {
         void loadList(true, true)
       }
     } catch {
-      if (gen !== threadGen) break
+      if (gen !== threadGen || selectedId.value !== id || ac.signal.aborted) break
       await new Promise((r) => setTimeout(r, 1000))
     }
   }
@@ -504,20 +618,36 @@ async function alertsLoop() {
 }
 
 async function send() {
-  const body = draft.value.trim()
-  if (!body || !selectedId.value || sending.value) return
+  const conversationId = selectedId.value
+  const draftSnapshot = draft.value
+  const body = draftSnapshot.trim()
+  if (!body || !conversationId || sending.value) return
   sending.value = true
   error.value = ''
+  drafts.set(conversationId, draftSnapshot)
   try {
-    await clearTyping()
+    await clearTyping(conversationId)
     const msg = await marketSend<Message>(
       'POST',
-      `${MARKET_API_PREFIX}/support/conversations/${selectedId.value}/messages`,
+      `${MARKET_API_PREFIX}/support/conversations/${conversationId}/messages`,
       { body },
     )
-    draft.value = ''
-    if (!messages.value.some((m) => m.id === msg.id)) messages.value = [...messages.value, msg]
-    const idx = list.value.findIndex((c) => c.id === selectedId.value)
+    if (selectedId.value === conversationId && activeConversation.value?.id === conversationId) {
+      if (draft.value === draftSnapshot) draft.value = ''
+      activeConversation.value = {
+        ...activeConversation.value,
+        last_preview: body.slice(0, 80),
+        last_sender: 'staff',
+        awaiting_staff_since: null,
+        overdue: false,
+        staff_unread_count: 0,
+        peer_typing: false,
+      }
+      peerTyping.value = false
+      await appendMessages([msg])
+    }
+    if (drafts.get(conversationId) === draftSnapshot) drafts.set(conversationId, '')
+    const idx = list.value.findIndex((c) => c.id === conversationId)
     if (idx >= 0) {
       list.value[idx] = {
         ...list.value[idx],
@@ -529,8 +659,6 @@ async function send() {
         peer_typing: false,
       }
     }
-    peerTyping.value = false
-    await scrollBottom()
     void loadAlerts()
   } catch (e) {
     error.value = e instanceof Error ? e.message : '发送失败'
@@ -539,51 +667,66 @@ async function send() {
   }
 }
 
-async function closeConversation() {
-  if (!selectedId.value) return
-  if (!confirm('确认关闭该会话？用户仍可再发消息重新打开。')) return
-  await clearTyping()
+function closeConversation() {
+  if (!selectedId.value || closing.value) return
+  error.value = ''
+  closeConfirmationOpen.value = true
+}
+
+async function confirmCloseConversation() {
+  const conversationId = selectedId.value
+  if (!conversationId || closing.value) return
+  closing.value = true
+  error.value = ''
   try {
-    await marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${selectedId.value}/close`)
+    await clearTyping(conversationId)
+    await marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${conversationId}/close`)
+    closeConfirmationOpen.value = false
     await loadList(false)
     void loadAlerts()
   } catch (e) {
     error.value = e instanceof Error ? e.message : '关闭失败'
+  } finally {
+    closing.value = false
   }
 }
 
-async function clearTyping() {
+async function clearTyping(conversationId = selectedId.value) {
   if (typingTimer) {
     clearTimeout(typingTimer)
     typingTimer = null
   }
-  if (!typingSent || !selectedId.value) return
+  if (!typingSent || typingConversationId !== conversationId || !conversationId) return
   typingSent = false
-  await marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${selectedId.value}/typing`, {
+  typingConversationId = 0
+  await marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${conversationId}/typing`, {
     typing: false,
   }).catch(() => null)
 }
 
 function onDraftInput() {
-  if (!selectedId.value || selected.value?.status === 'closed') return
+  const conversationId = selectedId.value
+  if (!conversationId || activeConversation.value?.status === 'closed') return
   if (!typingSent) {
     typingSent = true
-    void marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${selectedId.value}/typing`, {
+    typingConversationId = conversationId
+    void marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${conversationId}/typing`, {
       typing: true,
     }).catch(() => null)
   }
   if (typingTimer) clearTimeout(typingTimer)
   typingTimer = setTimeout(() => {
+    if (!typingSent || typingConversationId !== conversationId) return
     typingSent = false
-    if (!selectedId.value) return
-    void marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${selectedId.value}/typing`, {
+    typingConversationId = 0
+    void marketSend('POST', `${MARKET_API_PREFIX}/support/conversations/${conversationId}/typing`, {
       typing: false,
     }).catch(() => null)
   }, 2500)
 }
 
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault()
     void send()
   }
@@ -605,6 +748,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  openRequestId += 1
+  openAbort?.abort()
+  openAbort = null
   dragCleanup?.()
   dragCleanup = null
   stackMqCleanup?.()
@@ -627,6 +773,7 @@ onUnmounted(() => {
         <input
           v-model="q"
           type="search"
+          aria-label="搜索会话"
           placeholder="搜索邮箱、内容预览、会话 ID"
           @keydown.enter="loadList(false)"
         />
@@ -672,15 +819,21 @@ onUnmounted(() => {
       @mousedown="startResize('metrics', $event)"
     />
 
-    <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
+    <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
 
     <div class="sw-board" :class="{ stacked }" :style="boardStyle">
       <aside class="sw-queue">
-        <button type="button" class="sw-queue-head" @click="queueOpen = !queueOpen">
+        <button
+          type="button"
+          class="sw-queue-head"
+          :aria-expanded="queueOpen"
+          aria-controls="sw-queue-body"
+          @click="queueOpen = !queueOpen"
+        >
           <span>工作队列</span>
           <Icon :name="queueOpen ? 'chevronUp' : 'chevronDown'" size="sm" />
         </button>
-        <div v-show="queueOpen" class="sw-queue-body">
+        <div v-show="queueOpen" id="sw-queue-body" class="sw-queue-body">
           <template v-for="g in QUEUE_GROUPS" :key="g.title">
             <p class="sw-queue-label">{{ g.title }}</p>
             <button
@@ -689,6 +842,7 @@ onUnmounted(() => {
               type="button"
               class="sw-queue-item"
               :class="{ on: status === item.value }"
+              :aria-pressed="status === item.value"
               @click="selectQueue(item.value)"
             >
               <span>{{ item.label }}</span>
@@ -702,6 +856,7 @@ onUnmounted(() => {
               :key="`od-${c.id}`"
               type="button"
               class="sw-queue-mini"
+              :aria-current="c.id === selectedId ? 'true' : undefined"
               @click="openConversation(c.id)"
             >
               <strong>{{ c.user_email || `#${c.user_id}` }}</strong>
@@ -727,31 +882,33 @@ onUnmounted(() => {
           <span class="sw-list-total">共 {{ total }} 条</span>
         </header>
         <ul class="sw-cards">
-          <li v-if="loadingList && !list.length" class="sw-empty">加载中…</li>
+          <li v-if="loadingList && !list.length" class="sw-empty" role="status">加载中…</li>
           <li v-else-if="!list.length" class="sw-empty">暂无会话</li>
-          <li
-            v-for="c in list"
-            :key="c.id"
-            class="sw-card"
-            :class="{ on: c.id === selectedId, overdue: c.overdue }"
-            @click="openConversation(c.id)"
-          >
-            <div class="sw-card-avatar" :data-tone="priorityOf(c).tone">{{ avatarText(c) }}</div>
-            <div class="sw-card-main">
-              <div class="sw-card-top">
-                <strong>{{ c.user_email || `用户 #${c.user_id}` }}</strong>
-                <span class="sw-tag" :data-tone="priorityOf(c).tone">{{ priorityOf(c).label }}</span>
-                <span v-if="c.staff_unread_count" class="sw-dot">{{ c.staff_unread_count }}</span>
-                <time>{{ relativeTime(c.last_message_at) }}</time>
+          <li v-for="c in list" :key="c.id">
+            <button
+              type="button"
+              class="sw-card"
+              :class="{ on: c.id === selectedId, overdue: c.overdue }"
+              :aria-current="c.id === selectedId ? 'true' : undefined"
+              @click="openConversation(c.id)"
+            >
+              <div class="sw-card-avatar" :data-tone="priorityOf(c).tone">{{ avatarText(c) }}</div>
+              <div class="sw-card-main">
+                <div class="sw-card-top">
+                  <strong>{{ c.user_email || `用户 #${c.user_id}` }}</strong>
+                  <span class="sw-tag" :data-tone="priorityOf(c).tone">{{ priorityOf(c).label }}</span>
+                  <span v-if="c.staff_unread_count" class="sw-dot">{{ c.staff_unread_count }}</span>
+                  <time>{{ relativeTime(c.last_message_at) }}</time>
+                </div>
+                <p v-if="c.peer_typing || c.user_typing" class="sw-typing-hint">对方正在输入…</p>
+                <p v-else class="sw-card-preview">{{ c.last_preview || '（无内容）' }}</p>
+                <div class="sw-card-meta">
+                  <span>#{{ c.id }}</span>
+                  <span>{{ c.last_sender === 'user' ? '用户留言' : c.last_sender === 'staff' ? '官方已回' : '系统消息' }}</span>
+                  <em v-if="c.awaiting_staff_since" :class="{ hot: c.overdue }">{{ waitLabel(c) }}</em>
+                </div>
               </div>
-              <p v-if="c.peer_typing || c.user_typing" class="sw-typing-hint">对方正在输入…</p>
-              <p v-else class="sw-card-preview">{{ c.last_preview || '（无内容）' }}</p>
-              <div class="sw-card-meta">
-                <span>#{{ c.id }}</span>
-                <span>{{ c.last_sender === 'user' ? '用户留言' : c.last_sender === 'staff' ? '官方已回' : '系统消息' }}</span>
-                <em v-if="c.awaiting_staff_since" :class="{ hot: c.overdue }">{{ waitLabel(c) }}</em>
-              </div>
-            </div>
+            </button>
           </li>
         </ul>
       </section>
@@ -769,7 +926,7 @@ onUnmounted(() => {
             <div class="sw-detail-user">
               <div class="sw-card-avatar lg" :data-tone="priorityOf(selected).tone">{{ avatarText(selected) }}</div>
               <div>
-                <strong>{{ selected.user_email || `用户 #${selected.user_id}` }}</strong>
+                <strong>{{ selected.user_email || (selected.user_id ? `用户 #${selected.user_id}` : `会话 #${selected.id}`) }}</strong>
                 <div class="sw-detail-tags">
                   <span class="sw-tag" :data-tone="priorityOf(selected).tone">{{ priorityOf(selected).label }}</span>
                   <span class="sw-tag muted">#{{ selected.id }}</span>
@@ -778,29 +935,60 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="sw-detail-actions">
-              <button type="button" class="sw-btn ghost" @click="openHistory">
+              <button
+                type="button"
+                class="sw-btn ghost"
+                :disabled="!activeConversation || loadingThread"
+                @click="openHistory"
+              >
                 全部聊天记录
               </button>
               <button
-                v-if="selected.status !== 'closed'"
+                v-if="activeConversation && selected.status !== 'closed'"
                 type="button"
-                class="sw-btn ghost"
+                class="sw-btn ghost sw-close-conversation"
                 @click="closeConversation"
               >
                 结束会话
               </button>
-              <span v-else class="sw-closed-tag">已结束</span>
+              <span v-else-if="activeConversation" class="sw-closed-tag">已结束</span>
             </div>
           </header>
 
           <div class="sw-detail-tabs">
-            <button type="button" :class="{ on: detailTab === 'thread' }" @click="detailTab = 'thread'">会话详情</button>
-            <button type="button" :class="{ on: detailTab === 'customer' }" @click="detailTab = 'customer'">客户信息</button>
+            <button
+              type="button"
+              :class="{ on: detailTab === 'thread' }"
+              :aria-pressed="detailTab === 'thread'"
+              @click="detailTab = 'thread'"
+            >
+              会话详情
+            </button>
+            <button
+              type="button"
+              :class="{ on: detailTab === 'customer' }"
+              :aria-pressed="detailTab === 'customer'"
+              @click="detailTab = 'customer'"
+            >
+              客户信息
+            </button>
           </div>
 
           <div v-if="detailTab === 'thread'" class="sw-detail-body">
-            <div ref="listEl" class="sw-msgs">
-              <p v-if="loadingThread" class="sw-empty">加载中…</p>
+            <div
+              ref="listEl"
+              class="sw-msgs"
+              tabindex="0"
+              aria-label="会话消息"
+              :aria-busy="loadingThread"
+              @scroll="onMessagesScroll"
+            >
+              <p v-if="loadingThread" class="sw-empty" role="status">加载中…</p>
+              <div v-else-if="threadError" class="sw-thread-error" role="alert">
+                <p>{{ threadError }}</p>
+                <button type="button" class="sw-btn ghost" @click="openConversation(selectedId)">重试</button>
+              </div>
+              <p v-else-if="!chatMessages.length" class="sw-empty">暂无消息</p>
               <div
                 v-for="m in chatMessages"
                 :key="m.id"
@@ -815,9 +1003,12 @@ onUnmounted(() => {
                   </div>
                 </div>
               </div>
-              <div v-if="peerTyping" class="sw-msg user">
+              <div v-if="peerTyping && !loadingThread && !threadError" class="sw-msg user">
                 <div class="sw-bubble sw-typing-dots"><span /><span /><span /></div>
               </div>
+            </div>
+            <div v-if="hasNewMessages" class="sw-new-messages">
+              <button type="button" class="sw-btn ghost" @click="jumpToLatest">新消息，跳到最新</button>
             </div>
 
             <div
@@ -829,17 +1020,19 @@ onUnmounted(() => {
               <textarea
                 v-model="draft"
                 maxlength="2000"
+                aria-label="回复用户"
+                aria-describedby="sw-draft-meta"
                 placeholder="输入回复内容，Enter 发送，Shift+Enter 换行"
-                :disabled="selected.status === 'closed'"
+                :disabled="!activeConversation || loadingThread || !!threadError || selected.status === 'closed'"
                 @input="onDraftInput"
                 @keydown="onKey"
               />
               <div class="sw-compose-bar">
-                <span>{{ draft.length }}/2000</span>
+                <span id="sw-draft-meta">草稿按会话保留 · {{ draft.length }}/2000</span>
                 <button
                   type="button"
                   class="sw-btn primary"
-                  :disabled="sending || !draft.trim() || selected.status === 'closed'"
+                  :disabled="sending || !draft.trim() || !activeConversation || loadingThread || !!threadError || selected.status === 'closed'"
                   @click="send"
                 >
                   {{ sending ? '发送中…' : '回复' }}
@@ -871,10 +1064,10 @@ onUnmounted(() => {
           <div v-else class="sw-customer">
             <dl>
               <div><dt>邮箱</dt><dd>{{ selected.user_email || '—' }}</dd></div>
-              <div><dt>用户 ID</dt><dd>{{ selected.user_id }}</dd></div>
+              <div><dt>用户 ID</dt><dd>{{ selected.user_id || '—' }}</dd></div>
               <div><dt>会话 ID</dt><dd>{{ selected.id }}</dd></div>
               <div><dt>状态</dt><dd>{{ priorityOf(selected).label }}</dd></div>
-              <div><dt>最近消息</dt><dd>{{ fmtTime(selected.last_message_at) }}</dd></div>
+              <div><dt>最近消息</dt><dd>{{ fmtTime(selected.last_message_at) || '—' }}</dd></div>
               <div><dt>等待时长</dt><dd>{{ waitLabel(selected) || '—' }}</dd></div>
               <div><dt>未读</dt><dd>{{ selected.staff_unread_count }}</dd></div>
             </dl>
@@ -883,8 +1076,24 @@ onUnmounted(() => {
         <div v-else class="sw-empty tall">
           <p>从中间列表选择一条会话开始处理</p>
         </div>
+        <p class="sw-sr-only" role="status" aria-live="polite" aria-atomic="true">{{ newMessageAnnouncement }}</p>
       </main>
     </div>
+
+    <ConfirmDialog
+      :show="closeConfirmationOpen"
+      title="结束会话"
+      :message="`确认结束与 ${activeConversation?.user_email || `会话 #${selectedId}`} 的会话？用户仍可再发消息重新打开。`"
+      confirm-text="确认结束"
+      cancel-text="取消"
+      busy-text="结束中…"
+      danger
+      :busy="closing"
+      @confirm="confirmCloseConversation"
+      @cancel="closeConfirmationOpen = false"
+    >
+      <p v-if="closeConfirmationOpen && error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+    </ConfirmDialog>
 
     <Teleport to="body">
       <div
@@ -930,13 +1139,13 @@ onUnmounted(() => {
 
 <style scoped>
 .sw-shell {
-  --sw-bg: #f3f5f9;
-  --sw-card: #fff;
-  --sw-line: #e8ecf2;
-  --sw-text: #1f2937;
-  --sw-muted: #8b95a7;
-  --sw-primary: #3b82f6;
-  --sw-primary-soft: #eff6ff;
+  --sw-bg: var(--color-bg-secondary, #f3f5f9);
+  --sw-card: var(--color-bg-elevated, var(--color-surface, #fff));
+  --sw-line: var(--color-border, #e8ecf2);
+  --sw-text: var(--color-text-primary, #1f2937);
+  --sw-muted: var(--color-text-secondary, #8b95a7);
+  --sw-primary: var(--color-primary, #3b82f6);
+  --sw-primary-soft: var(--color-bg-secondary, #eff6ff);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1017,15 +1226,16 @@ onUnmounted(() => {
 .sw-banner {
   flex-shrink: 0;
   padding: 10px 14px;
+  border: 1px solid var(--sw-line);
   border-radius: 10px;
-  background: #fff7ed;
-  color: #9a3412;
+  background: var(--color-bg-secondary, #fff7ed);
+  color: var(--color-warning, #9a3412);
   font-size: 13px;
   font-weight: 600;
 }
 .sw-banner.hot {
-  background: #fef2f2;
-  color: #b91c1c;
+  background: var(--color-bg-secondary, #fef2f2);
+  color: var(--color-error, #b91c1c);
 }
 .sw-metrics-wrap {
   flex-shrink: 0;
@@ -1101,14 +1311,14 @@ onUnmounted(() => {
   display: grid;
   place-items: center;
   background: #f1f5f9;
-  color: #64748b;
+  color: var(--sw-muted);
   flex-shrink: 0;
 }
 .sw-metric.blue .sw-metric-ico { background: #eff6ff; color: #2563eb; }
 .sw-metric.red .sw-metric-ico { background: #fef2f2; color: #dc2626; }
 .sw-metric.amber .sw-metric-ico { background: #fffbeb; color: #d97706; }
 .sw-metric.violet .sw-metric-ico { background: #f5f3ff; color: #7c3aed; }
-.sw-metric.slate .sw-metric-ico { background: #f8fafc; color: #475569; }
+.sw-metric.slate .sw-metric-ico { background: var(--color-bg-secondary, #f8fafc); color: var(--sw-muted); }
 .sw-metric.cyan .sw-metric-ico { background: #ecfeff; color: #0891b2; }
 .sw-metric-body {
   display: flex;
@@ -1129,7 +1339,7 @@ onUnmounted(() => {
 .sw-metric-body em {
   font-style: normal;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--sw-muted);
 }
 .sw-board {
   flex: 1;
@@ -1187,11 +1397,11 @@ onUnmounted(() => {
   border-radius: 8px;
   padding: 9px 10px;
   font-size: 13px;
-  color: #475569;
+  color: var(--sw-muted);
   cursor: pointer;
   text-align: left;
 }
-.sw-queue-item:hover { background: #f8fafc; }
+.sw-queue-item:hover { background: var(--color-bg-secondary, #f8fafc); }
 .sw-queue-item.on {
   background: var(--sw-primary-soft);
   color: var(--sw-primary);
@@ -1203,7 +1413,7 @@ onUnmounted(() => {
   padding: 0 6px;
   border-radius: 999px;
   background: #eef2f7;
-  color: #64748b;
+  color: var(--sw-muted);
   font-size: 11px;
   display: inline-grid;
   place-items: center;
@@ -1254,7 +1464,7 @@ onUnmounted(() => {
   padding: 0 10px;
   border-radius: 999px;
   background: #f1f5f9;
-  color: #475569;
+  color: var(--sw-muted);
   font-size: 12px;
   font-weight: 600;
 }
@@ -1274,13 +1484,24 @@ onUnmounted(() => {
 }
 .sw-card {
   display: flex;
+  width: 100%;
+  margin: 0;
   gap: 10px;
   padding: 12px;
   border-radius: 10px;
   border: 1px solid transparent;
+  background: transparent;
+  color: var(--sw-text);
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
-.sw-card:hover { background: #f8fafc; }
+.sw-card:focus-visible,
+.sw-queue-mini:focus-visible {
+  outline: 2px solid var(--sw-primary);
+  outline-offset: -2px;
+}
+.sw-card:hover { background: var(--color-bg-secondary, #f8fafc); }
 .sw-card.on {
   background: var(--sw-primary-soft);
   border-color: #dbeafe;
@@ -1339,7 +1560,7 @@ onUnmounted(() => {
 .sw-tag[data-tone='warn'] { background: #fff7ed; color: #ea580c; }
 .sw-tag[data-tone='info'] { background: #eff6ff; color: #2563eb; }
 .sw-tag[data-tone='muted'],
-.sw-tag.muted { background: #f1f5f9; color: #64748b; }
+.sw-tag.muted { background: #f1f5f9; color: var(--sw-muted); }
 .sw-dot {
   min-width: 16px;
   height: 16px;
@@ -1356,7 +1577,7 @@ onUnmounted(() => {
 .sw-typing-hint {
   margin: 0;
   font-size: 13px;
-  color: #64748b;
+  color: var(--sw-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1420,7 +1641,7 @@ onUnmounted(() => {
   padding: 0 12px;
   border-radius: 8px;
   border: 1px solid var(--sw-line);
-  background: #fff;
+  background: var(--sw-card);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1438,7 +1659,7 @@ onUnmounted(() => {
 .sw-history {
   width: min(720px, 100%);
   height: min(780px, calc(100vh - 48px));
-  background: #fff;
+  background: var(--sw-card);
   border-radius: 14px;
   border: 1px solid var(--sw-line);
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.22);
@@ -1454,7 +1675,7 @@ onUnmounted(() => {
   gap: 12px;
   padding: 16px 18px;
   border-bottom: 1px solid var(--sw-line);
-  background: #f8fafc;
+  background: var(--color-bg-secondary, #f8fafc);
 }
 .sw-history-head strong {
   font-size: 16px;
@@ -1470,7 +1691,7 @@ onUnmounted(() => {
   background: transparent;
   font-size: 24px;
   line-height: 1;
-  color: #94a3b8;
+  color: var(--sw-muted);
   cursor: pointer;
   padding: 0 4px;
 }
@@ -1484,7 +1705,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: #f8fafc;
+  background: var(--color-bg-secondary, #f8fafc);
 }
 .sw-history-row {
   display: flex;
@@ -1496,7 +1717,7 @@ onUnmounted(() => {
   max-width: 86%;
   padding: 10px 12px;
   border-radius: 12px;
-  background: #fff;
+  background: var(--sw-card);
   border: 1px solid var(--sw-line);
 }
 .sw-history-row.staff .sw-history-bubble {
@@ -1532,7 +1753,7 @@ onUnmounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.sw-btn.ghost:hover { background: #f8fafc; }
+.sw-btn.ghost:hover { background: var(--color-bg-secondary, #f8fafc); }
 .sw-btn.primary {
   border-color: transparent;
   background: var(--sw-primary);
@@ -1580,7 +1801,11 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  background: #f8fafc;
+  background: var(--color-bg-secondary, #f8fafc);
+}
+.sw-msgs:focus-visible {
+  outline: 2px solid var(--sw-primary);
+  outline-offset: -2px;
 }
 .sw-msg { display: flex; }
 .sw-msg.staff { justify-content: flex-end; }
@@ -1589,8 +1814,10 @@ onUnmounted(() => {
   max-width: 82%;
   padding: 9px 12px;
   border-radius: 12px;
-  background: #fff;
+  background: var(--sw-card);
+  color: var(--sw-text);
   border: 1px solid var(--sw-line);
+  overflow-wrap: anywhere;
 }
 .sw-msg.staff .sw-bubble {
   background: var(--sw-primary);
@@ -1602,7 +1829,7 @@ onUnmounted(() => {
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 .sw-meta {
   display: flex;
@@ -1611,10 +1838,10 @@ onUnmounted(() => {
   gap: 6px;
   margin-top: 4px;
 }
-.sw-meta time { font-size: 10px; opacity: 0.65; }
-.sw-read { font-size: 10px; opacity: 0.55; }
-.sw-read.on { opacity: 0.95; font-weight: 700; color: #bbf7d0; }
-.sw-msg.user .sw-read.on { color: #16a34a; }
+.sw-meta time { font-size: 10px; opacity: 0.78; }
+.sw-read { font-size: 10px; opacity: 0.78; }
+.sw-read.on { opacity: 1; font-weight: 700; color: #bbf7d0; }
+.sw-msg.user .sw-read.on { color: var(--color-success, #16a34a); }
 .sw-typing-dots {
   display: inline-flex;
   gap: 4px;
@@ -1626,7 +1853,7 @@ onUnmounted(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #94a3b8;
+  background: var(--sw-muted);
   animation: sw-bounce 1.2s infinite ease-in-out;
 }
 .sw-typing-dots span:nth-child(2) { animation-delay: 0.15s; }
@@ -1635,13 +1862,39 @@ onUnmounted(() => {
   0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
   40% { transform: translateY(-3px); opacity: 1; }
 }
+.sw-thread-error {
+  margin: auto;
+  padding: 20px;
+  text-align: center;
+  color: var(--color-error, #b91c1c);
+}
+.sw-thread-error p { margin: 0 0 12px; overflow-wrap: anywhere; }
+.sw-new-messages {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+  padding: 6px;
+  border-top: 1px solid var(--sw-line);
+  background: var(--sw-card);
+}
+.sw-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .sw-compose {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
-  background: #fff;
+  background: var(--sw-card);
   min-height: 72px;
   box-sizing: border-box;
   overflow: hidden;
@@ -1652,6 +1905,8 @@ onUnmounted(() => {
   resize: none;
   border: 1px solid var(--sw-line);
   border-radius: 10px;
+  background: var(--sw-card);
+  color: var(--sw-text);
   padding: 10px 12px;
   font: inherit;
   font-size: 13px;
@@ -1669,7 +1924,7 @@ onUnmounted(() => {
 .sw-log {
   flex-shrink: 0;
   padding: 12px 14px 14px;
-  background: #fff;
+  background: var(--sw-card);
   min-height: 72px;
   box-sizing: border-box;
   overflow-x: hidden;
@@ -1704,7 +1959,7 @@ onUnmounted(() => {
 .sw-log p {
   margin: 0;
   font-size: 12px;
-  color: #475569;
+  color: var(--sw-muted);
   line-height: 1.4;
 }
 .sw-log time {
@@ -1729,7 +1984,7 @@ onUnmounted(() => {
   gap: 8px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--color-bg-secondary, #f8fafc);
 }
 .sw-customer dt {
   font-size: 12px;
@@ -1752,12 +2007,30 @@ onUnmounted(() => {
   display: grid;
   place-items: center;
 }
+.sw-top-search input,
+.sw-refresh,
+.sw-queue-head,
+.sw-btn {
+  color: var(--sw-text);
+}
 @media (max-width: 1200px) {
   .sw-metric-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 960px) {
   .sw-top { grid-template-columns: 1fr; }
   .sw-metric-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sw-typing-dots span,
+  .sw-shell .animate-spin {
+    animation: none;
+  }
+  .sw-splitter::after {
+    transition: none;
+  }
+  .sw-msgs {
+    scroll-behavior: auto;
+  }
 }
 </style>
 

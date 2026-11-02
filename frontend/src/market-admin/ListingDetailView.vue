@@ -6,6 +6,7 @@
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
 import { useConsoleTabs } from '@/stores/consoleTabs'
 
@@ -71,6 +72,7 @@ const error = ref('')
 const msg = ref('')
 const step = ref(0)
 const createdId = ref(0)
+const dangerAction = ref<'pause' | 'close' | null>(null)
 
 const form = reactive({
   upstream_id: '' as string | number,
@@ -283,11 +285,13 @@ async function load() {
 }
 
 async function run(label: string, fn: () => Promise<unknown>) {
+  if (busy.value) return false
   busy.value = true
   error.value = ''
   msg.value = ''
   try {
     await fn()
+    await load()
     msg.value = label
     return true
   } catch (e) {
@@ -471,31 +475,38 @@ async function save() {
   if (form.multiplier !== '') body.multiplier = Number(form.multiplier)
   if (form.face_value !== '') body.face_value = Number(form.face_value)
   if (form.stock !== '') body.stock = Number(form.stock)
-  if (
-    await run(`挂单 #${listingId.value} 已保存`, () =>
-      marketSend('PUT', `${MARKET_API_PREFIX}/listings/${listingId.value}`, body),
-    )
-  ) {
-    await load()
-  }
+  await run(`挂单 #${listingId.value} 已保存`, () =>
+    marketSend('PUT', `${MARKET_API_PREFIX}/listings/${listingId.value}`, body),
+  )
 }
 
-async function pause() {
-  if (!window.confirm(`强制暂停挂单 #${listingId.value}？`)) return
-  if (await run('已暂停', () => marketSend('POST', `${MARKET_API_PREFIX}/listings/${listingId.value}/pause`))) {
-    await load()
-  }
+function pause() {
+  error.value = ''
+  dangerAction.value = 'pause'
 }
+
 async function resume() {
-  if (await run('已恢复', () => marketSend('POST', `${MARKET_API_PREFIX}/listings/${listingId.value}/resume`))) {
-    await load()
-  }
+  await run('已恢复', () =>
+    marketSend('POST', `${MARKET_API_PREFIX}/listings/${listingId.value}/resume`),
+  )
 }
-async function closeListing() {
-  if (!window.confirm(`强制关闭挂单 #${listingId.value}？关闭后不可再售。`)) return
-  if (await run('已关闭', () => marketSend('POST', `${MARKET_API_PREFIX}/listings/${listingId.value}/close`))) {
-    await load()
-  }
+
+function closeListing() {
+  error.value = ''
+  dangerAction.value = 'close'
+}
+
+async function confirmDangerAction() {
+  const action = dangerAction.value
+  if (!action) return
+  const ok = action === 'pause'
+    ? await run('已暂停', () =>
+        marketSend('POST', `${MARKET_API_PREFIX}/listings/${listingId.value}/pause`),
+      )
+    : await run('已关闭', () =>
+        marketSend('POST', `${MARKET_API_PREFIX}/listings/${listingId.value}/close`),
+      )
+  if (ok) dangerAction.value = null
 }
 
 function backToList() {
@@ -533,7 +544,12 @@ onUnmounted(() => {
   <section id="market-listing-detail-page" class="detail-shell">
     <header class="detail-header">
       <div class="page-heading">
-        <h2 class="y-title">{{ isNew ? '新建挂单' : row?.title?.trim() || '挂单详情' }}</h2>
+        <h2
+          class="y-title break-anywhere"
+          :title="isNew ? '新建挂单' : row?.title?.trim() || '挂单详情'"
+        >
+          {{ isNew ? '新建挂单' : row?.title?.trim() || '挂单详情' }}
+        </h2>
         <p class="y-page-desc">
           {{
             isNew
@@ -560,8 +576,8 @@ onUnmounted(() => {
     </header>
 
     <div class="detail-body">
-      <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-      <p v-else-if="msg && !isNew" class="y-msg y-msg--ok">{{ msg }}</p>
+      <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+      <p v-else-if="msg && !isNew" class="y-msg y-msg--ok" role="status" aria-live="polite">{{ msg }}</p>
       <p v-if="loading" class="y-msg">加载中…</p>
 
       <!-- ========== 新建：C 端步骤条 ========== -->
@@ -572,24 +588,30 @@ onUnmounted(() => {
             :key="label"
             class="xm-stepper__item"
             :class="{ 'is-on': step === i, 'is-done': step > i }"
-            :aria-current="step === i ? 'step' : undefined"
-            @click="goStep(i)"
           >
-            <div class="xm-stepper__node">
-              <span class="xm-stepper__dot" aria-hidden="true">
-                <svg v-if="step > i" viewBox="0 0 16 16" width="14" height="14" fill="none">
-                  <path
-                    d="M3.5 8.5 6.5 11.5 12.5 4.5"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-                <template v-else>{{ i + 1 }}</template>
+            <button
+              type="button"
+              class="xm-stepper__button"
+              :aria-current="step === i ? 'step' : undefined"
+              :aria-label="`第 ${i + 1} 步：${label}`"
+              @click="goStep(i)"
+            >
+              <span class="xm-stepper__node">
+                <span class="xm-stepper__dot" aria-hidden="true">
+                  <svg v-if="step > i" viewBox="0 0 16 16" width="14" height="14" fill="none">
+                    <path
+                      d="M3.5 8.5 6.5 11.5 12.5 4.5"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  <template v-else>{{ i + 1 }}</template>
+                </span>
+                <span class="xm-stepper__label">{{ label }}</span>
               </span>
-              <span class="xm-stepper__label">{{ label }}</span>
-            </div>
+            </button>
             <span
               v-if="i < CREATE_STEPS.length - 1"
               class="xm-stepper__line"
@@ -818,7 +840,7 @@ onUnmounted(() => {
             <label class="xm-field-label">短描述（可选）</label>
             <textarea
               v-model="form.description"
-              class="xm-input"
+              class="xm-input y-textarea"
               rows="3"
               placeholder="给买家看的说明"
             />
@@ -908,7 +930,7 @@ onUnmounted(() => {
               </label>
               <label class="y-field">
                 <span>描述</span>
-                <textarea v-model="form.description" class="input w-full" rows="3" />
+                <textarea v-model="form.description" class="input y-textarea w-full" rows="3" />
               </label>
               <label class="y-field">
                 <span>分类（逗号分隔）</span>
@@ -973,6 +995,22 @@ onUnmounted(() => {
         </div>
       </template>
     </div>
+
+    <ConfirmDialog
+      :show="dangerAction !== null"
+      :title="dangerAction === 'close' ? '强制关闭挂单' : '强制暂停挂单'"
+      :message="dangerAction === 'close'
+        ? `强制关闭挂单 #${listingId}？关闭后不可再售。`
+        : `强制暂停挂单 #${listingId}？`"
+      :confirm-text="dangerAction === 'close' ? '确认关闭' : '确认暂停'"
+      cancel-text="取消"
+      :danger="dangerAction === 'close'"
+      :busy="busy"
+      @confirm="confirmDangerAction"
+      @cancel="dangerAction = null"
+    >
+      <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+    </ConfirmDialog>
   </section>
 </template>
 
@@ -1001,6 +1039,24 @@ onUnmounted(() => {
 
 .page-heading {
   min-width: 0;
+}
+
+.detail-shell,
+.detail-header,
+.detail-body,
+.xm-pub-panel,
+.edit-sections,
+.edit-card {
+  min-width: 0;
+}
+
+.break-anywhere,
+.xm-choice > div,
+.xm-summary,
+.upstream-list__main,
+.detail-meta > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .y-title {
@@ -1058,6 +1114,24 @@ onUnmounted(() => {
 
 .xm-stepper__item:last-child {
   flex: 0 0 auto;
+}
+
+.xm-stepper__button {
+  display: block;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.xm-stepper__button:focus-visible {
+  outline: 2px solid var(--color-primary, #0555ce);
+  outline-offset: 4px;
 }
 
 .xm-stepper__node {
@@ -1291,7 +1365,7 @@ textarea.xm-input {
   max-width: 36em;
   font-size: 12px !important;
   font-weight: 500 !important;
-  color: #666 !important;
+  color: var(--color-text-secondary, #666) !important;
   line-height: 1.5;
 }
 
@@ -1574,6 +1648,83 @@ textarea.xm-input {
   flex-wrap: wrap;
   gap: 8px;
   padding: 4px 0 12px;
+}
+
+:global(html.dark #market-listing-detail-page .detail-header),
+:global(html.dark #market-listing-detail-page .xm-stepper),
+:global(html.dark #market-listing-detail-page .xm-pub-panel),
+:global(html.dark #market-listing-detail-page .xm-input),
+:global(html.dark #market-listing-detail-page .detail-meta),
+:global(html.dark #market-listing-detail-page .edit-card),
+:global(html.dark #market-listing-detail-page .xm-btn-ghost) {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-listing-detail-page .upstream-list__item),
+:global(html.dark #market-listing-detail-page .xm-choice),
+:global(html.dark #market-listing-detail-page .xm-summary) {
+  background: var(--color-bg-secondary);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-listing-detail-page .y-title),
+:global(html.dark #market-listing-detail-page .xm-pub-panel h2),
+:global(html.dark #market-listing-detail-page .upstream-empty p),
+:global(html.dark #market-listing-detail-page .upstream-list__main),
+:global(html.dark #market-listing-detail-page .xm-choice strong),
+:global(html.dark #market-listing-detail-page .xm-check),
+:global(html.dark #market-listing-detail-page .xm-stepper__item.is-done .xm-stepper__label) {
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-listing-detail-page .y-page-desc),
+:global(html.dark #market-listing-detail-page .xm-pub-panel .sub),
+:global(html.dark #market-listing-detail-page .xm-field-label),
+:global(html.dark #market-listing-detail-page .xm-hint),
+:global(html.dark #market-listing-detail-page .xm-choice span),
+:global(html.dark #market-listing-detail-page .detail-meta span),
+:global(html.dark #market-listing-detail-page .y-field > span:first-child) {
+  color: var(--color-text-secondary);
+}
+
+:global(html.dark #market-listing-detail-page .xm-stepper__dot) {
+  background: var(--color-bg-secondary);
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+:global(html.dark #market-listing-detail-page .xm-stepper__item.is-on .xm-stepper__dot),
+:global(html.dark #market-listing-detail-page .xm-stepper__item.is-done .xm-stepper__dot) {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+:global(html.dark #market-listing-detail-page .xm-stepper__item.is-on .xm-stepper__label) {
+  color: var(--color-primary);
+}
+
+:global(html.dark #market-listing-detail-page .xm-choice.on) {
+  background: rgba(5, 85, 206, 0.16);
+}
+
+:global(html.dark #market-listing-detail-page .upstream-list__status) {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+}
+
+:global(html.dark #market-listing-detail-page .upstream-list__hint) {
+  color: var(--color-warning);
+}
+
+@media (max-width: 960px) {
+  .detail-meta {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 @media (max-width: 768px) {

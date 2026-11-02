@@ -2,7 +2,7 @@
 /**
  * 热搜配置：TablePageLayout + filter-grid + DataTable；行内编辑，↑↓ 调序后保存。
  */
-import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
@@ -82,6 +82,7 @@ const base = ref<DiscoveryConfig>({})
 const rows = ref<HotSearch[]>([])
 const tagOpts = ref<{ id: string; name: string }[]>([])
 const loading = ref(false)
+const loaded = ref(false)
 const busy = ref(false)
 const error = ref('')
 const msg = ref('')
@@ -136,6 +137,9 @@ const filtered = computed(() => {
 })
 
 const total = computed(() => filtered.value.length)
+const hasActiveFilters = computed(() =>
+  Boolean(queryParams.value.keyword.trim() || queryParams.value.enabled || queryParams.value.plat),
+)
 const pageRows = computed(() => {
   const start = (queryParams.value.pageNum - 1) * queryParams.value.pageSize
   return filtered.value.slice(start, start + queryParams.value.pageSize)
@@ -167,6 +171,11 @@ watch(
   },
 )
 
+watch(rows, () => {
+  const maxPage = Math.max(1, Math.ceil(total.value / queryParams.value.pageSize))
+  if (queryParams.value.pageNum > maxPage) queryParams.value.pageNum = maxPage
+}, { deep: true })
+
 function getSerialNumber(index: number) {
   const n = (queryParams.value.pageNum - 1) * queryParams.value.pageSize + index + 1
   return String(n).padStart(2, '0')
@@ -185,6 +194,8 @@ function indexOf(h: HotSearch) {
 }
 
 function move(h: HotSearch, delta: number) {
+  if (hasActiveFilters.value) return
+  msg.value = ''
   const i = indexOf(h)
   if (i < 0) return
   const j = i + delta
@@ -212,34 +223,55 @@ async function load() {
       action: { ...(h.action || {}) },
     }))
     tagOpts.value = flattenPickable(cats ?? [])
+    loaded.value = true
   } catch (e) {
+    loaded.value = false
     error.value = e instanceof Error ? e.message : '加载失败'
-    rows.value = []
   } finally {
     loading.value = false
   }
 }
 
-function add() {
+async function add() {
+  if (!loaded.value || busy.value) return
+  msg.value = ''
+  const pageSize = queryParams.value.pageSize
+  Object.assign(queryParams.value, { ...initQueryParams, pageSize })
+  let id = uid()
+  while (rows.value.some((row) => row.id === id)) id = uid()
   rows.value.push({
-    id: uid(),
+    id,
     label: '新热搜',
     enabled: true,
     sort: (rows.value.length + 1) * 10,
     action: {},
   })
   reSort()
-  queryParams.value.pageNum = Math.ceil(rows.value.length / queryParams.value.pageSize) || 1
+  await nextTick()
+  queryParams.value.pageNum = Math.ceil(rows.value.length / pageSize) || 1
 }
 
 function removeAt(h: HotSearch) {
   const i = indexOf(h)
   if (i < 0) return
+  msg.value = ''
   rows.value.splice(i, 1)
   reSort()
 }
 
 async function save() {
+  if (!loaded.value || loading.value || busy.value) return
+  const ids = rows.value.map((row) => row.id.trim())
+  if (ids.some((id) => !id)) {
+    error.value = '热搜 ID 不能为空'
+    msg.value = ''
+    return
+  }
+  if (new Set(ids).size !== ids.length) {
+    error.value = '热搜 ID 必须唯一'
+    msg.value = ''
+    return
+  }
   reSort()
   busy.value = true
   error.value = ''
@@ -277,11 +309,11 @@ onMounted(load)
       </template>
 
       <template #actions>
-        <button type="button" class="btn btn-secondary page-action-btn" :disabled="busy" @click="add">
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="busy || !loaded" @click="add">
           <Icon name="plus" size="sm" />
           热搜
         </button>
-        <button type="button" class="btn btn-primary page-action-btn" :disabled="busy || loading" @click="save">
+        <button type="button" class="btn btn-primary page-action-btn" :disabled="busy || loading || !loaded" @click="save">
           保存
         </button>
         <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
@@ -291,8 +323,11 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <div v-if="error" class="y-msg y-msg--error mb-2 load-error" role="alert">
+          <span class="break-anywhere">{{ error }}</span>
+          <button type="button" class="y-link" :disabled="loading" @click="load">重试</button>
+        </div>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
 
         <div class="section-block">
           <div class="section-title">基本信息</div>
@@ -322,9 +357,10 @@ onMounted(load)
           <div class="section-title">热搜筛选</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="hot-searches-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="hot-searches-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -334,20 +370,24 @@ onMounted(load)
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">启用</label>
+              <label class="filter-label" for="hot-searches-enabled">启用</label>
               <Select
+                id="hot-searches-enabled"
                 v-model="queryParams.enabled"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="热搜启用状态"
                 :options="ENABLED_OPTIONS"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">厂商</label>
+              <label class="filter-label" for="hot-searches-plat">厂商</label>
               <Select
+                id="hot-searches-plat"
                 v-model="queryParams.plat"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="热搜厂商"
                 :options="PLAT_OPTIONS"
               />
             </div>
@@ -366,6 +406,7 @@ onMounted(load)
       </template>
 
       <template #table>
+        <p v-if="hasActiveFilters" class="filter-note mb-2">筛选激活时不可调序；清空筛选后可调整完整顺序</p>
         <DataTable
           :columns="columns"
           :data="pageRows"
@@ -376,51 +417,51 @@ onMounted(load)
             {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
           </template>
           <template #cell-label="{ row }">
-            <input v-model="row.label" class="cell-input" placeholder="显示文案" />
+            <input v-model="row.label" class="cell-input" type="text" placeholder="显示文案" @input="msg = ''" />
           </template>
           <template #cell-id="{ row }">
-            <input v-model="row.id" class="cell-input mono" placeholder="id" />
+            <input v-model="row.id" class="cell-input mono" type="text" placeholder="id" @input="msg = ''" />
           </template>
           <template #cell-enabled="{ row }">
             <label class="y-check">
-              <input v-model="row.enabled" type="checkbox" />
+              <input v-model="row.enabled" type="checkbox" @change="msg = ''" />
               启用
             </label>
           </template>
           <template #cell-plat="{ row }">
-            <select v-model="row.action.plat" class="cell-input">
+            <select v-model="row.action.plat" class="cell-input" @change="msg = ''">
               <option :value="undefined">厂商（可选）</option>
               <option v-for="p in PLATS" :key="p" :value="p">{{ p }}</option>
             </select>
           </template>
           <template #cell-kindTab="{ row }">
-            <select v-model="row.action.kindTab" class="cell-input">
+            <select v-model="row.action.kindTab" class="cell-input" @change="msg = ''">
               <option v-for="k in KINDS" :key="k.value || 'none'" :value="k.value || undefined">
                 {{ k.label }}
               </option>
             </select>
           </template>
           <template #cell-tag="{ row }">
-            <select v-if="tagOpts.length" v-model="row.action.tag" class="cell-input">
+            <select v-if="tagOpts.length" v-model="row.action.tag" class="cell-input" @change="msg = ''">
               <option v-for="o in tagSelectOptions" :key="o.value || 'none'" :value="o.value || undefined">
                 {{ o.label }}
               </option>
             </select>
-            <input v-else v-model="row.action.tag" class="cell-input" placeholder="标签 id" />
+            <input v-else v-model="row.action.tag" class="cell-input" type="text" placeholder="标签 id" @input="msg = ''" />
           </template>
           <template #cell-q="{ row }">
-            <input v-model="row.action.q" class="cell-input" placeholder="搜索词" />
+            <input v-model="row.action.q" class="cell-input" type="text" placeholder="搜索词" @input="msg = ''" />
           </template>
           <template #cell-href="{ row }">
-            <input v-model="row.action.href" class="cell-input" placeholder="/seller/publish" />
+            <input v-model="row.action.href" class="cell-input" type="text" placeholder="/seller/publish" @input="msg = ''" />
           </template>
           <template #cell-actions="{ row }">
             <div class="table-ops">
-              <button type="button" class="y-link" :disabled="indexOf(row) <= 0" @click="move(row, -1)">上移</button>
+              <button type="button" class="y-link" :disabled="hasActiveFilters || indexOf(row) <= 0" @click="move(row, -1)">上移</button>
               <button
                 type="button"
                 class="y-link"
-                :disabled="indexOf(row) < 0 || indexOf(row) >= rows.length - 1"
+                :disabled="hasActiveFilters || indexOf(row) < 0 || indexOf(row) >= rows.length - 1"
                 @click="move(row, 1)"
               >
                 下移
@@ -502,30 +543,21 @@ onMounted(load)
   gap: 12px;
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  background: #f8fafc;
-}
-
-.stat-card--blue {
-  background: linear-gradient(135deg, #eff6ff, #f8fafc);
-}
-.stat-card--green {
-  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
-}
-.stat-card--orange {
-  background: linear-gradient(135deg, #fff7ed, #f8fafc);
+  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.06));
+  background: var(--color-bg-elevated, #f8fafc);
 }
 
 .stat-card__label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary, #0f172a);
   line-height: 1.2;
 }
 
@@ -543,9 +575,27 @@ onMounted(load)
   min-width: 0;
   height: 30px;
   padding: 0 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-bg-elevated, #fff);
+  color: var(--color-text-primary, #303133);
+  font-size: 12px;
+}
+
+.load-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.break-anywhere {
+  overflow-wrap: anywhere;
+}
+
+.filter-note {
+  padding: 8px 12px;
+  color: var(--color-text-secondary, #64748b);
   font-size: 12px;
 }
 
@@ -568,22 +618,22 @@ onMounted(load)
 }
 
 #market-hot-searches-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-hot-searches-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary, #303133);
   vertical-align: middle;
 }
 
 #market-hot-searches-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  background: var(--color-bg-secondary, #f5f7fa);
 }
 
 #market-hot-searches-page :deep(th.col-label),
@@ -614,19 +664,25 @@ onMounted(load)
   width: 10rem;
   box-sizing: border-box;
 }
-#market-hot-searches-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-hot-searches-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-hot-searches-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
-
 @media (max-width: 900px) {
   .stats-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  #market-hot-searches-page :deep(.y-header),
+  #market-hot-searches-page :deep(.y-header-actions) {
+    flex-wrap: wrap;
+  }
+
+  #market-hot-searches-page :deep(.y-header-actions) {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .load-error {
+    flex-wrap: wrap;
   }
 }
 </style>

@@ -19,6 +19,7 @@ const error = ref('')
 const msg = ref('')
 const busy = ref(false)
 const loading = ref(false)
+const loaded = ref(false)
 
 async function load() {
   loading.value = true
@@ -26,7 +27,9 @@ async function load() {
   try {
     const data = await marketGet<Record<string, unknown>>(`${MARKET_API_PREFIX}/settings`)
     for (const f of fields) form[f.key] = data[f.key] == null ? '' : String(data[f.key])
+    loaded.value = true
   } catch (e) {
+    loaded.value = false
     error.value = e instanceof Error ? e.message : '加载失败'
   } finally {
     loading.value = false
@@ -34,6 +37,7 @@ async function load() {
 }
 
 async function save() {
+  if (!loaded.value || loading.value || busy.value) return
   error.value = ''
   msg.value = ''
   busy.value = true
@@ -69,20 +73,23 @@ onMounted(load)
           <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
           刷新
         </button>
-        <button type="button" class="btn btn-primary page-action-btn" :disabled="busy || loading" @click="save">
+        <button type="button" class="btn btn-primary page-action-btn" :disabled="busy || loading || !loaded" @click="save">
           {{ busy ? '保存中…' : '保存' }}
         </button>
       </div>
     </header>
 
-    <div class="form-panel">
-      <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-      <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
+    <div class="form-panel" :aria-busy="loading">
+      <div v-if="error" class="y-msg y-msg--error load-error" role="alert">
+        <span class="break-anywhere">{{ error }}</span>
+        <button type="button" class="y-link" :disabled="loading" @click="load">重试</button>
+      </div>
+      <p v-else-if="msg" class="y-msg y-msg--ok" role="status" aria-live="polite">{{ msg }}</p>
       <p v-if="loading" class="y-msg">加载中…</p>
       <form v-else class="form-grid" @submit.prevent="save">
         <label v-for="f in fields" :key="f.key" class="form-field">
           <span>{{ f.label }}</span>
-          <input v-model="form[f.key]" class="input w-full" inputmode="decimal" />
+          <input v-model="form[f.key]" class="input w-full" inputmode="decimal" @input="msg = ''" />
         </label>
       </form>
     </div>
@@ -118,9 +125,29 @@ onMounted(load)
   max-width: 40rem;
   padding: 16px;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.08));
+  background: var(--color-bg-elevated, rgba(255, 255, 255, 0.96));
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.load-error {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.break-anywhere {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .y-header,
+  .y-header-actions,
+  .load-error {
+    flex-wrap: wrap;
+  }
+  .y-header-actions {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 .form-grid {
   display: grid;

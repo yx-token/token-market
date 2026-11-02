@@ -15,6 +15,9 @@
         :disabled="disabled"
         :clearable="clearable"
         :default-time="defaultTime"
+        :id="datePickerIds"
+        :aria-label="ariaLabel"
+        popper-class="console-date-popper"
         teleported
         @change="onElChange"
       />
@@ -25,6 +28,9 @@
   <div v-else class="relative w-full" ref="containerRef">
     <button
       type="button"
+      :id="id"
+      :aria-label="ariaLabel"
+      :aria-describedby="ariaDescribedby"
       @click="toggle"
       :class="['date-picker-trigger', isOpen && 'date-picker-trigger-open']"
     >
@@ -118,6 +124,9 @@ interface Props {
   clearable?: boolean
   startPlaceholder?: string
   endPlaceholder?: string
+  id?: string
+  ariaLabel?: string
+  ariaDescribedby?: string
 }
 
 interface Emits {
@@ -142,6 +151,9 @@ const containerRef = ref<HTMLElement | null>(null)
 const localStartDate = ref(props.startDate)
 const localEndDate = ref(props.endDate)
 const activePreset = ref<string | null>('last24Hours')
+const datePickerIds = computed<[string, string] | undefined>(() =>
+  props.id ? [props.id, `${props.id}-end`] : undefined,
+)
 
 const elLocale = computed(() => (locale.value === 'zh' || String(locale.value).startsWith('zh') ? zhCn : en))
 
@@ -433,7 +445,7 @@ onUnmounted(() => {
   padding: 0 10px;
   border-radius: 8px;
   box-shadow: 0 0 0 1px var(--color-border, #e8e8e8) inset;
-  background: var(--color-white, #fff);
+  background: var(--color-bg-elevated, #fff);
 }
 
 .date-range-el :deep(.el-range-editor.el-input__wrapper:hover),

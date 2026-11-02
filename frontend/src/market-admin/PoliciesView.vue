@@ -5,6 +5,8 @@
 import { computed, onMounted, reactive, ref, toRaw, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -114,7 +116,7 @@ const msg = ref('')
 
 const initQueryParams = {
   pageNum: 1,
-  pageSize: 15,
+  pageSize: getPersistedPageSize(),
   keyword: '',
   platform: '',
   enabled: '',
@@ -285,6 +287,11 @@ watch(
   },
 )
 
+watch(total, (value) => {
+  const maxPage = Math.max(1, Math.ceil(value / queryParams.value.pageSize))
+  queryParams.value.pageNum = Math.min(queryParams.value.pageNum, maxPage)
+})
+
 watch(tab, () => {
   error.value = ''
   msg.value = ''
@@ -375,7 +382,20 @@ async function run(label: string, fn: () => Promise<unknown>) {
   }
 }
 
+function openCreate() {
+  error.value = ''
+  msg.value = ''
+  showCreate.value = true
+}
+
+function closeCreate() {
+  showCreate.value = false
+  error.value = ''
+}
+
 function openEdit(p: Policy) {
+  error.value = ''
+  msg.value = ''
   editing.value = p
   const flows = policyFlows(p)
   Object.assign(form, {
@@ -412,6 +432,7 @@ function openEdit(p: Policy) {
 
 function closeModal() {
   editing.value = null
+  error.value = ''
 }
 
 async function save() {
@@ -579,7 +600,7 @@ onMounted(load)
           v-if="tab === 'policies'"
           type="button"
           class="btn btn-primary page-action-btn"
-          @click="showCreate = true"
+          @click="openCreate"
         >
           <Icon name="plus" size="sm" />
           新建策略
@@ -591,14 +612,26 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <p v-if="error && !editing && !showCreate" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
 
-        <nav class="y-tabs mb-3">
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'policies' }" @click="tab = 'policies'">
+        <nav class="y-tabs mb-3" aria-label="检测策略视图">
+          <button
+            type="button"
+            class="y-tab"
+            :class="{ 'is-on': tab === 'policies' }"
+            :aria-pressed="tab === 'policies'"
+            @click="tab = 'policies'"
+          >
             策略列表
           </button>
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'upstream' }" @click="tab = 'upstream'">
+          <button
+            type="button"
+            class="y-tab"
+            :class="{ 'is-on': tab === 'upstream' }"
+            :aria-pressed="tab === 'upstream'"
+            @click="tab = 'upstream'"
+          >
             单个上游
           </button>
         </nav>
@@ -632,9 +665,10 @@ onMounted(load)
             <div class="section-title">策略信息</div>
             <div class="filter-grid">
               <div class="filter-item">
-                <label class="filter-label">关键词</label>
+                <label class="filter-label" for="policies-keyword">关键词</label>
                 <div class="relative flex-1 w-full min-w-0">
                   <input
+                    id="policies-keyword"
                     v-model="queryParams.keyword"
                     class="filter-input w-full"
                     type="search"
@@ -644,39 +678,47 @@ onMounted(load)
                 </div>
               </div>
               <div class="filter-item">
-                <label class="filter-label">厂商</label>
+                <label class="filter-label" for="policies-platform">厂商</label>
                 <Select
+                  id="policies-platform"
                   v-model="queryParams.platform"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="platformFilterOptions"
+                  aria-label="按厂商筛选"
                 />
               </div>
               <div class="filter-item">
-                <label class="filter-label">接入</label>
+                <label class="filter-label" for="policies-auth">接入</label>
                 <Select
+                  id="policies-auth"
                   v-model="queryParams.auth_type"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="AUTH_OPTIONS"
+                  aria-label="按接入方式筛选"
                 />
               </div>
               <div class="filter-item">
-                <label class="filter-label">检测</label>
+                <label class="filter-label" for="policies-enabled">检测</label>
                 <Select
+                  id="policies-enabled"
                   v-model="queryParams.enabled"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="ENABLED_OPTIONS"
+                  aria-label="按检测开关筛选"
                 />
               </div>
               <div class="filter-item">
-                <label class="filter-label">定时</label>
+                <label class="filter-label" for="policies-scheduled">定时</label>
                 <Select
+                  id="policies-scheduled"
                   v-model="queryParams.scheduled"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="SCHEDULED_OPTIONS"
+                  aria-label="按定时开关筛选"
                 />
               </div>
               <div class="filter-actions lg:col-span-4 sm:col-span-2">
@@ -748,7 +790,7 @@ onMounted(load)
                 title="暂无策略"
                 description="调整筛选条件后重试，或新建接入方式级策略"
                 action-text="新建策略"
-                @action="showCreate = true"
+                @action="openCreate"
               />
             </template>
           </DataTable>
@@ -807,7 +849,6 @@ onMounted(load)
           :total="total"
           :page="queryParams.pageNum"
           :page-size="queryParams.pageSize"
-          :page-size-options="[15, 20, 50]"
           show-jump
           @update:page="queryParams.pageNum = $event"
           @update:page-size="queryParams.pageSize = $event"
@@ -815,122 +856,122 @@ onMounted(load)
       </template>
     </TablePageLayout>
 
-    <div v-if="showCreate" class="y-modal-mask" @click.self="showCreate = false">
-      <div class="y-modal" role="dialog" aria-label="新建策略">
-        <header class="y-modal__head">
-          <h3>新建接入方式级策略</h3>
-          <button type="button" class="y-link" @click="showCreate = false">关闭</button>
-        </header>
-        <div class="y-modal__body">
-          <label class="y-field">
-            <span>厂商</span>
-            <select v-model="newAuth.platform" class="input w-full" @change="newAuth.authType = ''">
-              <option value="">选择</option>
-              <option v-for="v in vendors" :key="v.platform" :value="v.platform">{{ platLabel(v.platform) }}</option>
-            </select>
+    <BaseDialog
+      :show="showCreate"
+      title="新建接入方式级策略"
+      close-on-click-outside
+      @close="closeCreate"
+    >
+      <div class="dialog-form">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <label class="y-field">
+          <span>厂商</span>
+          <select v-model="newAuth.platform" class="input w-full" @change="newAuth.authType = ''">
+            <option value="">选择</option>
+            <option v-for="v in vendors" :key="v.platform" :value="v.platform">{{ platLabel(v.platform) }}</option>
+          </select>
+        </label>
+        <label class="y-field">
+          <span>接入方式</span>
+          <select v-model="newAuth.authType" class="input w-full">
+            <option value="">选择</option>
+            <option v-for="t in createAuthTypes" :key="t" :value="t">{{ t }}</option>
+          </select>
+        </label>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreate">取消</button>
+        <button type="button" class="btn btn-primary" :disabled="busy" @click="createAuthPolicy">创建</button>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
+      :show="!!editing"
+      :title="editing ? `编辑 ${platLabel(editing.platform)} · ${editing.auth_type || '全部'}` : '编辑策略'"
+      width="wide"
+      close-on-click-outside
+      @close="closeModal"
+    >
+      <div class="dialog-form">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 开启检测</label>
+        <label class="y-check"><input v-model="form.scheduled" type="checkbox" :disabled="!form.enabled" /> 开启定时检测</label>
+        <p class="hint">定时执行需同时开启总检测、总定时检测，以及对应流程和流程定时。</p>
+        <div class="y-field-row y-field-row--4">
+          <label class="y-field"><span>抖动(分)</span><input v-model.number="form.jitter" type="number" class="input w-full" /></label>
+          <label class="y-field"><span>每日预算$</span><input v-model.number="form.budget" type="number" class="input w-full" step="0.1" /></label>
+          <label class="y-field"><span>默认等级</span><input v-model="form.grade" class="input w-full" /></label>
+          <label class="y-field"><span>并发</span><input v-model.number="form.parallelism" type="number" class="input w-full" min="1" /></label>
+        </div>
+        <div class="y-field-row y-field-row--4">
+          <label class="y-field"><span>h0</span><input v-model.number="form.h0" type="number" step="0.01" class="input w-full" /></label>
+          <label class="y-field"><span>h1</span><input v-model.number="form.h1" type="number" step="0.01" class="input w-full" /></label>
+          <label class="y-field"><span>alpha</span><input v-model.number="form.alpha" type="number" step="0.01" class="input w-full" /></label>
+          <label class="y-field"><span>beta</span><input v-model.number="form.beta" type="number" step="0.01" class="input w-full" /></label>
+        </div>
+        <label class="y-check"><input v-model="form.autoPause" type="checkbox" /> 不达标自动暂停</label>
+
+        <div v-for="key in (['intelligence', 'degradation', 'identity'] as const)" :key="key" class="flow-block">
+          <h4>{{ key === 'intelligence' ? '测智' : key === 'degradation' ? '降智检测' : '身份核验' }}</h4>
+          <label class="y-check"><input v-model="form.flows[key].enabled" type="checkbox" /> 启用</label>
+          <label class="y-check">
+            <input v-model="form.flows[key].scheduled_enabled" type="checkbox" :disabled="!form.enabled || !form.scheduled" /> 定时
           </label>
           <label class="y-field">
-            <span>接入方式</span>
-            <select v-model="newAuth.authType" class="input w-full">
-              <option value="">选择</option>
-              <option v-for="t in createAuthTypes" :key="t" :value="t">{{ t }}</option>
+            <span>周期（分钟）</span>
+            <input v-model.number="form.flows[key].interval_minutes" type="number" min="10" class="input w-full" />
+          </label>
+          <label v-if="key !== 'identity'" class="y-field">
+            <span>模型（逗号分隔）</span>
+            <input
+              class="input w-full"
+              :value="modelsText(form.flows[key])"
+              @input="setModelsText(form.flows[key], ($event.target as HTMLInputElement).value)"
+            />
+          </label>
+          <label v-else class="y-field">
+            <span>来源</span>
+            <select v-model="form.flows.identity.source" class="input w-full">
+              <option value="third_party">第三方</option>
+              <option value="self">自研</option>
             </select>
           </label>
         </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="showCreate = false">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="createAuthPolicy">创建</button>
-        </footer>
-      </div>
-    </div>
 
-    <div v-if="editing" class="y-modal-mask" @click.self="closeModal">
-      <div class="y-modal y-modal--wide" role="dialog" :aria-label="`编辑 ${editing.platform}`">
-        <header class="y-modal__head">
-          <h3>编辑 {{ platLabel(editing.platform) }} · {{ editing.auth_type || '全部' }}</h3>
-          <button type="button" class="y-link" @click="closeModal">关闭</button>
-        </header>
-        <div class="y-modal__body">
-          <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-          <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 开启检测</label>
-          <label class="y-check"><input v-model="form.scheduled" type="checkbox" :disabled="!form.enabled" /> 开启定时检测</label>
-          <p class="hint">定时执行需同时开启总检测、总定时检测，以及对应流程和流程定时。</p>
-          <div class="y-field-row y-field-row--4">
-            <label class="y-field"><span>抖动(分)</span><input v-model.number="form.jitter" type="number" class="input w-full" /></label>
-            <label class="y-field"><span>每日预算$</span><input v-model.number="form.budget" type="number" class="input w-full" step="0.1" /></label>
-            <label class="y-field"><span>默认等级</span><input v-model="form.grade" class="input w-full" /></label>
-            <label class="y-field"><span>并发</span><input v-model.number="form.parallelism" type="number" class="input w-full" min="1" /></label>
-          </div>
-          <div class="y-field-row y-field-row--4">
-            <label class="y-field"><span>h0</span><input v-model.number="form.h0" type="number" step="0.01" class="input w-full" /></label>
-            <label class="y-field"><span>h1</span><input v-model.number="form.h1" type="number" step="0.01" class="input w-full" /></label>
-            <label class="y-field"><span>alpha</span><input v-model.number="form.alpha" type="number" step="0.01" class="input w-full" /></label>
-            <label class="y-field"><span>beta</span><input v-model.number="form.beta" type="number" step="0.01" class="input w-full" /></label>
-          </div>
-          <label class="y-check"><input v-model="form.autoPause" type="checkbox" /> 不达标自动暂停</label>
-
-          <div v-for="key in (['intelligence', 'degradation', 'identity'] as const)" :key="key" class="flow-block">
-            <h4>{{ key === 'intelligence' ? '测智' : key === 'degradation' ? '降智检测' : '身份核验' }}</h4>
-            <label class="y-check"><input v-model="form.flows[key].enabled" type="checkbox" /> 启用</label>
-            <label class="y-check">
-              <input v-model="form.flows[key].scheduled_enabled" type="checkbox" :disabled="!form.enabled || !form.scheduled" /> 定时
-            </label>
-            <label class="y-field">
-              <span>周期（分钟）</span>
-              <input v-model.number="form.flows[key].interval_minutes" type="number" min="10" class="input w-full" />
-            </label>
-            <label v-if="key !== 'identity'" class="y-field">
-              <span>模型（逗号分隔）</span>
-              <input
-                class="input w-full"
-                :value="modelsText(form.flows[key])"
-                @input="setModelsText(form.flows[key], ($event.target as HTMLInputElement).value)"
-              />
-            </label>
-            <label v-else class="y-field">
-              <span>来源</span>
-              <select v-model="form.flows.identity.source" class="input w-full">
-                <option value="third_party">第三方</option>
-                <option value="self">自研</option>
-              </select>
-            </label>
-          </div>
-
-          <div v-if="form.flows.identity.enabled && form.flows.identity.source === 'third_party'" data-testid="third-party-config" class="flow-block">
-            <h4>第三方检测站</h4>
-            <p v-if="disabledThirdParty.length" data-testid="disabled-provider-warning" class="hint">
-              检测站 {{ disabledThirdParty.join('、') }} 已停用，执行时会跳过；请先启用检测站，或在本策略中取消选择。
-            </p>
-            <div v-for="pr in providers" :key="pr.name" class="tp-row">
-              <template v-if="thirdParty[pr.name]">
-                <label class="y-check">
-                  <input v-model="thirdParty[pr.name].enabled" type="checkbox" />
-                  {{ pr.label }}
-                  <span v-if="!pr.enabled" class="hint">（站未启用）</span>
-                </label>
-                <template v-if="thirdParty[pr.name].enabled">
-                  <input v-model="thirdParty[pr.name].model" class="input" placeholder="模型" />
-                  <select v-model="thirdParty[pr.name].onMismatch" class="input">
-                    <option value="degraded">暂停调度</option>
-                    <option value="suspected">标记疑似</option>
-                    <option value="ignore">仅记录</option>
-                  </select>
-                </template>
+        <div v-if="form.flows.identity.enabled && form.flows.identity.source === 'third_party'" data-testid="third-party-config" class="flow-block">
+          <h4>第三方检测站</h4>
+          <p v-if="disabledThirdParty.length" data-testid="disabled-provider-warning" class="hint">
+            检测站 {{ disabledThirdParty.join('、') }} 已停用，执行时会跳过；请先启用检测站，或在本策略中取消选择。
+          </p>
+          <div v-for="pr in providers" :key="pr.name" class="tp-row">
+            <template v-if="thirdParty[pr.name]">
+              <label class="y-check">
+                <input v-model="thirdParty[pr.name].enabled" type="checkbox" />
+                {{ pr.label }}
+                <span v-if="!pr.enabled" class="hint">（站未启用）</span>
+              </label>
+              <template v-if="thirdParty[pr.name].enabled">
+                <input v-model="thirdParty[pr.name].model" class="input" placeholder="模型" />
+                <select v-model="thirdParty[pr.name].onMismatch" class="input">
+                  <option value="degraded">暂停调度</option>
+                  <option value="suspected">标记疑似</option>
+                  <option value="ignore">仅记录</option>
+                </select>
               </template>
-            </div>
+            </template>
           </div>
-
-          <label class="y-field">
-            <span>token 预算（JSON）</span>
-            <textarea v-model="form.tokenBudgets" class="input w-full y-textarea mono" rows="3" />
-          </label>
         </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
-        </footer>
+
+        <label class="y-field">
+          <span>token 预算（JSON）</span>
+          <textarea v-model="form.tokenBudgets" class="input w-full y-textarea mono" rows="3" />
+        </label>
       </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+        <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
+      </template>
+    </BaseDialog>
   </section>
 </template>
 
@@ -997,14 +1038,14 @@ onMounted(load)
 
 .stat-card__label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary, #0f172a);
   line-height: 1.2;
 }
 
@@ -1120,21 +1161,21 @@ onMounted(load)
 }
 
 #market-policies-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-policies-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary, #303133);
 }
 
 #market-policies-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  background: var(--color-bg-secondary, #f5f7fa);
 }
 
 #market-policies-page :deep(th.col-platform),
@@ -1161,62 +1202,19 @@ onMounted(load)
   width: 14rem;
   box-sizing: border-box;
 }
-#market-policies-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-policies-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-policies-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
 
-.y-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgb(15 23 42 / 45%);
-}
-.y-modal {
-  width: min(480px, 100%);
-  max-height: min(92vh, 860px);
-  overflow: auto;
-  border-radius: 12px;
-  background: var(--color-bg-elevated, #fff);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 18%);
-}
-.y-modal--wide {
-  width: min(720px, 100%);
-}
-.y-modal__head,
-.y-modal__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-}
-.y-modal__head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-.y-modal__foot {
-  justify-content: flex-end;
-}
-.y-modal__body {
+.dialog-form {
   display: grid;
   gap: 12px;
-  padding: 0 16px 16px;
+  min-width: 0;
 }
-.y-textarea {
+.y-textarea,
+.y-textarea:focus {
   height: auto !important;
   min-height: 72px;
   padding: 8px 10px;
+  line-height: 1.5 !important;
+  tab-size: 2;
   resize: vertical;
 }
 .mono {

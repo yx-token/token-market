@@ -5,6 +5,8 @@
 import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -72,7 +74,7 @@ const FLOW_OPTIONS = [
 
 const initQueryParams = {
   pageNum: 1,
-  pageSize: 15,
+  pageSize: getPersistedPageSize(),
   keyword: '',
   category: '',
   flow: '',
@@ -185,6 +187,11 @@ watch(
   },
 )
 
+watch(total, (value) => {
+  const maxPage = Math.max(1, Math.ceil(value / queryParams.value.pageSize))
+  queryParams.value.pageNum = Math.min(queryParams.value.pageNum, maxPage)
+})
+
 function getSerialNumber(index: number) {
   const n = (queryParams.value.pageNum - 1) * queryParams.value.pageSize + index + 1
   return String(n).padStart(2, '0')
@@ -216,6 +223,8 @@ async function load() {
 }
 
 function openEdit(check: InspectionCheck) {
+  error.value = ''
+  msg.value = ''
   editing.value = check
   const other = Object.fromEntries(
     Object.entries(check.coefficients || {}).filter(([key]) => key !== 'warning' && key !== 'severe'),
@@ -234,6 +243,7 @@ function openEdit(check: InspectionCheck) {
 
 function closeModal() {
   editing.value = null
+  error.value = ''
 }
 
 function numberObject(text: string): Record<string, number> {
@@ -327,8 +337,8 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <p v-if="error && !editing" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
 
         <div class="section-block">
           <div class="section-title">基本信息</div>
@@ -358,9 +368,10 @@ onMounted(load)
           <div class="section-title">质检项信息</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="checks-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="checks-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -370,48 +381,58 @@ onMounted(load)
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">分组</label>
+              <label class="filter-label" for="checks-category">分组</label>
               <Select
+                id="checks-category"
                 v-model="queryParams.category"
                 class="flex-1 w-full min-w-0"
                 size="sm"
                 :options="categoryOptions"
+                aria-label="按分组筛选"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">流程</label>
+              <label class="filter-label" for="checks-flow">流程</label>
               <Select
+                id="checks-flow"
                 v-model="queryParams.flow"
                 class="flex-1 w-full min-w-0"
                 size="sm"
                 :options="FLOW_OPTIONS"
+                aria-label="按流程筛选"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">启用</label>
+              <label class="filter-label" for="checks-enabled">启用</label>
               <Select
+                id="checks-enabled"
                 v-model="queryParams.enabled"
                 class="flex-1 w-full min-w-0"
                 size="sm"
                 :options="ENABLED_OPTIONS"
+                aria-label="按启用状态筛选"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">扣价</label>
+              <label class="filter-label" for="checks-pricing">扣价</label>
               <Select
+                id="checks-pricing"
                 v-model="queryParams.pricing"
                 class="flex-1 w-full min-w-0"
                 size="sm"
                 :options="PRICING_OPTIONS"
+                aria-label="按扣价状态筛选"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">校准</label>
+              <label class="filter-label" for="checks-calibrated">校准</label>
               <Select
+                id="checks-calibrated"
                 v-model="queryParams.calibrated"
                 class="flex-1 w-full min-w-0"
                 size="sm"
                 :options="CALIBRATED_OPTIONS"
+                aria-label="按校准状态筛选"
               />
             </div>
             <div class="filter-actions lg:col-span-4 sm:col-span-2">
@@ -482,7 +503,6 @@ onMounted(load)
           :total="total"
           :page="queryParams.pageNum"
           :page-size="queryParams.pageSize"
-          :page-size-options="[15, 20, 50]"
           show-jump
           @update:page="queryParams.pageNum = $event"
           @update:page-size="queryParams.pageSize = $event"
@@ -490,57 +510,57 @@ onMounted(load)
       </template>
     </TablePageLayout>
 
-    <div v-if="editing" class="y-modal-mask" @click.self="closeModal">
-      <div class="y-modal" role="dialog" :aria-label="`编辑 ${editing.key}`">
-        <header class="y-modal__head">
-          <h3>编辑 {{ editing.key }} · {{ editing.name }}</h3>
-          <button type="button" class="y-link" @click="closeModal">关闭</button>
-        </header>
-        <div class="y-modal__body">
-          <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 启用质检项</label>
+    <BaseDialog
+      :show="!!editing"
+      :title="editing ? `编辑 ${editing.key} · ${editing.name}` : '编辑质检项'"
+      close-on-click-outside
+      @close="closeModal"
+    >
+      <div class="dialog-form">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 启用质检项</label>
+        <label class="y-field">
+          <span>用于扣价</span>
+          <select v-model="form.pricing" class="input w-full">
+            <option :value="true">开</option>
+            <option :value="false">关</option>
+            <option :value="null">恢复默认</option>
+          </select>
+          <span class="hint">恢复默认后：{{ editing?.default_pricing ? '开' : '关' }}</span>
+        </label>
+        <label class="y-check"><input v-model="form.calibrated" type="checkbox" /> 已完成运营校准</label>
+        <p class="hint">校准只影响门槛（是否暂停），不影响扣价。</p>
+        <label class="y-field">
+          <span>校准记录</span>
+          <textarea v-model="form.calibrationNote" class="input w-full y-textarea" rows="2" />
+        </label>
+        <div class="y-field-row">
           <label class="y-field">
-            <span>用于扣价</span>
-            <select v-model="form.pricing" class="input w-full">
-              <option :value="true">开</option>
-              <option :value="false">关</option>
-              <option :value="null">恢复默认</option>
-            </select>
-            <span class="hint">恢复默认后：{{ editing.default_pricing ? '开' : '关' }}</span>
-          </label>
-          <label class="y-check"><input v-model="form.calibrated" type="checkbox" /> 已完成运营校准</label>
-          <p class="hint">校准只影响门槛（是否暂停），不影响扣价。</p>
-          <label class="y-field">
-            <span>校准记录</span>
-            <textarea v-model="form.calibrationNote" class="input w-full y-textarea" rows="2" />
-          </label>
-          <div class="y-field-row">
-            <label class="y-field">
-              <span>需关注系数</span>
-              <input v-model.number="form.warning" type="number" min="0.01" max="1.05" step="0.01" class="input w-full" />
-            </label>
-            <label class="y-field">
-              <span>严重异常系数</span>
-              <input v-model.number="form.severe" type="number" min="0.01" max="1.05" step="0.01" class="input w-full" />
-            </label>
-          </div>
-          <label v-if="hasOtherCoefficients" class="y-field">
-            <span>其他系数（JSON）</span>
-            <textarea v-model="form.otherCoefficients" class="input w-full y-textarea mono" rows="2" />
+            <span>需关注系数</span>
+            <input v-model.number="form.warning" type="number" min="0.01" max="1.05" step="0.01" class="input w-full" />
           </label>
           <label class="y-field">
-            <span>阈值（JSON）</span>
-            <textarea v-model="form.thresholds" class="input w-full y-textarea mono" rows="2" />
+            <span>严重异常系数</span>
+            <input v-model.number="form.severe" type="number" min="0.01" max="1.05" step="0.01" class="input w-full" />
           </label>
-          <p v-if="editing.description || editing.advice" class="hint">
-            {{ editing.description }}{{ editing.advice }}
-          </p>
         </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
-        </footer>
+        <label v-if="hasOtherCoefficients" class="y-field">
+          <span>其他系数（JSON）</span>
+          <textarea v-model="form.otherCoefficients" class="input w-full y-textarea mono" rows="2" />
+        </label>
+        <label class="y-field">
+          <span>阈值（JSON）</span>
+          <textarea v-model="form.thresholds" class="input w-full y-textarea mono" rows="2" />
+        </label>
+        <p v-if="editing?.description || editing?.advice" class="hint">
+          {{ editing?.description }}{{ editing?.advice }}
+        </p>
       </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+        <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
+      </template>
+    </BaseDialog>
   </section>
 </template>
 
@@ -607,14 +627,14 @@ onMounted(load)
 
 .stat-card__label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary, #0f172a);
   line-height: 1.2;
 }
 
@@ -669,21 +689,21 @@ onMounted(load)
 }
 
 #market-checks-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-checks-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary, #303133);
 }
 
 #market-checks-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  background: var(--color-bg-secondary, #f5f7fa);
 }
 
 #market-checks-page :deep(th.col-key),
@@ -716,58 +736,15 @@ onMounted(load)
   width: 8rem;
   box-sizing: border-box;
 }
-#market-checks-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-checks-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-checks-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
 
 .hint {
   font-size: 12px;
   color: var(--color-text-secondary, #868686);
 }
-.y-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgb(15 23 42 / 45%);
-}
-.y-modal {
-  width: min(560px, 100%);
-  max-height: min(92vh, 800px);
-  overflow: auto;
-  border-radius: 12px;
-  background: var(--color-bg-elevated, #fff);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 18%);
-}
-.y-modal__head,
-.y-modal__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-}
-.y-modal__head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-.y-modal__foot {
-  justify-content: flex-end;
-}
-.y-modal__body {
+.dialog-form {
   display: grid;
   gap: 12px;
-  padding: 0 16px 16px;
+  min-width: 0;
 }
 .y-field {
   display: grid;
@@ -788,10 +765,13 @@ onMounted(load)
   gap: 8px;
   font-size: 13px;
 }
-.y-textarea {
+.y-textarea,
+.y-textarea:focus {
   height: auto !important;
   min-height: 64px;
   padding: 8px 10px;
+  line-height: 1.5 !important;
+  tab-size: 2;
   resize: vertical;
 }
 

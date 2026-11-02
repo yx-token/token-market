@@ -8,6 +8,7 @@ import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
@@ -42,7 +43,7 @@ interface PaymentNotification {
   out_trade_no?: string
   trade_no?: string
   state?: string
-  amount_fen?: number
+  amount_fen?: number | string | null
   result: string
   error?: string
   created_at: string
@@ -111,6 +112,19 @@ const busy = ref(false)
 const loading = ref(false)
 const error = ref('')
 const msg = ref('')
+const sectionReady = reactive({ settings: false, merchants: false, status: false })
+const sectionErrors = reactive<Record<'settings' | 'merchants' | 'status', string>>({
+  settings: '',
+  merchants: '',
+  status: '',
+})
+const sectionNames = { settings: '基础设置', merchants: '商户通道', status: '支付通知' } as const
+const sectionErrorItems = computed(() =>
+  (Object.keys(sectionNames) as Array<keyof typeof sectionNames>)
+    .filter((key) => sectionErrors[key])
+    .map((key) => ({ key, label: sectionNames[key], message: sectionErrors[key] })),
+)
+const channelConfirmation = reactive({ show: false, provider: '', next: false })
 
 const ali = reactive({
   enabled: false,
@@ -293,9 +307,15 @@ function fmtTime(v?: string) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function fenYuan(fen?: number) {
-  if (fen == null || !Number.isFinite(fen)) return '—'
-  return (fen / 100).toFixed(2)
+const yuanFormatter = new Intl.NumberFormat('zh-CN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+function fenYuan(fen?: number | string | null) {
+  if (fen == null || (typeof fen === 'string' && !fen.trim())) return '—'
+  const value = Number(fen)
+  return Number.isFinite(value) ? yuanFormatter.format(value / 100) : '—'
 }
 
 function providerLabel(p: string) {
@@ -349,34 +369,55 @@ function pageDesc() {
   )[tab.value]
 }
 
+let loadVersion = 0
+
 async function load() {
+  const version = ++loadVersion
   loading.value = true
   error.value = ''
-  try {
-    const [s, m, status] = await Promise.all([
-      marketGet<Settings>(`${MARKET_API_PREFIX}/settings`).catch(() => null),
-      marketGet<Record<string, MerchantView>>(`${MARKET_API_PREFIX}/payments/merchants`).catch(() => null),
-      marketGet<PaymentStatus>(`${MARKET_API_PREFIX}/payments/status`).catch(() => null),
-    ])
-    if (s) {
-      st.value = {
-        ...s,
-        payment_channels: {
-          alipay_page: false,
-          alipay_f2f: false,
-          wechat_native: false,
-          manual: false,
-          ...(s.payment_channels || {}),
-        },
-      }
+  const [s, m, status] = await Promise.allSettled([
+    marketGet<Settings>(`${MARKET_API_PREFIX}/settings`),
+    marketGet<Record<string, MerchantView>>(`${MARKET_API_PREFIX}/payments/merchants`),
+    marketGet<PaymentStatus>(`${MARKET_API_PREFIX}/payments/status`),
+  ])
+  if (version !== loadVersion) return
+
+  if (s.status === 'fulfilled') {
+    st.value = {
+      ...s.value,
+      payment_channels: {
+        alipay_page: false,
+        alipay_f2f: false,
+        wechat_native: false,
+        manual: false,
+        ...(s.value.payment_channels || {}),
+      },
     }
-    if (m) fillMerchants(m)
-    notifications.value = status?.notifications ?? []
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载失败'
-  } finally {
-    loading.value = false
+    sectionReady.settings = true
+    sectionErrors.settings = ''
+  } else {
+    sectionReady.settings = false
+    sectionErrors.settings = s.reason instanceof Error ? s.reason.message : '加载失败'
   }
+
+  if (m.status === 'fulfilled') {
+    fillMerchants(m.value)
+    sectionReady.merchants = true
+    sectionErrors.merchants = ''
+  } else {
+    sectionReady.merchants = false
+    sectionErrors.merchants = m.reason instanceof Error ? m.reason.message : '加载失败'
+  }
+
+  if (status.status === 'fulfilled') {
+    notifications.value = status.value.notifications ?? []
+    sectionReady.status = true
+    sectionErrors.status = ''
+  } else {
+    sectionReady.status = false
+    sectionErrors.status = status.reason instanceof Error ? status.reason.message : '加载失败'
+  }
+  loading.value = false
 }
 
 async function run(label: string, fn: () => Promise<unknown>) {
@@ -396,20 +437,44 @@ async function run(label: string, fn: () => Promise<unknown>) {
   }
 }
 
+function finiteSetting(value: unknown, label: string) {
+  if (value == null || String(value).trim() === '') throw new Error(`${label}不能为空且必须是有限数字`)
+  const number = Number(value)
+  if (!Number.isFinite(number)) throw new Error(`${label}不能为空且必须是有限数字`)
+  return number
+}
+
 async function saveBasic() {
-  if (!st.value) return
+  if (!st.value || !sectionReady.settings || busy.value || loading.value) return
   const s = st.value
-  await run('基础设置已保存', () =>
-    marketSend('PUT', `${MARKET_API_PREFIX}/settings`, {
-      payment_public_url: s.payment_public_url.trim(),
-      payment_channels: s.payment_channels,
-      recharge_min: Number(s.recharge_min),
-      recharge_max: Number(s.recharge_max),
-      recharge_order_timeout_minutes: Number(s.recharge_order_timeout_minutes),
-      refund_original_route: s.refund_original_route,
-      refund_original_route_days: Number(s.refund_original_route_days),
-    }),
-  )
+  try {
+    const rechargeMin = finiteSetting(s.recharge_min, '单笔充值下限')
+    const rechargeMax = finiteSetting(s.recharge_max, '单笔充值上限')
+    const timeout = finiteSetting(s.recharge_order_timeout_minutes, '在线支付时限')
+    const refundDays = finiteSetting(s.refund_original_route_days, '原路退回期限')
+    if (rechargeMin <= 0) throw new Error('单笔充值下限必须大于 0')
+    if (rechargeMax < rechargeMin) throw new Error('单笔充值上限不得低于下限')
+    if (!Number.isInteger(timeout) || timeout < 5 || timeout > 1440) {
+      throw new Error('在线支付时限必须为 5–1440 分钟的整数')
+    }
+    if (!Number.isInteger(refundDays) || refundDays < 0) {
+      throw new Error('原路退回期限必须为不小于 0 的整数')
+    }
+    await run('基础设置已保存', () =>
+      marketSend('PUT', `${MARKET_API_PREFIX}/settings`, {
+        payment_public_url: s.payment_public_url.trim(),
+        payment_channels: s.payment_channels,
+        recharge_min: rechargeMin,
+        recharge_max: rechargeMax,
+        recharge_order_timeout_minutes: timeout,
+        refund_original_route: s.refund_original_route,
+        refund_original_route_days: refundDays,
+      }),
+    )
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '设置校验失败'
+    msg.value = ''
+  }
 }
 
 function alipayGateway() {
@@ -419,6 +484,7 @@ function alipayGateway() {
 }
 
 async function saveAlipay() {
+  if (!sectionReady.merchants || busy.value || loading.value) return
   const body: Record<string, unknown> = {
     enabled: ali.enabled,
     alipay: {
@@ -438,6 +504,7 @@ async function saveAlipay() {
 }
 
 async function saveWechat() {
+  if (!sectionReady.merchants || busy.value || loading.value) return
   const body: Record<string, unknown> = {
     enabled: wx.enabled,
     wechat: {
@@ -457,16 +524,22 @@ async function saveWechat() {
 }
 
 async function test(provider: string) {
+  if (!sectionReady.merchants || busy.value || loading.value) return
   await run('连接正常：签名、密钥与验签均通过', () =>
     marketSend('POST', `${MARKET_API_PREFIX}/payments/merchants/${provider}/test`),
   )
 }
 
-async function toggleChannel(provider: string) {
+function toggleChannel(provider: string) {
   const m = merchants.value[provider]
-  if (!m) return
-  const next = !m.enabled
-  if (!window.confirm(`${next ? '启用' : '停用'}支付通道 ${providerLabel(provider)}？`)) return
+  if (!m || !sectionReady.merchants || busy.value || loading.value) return
+  Object.assign(channelConfirmation, { show: true, provider, next: !m.enabled })
+}
+
+async function confirmToggleChannel() {
+  const provider = channelConfirmation.provider
+  const next = channelConfirmation.next
+  channelConfirmation.show = false
   await run(`${providerLabel(provider)} 已${next ? '启用' : '停用'}`, () =>
     marketSend('PUT', `${MARKET_API_PREFIX}/payments/merchants/${provider}`, { enabled: next }),
   )
@@ -481,7 +554,7 @@ onMounted(load)
 
 <template>
   <section id="market-payments-page" class="payments-shell">
-    <TablePageLayout>
+    <TablePageLayout :content-mode="isListTab ? 'table' : 'content'">
       <template #title>
         <div class="page-heading">
           <h2 class="y-title">{{ pageTitle() }}</h2>
@@ -497,26 +570,33 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <div v-if="sectionErrorItems.length" class="section-errors mb-2" role="alert">
+          <div v-for="item in sectionErrorItems" :key="item.key" class="section-error-row">
+            <span class="break-anywhere"><strong>{{ item.label }}未加载：</strong>{{ item.message }}</span>
+            <button type="button" class="y-link" :disabled="loading" @click="load">重试</button>
+          </div>
+        </div>
+        <p v-if="error" class="y-msg y-msg--error mb-2 break-anywhere" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
 
-        <nav class="y-tabs mb-3">
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'basic' }" @click="tab = 'basic'">
+        <nav class="y-tabs mb-3" aria-label="支付配置分区">
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'basic' }" :aria-pressed="tab === 'basic'" @click="tab = 'basic'">
             基础设置
           </button>
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'alipay' }" @click="tab = 'alipay'">
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'alipay' }" :aria-pressed="tab === 'alipay'" @click="tab = 'alipay'">
             支付宝
           </button>
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'wechat' }" @click="tab = 'wechat'">
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'wechat' }" :aria-pressed="tab === 'wechat'" @click="tab = 'wechat'">
             微信支付
           </button>
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'channels' }" @click="tab = 'channels'">
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'channels' }" :aria-pressed="tab === 'channels'" @click="tab = 'channels'">
             通道状态
           </button>
           <button
             type="button"
             class="y-tab"
             :class="{ 'is-on': tab === 'notifications' }"
+            :aria-pressed="tab === 'notifications'"
             @click="tab = 'notifications'"
           >
             最近通知
@@ -551,9 +631,10 @@ onMounted(load)
           <div class="section-title">筛选条件</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="payments-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="payments-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -563,38 +644,46 @@ onMounted(load)
               </div>
             </div>
             <div v-show="tab === 'channels'" class="filter-item">
-              <label class="filter-label">状态</label>
+              <label class="filter-label" for="payments-channel-status">状态</label>
               <Select
+                id="payments-channel-status"
                 v-model="queryParams.channel_status"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="支付通道状态"
                 :options="CHANNEL_STATUS_OPTIONS"
               />
             </div>
             <div v-show="tab === 'channels'" class="filter-item">
-              <label class="filter-label">就绪</label>
+              <label class="filter-label" for="payments-channel-ready">就绪</label>
               <Select
+                id="payments-channel-ready"
                 v-model="queryParams.channel_ready"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="支付通道就绪状态"
                 :options="CHANNEL_READY_OPTIONS"
               />
             </div>
             <div v-show="tab === 'notifications'" class="filter-item">
-              <label class="filter-label">渠道</label>
+              <label class="filter-label" for="payments-provider">渠道</label>
               <Select
+                id="payments-provider"
                 v-model="queryParams.provider"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="支付通知渠道"
                 :options="PROVIDER_OPTIONS"
               />
             </div>
             <div v-show="tab === 'notifications'" class="filter-item">
-              <label class="filter-label">结果</label>
+              <label class="filter-label" for="payments-result">结果</label>
               <Select
+                id="payments-result"
                 v-model="queryParams.result"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="支付通知结果"
                 :options="RESULT_OPTIONS"
               />
             </div>
@@ -621,7 +710,7 @@ onMounted(load)
             <label class="y-field y-field--wide">
               <span>支付通知地址（对外公网 https）</span>
               <input v-model="st.payment_public_url" class="input w-full" :placeholder="origin" />
-              <span class="hint">
+              <span class="hint break-anywhere">
                 通知发到 {{ notifyBase }}/api/payments/alipay/notify 与 …/wechat/notify
                 <button
                   v-if="!st.payment_public_url"
@@ -643,26 +732,26 @@ onMounted(load)
             </div>
             <label class="y-field">
               <span>单笔充值下限（元）</span>
-              <input v-model.number="st.recharge_min" class="input w-full" type="number" step="0.01" min="0" />
+              <input v-model.number="st.recharge_min" class="input w-full" type="number" step="0.01" min="0.01" />
             </label>
             <label class="y-field">
               <span>单笔充值上限（元）</span>
-              <input v-model.number="st.recharge_max" class="input w-full" type="number" step="0.01" min="0" />
+              <input v-model.number="st.recharge_max" class="input w-full" type="number" step="0.01" min="0.01" />
             </label>
             <label class="y-field">
               <span>在线支付时限（分钟）</span>
-              <input v-model.number="st.recharge_order_timeout_minutes" class="input w-full" type="number" min="5" />
+              <input v-model.number="st.recharge_order_timeout_minutes" class="input w-full" type="number" min="5" max="1440" step="1" />
             </label>
             <label class="y-field">
               <span>原路退回期限（天）</span>
-              <input v-model.number="st.refund_original_route_days" class="input w-full" type="number" min="0" />
+              <input v-model.number="st.refund_original_route_days" class="input w-full" type="number" min="0" step="1" />
             </label>
             <label class="y-check y-field--wide">
               <input v-model="st.refund_original_route" type="checkbox" />
               余额退款优先原路退回
             </label>
             <div class="pay-actions">
-              <button type="button" class="btn btn-primary" :disabled="busy" @click="saveBasic">保存</button>
+              <button type="button" class="btn btn-primary" :disabled="busy || loading || !sectionReady.settings" @click="saveBasic">保存</button>
             </div>
           </div>
         </template>
@@ -740,12 +829,12 @@ onMounted(load)
               <button
                 type="button"
                 class="btn btn-secondary"
-                :disabled="busy || !merchants.alipay?.ready"
+                :disabled="busy || loading || !sectionReady.merchants || !merchants.alipay?.ready"
                 @click="test('alipay')"
               >
                 测试连接
               </button>
-              <button type="button" class="btn btn-primary" :disabled="busy" @click="saveAlipay">保存</button>
+              <button type="button" class="btn btn-primary" :disabled="busy || loading || !sectionReady.merchants" @click="saveAlipay">保存</button>
             </div>
           </div>
         </template>
@@ -829,12 +918,12 @@ onMounted(load)
               <button
                 type="button"
                 class="btn btn-secondary"
-                :disabled="busy || !merchants.wechat?.ready"
+                :disabled="busy || loading || !sectionReady.merchants || !merchants.wechat?.ready"
                 @click="test('wechat')"
               >
                 测试连接
               </button>
-              <button type="button" class="btn btn-primary" :disabled="busy" @click="saveWechat">保存</button>
+              <button type="button" class="btn btn-primary" :disabled="busy || loading || !sectionReady.merchants" @click="saveWechat">保存</button>
             </div>
           </div>
         </template>
@@ -861,31 +950,32 @@ onMounted(load)
               <i class="status-dot" :data-tone="row.ready ? 'ok' : 'err'" />
               {{ row.ready ? '是' : '否' }}
             </span>
-            <div v-if="row.problem" class="row-sub warn">{{ row.problem }}</div>
+            <div v-if="row.problem" class="row-sub warn" :title="row.problem">{{ row.problem }}</div>
           </template>
           <template #cell-updated_at="{ row }">{{ fmtTime(row.updated_at) }}</template>
           <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
           <template #cell-out_trade_no="{ row }">
-            <span class="mono-cell" :title="row.out_trade_no || ''">{{ row.out_trade_no || '—' }}</span>
+            <span class="mono-cell data-table-cell-truncate" :title="row.out_trade_no || ''">{{ row.out_trade_no || '—' }}</span>
           </template>
           <template #cell-trade_no="{ row }">
-            <span class="mono-cell" :title="row.trade_no || ''">{{ row.trade_no || '—' }}</span>
+            <span class="mono-cell data-table-cell-truncate" :title="row.trade_no || ''">{{ row.trade_no || '—' }}</span>
           </template>
-          <template #cell-amount="{ row }">{{ fenYuan(row.amount_fen) }}</template>
+          <template #cell-amount="{ row }"><span class="amount-cell">{{ fenYuan(row.amount_fen) }}</span></template>
           <template #cell-result="{ row }">
             <span :class="resultOk(row.result) ? 'y-chip y-chip--ok' : 'y-chip y-chip--err'">
-              {{ row.result }}{{ row.error ? ` · ${row.error}` : '' }}
+              {{ row.result }}
             </span>
+            <div v-if="row.error" class="row-sub" :title="row.error">{{ row.error }}</div>
           </template>
           <template #cell-actions="{ row }">
             <div class="table-ops">
-              <button type="button" class="y-link" :disabled="busy" @click="toggleChannel(String(row.provider || row._key))">
+              <button type="button" class="y-link" :disabled="busy || loading || !sectionReady.merchants" @click="toggleChannel(String(row.provider || row._key))">
                 {{ row.enabled ? '停用' : '启用' }}
               </button>
               <button
                 type="button"
                 class="y-link"
-                :disabled="busy || !row.ready"
+                :disabled="busy || loading || !sectionReady.merchants || !row.ready"
                 @click="test(String(row.provider || row._key))"
               >
                 测试
@@ -914,6 +1004,17 @@ onMounted(load)
         />
       </template>
     </TablePageLayout>
+
+    <ConfirmDialog
+      :show="channelConfirmation.show"
+      :title="`${channelConfirmation.next ? '启用' : '停用'}支付通道`"
+      :message="`${channelConfirmation.next ? '启用' : '停用'}支付通道 ${providerLabel(channelConfirmation.provider)}？`"
+      :confirm-text="channelConfirmation.next ? '启用' : '停用'"
+      :danger="!channelConfirmation.next"
+      :busy="busy"
+      @confirm="confirmToggleChannel"
+      @cancel="channelConfirmation.show = false"
+    />
   </section>
 </template>
 
@@ -964,30 +1065,21 @@ onMounted(load)
   gap: 12px;
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  background: #f8fafc;
-}
-
-.stat-card--blue {
-  background: linear-gradient(135deg, #eff6ff, #f8fafc);
-}
-.stat-card--green {
-  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
-}
-.stat-card--cyan {
-  background: linear-gradient(135deg, #ecfeff, #f8fafc);
+  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.06));
+  background: var(--color-bg-elevated, #f8fafc);
 }
 
 .stat-card__label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary, #0f172a);
   line-height: 1.2;
 }
 
@@ -1007,7 +1099,7 @@ onMounted(load)
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-text-secondary, #8c8c8c);
 }
 
 .row-sub.warn {
@@ -1015,9 +1107,43 @@ onMounted(load)
 }
 
 .mono-cell {
+  display: block;
+  max-width: 14rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
-  word-break: break-all;
+}
+
+.amount-cell {
+  display: block;
+  min-width: 5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.break-anywhere {
+  overflow-wrap: anywhere;
+}
+
+.section-errors {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-error, #ef4444);
+  border-radius: 8px;
+  color: var(--color-error, #b91c1c);
+  background: var(--color-bg-elevated, #fff);
+  font-size: 13px;
+}
+
+.section-error-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-error-row .y-link {
+  flex: none;
 }
 
 .status-cell {
@@ -1106,21 +1232,25 @@ onMounted(load)
 }
 
 #market-payments-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-payments-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary, #303133);
 }
 
 #market-payments-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  background: var(--color-bg-secondary, #f5f7fa);
+}
+
+#market-payments-page :deep(.y-tabs) {
+  flex-wrap: wrap;
 }
 
 #market-payments-page :deep(th.col-provider),
@@ -1154,19 +1284,23 @@ onMounted(load)
   width: 8rem;
   box-sizing: border-box;
 }
-#market-payments-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-payments-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-payments-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
-
 @media (max-width: 900px) {
   .stats-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .row-sub,
+  .mono-cell {
+    max-width: 100%;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .section-error-row {
+    flex-wrap: wrap;
   }
 }
 </style>

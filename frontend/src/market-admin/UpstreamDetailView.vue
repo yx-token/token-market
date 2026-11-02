@@ -247,13 +247,14 @@ async function loadModels() {
 }
 
 async function run(label: string, fn: () => Promise<unknown>) {
+  if (busy.value) return false
   busy.value = true
   error.value = ''
   msg.value = ''
   try {
     await fn()
-    msg.value = label
     await load()
+    msg.value = label
     return true
   } catch (e) {
     error.value = e instanceof Error ? e.message : '操作失败'
@@ -264,17 +265,27 @@ async function run(label: string, fn: () => Promise<unknown>) {
 }
 
 async function startOAuth() {
-  const body: Record<string, string> = {}
-  if (projectID.value.trim()) body.project_id = projectID.value.trim()
-  const st = await marketSend<{ auth_url?: string }>(
-    'POST',
-    `${MARKET_API_PREFIX}/upstreams/${upstreamId.value}/oauth/start`,
-    Object.keys(body).length ? body : {},
-  )
-  authURL.value = st?.auth_url || ''
-  if (authURL.value) {
-    window.open(authURL.value, '_blank', 'noopener')
-    msg.value = '已打开授权页，完成后粘贴回调地址或授权码'
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  msg.value = ''
+  try {
+    const body: Record<string, string> = {}
+    if (projectID.value.trim()) body.project_id = projectID.value.trim()
+    const st = await marketSend<{ auth_url?: string }>(
+      'POST',
+      `${MARKET_API_PREFIX}/upstreams/${upstreamId.value}/oauth/start`,
+      Object.keys(body).length ? body : {},
+    )
+    authURL.value = st?.auth_url || ''
+    if (authURL.value) {
+      window.open(authURL.value, '_blank', 'noopener')
+      msg.value = '已打开授权页，完成后粘贴回调地址或授权码'
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '授权页打开失败'
+  } finally {
+    busy.value = false
   }
 }
 
@@ -386,7 +397,10 @@ onMounted(() => {
   <section id="market-upstream-detail-page" class="detail-shell">
     <header class="detail-header">
       <div class="page-heading">
-        <h2 class="y-title">
+        <h2
+          class="y-title break-anywhere"
+          :title="(row?.name || '').trim() || (row?.account_email || '').trim() || (row?.seller_email || '').trim() || '未命名上游'"
+        >
           {{
             (row?.name || '').trim() ||
             (row?.account_email || '').trim() ||
@@ -405,8 +419,8 @@ onMounted(() => {
     </header>
 
     <div class="detail-body">
-      <p v-if="error" class="y-msg y-msg--error">{{ error }}</p>
-      <p v-else-if="msg" class="y-msg y-msg--ok">{{ msg }}</p>
+      <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+      <p v-else-if="msg" class="y-msg y-msg--ok" role="status" aria-live="polite">{{ msg }}</p>
       <div v-if="accountMissing && !loading" class="dead-account-banner">
         <p>引擎侧账号已失效（常见于引擎库重建后）。需清除绑定并重新 OAuth / 填 Key，才能继续选模型。</p>
         <button type="button" class="btn btn-primary" :disabled="busy" @click="clearDeadAccount">
@@ -417,24 +431,24 @@ onMounted(() => {
 
       <template v-else-if="row">
         <div class="summary-card">
-          <div>
+          <div :title="row.code || ''">
             <span>编号</span>
             {{ row.code || '—' }}
           </div>
-          <div>
+          <div :title="(row.name || '').trim()">
             <span>名称</span>
             {{ (row.name || '').trim() || '—' }}
           </div>
-          <div>
+          <div :title="row.seller_email?.trim() || ''">
             <span>卖家</span>
             {{ row.seller_email?.trim() || '—' }}
           </div>
           <div><span>厂商</span>{{ row.platform }} · {{ row.auth_type || '—' }}</div>
           <div><span>状态</span>{{ statusLabel(row.status) }}</div>
-          <div><span>邮箱</span>{{ row.account_email || '—' }}</div>
+          <div :title="row.account_email || ''"><span>邮箱</span>{{ row.account_email || '—' }}</div>
           <div><span>健康</span>{{ row.health || '—' }}</div>
           <div><span>等级</span>{{ row.grade || row.tier || '—' }}</div>
-          <div class="summary-note">
+          <div class="summary-note" :title="(row.note || '').trim()">
             <span>备注</span>
             {{ (row.note || '').trim() || '—' }}
           </div>
@@ -447,21 +461,25 @@ onMounted(() => {
           <p class="sub">
             草稿 / 授权中 / 失败时可更换厂商与接入方式；切换后需重新授权。已接入完成的上游请删除后新建。
           </p>
-          <label class="field">
+          <label class="field" for="upstream-switch-platform">
             <span>厂商</span>
             <Select
+              id="upstream-switch-platform"
               v-model="switchPlatform"
               class="w-full"
               size="sm"
+              aria-label="切换上游厂商"
               :options="switchPlatformOptions"
             />
           </label>
-          <label class="field">
+          <label class="field" for="upstream-switch-auth-type">
             <span>接入方式</span>
             <Select
+              id="upstream-switch-auth-type"
               v-model="switchAuthType"
               class="w-full"
               size="sm"
+              aria-label="切换上游接入方式"
               :options="switchAuthOptions"
             />
           </label>
@@ -482,7 +500,7 @@ onMounted(() => {
             </label>
             <div class="actions-row">
               <button type="button" class="btn btn-primary" :disabled="busy" @click="startOAuth">
-                打开授权页
+                {{ busy ? '正在打开…' : '打开授权页' }}
               </button>
               <a
                 v-if="authURL"
@@ -494,7 +512,7 @@ onMounted(() => {
             </div>
             <label class="field">
               <span>授权码 / 回调地址</span>
-              <textarea v-model="oauthCode" class="input w-full" rows="3" placeholder="授权完成后粘贴" />
+              <textarea v-model="oauthCode" class="input y-textarea w-full" rows="3" placeholder="授权完成后粘贴" />
             </label>
             <button type="button" class="btn btn-primary" :disabled="busy" @click="completeOAuth">
               提交授权
@@ -541,7 +559,7 @@ onMounted(() => {
           <div v-else class="model-grid">
             <label v-for="m in models.catalog" :key="m" class="model-item">
               <input type="checkbox" :checked="selected.includes(m)" @change="toggleModel(m)" />
-              <span>{{ m }}</span>
+              <span class="break-anywhere" :title="m">{{ m }}</span>
             </label>
           </div>
 
@@ -606,6 +624,19 @@ onMounted(() => {
   min-width: 0;
 }
 
+.detail-shell,
+.detail-header,
+.detail-body,
+.edit-panel {
+  min-width: 0;
+}
+
+.break-anywhere {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .y-title {
   margin: 0;
   font-size: 18px;
@@ -647,6 +678,11 @@ onMounted(() => {
   color: #303133;
 }
 
+.summary-card > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .summary-card span {
   display: block;
   margin-bottom: 2px;
@@ -657,12 +693,53 @@ onMounted(() => {
 .summary-note {
   grid-column: 1 / -1;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+:global(html.dark #market-upstream-detail-page .detail-header),
+:global(html.dark #market-upstream-detail-page .summary-card),
+:global(html.dark #market-upstream-detail-page .edit-panel) {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-upstream-detail-page .y-title),
+:global(html.dark #market-upstream-detail-page .edit-panel h3),
+:global(html.dark #market-upstream-detail-page .model-item) {
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-upstream-detail-page .y-page-desc),
+:global(html.dark #market-upstream-detail-page .summary-card span),
+:global(html.dark #market-upstream-detail-page .sub),
+:global(html.dark #market-upstream-detail-page .field > span),
+:global(html.dark #market-upstream-detail-page .hint),
+:global(html.dark #market-upstream-detail-page .empty-models) {
+  color: var(--color-text-secondary);
+}
+
+:global(html.dark #market-upstream-detail-page .model-item),
+:global(html.dark #market-upstream-detail-page .empty-models) {
+  background: var(--color-bg-secondary);
+  border-color: var(--color-border);
 }
 
 @media (max-width: 800px) {
   .summary-card {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .summary-card {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 

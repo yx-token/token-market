@@ -11,6 +11,8 @@ import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
@@ -127,6 +129,7 @@ const probeTarget = ref<Upstream | null>(null)
 const probeDone = ref<{ id: number; label: string } | null>(null)
 const probeBusy = ref(false)
 const probeError = ref('')
+const rowAction = ref<{ kind: 'suspend' | 'remove'; upstream: Upstream } | null>(null)
 
 /** 管理端兜底：与 listing.SupportedAuthTypes 对齐，避免厂商 auth_types 未开放时下拉为空 */
 const AUTH_FALLBACK: Record<string, string[]> = {
@@ -392,15 +395,18 @@ async function getList() {
 }
 
 async function run(label: string, fn: () => Promise<unknown>) {
+  if (busy.value) return false
   busy.value = true
   error.value = ''
   msg.value = ''
   try {
     await fn()
-    msg.value = label
     await getList()
+    msg.value = label
+    return true
   } catch (e) {
     error.value = e instanceof Error ? e.message : '操作失败'
+    return false
   } finally {
     busy.value = false
   }
@@ -452,11 +458,8 @@ function goProbeRuns() {
 }
 
 function suspend(u: Upstream) {
-  const reason = window.prompt('冻结原因')
-  if (reason === null) return
-  return run(`上游 ${displayName(u)} 已冻结`, () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/upstreams/${u.id}/suspend`, { reason }),
-  )
+  error.value = ''
+  rowAction.value = { kind: 'suspend', upstream: u }
 }
 
 function unsuspend(u: Upstream) {
@@ -466,10 +469,24 @@ function unsuspend(u: Upstream) {
 }
 
 function remove(u: Upstream) {
-  if (!window.confirm(`强制删除上游 ${displayName(u)}？`)) return
-  return run(`上游 ${displayName(u)} 已删除`, () =>
-    marketSend('DELETE', `${MARKET_API_PREFIX}/upstreams/${u.id}`),
-  )
+  error.value = ''
+  rowAction.value = { kind: 'remove', upstream: u }
+}
+
+async function confirmRowAction(reason?: string) {
+  const action = rowAction.value
+  if (!action) return
+  const { kind, upstream } = action
+  const ok = kind === 'suspend'
+    ? await run(`上游 ${displayName(upstream)} 已冻结`, () =>
+        marketSend('POST', `${MARKET_API_PREFIX}/upstreams/${upstream.id}/suspend`, {
+          reason: reason ?? '',
+        }),
+      )
+    : await run(`上游 ${displayName(upstream)} 已删除`, () =>
+        marketSend('DELETE', `${MARKET_API_PREFIX}/upstreams/${upstream.id}`),
+      )
+  if (ok) rowAction.value = null
 }
 
 function openEdit(u: Upstream) {
@@ -570,8 +587,8 @@ async function submitCreate() {
       note: createForm.note.trim() || undefined,
     })
     showCreate.value = false
-    msg.value = `已为卖家创建上游 ${displayName(created)}，请继续完成接入`
     await getList()
+    msg.value = `已为卖家创建上游 ${displayName(created)}，请继续完成接入`
     openEdit(created)
   } catch (e) {
     createError.value = e instanceof Error ? e.message : '创建失败'
@@ -653,8 +670,8 @@ onMounted(() => {
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <p v-if="error" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
         <p v-if="showAddHint" class="y-msg mb-2">
           从「新建挂单」过来：可点「添加上游」代用户接入，或对已有账号点「继续接入 / 选模型」推进到
           <b>就绪</b> 后再回挂单页刷新。
@@ -711,49 +728,58 @@ onMounted(() => {
 
         <div class="section-block mt-3">
           <div class="section-title">上游信息</div>
-          <!-- filter-grid：lg 每项 1/4，弹性伸缩 -->
+          <!-- 常规筛选项弹性排列；日期范围在中小屏幕占整行。 -->
           <div class="filter-grid">
-            <div class="filter-item">
-              <label class="filter-label">接入时间</label>
+            <div class="filter-item filter-item--date-range sm:col-span-2">
+              <label class="filter-label" for="upstream-filter-created-at">接入时间</label>
               <div class="flex flex-1 w-full min-w-0 items-center gap-2">
                 <DateRangePicker
+                  id="upstream-filter-created-at"
                   mode="datetimerange"
+                  aria-label="按接入时间筛选上游"
                   v-model:start-date="queryParams.startDate"
                   v-model:end-date="queryParams.endDate"
                 />
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">用户</label>
+              <label class="filter-label" for="upstream-filter-seller">用户</label>
               <Select
+                id="upstream-filter-seller"
                 v-model="queryParams.seller_id"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按用户筛选上游"
                 :options="sellerFilterOptions"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">状态</label>
+              <label class="filter-label" for="upstream-filter-status">状态</label>
               <Select
+                id="upstream-filter-status"
                 v-model="queryParams.status"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按状态筛选上游"
                 :options="STATUS_OPTIONS"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">厂商</label>
+              <label class="filter-label" for="upstream-filter-platform">厂商</label>
               <Select
+                id="upstream-filter-platform"
                 v-model="queryParams.platform"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按厂商筛选上游"
                 :options="PLATFORM_OPTIONS"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="upstream-filter-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="upstream-filter-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -789,7 +815,7 @@ onMounted(() => {
           </template>
           <template #cell-name="{ row }">
             <div class="account-cell">
-              <span>{{ nameCell(row) }}</span>
+              <span class="data-table-cell-truncate" :title="nameCell(row)">{{ nameCell(row) }}</span>
               <span v-if="row.is_reference" class="ref-tag">基线</span>
             </div>
             <div v-if="row.account_email && row.name" class="row-sub" :title="row.account_email">
@@ -797,13 +823,15 @@ onMounted(() => {
             </div>
           </template>
           <template #cell-code="{ row }">
-            {{ upstreamCode(row) || '—' }}
+            <span class="data-table-cell-truncate" :title="upstreamCode(row)">
+              {{ upstreamCode(row) || '—' }}
+            </span>
           </template>
           <template #cell-note="{ row }">
             <span class="note-cell" :title="row.note || ''">{{ String(row.note || '').trim() || '—' }}</span>
           </template>
           <template #cell-seller="{ row }">
-            <div>{{ sellerLabel(row) }}</div>
+            <span class="data-table-cell-truncate" :title="sellerLabel(row)">{{ sellerLabel(row) }}</span>
           </template>
           <template #cell-platform="{ row }">
             {{ platformLabel(row.platform) }}
@@ -875,144 +903,172 @@ onMounted(() => {
       </template>
     </TablePageLayout>
 
-    <div v-if="probeTarget" class="create-mask" @click.self="closeProbeConfirm">
-      <div class="create-modal" role="dialog" aria-labelledby="probe-confirm-title">
-        <header class="create-modal__head">
-          <h3 id="probe-confirm-title">确认检测</h3>
-          <button type="button" class="y-link" :disabled="probeBusy" @click="closeProbeConfirm">关闭</button>
-        </header>
-        <div class="create-modal__body">
-          <p class="create-modal__hint">
-            将对上游
-            <strong>{{ displayName(probeTarget) }}</strong>
-            <template v-if="upstreamCode(probeTarget) !== displayName(probeTarget)">
-              （编号 {{ upstreamCode(probeTarget) }}）
-            </template>
-            发起检测。确认后任务会进入检测队列。
-          </p>
-          <p v-if="probeError" class="y-msg y-msg--error">{{ probeError }}</p>
-        </div>
-        <footer class="create-modal__foot">
+    <BaseDialog
+      :show="!!probeTarget"
+      title="确认检测"
+      :close-on-escape="!probeBusy"
+      :show-close-button="!probeBusy"
+      @close="closeProbeConfirm"
+    >
+      <div class="dialog-body">
+        <p class="create-modal__hint">
+          将对上游
+          <strong class="break-anywhere">{{ probeTarget ? displayName(probeTarget) : '' }}</strong>
+          <template v-if="probeTarget && upstreamCode(probeTarget) !== displayName(probeTarget)">
+            （编号 {{ upstreamCode(probeTarget) }}）
+          </template>
+          发起检测。确认后任务会进入检测队列。
+        </p>
+        <p v-if="probeError" class="y-msg y-msg--error" role="alert">{{ probeError }}</p>
+      </div>
+      <template #footer>
+        <div class="dialog-actions">
           <button type="button" class="btn btn-secondary" :disabled="probeBusy" @click="closeProbeConfirm">
             取消
           </button>
           <button type="button" class="btn btn-primary" :disabled="probeBusy" @click="confirmProbe">
             {{ probeBusy ? '提交中…' : '确认检测' }}
           </button>
-        </footer>
-      </div>
-    </div>
-
-    <div v-if="probeDone" class="create-mask" @click.self="closeProbeDone">
-      <div class="create-modal" role="dialog" aria-labelledby="probe-done-title">
-        <header class="create-modal__head">
-          <h3 id="probe-done-title">已排队检测</h3>
-          <button type="button" class="y-link" @click="closeProbeDone">关闭</button>
-        </header>
-        <div class="create-modal__body">
-          <p class="create-modal__hint">
-            上游 <strong>{{ probeDone.label }}</strong> 已进入检测队列。可前往「检测记录」查看进度与结果。
-          </p>
         </div>
-        <footer class="create-modal__foot">
+      </template>
+    </BaseDialog>
+
+    <BaseDialog :show="!!probeDone" title="已排队检测" @close="closeProbeDone">
+      <p class="create-modal__hint">
+        上游 <strong class="break-anywhere">{{ probeDone?.label }}</strong> 已进入检测队列。可前往「检测记录」查看进度与结果。
+      </p>
+      <template #footer>
+        <div class="dialog-actions">
           <button type="button" class="btn btn-secondary" @click="closeProbeDone">稍后查看</button>
           <button type="button" class="btn btn-primary" @click="goProbeRuns">查看检测记录</button>
-        </footer>
-      </div>
-    </div>
-
-    <div v-if="showCreate" class="create-mask" @click.self="showCreate = false">
-      <div class="create-modal" role="dialog" aria-labelledby="create-upstream-title">
-        <header class="create-modal__head">
-          <h3 id="create-upstream-title">添加上游</h3>
-          <button type="button" class="y-link" @click="showCreate = false">关闭</button>
-        </header>
-        <div class="create-modal__body">
-          <p class="create-modal__hint">
-            选择卖家与厂商后创建草稿，随后进入授权 / 选模型对接流程，完成后状态为就绪即可挂单。
-          </p>
-          <p v-if="createError" class="y-msg y-msg--error">{{ createError }}</p>
-
-          <label class="create-field">
-            <span>搜索卖家</span>
-            <div class="create-field__row">
-              <input
-                v-model="userKeyword"
-                class="filter-input flex-1"
-                type="search"
-                placeholder="邮箱 / 用户 ID"
-                @keyup.enter="searchUsers"
-              />
-              <button type="button" class="btn btn-secondary" @click="searchUsers">查找</button>
-            </div>
-          </label>
-
-          <label class="create-field">
-            <span>卖家用户</span>
-            <Select
-              v-model="createForm.seller_id"
-              class="w-full"
-              size="sm"
-              :options="[{ value: '', label: '— 请选择 —' }, ...createSellerOptions]"
-            />
-          </label>
-
-          <label class="create-field">
-            <span>名称</span>
-            <input
-              v-model="createForm.name"
-              class="filter-input w-full"
-              type="text"
-              maxlength="64"
-              placeholder="可选，列表展示用"
-            />
-          </label>
-
-          <label class="create-field">
-            <span>备注</span>
-            <textarea
-              v-model="createForm.note"
-              class="filter-input w-full create-note"
-              rows="2"
-              maxlength="500"
-              placeholder="可选，运营备注"
-            />
-          </label>
-
-          <label class="create-field">
-            <span>厂商</span>
-            <Select
-              v-model="createForm.platform"
-              class="w-full"
-              size="sm"
-              placeholder="— 请选择厂商 —"
-              :options="createPlatformOptions"
-            />
-          </label>
-
-          <label class="create-field">
-            <span>接入方式</span>
-            <Select
-              v-model="createForm.auth_type"
-              class="w-full"
-              size="sm"
-              placeholder="— 请选择接入方式 —"
-              :disabled="!createForm.platform"
-              :options="createAuthOptions"
-            />
-            <span v-if="createForm.platform && !createAuthOptions.length" class="create-field__err">
-              该厂商暂无可用接入方式
-            </span>
-          </label>
         </div>
-        <footer class="create-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="showCreate = false">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="createBusy" @click="submitCreate">
-            创建并开始接入
-          </button>
-        </footer>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
+      :show="showCreate"
+      title="添加上游"
+      :close-on-escape="!createBusy"
+      :show-close-button="!createBusy"
+      @close="showCreate = false"
+    >
+      <div class="dialog-body">
+        <p class="create-modal__hint">
+          选择卖家与厂商后创建草稿，随后进入授权 / 选模型对接流程，完成后状态为就绪即可挂单。
+        </p>
+        <p v-if="createError" class="y-msg y-msg--error" role="alert">{{ createError }}</p>
+
+        <label class="create-field" for="create-seller-search">
+          <span>搜索卖家</span>
+          <div class="create-field__row">
+            <input
+              id="create-seller-search"
+              v-model="userKeyword"
+              class="filter-input flex-1"
+              type="search"
+              placeholder="邮箱 / 用户 ID"
+              @keyup.enter="searchUsers"
+            />
+            <button type="button" class="btn btn-secondary" @click="searchUsers">查找</button>
+          </div>
+        </label>
+
+        <label class="create-field" for="create-seller">
+          <span>卖家用户</span>
+          <Select
+            id="create-seller"
+            v-model="createForm.seller_id"
+            class="w-full"
+            size="sm"
+            aria-label="选择上游卖家用户"
+            :options="[{ value: '', label: '— 请选择 —' }, ...createSellerOptions]"
+          />
+        </label>
+
+        <label class="create-field" for="create-name">
+          <span>名称</span>
+          <input
+            id="create-name"
+            v-model="createForm.name"
+            class="filter-input w-full"
+            type="text"
+            maxlength="64"
+            placeholder="可选，列表展示用"
+          />
+        </label>
+
+        <label class="create-field" for="create-note">
+          <span>备注</span>
+          <textarea
+            id="create-note"
+            v-model="createForm.note"
+            class="y-textarea w-full create-note"
+            rows="3"
+            maxlength="500"
+            placeholder="可选，运营备注"
+          />
+        </label>
+
+        <label class="create-field" for="create-platform">
+          <span>厂商</span>
+          <Select
+            id="create-platform"
+            v-model="createForm.platform"
+            class="w-full"
+            size="sm"
+            aria-label="选择上游厂商"
+            placeholder="— 请选择厂商 —"
+            :options="createPlatformOptions"
+          />
+        </label>
+
+        <label class="create-field" for="create-auth-type">
+          <span>接入方式</span>
+          <Select
+            id="create-auth-type"
+            v-model="createForm.auth_type"
+            class="w-full"
+            size="sm"
+            aria-label="选择上游接入方式"
+            placeholder="— 请选择接入方式 —"
+            :disabled="!createForm.platform"
+            :options="createAuthOptions"
+          />
+          <span v-if="createForm.platform && !createAuthOptions.length" class="create-field__err">
+            该厂商暂无可用接入方式
+          </span>
+        </label>
       </div>
-    </div>
+      <template #footer>
+        <div class="dialog-actions">
+          <button type="button" class="btn btn-secondary" :disabled="createBusy" @click="showCreate = false">
+            取消
+          </button>
+          <button type="button" class="btn btn-primary" :disabled="createBusy" @click="submitCreate">
+            {{ createBusy ? '创建中…' : '创建并开始接入' }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <ConfirmDialog
+      :show="!!rowAction"
+      :title="rowAction?.kind === 'remove' ? '强制删除上游' : '冻结上游'"
+      :message="rowAction?.kind === 'remove'
+        ? `强制删除上游 ${rowAction ? displayName(rowAction.upstream) : ''}？`
+        : `冻结上游 ${rowAction ? displayName(rowAction.upstream) : ''}？`"
+      :confirm-text="rowAction?.kind === 'remove' ? '确认删除' : '确认冻结'"
+      cancel-text="取消"
+      :danger="rowAction?.kind === 'remove'"
+      :reason="rowAction?.kind === 'suspend'"
+      reason-label="冻结原因"
+      reason-placeholder="可选，记录冻结原因"
+      :busy="busy"
+      @confirm="confirmRowAction"
+      @cancel="rowAction = null"
+    >
+      <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+    </ConfirmDialog>
   </section>
 </template>
 
@@ -1135,17 +1191,11 @@ onMounted(() => {
   width: 17.5rem;
   box-sizing: border-box;
 }
-#market-upstreams-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-upstreams-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-upstreams-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
+.section-block {
+  min-width: 0;
 }
 
-.section-block {
+.filter-item--date-range {
   min-width: 0;
 }
 
@@ -1194,6 +1244,16 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+
+#market-upstreams-page :deep(.data-table-cell-truncate) {
+  display: inline-block;
+  max-width: min(20rem, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .note-cell {
@@ -1357,54 +1417,28 @@ onMounted(() => {
   background: linear-gradient(120deg, #e8f9f8 0%, #f8fefe 100%);
 }
 
-.create-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgb(15 23 42 / 45%);
-}
-
-.create-modal {
-  width: min(480px, 100%);
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 16px 48px rgb(0 0 0 / 18%);
-}
-
-.create-modal__head,
-.create-modal__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-}
-
-.create-modal__head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.create-modal__foot {
-  justify-content: flex-end;
-}
-
-.create-modal__body {
+.dialog-body {
   display: grid;
   gap: 12px;
-  padding: 0 16px 16px;
+  min-width: 0;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.break-anywhere {
+  overflow-wrap: anywhere;
 }
 
 .create-modal__hint {
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
-  color: #666;
+  color: var(--color-text-secondary, #666);
 }
 
 .create-field {
@@ -1414,7 +1448,7 @@ onMounted(() => {
 }
 
 .create-field > span {
-  color: #606266;
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
 }
 
@@ -1438,5 +1472,45 @@ onMounted(() => {
 .flex-1 {
   flex: 1;
   min-width: 0;
+}
+
+:global(html.dark #market-upstreams-page .y-header),
+:global(html.dark #market-upstreams-page .stat-card) {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border);
+}
+
+:global(html.dark #market-upstreams-page .y-title),
+:global(html.dark #market-upstreams-page .stat-card__value),
+:global(html.dark #market-upstreams-page .table-scroll-container table tbody td) {
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-upstreams-page .y-page-desc),
+:global(html.dark #market-upstreams-page .stat-card__label),
+:global(html.dark #market-upstreams-page .row-sub) {
+  color: var(--color-text-secondary);
+}
+
+:global(html.dark #market-upstreams-page .table-scroll-container table thead th),
+:global(html.dark #market-upstreams-page .table-scroll-container table tbody tr:hover td) {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-upstreams-page .table-scroll-container table tbody td) {
+  border-color: var(--color-border);
+}
+
+@media (max-width: 768px) {
+  #market-upstreams-page :deep(.data-table-cell-truncate),
+  #market-upstreams-page :deep(.note-cell),
+  #market-upstreams-page :deep(.row-sub) {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 </style>
