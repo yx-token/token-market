@@ -8,6 +8,7 @@ import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet } from './api'
@@ -39,6 +40,7 @@ const ledger = ref<PlatformLedger | null>(null)
 const logs = ref<AuditLog[]>([])
 const loading = ref(false)
 const error = ref('')
+const detailEntry = ref<{ title: string; value: string } | null>(null)
 
 const initQueryParams = { pageNum: 1, pageSize: 15, keyword: '', actor_type: '' }
 const data = reactive({ queryParams: { ...initQueryParams } })
@@ -106,6 +108,12 @@ function actorLabel(l: AuditLog) {
   return `${l.actor_type} ${l.actor_id}`
 }
 
+function openDetail(log: AuditLog, field: 'action' | 'target' | 'detail') {
+  const labels = { action: '动作', target: '目标', detail: 'JSON 详情' }
+  const value = field === 'action' ? log.action : field === 'target' ? log.target || '—' : detailText(log.detail)
+  detailEntry.value = { title: `审计 #${log.id} ${labels[field]}`, value }
+}
+
 function fmtTime(v?: string) {
   if (!v) return '—'
   const d = new Date(v)
@@ -153,8 +161,8 @@ onMounted(load)
 </script>
 
 <template>
-  <section id="market-audit-page" class="audit-shell">
-    <TablePageLayout>
+  <section id="market-audit-page" class="audit-shell" :aria-busy="loading">
+    <TablePageLayout :key="tab" :content-mode="tab === 'ledger' ? 'content' : 'table'">
       <template #title>
         <div class="page-heading">
           <h2 class="y-title">{{ tab === 'ledger' ? '平台账本' : '审计日志' }}</h2>
@@ -170,10 +178,10 @@ onMounted(load)
         </button>
       </template>
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <nav class="y-tabs mb-3">
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'ledger' }" @click="tab = 'ledger'">账本</button>
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'audit' }" @click="tab = 'audit'">审计</button>
+        <p v-if="error" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <nav class="y-tabs mb-3" aria-label="账本与审计视图">
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'ledger' }" :aria-pressed="tab === 'ledger'" @click="tab = 'ledger'">账本</button>
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'audit' }" :aria-pressed="tab === 'audit'" @click="tab = 'audit'">审计</button>
         </nav>
 
         <template v-if="tab === 'ledger'">
@@ -198,9 +206,10 @@ onMounted(load)
             <div class="section-title">审计信息</div>
             <div class="filter-grid">
               <div class="filter-item">
-                <label class="filter-label">关键词</label>
+                <label class="filter-label" for="audit-keyword">关键词</label>
                 <div class="relative flex-1 w-full min-w-0">
                   <input
+                    id="audit-keyword"
                     v-model="queryParams.keyword"
                     class="filter-input w-full"
                     type="search"
@@ -210,12 +219,14 @@ onMounted(load)
                 </div>
               </div>
               <div class="filter-item">
-                <label class="filter-label">操作者</label>
+                <label class="filter-label" for="audit-actor">操作者</label>
                 <Select
+                  id="audit-actor"
                   v-model="queryParams.actor_type"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="actorOptions"
+                  aria-label="审计操作者类型"
                 />
               </div>
               <div class="filter-actions lg:col-span-4">
@@ -240,10 +251,23 @@ onMounted(load)
           </template>
           <template #cell-id="{ row }">{{ row.id }}</template>
           <template #cell-actor="{ row }">{{ actorLabel(row) }}</template>
-          <template #cell-action="{ row }">{{ row.action }}</template>
-          <template #cell-target="{ row }">{{ row.target || '—' }}</template>
+          <template #cell-action="{ row }">
+            <div class="audit-long-cell">
+              <span class="detail-cell">{{ row.action }}</span>
+              <button type="button" class="y-link detail-link" :aria-label="`查看审计 #${row.id} 完整动作`" @click="openDetail(row, 'action')">查看详情</button>
+            </div>
+          </template>
+          <template #cell-target="{ row }">
+            <div class="audit-long-cell">
+              <span class="detail-cell">{{ row.target || '—' }}</span>
+              <button type="button" class="y-link detail-link" :aria-label="`查看审计 #${row.id} 完整目标`" @click="openDetail(row, 'target')">查看详情</button>
+            </div>
+          </template>
           <template #cell-detail="{ row }">
-            <span class="detail-cell" :title="detailText(row.detail)">{{ detailText(row.detail) }}</span>
+            <div class="audit-long-cell">
+              <span class="detail-cell">{{ detailText(row.detail) }}</span>
+              <button type="button" class="y-link detail-link" :aria-label="`查看审计 #${row.id} JSON 详情`" @click="openDetail(row, 'detail')">查看详情</button>
+            </div>
           </template>
           <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
           <template #empty>
@@ -265,6 +289,15 @@ onMounted(load)
         />
       </template>
     </TablePageLayout>
+
+    <BaseDialog
+      :show="detailEntry !== null"
+      :title="detailEntry?.title || '审计详情'"
+      width="wide"
+      @close="detailEntry = null"
+    >
+      <pre v-if="detailEntry" class="audit-detail-content">{{ detailEntry.value }}</pre>
+    </BaseDialog>
   </section>
 </template>
 
@@ -303,17 +336,35 @@ onMounted(load)
   gap: 6px;
   padding: 14px;
   border-radius: 10px;
-  background: #f8fafc;
-  border: 1px solid rgb(0 0 0 / 6%);
+  background: var(--color-bg-secondary, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
 }
-.ledger-card span { font-size: 12px; color: #868686; }
-.ledger-card strong { font-size: 18px; font-weight: 650; }
+.ledger-card span { font-size: 12px; color: var(--color-text-secondary, #64748b); }
+.ledger-card strong { font-size: 18px; font-weight: 650; color: var(--color-text-primary, #0f172a); }
+.audit-long-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  max-width: 18rem;
+  min-width: 0;
+}
 .detail-cell {
   display: inline-block;
-  max-width: 16rem;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 12px;
+}
+.detail-link { flex: none; font-size: 12px; }
+.audit-detail-content {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  tab-size: 2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
 }
 #market-audit-page :deep(.filter-grid .select-trigger),
@@ -323,13 +374,17 @@ onMounted(load)
   min-height: 32px;
 }
 #market-audit-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
 }
 #market-audit-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
+}
+@media (max-width: 767px) {
+  .audit-long-cell { max-width: min(18rem, 58vw); }
+  .detail-cell { white-space: normal; overflow-wrap: anywhere; }
 }
 </style>

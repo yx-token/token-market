@@ -217,3 +217,56 @@ describe('Select remote search', () => {
     expect(labels).toEqual(['Alpha account'])
   })
 })
+
+describe('Select accessible name', () => {
+  const options = [{ value: 'alpha', label: 'Alpha' }]
+
+  it('uses an explicit placeholder instead of a generic English aria-label', () => {
+    const wrapper = mount(Select, {
+      props: { modelValue: null, options, placeholder: '选择状态' },
+    })
+    unmountWrapper = () => wrapper.unmount()
+
+    expect(wrapper.get('button').attributes('aria-label')).toBe('选择状态')
+  })
+
+  it('prefers an explicit ariaLabel over the placeholder', () => {
+    const wrapper = mount(Select, {
+      props: {
+        modelValue: null,
+        options,
+        placeholder: '选择状态',
+        ariaLabel: '按状态筛选',
+      },
+    })
+    unmountWrapper = () => wrapper.unmount()
+
+    expect(wrapper.get('button').attributes('aria-label')).toBe('按状态筛选')
+  })
+
+  it('leaves naming to visible content or an external label when no name is provided', () => {
+    const wrapper = mount(Select, {
+      props: { modelValue: 'alpha', options, id: 'status-filter' },
+    })
+    unmountWrapper = () => wrapper.unmount()
+    const trigger = wrapper.get('button')
+
+    expect(trigger.attributes('id')).toBe('status-filter')
+    expect(trigger.attributes('aria-label')).toBeUndefined()
+    expect(trigger.text()).toContain('Alpha')
+    expect(trigger.attributes('aria-label')).not.toBe('Select option')
+  })
+
+  it('generates distinct listbox IDs for separate instances', () => {
+    const first = mount(Select, { props: { modelValue: 'alpha', options } })
+    const second = mount(Select, { props: { modelValue: 'alpha', options } })
+    unmountWrapper = () => {
+      first.unmount()
+      second.unmount()
+    }
+
+    expect(first.get('button').attributes('aria-controls')).not.toBe(
+      second.get('button').attributes('aria-controls')
+    )
+  })
+})

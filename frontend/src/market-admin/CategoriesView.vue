@@ -5,6 +5,8 @@
 import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -62,6 +64,7 @@ const msg = ref('')
 
 const creating = ref(false)
 const editing = ref<MarketCategory | null>(null)
+const deleteTarget = ref<MarketCategory | null>(null)
 const form = reactive({
   id: '',
   parent_id: '' as string,
@@ -180,6 +183,10 @@ const parentOptions = computed(() => [
 ])
 
 const modalOpen = computed(() => creating.value || !!editing.value)
+
+function categoryRowClass(row: FlatRow) {
+  return row.enabled ? '' : 'is-disabled'
+}
 
 watch(
   () => [
@@ -329,15 +336,24 @@ async function save() {
   await load()
 }
 
-async function remove(c: MarketCategory) {
+function remove(c: MarketCategory) {
   if (c.children?.length) {
     error.value = '请先删除子分类'
     return
   }
-  if (!window.confirm(`删除分类「${c.name}」(${c.id})？`)) return
-  if (await run('已删除', () => marketSend('DELETE', `${MARKET_API_PREFIX}/market-categories/${c.id}`))) {
-    await load()
-  }
+  error.value = ''
+  deleteTarget.value = c
+}
+
+async function confirmRemove() {
+  const target = deleteTarget.value
+  if (!target) return
+  const removed = await run('已删除', () =>
+    marketSend('DELETE', `${MARKET_API_PREFIX}/market-categories/${target.id}`),
+  )
+  if (!removed) return
+  deleteTarget.value = null
+  await load()
 }
 
 async function toggleEnabled(c: MarketCategory) {
@@ -389,7 +405,7 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-if="error && !modalOpen" class="y-msg y-msg--error mb-2">{{ error }}</p>
         <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
 
         <div class="section-block">
@@ -469,7 +485,7 @@ onMounted(load)
           :data="pageRows"
           :loading="loading"
           :expandable-actions="false"
-          :row-class="(row: FlatRow) => (!row.enabled ? 'is-disabled' : '')"
+          :row-class="categoryRowClass"
         >
           <template #cell-serial="{ row }">
             {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
@@ -488,13 +504,21 @@ onMounted(load)
               </button>
               <span v-else class="cat-leaf" aria-hidden="true">·</span>
               <div class="min-w-0">
-                <div class="cat-title" :class="{ root: row.depth === 0 }">{{ row.name }}</div>
-                <div v-if="row.description" class="row-sub">{{ row.description }}</div>
+                <div
+                  class="cat-title data-table-cell-truncate"
+                  :class="{ root: row.depth === 0 }"
+                  :title="row.name"
+                >
+                  {{ row.name }}
+                </div>
+                <div v-if="row.description" class="row-sub data-table-cell-truncate" :title="row.description">
+                  {{ row.description }}
+                </div>
               </div>
             </div>
           </template>
           <template #cell-id="{ row }">
-            <span class="mono-cell">{{ row.id }}</span>
+            <span class="mono-cell data-table-cell-truncate" :title="row.id">{{ row.id }}</span>
           </template>
           <template #cell-seller_pickable="{ row }">
             {{ row.seller_pickable ? '可选' : '—' }}
@@ -541,57 +565,72 @@ onMounted(load)
       </template>
     </TablePageLayout>
 
-    <div v-if="modalOpen" class="y-modal-mask" @click.self="closeModal">
-      <div class="y-modal" role="dialog" :aria-label="creating ? '新建分类' : '编辑分类'">
-        <header class="y-modal__head">
-          <h3>{{ creating ? '新建分类' : `编辑 ${editing?.id}` }}</h3>
-          <button type="button" class="y-link" @click="closeModal">关闭</button>
-        </header>
-        <div class="y-modal__body">
-          <label v-if="creating" class="y-field">
-            <span>ID</span>
-            <input v-model="form.id" class="input w-full font-mono" placeholder="low_rate" />
+    <BaseDialog
+      :show="modalOpen"
+      :title="creating ? '新建分类' : editing ? `编辑 ${editing.id}` : '编辑分类'"
+      :z-index="80"
+      close-on-click-outside
+      @close="closeModal"
+    >
+      <div class="dialog-form">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <label v-if="creating" class="y-field">
+          <span>ID</span>
+          <input v-model="form.id" class="input w-full font-mono" placeholder="low_rate" />
+        </label>
+        <label class="y-field">
+          <span>名称</span>
+          <input v-model="form.name" class="input w-full" />
+        </label>
+        <label class="y-field">
+          <span>父分类</span>
+          <select v-model="form.parent_id" class="input w-full">
+            <option
+              v-for="p in parentOptions"
+              :key="p.id || 'root'"
+              :value="p.id"
+              :disabled="!!editing && p.id === editing.id"
+            >
+              {{ p.label }}
+            </option>
+          </select>
+        </label>
+        <label class="y-field">
+          <span>说明</span>
+          <textarea v-model="form.description" class="input w-full y-textarea" rows="3" />
+        </label>
+        <div class="y-field-row">
+          <label class="y-field">
+            <span>排序</span>
+            <input v-model.number="form.sort" type="number" class="input w-full" />
           </label>
           <label class="y-field">
-            <span>名称</span>
-            <input v-model="form.name" class="input w-full" />
+            <span>图标 key</span>
+            <input v-model="form.icon" class="input w-full" placeholder="chat / code" />
           </label>
-          <label class="y-field">
-            <span>父分类</span>
-            <select v-model="form.parent_id" class="input w-full">
-              <option
-                v-for="p in parentOptions"
-                :key="p.id || 'root'"
-                :value="p.id"
-                :disabled="!!editing && p.id === editing.id"
-              >
-                {{ p.label }}
-              </option>
-            </select>
-          </label>
-          <label class="y-field">
-            <span>说明</span>
-            <input v-model="form.description" class="input w-full" />
-          </label>
-          <div class="y-field-row">
-            <label class="y-field">
-              <span>排序</span>
-              <input v-model.number="form.sort" type="number" class="input w-full" />
-            </label>
-            <label class="y-field">
-              <span>图标 key</span>
-              <input v-model="form.icon" class="input w-full" placeholder="chat / code" />
-            </label>
-          </div>
-          <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 启用</label>
-          <label class="y-check"><input v-model="form.seller_pickable" type="checkbox" /> 卖家发布时可勾选</label>
         </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
-        </footer>
+        <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 启用</label>
+        <label class="y-check"><input v-model="form.seller_pickable" type="checkbox" /> 卖家发布时可勾选</label>
       </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+        <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
+      </template>
+    </BaseDialog>
+
+    <ConfirmDialog
+      :show="!!deleteTarget"
+      title="删除分类"
+      :message="deleteTarget ? `确认删除分类「${deleteTarget.name}」(${deleteTarget.id})？此操作不可撤销。` : ''"
+      confirm-text="确认删除"
+      cancel-text="取消"
+      danger
+      :busy="busy"
+      @confirm="confirmRemove"
+      @cancel="deleteTarget = null"
+    >
+      <p v-if="deleteTarget && error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+    </ConfirmDialog>
   </section>
 </template>
 
@@ -642,30 +681,20 @@ onMounted(load)
   gap: 12px;
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  background: #f8fafc;
-}
-
-.stat-card--blue {
-  background: linear-gradient(135deg, #eff6ff, #f8fafc);
-}
-.stat-card--green {
-  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
-}
-.stat-card--orange {
-  background: linear-gradient(135deg, #fff7ed, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-bg-secondary, #f8fafc);
 }
 
 .stat-card__label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary);
   line-height: 1.2;
 }
 
@@ -685,7 +714,7 @@ onMounted(load)
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-text-secondary, #8c8c8c);
 }
 
 .mono-cell {
@@ -743,7 +772,7 @@ onMounted(load)
   flex-shrink: 0;
 }
 
-#market-categories-page :deep(tr.is-disabled) {
+#market-categories-page :deep(.is-disabled) {
   opacity: 0.55;
 }
 
@@ -755,30 +784,40 @@ onMounted(load)
 }
 
 #market-categories-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-categories-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary, #303133);
 }
 
 #market-categories-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  background: var(--color-bg-secondary, #f5f7fa);
+}
+
+#market-categories-page :deep(.data-table-cell-truncate) {
+  display: block;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #market-categories-page :deep(th.col-name),
 #market-categories-page :deep(td.col-name) {
   min-width: 14rem;
+  max-width: 20rem;
 }
 #market-categories-page :deep(th.col-id),
 #market-categories-page :deep(td.col-id) {
   min-width: 7rem;
+  max-width: 16rem;
 }
 #market-categories-page :deep(th.col-pick),
 #market-categories-page :deep(td.col-pick),
@@ -794,52 +833,10 @@ onMounted(load)
   width: 14rem;
   box-sizing: border-box;
 }
-#market-categories-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-categories-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-categories-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
 
-.y-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgb(15 23 42 / 45%);
-}
-.y-modal {
-  width: min(480px, 100%);
-  border-radius: 12px;
-  background: var(--color-bg-elevated, #fff);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 18%);
-}
-.y-modal__head,
-.y-modal__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-}
-.y-modal__head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-.y-modal__foot {
-  justify-content: flex-end;
-}
-.y-modal__body {
+.dialog-form {
   display: grid;
   gap: 12px;
-  padding: 0 16px 16px;
 }
 .y-field {
   display: grid;
@@ -860,11 +857,28 @@ onMounted(load)
   gap: 8px;
   font-size: 13px;
 }
+.y-textarea {
+  height: auto !important;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
 
 @media (max-width: 900px) {
   .stats-row,
   .y-field-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  #market-categories-page :deep(.mobile-card-value .data-table-cell-truncate),
+  #market-categories-page :deep(.mobile-card-value .row-sub) {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 </style>

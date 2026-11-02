@@ -5,6 +5,7 @@
 import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -341,7 +342,7 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-if="error && !show" class="y-msg y-msg--error mb-2">{{ error }}</p>
         <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
 
         <div class="section-block">
@@ -434,9 +435,16 @@ onMounted(load)
           <template #cell-serial="{ row }">
             {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
           </template>
-          <template #cell-name="{ row }">{{ row.name }}</template>
+          <template #cell-name="{ row }">
+            <span class="data-table-cell-truncate" :title="row.name">{{ row.name }}</span>
+          </template>
           <template #cell-market_title="{ row }">
-            {{ row.market_published ? row.market_title || '—' : '—' }}
+            <span
+              class="data-table-cell-truncate"
+              :title="row.market_published ? row.market_title || '—' : '—'"
+            >
+              {{ row.market_published ? row.market_title || '—' : '—' }}
+            </span>
           </template>
           <template #cell-platform="{ row }">{{ platformLabel(row.platform) }}</template>
           <template #cell-sell="{ row }">{{ fmtMul(row.sell_multiplier) }}</template>
@@ -502,73 +510,74 @@ onMounted(load)
       </template>
     </TablePageLayout>
 
-    <div v-if="show" class="y-modal-mask" @click.self="closeModal">
-      <div class="y-modal" role="dialog" :aria-label="editing ? '编辑默认分组' : '新建默认分组'">
-        <header class="y-modal__head">
-          <h3>{{ editing ? '编辑默认分组' : '新建默认分组' }}</h3>
-          <button type="button" class="y-link" @click="closeModal">关闭</button>
-        </header>
-        <div class="y-modal__body">
+    <BaseDialog
+      :show="show"
+      :title="editing ? '编辑默认分组' : '新建默认分组'"
+      :z-index="80"
+      close-on-click-outside
+      @close="closeModal"
+    >
+      <div class="dialog-form">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <label class="y-field">
+          <span>名称（sub2api 分组名，以 tm-pool- 开头）</span>
+          <input v-model="form.name" class="input w-full" :disabled="!!editing" />
+        </label>
+        <label class="y-field">
+          <span>平台</span>
+          <select v-model="form.platform" class="input w-full" :disabled="!!editing">
+            <option v-for="o in PLATFORM_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+          </select>
+        </label>
+        <div class="y-field-row y-field-row--3">
           <label class="y-field">
-            <span>名称（sub2api 分组名，以 tm-pool- 开头）</span>
-            <input v-model="form.name" class="input w-full" :disabled="!!editing" />
+            <span>售价 D</span>
+            <input v-model="form.sell" class="input w-full" inputmode="decimal" />
           </label>
           <label class="y-field">
-            <span>平台</span>
-            <select v-model="form.platform" class="input w-full" :disabled="!!editing">
-              <option v-for="o in PLATFORM_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
-            </select>
+            <span>最低毛利</span>
+            <input v-model="form.margin" class="input w-full" inputmode="decimal" />
           </label>
-          <div class="y-field-row y-field-row--3">
-            <label class="y-field">
-              <span>售价 D</span>
-              <input v-model="form.sell" class="input w-full" inputmode="decimal" />
-            </label>
-            <label class="y-field">
-              <span>最低毛利</span>
-              <input v-model="form.margin" class="input w-full" inputmode="decimal" />
-            </label>
-            <label class="y-field">
-              <span>安全缓冲</span>
-              <input v-model="form.buffer" class="input w-full" inputmode="decimal" />
-            </label>
-          </div>
-          <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 启用</label>
-          <div class="y-sep">
-            <label class="y-check">
-              <input v-model="form.market_published" type="checkbox" :disabled="!editing" />
-              作为商品上架到市场
-            </label>
-            <p class="y-hint">
-              {{ editing ? '上架后出现在市场信息流，买家点击后去开通保障池 Key。' : '新建后请先同步，再编辑上架。' }}
-            </p>
-            <label class="y-field">
-              <span>市场标题</span>
-              <input
-                v-model="form.market_title"
-                class="input w-full"
-                placeholder="如：Claude · 平台保障"
-                :disabled="!editing"
-              />
-            </label>
-            <label class="y-field">
-              <span>市场介绍</span>
-              <textarea
-                v-model="form.market_description"
-                class="input w-full y-textarea"
-                rows="3"
-                placeholder="一两句话介绍平台保障池优势、适用场景"
-                :disabled="!editing"
-              />
-            </label>
-          </div>
+          <label class="y-field">
+            <span>安全缓冲</span>
+            <input v-model="form.buffer" class="input w-full" inputmode="decimal" />
+          </label>
         </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
-        </footer>
+        <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 启用</label>
+        <div class="y-sep">
+          <label class="y-check">
+            <input v-model="form.market_published" type="checkbox" :disabled="!editing" />
+            作为商品上架到市场
+          </label>
+          <p class="y-hint">
+            {{ editing ? '上架后出现在市场信息流，买家点击后去开通保障池 Key。' : '新建后请先同步，再编辑上架。' }}
+          </p>
+          <label class="y-field">
+            <span>市场标题</span>
+            <input
+              v-model="form.market_title"
+              class="input w-full"
+              placeholder="如：Claude · 平台保障"
+              :disabled="!editing"
+            />
+          </label>
+          <label class="y-field">
+            <span>市场介绍</span>
+            <textarea
+              v-model="form.market_description"
+              class="input w-full y-textarea"
+              rows="3"
+              placeholder="一两句话介绍平台保障池优势、适用场景"
+              :disabled="!editing"
+            />
+          </label>
+        </div>
       </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+        <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
+      </template>
+    </BaseDialog>
   </section>
 </template>
 
@@ -619,30 +628,20 @@ onMounted(load)
   gap: 12px;
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  background: #f8fafc;
-}
-
-.stat-card--blue {
-  background: linear-gradient(135deg, #eff6ff, #f8fafc);
-}
-.stat-card--green {
-  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
-}
-.stat-card--orange {
-  background: linear-gradient(135deg, #fff7ed, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-bg-secondary, #f8fafc);
 }
 
 .stat-card__label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary);
   line-height: 1.2;
 }
 
@@ -683,30 +682,40 @@ onMounted(load)
 }
 
 #market-pools-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-pools-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary, #303133);
 }
 
 #market-pools-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  background: var(--color-bg-secondary, #f5f7fa);
+}
+
+#market-pools-page :deep(.data-table-cell-truncate) {
+  display: block;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #market-pools-page :deep(th.col-name),
 #market-pools-page :deep(td.col-name) {
   min-width: 8rem;
+  max-width: 16rem;
 }
 #market-pools-page :deep(th.col-title),
 #market-pools-page :deep(td.col-title) {
   min-width: 9rem;
+  max-width: 18rem;
 }
 #market-pools-page :deep(th.col-platform),
 #market-pools-page :deep(td.col-platform) {
@@ -728,54 +737,10 @@ onMounted(load)
   width: 14rem;
   box-sizing: border-box;
 }
-#market-pools-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-pools-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-pools-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
 
-.y-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgb(15 23 42 / 45%);
-}
-.y-modal {
-  width: min(520px, 100%);
-  max-height: min(90vh, 720px);
-  overflow: auto;
-  border-radius: 12px;
-  background: var(--color-bg-elevated, #fff);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 18%);
-}
-.y-modal__head,
-.y-modal__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-}
-.y-modal__head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-.y-modal__foot {
-  justify-content: flex-end;
-}
-.y-modal__body {
+.dialog-form {
   display: grid;
   gap: 12px;
-  padding: 0 16px 16px;
 }
 .y-field {
   display: grid;
@@ -803,7 +768,7 @@ onMounted(load)
   display: grid;
   gap: 10px;
   padding-top: 8px;
-  border-top: 1px solid rgb(0 0 0 / 6%);
+  border-top: 1px solid var(--color-border, #e2e8f0);
 }
 .y-hint {
   margin: 0;
@@ -818,11 +783,19 @@ onMounted(load)
 }
 
 @media (max-width: 900px) {
-  .stats-row {
-    grid-template-columns: 1fr;
-  }
+  .stats-row,
   .y-field-row--3 {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  #market-pools-page :deep(.mobile-card-value .data-table-cell-truncate) {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 </style>

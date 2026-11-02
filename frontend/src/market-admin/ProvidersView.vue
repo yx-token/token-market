@@ -11,6 +11,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
+import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 defineOptions({ name: 'MarketAdminProviders' })
 
@@ -72,7 +73,7 @@ const STATUS_OPTIONS = [
   { value: 'failed', label: 'failed' },
 ]
 
-const initQueryParams = { pageNum: 1, pageSize: 15, keyword: '', provider: '', status: '' }
+const initQueryParams = { pageNum: 1, pageSize: getPersistedPageSize(), keyword: '', provider: '', status: '' }
 const data = reactive({ queryParams: { ...initQueryParams } })
 const { queryParams } = toRefs(data)
 
@@ -119,6 +120,11 @@ watch(
     queryParams.value.pageNum = 1
   },
 )
+
+watch(total, (value) => {
+  const maxPage = Math.max(1, Math.ceil(value / queryParams.value.pageSize))
+  queryParams.value.pageNum = Math.min(queryParams.value.pageNum, maxPage)
+})
 
 function getSerialNumber(index: number) {
   return String((queryParams.value.pageNum - 1) * queryParams.value.pageSize + index + 1).padStart(2, '0')
@@ -219,7 +225,7 @@ onMounted(load)
 
 <template>
   <section id="market-providers-page" class="providers-shell">
-    <TablePageLayout>
+    <TablePageLayout content-mode="content">
       <template #title>
         <div class="page-heading">
           <h2 class="y-title">{{ tab === 'config' ? '检测站配置' : '最近检测' }}</h2>
@@ -239,15 +245,33 @@ onMounted(load)
         </button>
       </template>
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
-        <nav class="y-tabs mb-3">
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'config' }" @click="tab = 'config'">检测站配置</button>
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'checks' }" @click="tab = 'checks'">最近检测</button>
+        <p v-if="error" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
+        <nav class="y-tabs" aria-label="检测站视图">
+          <button
+            type="button"
+            class="y-tab"
+            :class="{ 'is-on': tab === 'config' }"
+            :aria-pressed="tab === 'config'"
+            @click="tab = 'config'"
+          >
+            检测站配置
+          </button>
+          <button
+            type="button"
+            class="y-tab"
+            :class="{ 'is-on': tab === 'checks' }"
+            :aria-pressed="tab === 'checks'"
+            @click="tab = 'checks'"
+          >
+            最近检测
+          </button>
         </nav>
+      </template>
 
-        <template v-if="tab === 'config'">
-          <p v-if="loading" class="y-msg">加载中…</p>
+      <template #table>
+        <div v-if="tab === 'config'" class="providers-content">
+          <EmptyState v-if="loading" title="正在加载检测站" description="请稍候…" />
           <template v-else>
             <div v-for="p in providers" :key="p.name" class="provider-card">
               <div class="provider-head">
@@ -309,18 +333,19 @@ onMounted(load)
                 </div>
               </div>
             </div>
-            <p v-if="!providers.length" class="y-msg">暂无检测站</p>
+            <EmptyState v-if="!providers.length" title="暂无检测站" description="可用检测站会显示在这里" />
           </template>
-        </template>
+        </div>
 
-        <template v-else>
+        <div v-else class="provider-checks-content">
           <div class="section-block">
             <div class="section-title">检测信息</div>
             <div class="filter-grid">
               <div class="filter-item">
-                <label class="filter-label">关键词</label>
+                <label class="filter-label" for="provider-check-keyword">关键词</label>
                 <div class="relative flex-1 w-full min-w-0">
                   <input
+                    id="provider-check-keyword"
                     v-model="queryParams.keyword"
                     class="filter-input w-full"
                     type="search"
@@ -330,21 +355,25 @@ onMounted(load)
                 </div>
               </div>
               <div class="filter-item">
-                <label class="filter-label">检测站</label>
+                <label class="filter-label" for="provider-check-provider">检测站</label>
                 <Select
+                  id="provider-check-provider"
                   v-model="queryParams.provider"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="providerFilterOptions"
+                  aria-label="按检测站筛选"
                 />
               </div>
               <div class="filter-item">
-                <label class="filter-label">状态</label>
+                <label class="filter-label" for="provider-check-status">状态</label>
                 <Select
+                  id="provider-check-status"
                   v-model="queryParams.status"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="STATUS_OPTIONS"
+                  aria-label="按检测状态筛选"
                 />
               </div>
               <div class="filter-actions lg:col-span-4">
@@ -359,25 +388,22 @@ onMounted(load)
               </div>
             </div>
           </div>
-        </template>
-      </template>
-
-      <template v-if="tab === 'checks'" #table>
-        <DataTable :columns="columns" :data="pageRows" :loading="loading" :expandable-actions="false">
-          <template #cell-serial="{ row }">
-            {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
-          </template>
-          <template #cell-id="{ row }">{{ row.id }}</template>
-          <template #cell-upstream="{ row }">{{ row.upstream_id ? `上游 ${row.upstream_id}` : '—' }}</template>
-          <template #cell-provider="{ row }">{{ providerLabel(row.provider) }}</template>
-          <template #cell-model="{ row }">{{ row.model || '—' }}</template>
-          <template #cell-status="{ row }">{{ row.status }}</template>
-          <template #cell-verdict="{ row }">{{ row.verdict || row.outcome || row.error || '—' }}</template>
-          <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
-          <template #empty>
-            <EmptyState title="暂无检测记录" description="启用检测站并触发检测后会出现在这里" />
-          </template>
-        </DataTable>
+          <DataTable :columns="columns" :data="pageRows" :loading="loading" :expandable-actions="false">
+            <template #cell-serial="{ row }">
+              {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
+            </template>
+            <template #cell-id="{ row }">{{ row.id }}</template>
+            <template #cell-upstream="{ row }">{{ row.upstream_id ? `上游 ${row.upstream_id}` : '—' }}</template>
+            <template #cell-provider="{ row }">{{ providerLabel(row.provider) }}</template>
+            <template #cell-model="{ row }">{{ row.model || '—' }}</template>
+            <template #cell-status="{ row }">{{ row.status }}</template>
+            <template #cell-verdict="{ row }">{{ row.verdict || row.outcome || row.error || '—' }}</template>
+            <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
+            <template #empty>
+              <EmptyState title="暂无检测记录" description="启用检测站并触发检测后会出现在这里" />
+            </template>
+          </DataTable>
+        </div>
       </template>
 
       <template v-if="tab === 'checks'" #pagination>
@@ -386,7 +412,6 @@ onMounted(load)
           :total="total"
           :page="queryParams.pageNum"
           :page-size="queryParams.pageSize"
-          :page-size-options="[15, 20, 50]"
           show-jump
           @update:page="queryParams.pageNum = $event"
           @update:page-size="queryParams.pageSize = $event"
@@ -419,6 +444,20 @@ onMounted(load)
   margin: 0 0 10px;
   font-size: 13px;
   font-weight: 600;
+}
+.providers-content,
+.provider-checks-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.providers-content {
+  overflow-y: auto;
+}
+.provider-checks-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .provider-card {
   margin-bottom: 20px;
@@ -492,13 +531,14 @@ onMounted(load)
   min-height: 32px;
 }
 #market-providers-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
 }
 #market-providers-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
+  color: var(--color-text-primary, #303133);
   font-size: 13px;
 }
 </style>

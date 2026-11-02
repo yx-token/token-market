@@ -97,7 +97,7 @@ function getSerialNumber(index: number) {
 }
 
 function needsPassword(row: IdentityRow) {
-  return !row.linked || (!row.is_admin && !row.shadow_kind)
+  return !row.is_admin && (!row.linked || !row.shadow_kind)
 }
 
 function done(row: IdentityRow) {
@@ -126,6 +126,7 @@ async function load() {
 }
 
 async function ensure(row: IdentityRow) {
+  if (busyEmail.value) return
   error.value = ''
   msg.value = ''
   const password = (passwordDraft.value[row.email] || '').trim()
@@ -173,21 +174,22 @@ onMounted(load)
         </div>
       </template>
       <template #actions>
-        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading || !!busyEmail" @click="load">
           <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
           刷新
         </button>
       </template>
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <p v-if="error" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
         <div class="section-block">
           <div class="section-title">身份信息</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="identity-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="identity-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -197,12 +199,12 @@ onMounted(load)
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">关联</label>
-              <Select v-model="queryParams.link" class="flex-1 w-full min-w-0" size="sm" :options="LINK_OPTIONS" />
+              <label class="filter-label" for="identity-link">关联</label>
+              <Select id="identity-link" v-model="queryParams.link" class="flex-1 w-full min-w-0" size="sm" :options="LINK_OPTIONS" aria-label="引擎关联状态" />
             </div>
             <div class="filter-item">
-              <label class="filter-label">角色</label>
-              <Select v-model="queryParams.role" class="flex-1 w-full min-w-0" size="sm" :options="ROLE_OPTIONS" />
+              <label class="filter-label" for="identity-role">角色</label>
+              <Select id="identity-role" v-model="queryParams.role" class="flex-1 w-full min-w-0" size="sm" :options="ROLE_OPTIONS" aria-label="用户角色" />
             </div>
             <div class="filter-actions lg:col-span-4">
               <button type="button" class="btn btn-secondary" @click="resetQuery">
@@ -251,11 +253,14 @@ onMounted(load)
                 type="password"
                 placeholder="引擎登录密码"
                 autocomplete="new-password"
+                :aria-label="`${row.email} 的引擎登录密码`"
+                :disabled="!!busyEmail"
               />
               <button
                 type="button"
                 class="btn btn-secondary btn-sm"
-                :disabled="busyEmail === row.email || done(row)"
+                :disabled="!!busyEmail || done(row)"
+                :aria-label="`${done(row) ? '已同步' : busyEmail === row.email ? '正在同步' : '同步'} ${row.email}`"
                 @click="ensure(row)"
               >
                 {{
@@ -320,12 +325,12 @@ onMounted(load)
 .hint-line {
   margin: 10px 0 0;
   font-size: 12px;
-  color: #868686;
+  color: var(--color-text-secondary, #64748b);
 }
 .row-sub {
   margin-top: 2px;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-text-secondary, #64748b);
 }
 .table-ops {
   display: inline-flex;
@@ -365,13 +370,13 @@ onMounted(load)
   min-height: 32px;
 }
 #market-identities-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
 }
 #market-identities-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
 }
 #market-identities-page :deep(th.col-ops),
@@ -380,7 +385,4 @@ onMounted(load)
   width: 16rem;
   box-sizing: border-box;
 }
-#market-identities-page :deep(thead th.col-ops) { background: #f5f7fa !important; }
-#market-identities-page :deep(tbody td.col-ops) { background: #fff !important; }
-#market-identities-page :deep(tbody tr:hover td.col-ops) { background: #f5f7fa !important; }
 </style>

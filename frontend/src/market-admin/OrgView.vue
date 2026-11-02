@@ -2,11 +2,13 @@
 /**
  * 组织管理：TablePageLayout + DataTable（组织/员工）；角色保留左右分栏与权限树。
  */
-import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
@@ -83,6 +85,35 @@ const roleMembers = ref<IAMStaff[]>([])
 const detailLoading = ref(false)
 const memberQ = ref('')
 const pickHits = ref<IAMStaff[]>([])
+const memberSearchLoading = ref(false)
+const memberSearchError = ref('')
+const memberSearched = ref(false)
+const checkedBaseline = ref<string[]>([])
+const membersBaseline = ref<IAMStaff[]>([])
+const showDiscardConfirm = ref(false)
+let discardAction: (() => void | Promise<void>) | null = null
+let roleDetailRequest = 0
+
+const permsDirty = computed(() => {
+  const current = [...checked.value].sort()
+  const baseline = [...checkedBaseline.value].sort()
+  return current.length !== baseline.length || current.some((id, index) => id !== baseline[index])
+})
+const membersDirty = computed(() => {
+  const current = roleMembers.value.map((member) => member.id)
+  const baseline = membersBaseline.value.map((member) => member.id)
+  return current.length !== baseline.length || current.some((id, index) => id !== baseline[index])
+})
+const hasRoleDraft = computed(() => permsDirty.value || membersDirty.value)
+const formDialogOpen = computed(() => showUnit.value || showRole.value || showStaff.value)
+const pendingDelete = ref<{ type: 'unit' | 'role'; unit?: OrgUnit; role?: IAMRole } | null>(null)
+const deleteMessage = computed(() => {
+  const pending = pendingDelete.value
+  if (!pending) return ''
+  const target = pending.type === 'unit' ? `组织「${pending.unit?.name}」` : `角色「${pending.role?.name}」`
+  const draftWarning = pending.type === 'role' && hasRoleDraft.value ? '该角色的未保存草稿也会丢失。' : ''
+  return `确认删除${target}？${draftWarning}`
+})
 
 const showStaff = ref(false)
 const editingStaff = ref<IAMStaff | null>(null)
@@ -296,6 +327,7 @@ async function run(label: string, fn: () => Promise<unknown>, reload = true) {
 }
 
 function openUnit(u?: OrgUnit) {
+  if (busy.value) return
   editingUnit.value = u ?? null
   Object.assign(unitForm, {
     name: u?.name ?? '',
@@ -304,10 +336,17 @@ function openUnit(u?: OrgUnit) {
     sort: u?.sort ?? 0,
     enabled: u?.enabled ?? true,
   })
+  error.value = ''
+  msg.value = ''
   showUnit.value = true
 }
 
+function closeUnit() {
+  if (!busy.value) showUnit.value = false
+}
+
 async function saveUnit() {
+  if (busy.value) return
   const body = {
     name: unitForm.name.trim(),
     code: unitForm.code.trim(),
@@ -324,25 +363,36 @@ async function saveUnit() {
         marketSend('PUT', `${MARKET_API_PREFIX}/org/units/${editingUnit.value!.id}`, body),
       )
     : await run('组织已创建', () => marketSend('POST', `${MARKET_API_PREFIX}/org/units`, body))
-  if (ok) showUnit.value = false
+  if (ok) closeUnit()
 }
 
-async function deleteUnit(u: OrgUnit) {
-  if (!window.confirm(`删除组织「${u.name}」？`)) return
-  await run('已删除', () => marketSend('DELETE', `${MARKET_API_PREFIX}/org/units/${u.id}`))
+function deleteUnit(u: OrgUnit) {
+  if (!busy.value) pendingDelete.value = { type: 'unit', unit: u }
 }
 
 function openRole(r?: IAMRole) {
+  if (busy.value) return
+  if (hasRoleDraft.value && !showRole.value) {
+    requestDiscard(() => openRole(r))
+    return
+  }
   editingRole.value = r ?? null
   Object.assign(roleForm, {
     name: r?.name ?? '',
     code: r?.code ?? '',
     description: r?.description ?? '',
   })
+  error.value = ''
+  msg.value = ''
   showRole.value = true
 }
 
+function closeRole() {
+  if (!busy.value) showRole.value = false
+}
+
 async function saveRole() {
+  if (busy.value) return
   if (!roleForm.name.trim() || !roleForm.code.trim()) {
     error.value = '请填写角色名称与编码'
     return
@@ -358,7 +408,7 @@ async function saveRole() {
       )
     : await run('角色已创建', () => marketSend('POST', `${MARKET_API_PREFIX}/org/roles`, body))
   if (ok) {
-    showRole.value = false
+    closeRole()
     if (!editingRole.value) {
       const created = roles.value.find((x) => x.code === body.code)
       if (created) await selectRole(created.id)
@@ -366,35 +416,100 @@ async function saveRole() {
   }
 }
 
-async function deleteRole(r: IAMRole) {
-  if (!window.confirm(`删除角色「${r.name}」？`)) return
-  const ok = await run('已删除', () => marketSend('DELETE', `${MARKET_API_PREFIX}/org/roles/${r.id}`))
-  if (ok && selectedRoleId.value === r.id) selectedRoleId.value = null
+function deleteRole(r: IAMRole) {
+  if (!busy.value) pendingDelete.value = { type: 'role', role: r }
+}
+
+async function confirmDelete() {
+  const pending = pendingDelete.value
+  if (!pending || busy.value) return
+  pendingDelete.value = null
+  const id = pending.type === 'unit' ? pending.unit!.id : pending.role!.id
+  const path = pending.type === 'unit' ? 'units' : 'roles'
+  const ok = await run('已删除', () => marketSend('DELETE', `${MARKET_API_PREFIX}/org/${path}/${id}`))
+  if (ok && pending.type === 'role' && selectedRoleId.value === id) selectedRoleId.value = null
+}
+
+function resetRoleDraft() {
+  checked.value = [...checkedBaseline.value]
+  roleMembers.value = [...membersBaseline.value]
+  pickHits.value = []
+  memberSearchError.value = ''
+  memberSearched.value = false
+}
+
+function requestDiscard(action: () => void | Promise<void>) {
+  if (busy.value) return
+  if (!hasRoleDraft.value) return action()
+  discardAction = action
+  showDiscardConfirm.value = true
+}
+
+async function confirmDiscard() {
+  const action = discardAction
+  discardAction = null
+  showDiscardConfirm.value = false
+  resetRoleDraft()
+  if (action) await action()
+}
+
+function cancelDiscard() {
+  discardAction = null
+  showDiscardConfirm.value = false
+}
+
+function requestTabChange(next: typeof tab.value) {
+  if (next === tab.value) return
+  return requestDiscard(() => { tab.value = next })
+}
+
+function requestRoleTabChange(next: typeof roleDetailTab.value) {
+  if (next === roleDetailTab.value) return
+  return requestDiscard(() => { roleDetailTab.value = next })
+}
+
+function requestRoleSelection(id: number) {
+  if (id === selectedRoleId.value) return
+  return requestDiscard(() => selectRole(id))
+}
+
+function requestRefresh() {
+  if (loading.value || busy.value) return
+  return requestDiscard(load)
 }
 
 async function selectRole(id: number) {
   selectedRoleId.value = id
   roleDetailTab.value = 'perms'
+  checked.value = []
+  roleMembers.value = []
+  checkedBaseline.value = []
+  membersBaseline.value = []
   await loadRoleDetail(id)
 }
 
 async function loadRoleDetail(id: number) {
+  const requestId = ++roleDetailRequest
   detailLoading.value = true
   try {
     const [res, mem] = await Promise.all([
       marketGet<{ resource_ids: string[] }>(`${MARKET_API_PREFIX}/org/roles/${id}/resources`),
       marketGet<{ members: IAMStaff[] }>(`${MARKET_API_PREFIX}/org/roles/${id}/members`),
     ])
-    checked.value = res.resource_ids ?? []
-    roleMembers.value = mem.members ?? []
+    if (requestId !== roleDetailRequest || selectedRoleId.value !== id) return
+    checked.value = [...(res.resource_ids ?? [])]
+    roleMembers.value = [...(mem.members ?? [])]
+    checkedBaseline.value = [...checked.value]
+    membersBaseline.value = [...roleMembers.value]
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '加载角色详情失败'
+    if (requestId === roleDetailRequest) error.value = e instanceof Error ? e.message : '加载角色详情失败'
   } finally {
-    detailLoading.value = false
+    if (requestId === roleDetailRequest) detailLoading.value = false
   }
 }
 
 function toggleRes(id: string) {
+  if (busy.value || detailLoading.value) return
   const set = new Set(checked.value)
   const kids = collectDescendantIds(id)
   if (set.has(id)) {
@@ -415,25 +530,36 @@ function toggleRes(id: string) {
 }
 
 async function savePerm() {
-  if (!selectedRole.value) return
-  await run(
+  const role = selectedRole.value
+  if (!role || busy.value) return
+  const resourceIds = [...checked.value]
+  const ok = await run(
     '菜单权限已保存',
-    () =>
-      marketSend('PUT', `${MARKET_API_PREFIX}/org/roles/${selectedRole.value!.id}/resources`, {
-        resource_ids: checked.value,
-      }),
+    () => marketSend('PUT', `${MARKET_API_PREFIX}/org/roles/${role.id}/resources`, { resource_ids: resourceIds }),
     false,
   )
+  if (ok) checkedBaseline.value = [...resourceIds]
 }
 
 async function searchUsers() {
-  pickHits.value =
-    (await marketGet<IAMStaff[] | null>(
+  if (busy.value || memberSearchLoading.value) return
+  memberSearchLoading.value = true
+  memberSearchError.value = ''
+  memberSearched.value = true
+  try {
+    pickHits.value = (await marketGet<IAMStaff[] | null>(
       `${MARKET_API_PREFIX}/org/users?q=${encodeURIComponent(memberQ.value.trim())}`,
-    ).catch(() => [])) ?? []
+    )) ?? []
+  } catch (e) {
+    pickHits.value = []
+    memberSearchError.value = e instanceof Error ? e.message : '成员搜索失败'
+  } finally {
+    memberSearchLoading.value = false
+  }
 }
 
 function addMember(u: IAMStaff) {
+  if (busy.value) return
   if (roleMembers.value.some((m) => m.id === u.id)) {
     msg.value = '已在成员列表中'
     return
@@ -441,26 +567,32 @@ function addMember(u: IAMStaff) {
   roleMembers.value = [...roleMembers.value, u]
   pickHits.value = []
   memberQ.value = ''
+  memberSearched.value = false
 }
 
 function removeMember(id: number) {
-  roleMembers.value = roleMembers.value.filter((m) => m.id !== id)
+  if (!busy.value) roleMembers.value = roleMembers.value.filter((m) => m.id !== id)
 }
 
 async function saveMembers() {
-  if (!selectedRole.value) return
+  const role = selectedRole.value
+  if (!role || busy.value) return
+  const members = [...roleMembers.value]
   const ok = await run(
     '成员已保存（需重新登录生效）',
-    () =>
-      marketSend('PUT', `${MARKET_API_PREFIX}/org/roles/${selectedRole.value!.id}/members`, {
-        user_ids: roleMembers.value.map((m) => m.id),
-      }),
+    () => marketSend('PUT', `${MARKET_API_PREFIX}/org/roles/${role.id}/members`, {
+      user_ids: members.map((member) => member.id),
+    }),
     false,
   )
-  if (ok) await loadRoleDetail(selectedRole.value.id)
+  if (ok) {
+    membersBaseline.value = [...members]
+    await loadRoleDetail(role.id)
+  }
 }
 
 function openStaff(s?: IAMStaff) {
+  if (busy.value) return
   editingStaff.value = s ?? null
   Object.assign(staffForm, {
     email: s?.email ?? '',
@@ -468,7 +600,13 @@ function openStaff(s?: IAMStaff) {
     role_ids: (s?.roles ?? []).map((r) => r.id),
     org_unit_ids: (s?.org_units ?? []).map((o) => o.id),
   })
+  error.value = ''
+  msg.value = ''
   showStaff.value = true
+}
+
+function closeStaff() {
+  if (!busy.value) showStaff.value = false
 }
 
 function toggleId(list: number[], id: number) {
@@ -479,6 +617,7 @@ function toggleId(list: number[], id: number) {
 }
 
 async function saveStaff() {
+  if (busy.value) return
   if (editingStaff.value) {
     if (
       await run('员工授权已保存', () =>
@@ -488,7 +627,7 @@ async function saveStaff() {
         }),
       )
     ) {
-      showStaff.value = false
+      closeStaff()
     }
     return
   }
@@ -506,7 +645,7 @@ async function saveStaff() {
       }),
     )
   ) {
-    showStaff.value = false
+    closeStaff()
   }
 }
 
@@ -520,12 +659,26 @@ watch(tab, () => {
   Object.assign(queryParams.value, { ...initQueryParams })
   load()
 })
-onMounted(load)
+
+function handleBeforeUnload(event: BeforeUnloadEvent) {
+  if (!hasRoleDraft.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  load()
+})
+onUnmounted(() => {
+  roleDetailRequest += 1
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
 </script>
 
 <template>
   <section id="market-org-page" class="org-shell">
-    <TablePageLayout>
+    <TablePageLayout content-mode="content">
       <template #title>
         <div class="page-heading">
           <h2 class="y-title">{{ pageTitle }}</h2>
@@ -534,33 +687,34 @@ onMounted(load)
       </template>
 
       <template #actions>
-        <button type="button" class="btn btn-primary page-action-btn" @click="openCreate">
+        <button type="button" class="btn btn-primary page-action-btn" :disabled="busy" @click="openCreate">
           <Icon name="plus" size="sm" />
           {{ tab === 'units' ? '新建组织' : tab === 'roles' ? '新建角色' : '新建员工' }}
         </button>
-        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
+        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading || busy" @click="requestRefresh">
           <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
           刷新
         </button>
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <p v-if="error && !formDialogOpen" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
 
-        <nav class="y-tabs mb-3">
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'units' }" @click="tab = 'units'">组织</button>
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'roles' }" @click="tab = 'roles'">角色</button>
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'staff' }" @click="tab = 'staff'">员工</button>
+        <nav class="y-tabs mb-3" aria-label="组织管理视图">
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'units' }" :aria-pressed="tab === 'units'" :disabled="busy" @click="requestTabChange('units')">组织</button>
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'roles' }" :aria-pressed="tab === 'roles'" :disabled="busy" @click="requestTabChange('roles')">角色</button>
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'staff' }" :aria-pressed="tab === 'staff'" :disabled="busy" @click="requestTabChange('staff')">员工</button>
         </nav>
 
         <div v-if="tab !== 'roles'" class="section-block">
           <div class="section-title">筛选条件</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="org-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="org-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -585,139 +739,154 @@ onMounted(load)
 
       <template #table>
         <template v-if="tab === 'roles'">
-          <div class="org-split">
-            <aside class="org-side">
-              <p v-if="loading" class="y-msg">加载中…</p>
-              <EmptyState v-else-if="!roles.length" title="暂无角色" description="点右上角「新建角色」创建" />
-              <button
-                v-for="r in roles"
-                v-else
-                :key="r.id"
-                type="button"
-                class="org-side__item"
-                :class="{ 'is-on': r.id === selectedRoleId }"
-                @click="selectRole(r.id)"
-              >
-                <span class="org-side__title">{{ r.name }}</span>
-                <span class="org-side__meta">{{ r.code }} · {{ r.member_count ?? 0 }} 人</span>
-              </button>
-            </aside>
-            <section class="org-main">
-              <p v-if="!selectedRole" class="y-msg">请选择左侧角色</p>
-              <template v-else>
-                <div class="org-main__head">
-                  <div>
-                    <h3>{{ selectedRole.name }}</h3>
-                    <p class="hint">{{ selectedRole.description || '暂无说明' }}</p>
+          <div class="org-role-layout">
+            <div class="org-split">
+              <aside class="org-side" aria-label="角色列表">
+                <p v-if="loading" class="y-msg" role="status">加载中…</p>
+                <EmptyState v-else-if="!roles.length" title="暂无角色" description="点右上角「新建角色」创建" />
+                <button
+                  v-for="r in roles"
+                  v-else
+                  :key="r.id"
+                  type="button"
+                  class="org-side__item"
+                  :class="{ 'is-on': r.id === selectedRoleId }"
+                  :aria-pressed="r.id === selectedRoleId"
+                  :disabled="busy || detailLoading"
+                  @click="requestRoleSelection(r.id)"
+                >
+                  <span class="org-side__title">{{ r.name }}</span>
+                  <span class="org-side__meta">{{ r.code }} · {{ r.member_count ?? 0 }} 人</span>
+                </button>
+              </aside>
+              <section class="org-main" :aria-busy="detailLoading || busy">
+                <p v-if="!selectedRole" class="y-msg">请选择左侧角色</p>
+                <template v-else>
+                  <div class="org-main__head">
+                    <div class="org-main__title">
+                      <h3>{{ selectedRole.name }}</h3>
+                      <p class="hint">{{ selectedRole.description || '暂无说明' }}</p>
+                    </div>
+                    <div class="role-head-actions">
+                      <button type="button" class="btn btn-secondary page-action-btn" :disabled="busy" @click="openRole(selectedRole)">
+                        编辑
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-secondary page-action-btn"
+                        :disabled="busy"
+                        @click="deleteRole(selectedRole)"
+                      >
+                        删除
+                      </button>
+                    </div>
                   </div>
-                  <div class="role-head-actions">
-                    <button type="button" class="btn btn-secondary page-action-btn" @click="openRole(selectedRole)">
-                      编辑
+                  <p v-if="hasRoleDraft" class="draft-hint" role="status" aria-live="polite">有未保存的权限或成员草稿</p>
+                  <nav class="y-tabs mb-3" aria-label="角色详情视图">
+                    <button
+                      type="button"
+                      class="y-tab"
+                      :class="{ 'is-on': roleDetailTab === 'perms' }"
+                      :aria-pressed="roleDetailTab === 'perms'"
+                      :disabled="busy"
+                      @click="requestRoleTabChange('perms')"
+                    >
+                      权限
                     </button>
                     <button
                       type="button"
-                      class="btn btn-secondary page-action-btn"
+                      class="y-tab"
+                      :class="{ 'is-on': roleDetailTab === 'members' }"
+                      :aria-pressed="roleDetailTab === 'members'"
                       :disabled="busy"
-                      @click="deleteRole(selectedRole)"
+                      @click="requestRoleTabChange('members')"
                     >
-                      删除
+                      成员
                     </button>
-                  </div>
-                </div>
-                <nav class="y-tabs mb-3">
-                  <button
-                    type="button"
-                    class="y-tab"
-                    :class="{ 'is-on': roleDetailTab === 'perms' }"
-                    @click="roleDetailTab = 'perms'"
-                  >
-                    权限
-                  </button>
-                  <button
-                    type="button"
-                    class="y-tab"
-                    :class="{ 'is-on': roleDetailTab === 'members' }"
-                    @click="roleDetailTab = 'members'"
-                  >
-                    成员
-                  </button>
-                </nav>
-                <p v-if="detailLoading" class="y-msg">加载详情…</p>
-                <template v-else-if="roleDetailTab === 'perms'">
-                  <p v-if="!resourceTree.length" class="y-msg">暂无资源树</p>
-                  <div v-else class="perm-list">
-                    <label
-                      v-for="r in resourceTree"
-                      :key="r.id"
-                      class="y-check perm-item"
-                      :style="{ paddingLeft: `${8 + r.depth * 16}px` }"
-                    >
-                      <input type="checkbox" :checked="checked.includes(r.id)" @change="toggleRes(r.id)" />
-                      <span>{{ r.name }}</span>
-                      <span class="perm-kind">{{ kindLabel[r.kind] || r.kind }}</span>
-                    </label>
-                  </div>
-                  <div class="pay-actions">
-                    <button type="button" class="btn btn-primary" :disabled="busy" @click="savePerm">保存权限</button>
-                  </div>
-                </template>
-                <template v-else>
-                  <div class="filter-grid mb-3">
-                    <div class="filter-item">
-                      <label class="filter-label">关键词</label>
-                      <div class="relative flex-1 w-full min-w-0">
-                        <input
-                          v-model="memberQ"
-                          class="filter-input w-full"
-                          type="search"
-                          placeholder="搜索用户邮箱"
-                          @keyup.enter="searchUsers"
-                        />
+                  </nav>
+                  <p v-if="detailLoading" class="y-msg" role="status">加载详情…</p>
+                  <template v-else-if="roleDetailTab === 'perms'">
+                    <p v-if="!resourceTree.length" class="y-msg">暂无资源树</p>
+                    <div v-else class="perm-list">
+                      <label
+                        v-for="r in resourceTree"
+                        :key="r.id"
+                        class="y-check perm-item"
+                        :style="{ paddingLeft: `${8 + r.depth * 16}px` }"
+                      >
+                        <input type="checkbox" :checked="checked.includes(r.id)" :disabled="busy" @change="toggleRes(r.id)" />
+                        <span>{{ r.name }}</span>
+                        <span class="perm-kind">{{ kindLabel[r.kind] || r.kind }}</span>
+                      </label>
+                    </div>
+                    <div class="pay-actions">
+                      <button type="button" class="btn btn-primary" :disabled="busy" @click="savePerm">保存权限</button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="filter-grid member-search mb-3" :aria-busy="memberSearchLoading">
+                      <div class="filter-item">
+                        <label class="filter-label" for="org-member-search">关键词</label>
+                        <div class="relative flex-1 w-full min-w-0">
+                          <input
+                            id="org-member-search"
+                            v-model="memberQ"
+                            class="filter-input w-full"
+                            type="search"
+                            placeholder="搜索用户邮箱"
+                            :disabled="busy || memberSearchLoading"
+                            @keyup.enter="searchUsers"
+                          />
+                        </div>
+                      </div>
+                      <div class="filter-actions lg:col-span-4 sm:col-span-2">
+                        <button type="button" class="btn btn-secondary" :disabled="busy || memberSearchLoading" @click="memberQ = ''; searchUsers()">
+                          <Icon name="refresh" size="sm" />
+                          重置
+                        </button>
+                        <button type="button" class="btn btn-primary" :disabled="busy || memberSearchLoading" @click="searchUsers">
+                          <Icon name="search" size="sm" />
+                          {{ memberSearchLoading ? '查询中…' : '查询' }}
+                        </button>
                       </div>
                     </div>
-                    <div class="filter-actions lg:col-span-4 sm:col-span-2">
-                      <button type="button" class="btn btn-secondary" @click="memberQ = ''; searchUsers()">
-                        <Icon name="refresh" size="sm" />
-                        重置
-                      </button>
-                      <button type="button" class="btn btn-primary" @click="searchUsers">
-                        <Icon name="search" size="sm" />
-                        查询
+                    <p v-if="memberSearchLoading" class="y-msg" role="status" aria-live="polite">正在搜索成员…</p>
+                    <p v-else-if="memberSearchError" class="y-msg y-msg--error" role="alert">{{ memberSearchError }}</p>
+                    <p v-else-if="memberSearched && !pickHits.length" class="y-msg" role="status" aria-live="polite">未找到匹配用户</p>
+                    <div v-if="pickHits.length" class="pick-hits">
+                      <button
+                        v-for="u in pickHits"
+                        :key="u.id"
+                        type="button"
+                        class="y-link pick-hit"
+                        :disabled="busy"
+                        @click="addMember(u)"
+                      >
+                        添加 <span class="email-cell">{{ u.email }}</span>
                       </button>
                     </div>
-                  </div>
-                  <div v-if="pickHits.length" class="pick-hits">
-                    <button
-                      v-for="u in pickHits"
-                      :key="u.id"
-                      type="button"
-                      class="y-link"
-                      @click="addMember(u)"
+                    <DataTable
+                      :columns="memberColumns"
+                      :data="roleMembers"
+                      :loading="false"
+                      :expandable-actions="false"
                     >
-                      添加 {{ u.email }}
-                    </button>
-                  </div>
-                  <DataTable
-                    :columns="memberColumns"
-                    :data="roleMembers"
-                    :loading="false"
-                    :expandable-actions="false"
-                  >
-                    <template #cell-id="{ row }">{{ row.id }}</template>
-                    <template #cell-email="{ row }">{{ row.email }}</template>
-                    <template #cell-actions="{ row }">
-                      <button type="button" class="y-link y-link--danger" @click="removeMember(row.id)">移除</button>
-                    </template>
-                    <template #empty>
-                      <EmptyState title="暂无成员" description="上方搜索用户后添加" />
-                    </template>
-                  </DataTable>
-                  <div class="pay-actions">
-                    <button type="button" class="btn btn-primary" :disabled="busy" @click="saveMembers">保存成员</button>
-                  </div>
+                      <template #cell-id="{ row }">{{ row.id }}</template>
+                      <template #cell-email="{ row }"><span class="email-cell">{{ row.email }}</span></template>
+                      <template #cell-actions="{ row }">
+                        <button type="button" class="y-link y-link--danger" :disabled="busy" @click="removeMember(row.id)">移除</button>
+                      </template>
+                      <template #empty>
+                        <EmptyState title="暂无成员" description="上方搜索用户后添加" />
+                      </template>
+                    </DataTable>
+                    <div class="pay-actions">
+                      <button type="button" class="btn btn-primary" :disabled="busy" @click="saveMembers">保存成员</button>
+                    </div>
+                  </template>
                 </template>
-              </template>
-            </section>
+              </section>
+            </div>
           </div>
         </template>
 
@@ -748,9 +917,9 @@ onMounted(load)
               {{ row.enabled ? '启用' : '停用' }}
             </span>
           </template>
-          <template #cell-email="{ row }">{{ row.email }}</template>
-          <template #cell-roles="{ row }">{{ roleNames(row) }}</template>
-          <template #cell-org_units="{ row }">{{ orgUnitNames(row) }}</template>
+          <template #cell-email="{ row }"><span class="email-cell">{{ row.email }}</span></template>
+          <template #cell-roles="{ row }"><span class="role-list">{{ roleNames(row) }}</span></template>
+          <template #cell-org_units="{ row }"><span class="role-list">{{ orgUnitNames(row) }}</span></template>
           <template #cell-actions="{ row }">
             <div class="table-ops">
               <template v-if="tab === 'units'">
@@ -787,106 +956,136 @@ onMounted(load)
       </template>
     </TablePageLayout>
 
-    <div v-if="showUnit" class="y-modal-mask" @click.self="showUnit = false">
-      <div class="y-modal" role="dialog" :aria-label="editingUnit ? '编辑组织' : '新建组织'">
-        <header class="y-modal__head">
-          <h3>{{ editingUnit ? '编辑组织' : '新建组织' }}</h3>
-          <button type="button" class="y-link" @click="showUnit = false">关闭</button>
-        </header>
-        <div class="y-modal__body">
-          <label class="y-field"><span>名称</span><input v-model="unitForm.name" class="input w-full" /></label>
-          <label class="y-field">
-            <span>编码</span>
-            <input v-model="unitForm.code" class="input w-full" :disabled="!!editingUnit" />
-          </label>
-          <label class="y-field">
-            <span>父组织 ID（可空）</span>
-            <input v-model="unitForm.parent_id" class="input w-full" />
-          </label>
-          <label class="y-field">
-            <span>排序</span>
-            <input v-model.number="unitForm.sort" type="number" class="input w-full" />
-          </label>
-          <label class="y-check"><input v-model="unitForm.enabled" type="checkbox" /> 启用</label>
-        </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="showUnit = false">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="saveUnit">保存</button>
-        </footer>
-      </div>
-    </div>
+    <ConfirmDialog
+      :show="showDiscardConfirm"
+      title="放弃未保存草稿？"
+      message="当前角色有未保存的权限或成员修改。继续切换或刷新将丢失这些草稿。"
+      confirm-text="放弃草稿"
+      cancel-text="取消"
+      danger
+      :busy="busy"
+      @cancel="cancelDiscard"
+      @confirm="confirmDiscard"
+    />
 
-    <div v-if="showRole" class="y-modal-mask" @click.self="showRole = false">
-      <div class="y-modal" role="dialog" :aria-label="editingRole ? '编辑角色' : '新建角色'">
-        <header class="y-modal__head">
-          <h3>{{ editingRole ? '编辑角色' : '新建角色' }}</h3>
-          <button type="button" class="y-link" @click="showRole = false">关闭</button>
-        </header>
-        <div class="y-modal__body">
-          <label class="y-field"><span>名称</span><input v-model="roleForm.name" class="input w-full" /></label>
-          <label class="y-field">
-            <span>编码</span>
-            <input v-model="roleForm.code" class="input w-full" :disabled="!!editingRole" />
-          </label>
-          <label class="y-field">
-            <span>说明</span>
-            <input v-model="roleForm.description" class="input w-full" />
-          </label>
-        </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="showRole = false">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="saveRole">保存</button>
-        </footer>
-      </div>
-    </div>
+    <BaseDialog
+      :show="showUnit"
+      :title="editingUnit ? `编辑组织 ${editingUnit.name}` : '新建组织'"
+      :close-on-escape="!busy"
+      @close="closeUnit"
+    >
+      <form id="org-unit-form" class="dialog-form" @submit.prevent="saveUnit">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <label class="y-field" for="org-unit-name"><span>名称</span><input id="org-unit-name" v-model="unitForm.name" class="input w-full" /></label>
+        <label class="y-field" for="org-unit-code">
+          <span>编码</span>
+          <input id="org-unit-code" v-model="unitForm.code" class="input w-full" :disabled="!!editingUnit" />
+        </label>
+        <label class="y-field" for="org-unit-parent">
+          <span>父组织 ID（可空）</span>
+          <input id="org-unit-parent" v-model="unitForm.parent_id" class="input w-full" />
+        </label>
+        <label class="y-field" for="org-unit-sort">
+          <span>排序</span>
+          <input id="org-unit-sort" v-model.number="unitForm.sort" type="number" class="input w-full" />
+        </label>
+        <label class="y-check" for="org-unit-enabled"><input id="org-unit-enabled" v-model="unitForm.enabled" type="checkbox" /> 启用</label>
+      </form>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" :disabled="busy" @click="closeUnit">取消</button>
+        <button type="submit" form="org-unit-form" class="btn btn-primary" :disabled="busy">保存</button>
+      </template>
+    </BaseDialog>
 
-    <div v-if="showStaff" class="y-modal-mask" @click.self="showStaff = false">
-      <div class="y-modal" role="dialog" :aria-label="editingStaff ? `授权 ${editingStaff.email}` : '新建员工'">
-        <header class="y-modal__head">
-          <h3>{{ editingStaff ? `授权 ${editingStaff.email}` : '新建员工' }}</h3>
-          <button type="button" class="y-link" @click="showStaff = false">关闭</button>
-        </header>
-        <div class="y-modal__body">
-          <template v-if="!editingStaff">
-            <label class="y-field"><span>邮箱</span><input v-model="staffForm.email" class="input w-full" /></label>
-            <label class="y-field">
-              <span>初始密码</span>
-              <input v-model="staffForm.password" type="password" class="input w-full" />
+    <BaseDialog
+      :show="showRole"
+      :title="editingRole ? `编辑角色 ${editingRole.name}` : '新建角色'"
+      :close-on-escape="!busy"
+      @close="closeRole"
+    >
+      <form id="org-role-form" class="dialog-form" @submit.prevent="saveRole">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <label class="y-field" for="org-role-name"><span>名称</span><input id="org-role-name" v-model="roleForm.name" class="input w-full" /></label>
+        <label class="y-field" for="org-role-code">
+          <span>编码</span>
+          <input id="org-role-code" v-model="roleForm.code" class="input w-full" :disabled="!!editingRole" />
+        </label>
+        <label class="y-field" for="org-role-description">
+          <span>说明</span>
+          <input id="org-role-description" v-model="roleForm.description" class="input w-full" />
+        </label>
+      </form>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" :disabled="busy" @click="closeRole">取消</button>
+        <button type="submit" form="org-role-form" class="btn btn-primary" :disabled="busy">保存</button>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
+      :show="showStaff"
+      :title="editingStaff ? `授权 ${editingStaff.email}` : '新建员工'"
+      width="wide"
+      :close-on-escape="!busy"
+      @close="closeStaff"
+    >
+      <form id="org-staff-form" class="dialog-form" @submit.prevent="saveStaff">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <template v-if="!editingStaff">
+          <label class="y-field" for="org-staff-email">
+            <span>邮箱</span>
+            <input id="org-staff-email" v-model="staffForm.email" type="email" autocomplete="email" class="input w-full" />
+          </label>
+          <label class="y-field" for="org-staff-password">
+            <span>初始密码</span>
+            <input id="org-staff-password" v-model="staffForm.password" type="password" autocomplete="new-password" class="input w-full" />
+          </label>
+        </template>
+        <div class="y-field">
+          <span>角色</span>
+          <div class="auth-list">
+            <label v-for="r in roles" :key="r.id" class="y-check">
+              <input
+                type="checkbox"
+                :checked="staffForm.role_ids.includes(r.id)"
+                :disabled="busy"
+                @change="staffForm.role_ids = toggleId(staffForm.role_ids, r.id)"
+              />
+              <span>{{ r.name }}</span>
             </label>
-          </template>
-          <div class="y-field">
-            <span>角色</span>
-            <div class="auth-list">
-              <label v-for="r in roles" :key="r.id" class="y-check">
-                <input
-                  type="checkbox"
-                  :checked="staffForm.role_ids.includes(r.id)"
-                  @change="staffForm.role_ids = toggleId(staffForm.role_ids, r.id)"
-                />
-                {{ r.name }}
-              </label>
-            </div>
-          </div>
-          <div class="y-field">
-            <span>组织</span>
-            <div class="auth-list">
-              <label v-for="u in units" :key="u.id" class="y-check">
-                <input
-                  type="checkbox"
-                  :checked="staffForm.org_unit_ids.includes(u.id)"
-                  @change="staffForm.org_unit_ids = toggleId(staffForm.org_unit_ids, u.id)"
-                />
-                {{ u.name }}
-              </label>
-            </div>
           </div>
         </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="showStaff = false">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="saveStaff">保存</button>
-        </footer>
-      </div>
-    </div>
+        <div class="y-field">
+          <span>组织</span>
+          <div class="auth-list">
+            <label v-for="u in units" :key="u.id" class="y-check">
+              <input
+                type="checkbox"
+                :checked="staffForm.org_unit_ids.includes(u.id)"
+                :disabled="busy"
+                @change="staffForm.org_unit_ids = toggleId(staffForm.org_unit_ids, u.id)"
+              />
+              <span>{{ u.name }}</span>
+            </label>
+          </div>
+        </div>
+      </form>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" :disabled="busy" @click="closeStaff">取消</button>
+        <button type="submit" form="org-staff-form" class="btn btn-primary" :disabled="busy">保存</button>
+      </template>
+    </BaseDialog>
+
+    <ConfirmDialog
+      :show="pendingDelete !== null"
+      :title="pendingDelete?.type === 'unit' ? '删除组织' : '删除角色'"
+      :message="deleteMessage"
+      confirm-text="确认删除"
+      cancel-text="取消"
+      danger
+      :busy="busy"
+      @cancel="pendingDelete = null"
+      @confirm="confirmDelete"
+    />
   </section>
 </template>
 
@@ -964,16 +1163,22 @@ onMounted(load)
   flex-wrap: wrap;
   gap: 10px;
 }
+.auth-list .y-check { min-width: 0; overflow-wrap: anywhere; }
+.dialog-form { display: grid; gap: 12px; }
+:global(.modal-header .modal-title) { min-width: 0; overflow-wrap: anywhere; }
 .hint {
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--color-text-secondary, #868686);
+  overflow-wrap: anywhere;
 }
+.org-role-layout { container-type: inline-size; min-width: 0; }
 .org-split {
   display: grid;
-  grid-template-columns: minmax(180px, 240px) 1fr;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
   gap: 12px;
   min-height: 360px;
+  min-width: 0;
   padding: 12px;
 }
 .org-side {
@@ -982,17 +1187,20 @@ onMounted(load)
   padding: 8px;
   overflow: auto;
   max-height: 70vh;
+  min-width: 0;
 }
 .org-side__item {
   display: flex;
   flex-direction: column;
   gap: 2px;
   width: 100%;
+  min-width: 0;
   text-align: left;
   padding: 8px 10px;
   border: 0;
   border-radius: 8px;
   background: transparent;
+  color: var(--color-text-primary, #1e293b);
   cursor: pointer;
 }
 .org-side__item.is-on {
@@ -1001,10 +1209,12 @@ onMounted(load)
 .org-side__title {
   font-size: 13px;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 .org-side__meta {
   font-size: 11px;
   color: var(--color-text-secondary, #868686);
+  overflow-wrap: anywhere;
 }
 .org-main {
   border: 1px solid var(--color-border, #e5e7eb);
@@ -1019,10 +1229,13 @@ onMounted(load)
   gap: 10px;
   margin-bottom: 8px;
 }
+.org-main__title { min-width: 0; }
 .org-main__head h3 {
   margin: 0;
   font-size: 16px;
+  overflow-wrap: anywhere;
 }
+.draft-hint { margin: 0 0 10px; font-size: 12px; color: var(--color-text-secondary, #64748b); }
 .role-head-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1036,7 +1249,9 @@ onMounted(load)
   margin-bottom: 12px;
 }
 .perm-item {
+  min-width: 0;
   padding: 4px 0;
+  overflow-wrap: anywhere;
 }
 .perm-kind {
   margin-left: 6px;
@@ -1048,6 +1263,16 @@ onMounted(load)
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 10px;
+}
+.pick-hit { display: inline-flex; min-width: 0; max-width: 100%; gap: 4px; }
+.email-cell,
+.role-list {
+  display: inline-block;
+  max-width: 20rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 .pay-actions {
   display: flex;
@@ -1064,21 +1289,17 @@ onMounted(load)
 }
 
 #market-org-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-org-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
-}
-
-#market-org-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  color: var(--color-text-primary, #303133);
 }
 
 #market-org-page :deep(th.col-ops),
@@ -1087,58 +1308,11 @@ onMounted(load)
   width: 8rem;
   box-sizing: border-box;
 }
-#market-org-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-org-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-org-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
 
-.y-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgb(15 23 42 / 45%);
-}
-.y-modal {
-  width: min(480px, 100%);
-  max-height: min(90vh, 720px);
-  overflow: auto;
-  border-radius: 12px;
-  background: var(--color-bg-elevated, #fff);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 18%);
-}
-.y-modal__head,
-.y-modal__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-}
-.y-modal__head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-.y-modal__foot {
-  justify-content: flex-end;
-}
-.y-modal__body {
-  display: grid;
-  gap: 12px;
-  padding: 0 16px 16px;
-}
 .y-field {
   display: grid;
   gap: 4px;
+  min-width: 0;
   font-size: 13px;
 }
 .y-field > span:first-child {
@@ -1150,9 +1324,19 @@ onMounted(load)
   gap: 8px;
   font-size: 13px;
 }
-@media (max-width: 800px) {
-  .org-split {
-    grid-template-columns: 1fr;
+@container (max-width: 700px) {
+  .org-split { grid-template-columns: minmax(0, 1fr); }
+  .org-side { max-height: 240px; }
+  .org-main .member-search { grid-template-columns: minmax(0, 1fr); }
+  .member-search .filter-actions { grid-column: 1 / -1; flex-wrap: wrap; }
+}
+@media (max-width: 767px) {
+  .email-cell,
+  .role-list {
+    max-width: min(20rem, 58vw);
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
+  .pay-actions { flex-wrap: wrap; }
 }
 </style>

@@ -5,11 +5,13 @@
  */
 import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
@@ -20,6 +22,7 @@ defineOptions({ name: 'MarketAdminFusedSupply' })
 
 const props = defineProps<{ kind: 'accounts' | 'groups' }>()
 const { t } = useI18n()
+const router = useRouter()
 const { open: openTab } = useConsoleTabs()
 
 interface FusedAccount {
@@ -153,6 +156,7 @@ const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
 const msg = ref('')
+const deadTarget = ref<FusedRow | null>(null)
 
 const isAccounts = computed(() => props.kind === 'accounts')
 const title = computed(() =>
@@ -369,8 +373,8 @@ async function run(okMsg: string, fn: () => Promise<unknown>) {
   msg.value = ''
   try {
     await fn()
-    msg.value = okMsg
     await load()
+    msg.value = okMsg
     return true
   } catch (e) {
     error.value = e instanceof Error ? e.message : '操作失败'
@@ -384,29 +388,41 @@ function openUpstream(row: FusedRow) {
   if (!row.upstream_id) return
   const p = `/admin/market/upstreams/${row.upstream_id}`
   openTab(p, { title: marketPrimary(row) })
+  router.push(p)
 }
 
 function openEngineAccount(row: FusedRow) {
   if (!row.engine_account_id) return
   openTab('/admin/accounts', { title: '引擎账号' })
+  router.push('/admin/accounts')
 }
 
 function openPool(row: FusedRow) {
   if (!row.pool_id) return
   openTab('/admin/market/pools', { title: '保障池' })
+  router.push('/admin/market/pools')
 }
 
 function openEngineGroup(row: FusedRow) {
   if (!row.engine_group_id) return
   openTab('/admin/groups', { title: '引擎分组' })
+  router.push('/admin/groups')
 }
 
-async function clearDead(row: FusedRow) {
+function clearDead(row: FusedRow) {
   if (!row.upstream_id) return
-  if (!window.confirm(`确认清除上游 #${row.upstream_id} 的失效引擎绑定？清除后需重新授权。`)) return
-  await run('已清除失效引擎账号', () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/upstreams/${row.upstream_id}/clear-dead-account`),
+  error.value = ''
+  deadTarget.value = row
+}
+
+async function confirmClearDead() {
+  const target = deadTarget.value
+  if (!target?.upstream_id) return
+  const upstreamId = target.upstream_id
+  const ok = await run('已清除失效引擎账号', () =>
+    marketSend('POST', `${MARKET_API_PREFIX}/upstreams/${upstreamId}/clear-dead-account`),
   )
+  if (ok) deadTarget.value = null
 }
 
 async function syncPool(row: FusedRow) {
@@ -465,8 +481,8 @@ watch(
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <p v-if="error" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
 
         <div class="section-block">
           <div class="section-title">对照概览</div>
@@ -508,76 +524,91 @@ watch(
           <div class="section-title">{{ isAccounts ? '账号筛选' : '分组筛选' }}</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">厂商</label>
+              <label class="filter-label" for="fused-filter-platform">厂商</label>
               <Select
+                id="fused-filter-platform"
                 v-model="queryParams.platform"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按厂商筛选融合供给"
                 :options="PLATFORM_OPTIONS"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">关联</label>
+              <label class="filter-label" for="fused-filter-link">关联</label>
               <Select
+                id="fused-filter-link"
                 v-model="queryParams.link_state"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按关联状态筛选融合供给"
                 :options="LINK_OPTIONS"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">市场状态</label>
+              <label class="filter-label" for="fused-filter-market-status">市场状态</label>
               <Select
+                id="fused-filter-market-status"
                 v-model="queryParams.market_status"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按市场状态筛选融合供给"
                 :options="MARKET_STATUS_OPTIONS"
               />
             </div>
             <div v-show="isAccounts" class="filter-item">
-              <label class="filter-label">健康</label>
+              <label class="filter-label" for="fused-filter-health">健康</label>
               <Select
+                id="fused-filter-health"
                 v-model="queryParams.health"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按健康状态筛选融合账号"
                 :options="HEALTH_OPTIONS"
                 :disabled="!isAccounts"
               />
             </div>
             <div v-show="isAccounts" class="filter-item">
-              <label class="filter-label">可调度</label>
+              <label class="filter-label" for="fused-filter-schedulable">可调度</label>
               <Select
+                id="fused-filter-schedulable"
                 v-model="queryParams.schedulable"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按可调度状态筛选融合账号"
                 :options="SCHED_OPTIONS"
                 :disabled="!isAccounts"
               />
             </div>
             <div v-show="isAccounts" class="filter-item">
-              <label class="filter-label">卖家</label>
+              <label class="filter-label" for="fused-filter-seller">卖家</label>
               <Select
+                id="fused-filter-seller"
                 v-model="queryParams.seller_id"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按卖家筛选融合账号"
                 :options="sellerFilterOptions"
                 :disabled="!isAccounts"
               />
             </div>
             <div v-show="!isAccounts" class="filter-item">
-              <label class="filter-label">启用</label>
+              <label class="filter-label" for="fused-filter-enabled">启用</label>
               <Select
+                id="fused-filter-enabled"
                 v-model="queryParams.enabled"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="按启用状态筛选融合分组"
                 :options="ENABLED_OPTIONS"
                 :disabled="isAccounts"
               />
             </div>
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="fused-filter-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="fused-filter-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -611,23 +642,31 @@ watch(
             {{ getSerialNumber(pageRows.findIndex((r) => r === row)) }}
           </template>
           <template #cell-market="{ row }">
-            <div>{{ marketPrimary(row) }}</div>
-            <div v-if="isAccounts && row.account_email && row.upstream_name" class="row-sub">
+            <div class="data-table-cell-truncate" :title="marketPrimary(row)">{{ marketPrimary(row) }}</div>
+            <div
+              v-if="isAccounts && row.account_email && row.upstream_name"
+              class="row-sub"
+              :title="row.account_email"
+            >
               {{ row.account_email }}
             </div>
           </template>
           <template #cell-code="{ row }">
-            {{ String(row.upstream_code || '').trim() || '—' }}
+            <span class="data-table-cell-truncate" :title="String(row.upstream_code || '').trim()">
+              {{ String(row.upstream_code || '').trim() || '—' }}
+            </span>
           </template>
           <template #cell-seller="{ row }">
-            {{ sellerAccount(row.seller_email, row.seller_id) }}
+            <span class="data-table-cell-truncate" :title="sellerAccount(row.seller_email, row.seller_id)">
+              {{ sellerAccount(row.seller_email, row.seller_id) }}
+            </span>
           </template>
           <template #cell-platform="{ row }">{{ platformLabel(row.platform) }}</template>
           <template #cell-market_status="{ row }">{{ statusLabel(row.market_status) }}</template>
           <template #cell-health="{ row }">{{ healthLabel(row.health) }}</template>
           <template #cell-engine="{ row }">
-            <div>{{ enginePrimary(row) }}</div>
-            <div v-if="engineSub(row)" class="row-sub">{{ engineSub(row) }}</div>
+            <div class="data-table-cell-truncate" :title="enginePrimary(row)">{{ enginePrimary(row) }}</div>
+            <div v-if="engineSub(row)" class="row-sub" :title="engineSub(row)">{{ engineSub(row) }}</div>
           </template>
           <template #cell-engine_status="{ row }">{{ row.engine_status || '—' }}</template>
           <template #cell-schedulable="{ row }">{{ boolLabel(row.schedulable) }}</template>
@@ -725,6 +764,20 @@ watch(
         />
       </template>
     </TablePageLayout>
+
+    <ConfirmDialog
+      :show="!!deadTarget"
+      title="清除失效引擎绑定"
+      :message="`确认清除上游 #${deadTarget?.upstream_id} 的失效引擎绑定？清除后需重新授权。`"
+      confirm-text="确认清除"
+      cancel-text="取消"
+      danger
+      :busy="busy"
+      @confirm="confirmClearDead"
+      @cancel="deadTarget = null"
+    >
+      <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+    </ConfirmDialog>
   </section>
 </template>
 
@@ -793,16 +846,6 @@ watch(
   width: 14rem;
   box-sizing: border-box;
 }
-#market-fused-supply-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-fused-supply-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-fused-supply-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
-
 .section-block {
   min-width: 0;
 }
@@ -918,6 +961,15 @@ watch(
   color: #8c8c8c;
 }
 
+#market-fused-supply-page :deep(.data-table-cell-truncate) {
+  display: inline-block;
+  max-width: min(20rem, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
 .status-cell {
   display: inline-flex;
   align-items: center;
@@ -955,9 +1007,57 @@ watch(
   color: #15803d;
 }
 
+:global(html.dark #market-fused-supply-page .y-header),
+:global(html.dark #market-fused-supply-page .stat-card) {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border);
+}
+
+:global(html.dark #market-fused-supply-page .y-title),
+:global(html.dark #market-fused-supply-page .stat-card__value),
+:global(html.dark #market-fused-supply-page .table-scroll-container table tbody td) {
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-fused-supply-page .y-page-desc),
+:global(html.dark #market-fused-supply-page .stat-card__label),
+:global(html.dark #market-fused-supply-page .row-sub) {
+  color: var(--color-text-secondary);
+}
+
+:global(html.dark #market-fused-supply-page .stat-card__badge),
+:global(html.dark #market-fused-supply-page .y-msg--ok) {
+  color: var(--color-success);
+}
+
+:global(html.dark #market-fused-supply-page .stat-card__badge[data-tone='warn']) {
+  color: var(--color-warning);
+}
+
+:global(html.dark #market-fused-supply-page .table-scroll-container table thead th),
+:global(html.dark #market-fused-supply-page .table-scroll-container table tbody tr:hover td) {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+:global(html.dark #market-fused-supply-page .table-scroll-container table tbody td) {
+  border-color: var(--color-border);
+}
+
 @media (max-width: 1024px) {
   .stats-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  #market-fused-supply-page :deep(.data-table-cell-truncate),
+  #market-fused-supply-page :deep(.row-sub) {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 </style>

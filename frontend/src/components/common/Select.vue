@@ -6,9 +6,11 @@
       @click="toggle"
       :disabled="disabled"
       :aria-expanded="isOpen"
-      :aria-haspopup="true"
+      aria-haspopup="listbox"
+      :aria-controls="listboxId"
+      :aria-activedescendant="activeDescendantId"
       :id="id"
-      :aria-label="ariaLabel ?? 'Select option'"
+      :aria-label="triggerAriaLabel"
       :aria-describedby="ariaDescribedby"
       :class="[
         'select-trigger',
@@ -55,6 +57,7 @@
           class="select-dropdown-portal"
           :class="[instanceId]"
           :style="dropdownStyle"
+          :id="listboxId"
           role="listbox"
           tabindex="-1"
           @click.stop
@@ -80,6 +83,7 @@
             <div
               v-for="(option, index) in filteredOptions"
               :key="`${typeof getOptionValue(option)}:${String(getOptionValue(option) ?? '')}`"
+              :id="getOptionId(index)"
               role="option"
               :aria-selected="isSelected(option)"
               :aria-disabled="isOptionDisabled(option)"
@@ -312,6 +316,17 @@ const filteredOptions = computed(() => {
     }
   }
   return opts
+})
+
+const triggerAriaLabel = computed(() => props.ariaLabel || props.placeholder || undefined)
+const listboxId = `${instanceId}-listbox`
+const getOptionId = (index: number) => `${listboxId}-option-${index}`
+const activeDescendantId = computed(() => {
+  if (!isOpen.value) return undefined
+  const index = focusedIndex.value
+  if (index < 0 || index >= filteredOptions.value.length) return undefined
+  if (isOptionDisabled(filteredOptions.value[index])) return undefined
+  return getOptionId(index)
 })
 
 const isSelected = (option: any): boolean => {

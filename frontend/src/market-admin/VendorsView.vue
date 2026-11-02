@@ -5,6 +5,7 @@
 import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -275,7 +276,7 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-if="error && !editing" class="y-msg y-msg--error mb-2">{{ error }}</p>
         <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
 
         <div class="section-block">
@@ -360,8 +361,8 @@ onMounted(load)
             {{ getSerialNumber(pageRows.findIndex((r) => r.platform === row.platform)) }}
           </template>
           <template #cell-platform="{ row }">
-            <div>{{ platLabel(row.platform) }}</div>
-            <div class="row-sub">{{ row.platform }}</div>
+            <div class="data-table-cell-truncate" :title="platLabel(row.platform)">{{ platLabel(row.platform) }}</div>
+            <div class="row-sub data-table-cell-truncate" :title="row.platform">{{ row.platform }}</div>
           </template>
           <template #cell-enabled="{ row }">
             <span class="status-cell">
@@ -404,57 +405,58 @@ onMounted(load)
       </template>
     </TablePageLayout>
 
-    <div v-if="editing" class="y-modal-mask" @click.self="closeModal">
-      <div class="y-modal" role="dialog" :aria-label="`编辑 ${platLabel(editing.platform)}`">
-        <header class="y-modal__head">
-          <h3>编辑 {{ platLabel(editing.platform) }}</h3>
-          <button type="button" class="y-link" @click="closeModal">关闭</button>
-        </header>
-        <div class="y-modal__body">
-          <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 开放卖家接入</label>
-          <div class="y-field">
-            <span>开放的接入方式</span>
-            <div class="auth-list">
-              <label v-for="t in editing.supported_auth_types || []" :key="t" class="y-check">
-                <input v-model="form.authTypes" type="checkbox" :value="t" />
-                {{ authLabel(t) }}
-              </label>
-            </div>
-          </div>
-          <div class="y-field-row">
-            <label class="y-field">
-              <span>寄售最低倍率</span>
-              <input v-model="form.min" class="input w-full" inputmode="decimal" />
-            </label>
-            <label class="y-field">
-              <span>寄售最高倍率</span>
-              <input v-model="form.max" class="input w-full" inputmode="decimal" />
+    <BaseDialog
+      :show="!!editing"
+      :title="editing ? `编辑 ${platLabel(editing.platform)}` : '编辑厂商'"
+      :z-index="80"
+      close-on-click-outside
+      @close="closeModal"
+    >
+      <div class="dialog-form">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 开放卖家接入</label>
+        <div class="y-field">
+          <span>开放的接入方式</span>
+          <div class="auth-list">
+            <label v-for="t in editing?.supported_auth_types || []" :key="t" class="y-check">
+              <input v-model="form.authTypes" type="checkbox" :value="t" />
+              {{ authLabel(t) }}
             </label>
           </div>
+        </div>
+        <div class="y-field-row">
           <label class="y-field">
-            <span>回收基础倍率（JSON）</span>
-            <input v-model="form.base" class="input w-full font-mono" />
-            <span class="hint">须含 default，如 {"default":0.15,"max":0.2}</span>
+            <span>寄售最低倍率</span>
+            <input v-model="form.min" class="input w-full" inputmode="decimal" />
           </label>
           <label class="y-field">
-            <span>质检估价基准（JSON，正数）</span>
-            <input v-model="form.appraisal" class="input w-full font-mono" />
-          </label>
-          <label class="y-field">
-            <span>默认并发</span>
-            <input v-model="form.concurrency" class="input w-full" inputmode="numeric" />
-          </label>
-          <label class="y-field">
-            <span>限流参数 extra_limits（JSON）</span>
-            <textarea v-model="form.extra" class="input w-full y-textarea font-mono" rows="3" />
+            <span>寄售最高倍率</span>
+            <input v-model="form.max" class="input w-full" inputmode="decimal" />
           </label>
         </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
-        </footer>
+        <label class="y-field">
+          <span>回收基础倍率（JSON）</span>
+          <textarea v-model="form.base" class="input w-full y-textarea font-mono" rows="3" />
+          <span class="hint">须含 default，如 {"default":0.15,"max":0.2}</span>
+        </label>
+        <label class="y-field">
+          <span>质检估价基准（JSON，正数）</span>
+          <textarea v-model="form.appraisal" class="input w-full y-textarea font-mono" rows="3" />
+        </label>
+        <label class="y-field">
+          <span>默认并发</span>
+          <input v-model="form.concurrency" class="input w-full" inputmode="numeric" />
+        </label>
+        <label class="y-field">
+          <span>限流参数 extra_limits（JSON）</span>
+          <textarea v-model="form.extra" class="input w-full y-textarea font-mono" rows="3" />
+        </label>
       </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+        <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
+      </template>
+    </BaseDialog>
   </section>
 </template>
 
@@ -505,30 +507,20 @@ onMounted(load)
   gap: 12px;
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  background: #f8fafc;
-}
-
-.stat-card--blue {
-  background: linear-gradient(135deg, #eff6ff, #f8fafc);
-}
-.stat-card--green {
-  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
-}
-.stat-card--orange {
-  background: linear-gradient(135deg, #fff7ed, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-bg-secondary, #f8fafc);
 }
 
 .stat-card__label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary);
   line-height: 1.2;
 }
 
@@ -548,7 +540,7 @@ onMounted(load)
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--color-text-secondary, #8c8c8c);
 }
 
 .status-cell {
@@ -579,26 +571,35 @@ onMounted(load)
 }
 
 #market-vendors-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-vendors-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary, #303133);
 }
 
 #market-vendors-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  background: var(--color-bg-secondary, #f5f7fa);
+}
+
+#market-vendors-page :deep(.data-table-cell-truncate) {
+  display: block;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #market-vendors-page :deep(th.col-platform),
 #market-vendors-page :deep(td.col-platform) {
   min-width: 8rem;
+  max-width: 14rem;
 }
 #market-vendors-page :deep(th.col-enabled),
 #market-vendors-page :deep(td.col-enabled) {
@@ -620,15 +621,6 @@ onMounted(load)
   width: 8rem;
   box-sizing: border-box;
 }
-#market-vendors-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-vendors-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-vendors-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
 
 .auth-list {
   display: flex;
@@ -639,44 +631,9 @@ onMounted(load)
   font-size: 12px;
   color: var(--color-text-secondary, #868686);
 }
-.y-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgb(15 23 42 / 45%);
-}
-.y-modal {
-  width: min(560px, 100%);
-  max-height: min(92vh, 800px);
-  overflow: auto;
-  border-radius: 12px;
-  background: var(--color-bg-elevated, #fff);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 18%);
-}
-.y-modal__head,
-.y-modal__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-}
-.y-modal__head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-.y-modal__foot {
-  justify-content: flex-end;
-}
-.y-modal__body {
+.dialog-form {
   display: grid;
   gap: 12px;
-  padding: 0 16px 16px;
 }
 .y-field {
   display: grid;
@@ -705,11 +662,20 @@ onMounted(load)
 }
 
 @media (max-width: 900px) {
-  .stats-row {
-    grid-template-columns: 1fr;
-  }
+  .stats-row,
   .y-field-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  #market-vendors-page :deep(.mobile-card-value .data-table-cell-truncate),
+  #market-vendors-page :deep(.mobile-card-value .row-sub) {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 </style>

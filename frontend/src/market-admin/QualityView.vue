@@ -2,7 +2,7 @@
 /**
  * 质量概览：TablePageLayout + DataTable。
  */
-import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
+import { computed, onMounted, reactive, ref, toRefs } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Select from '@/components/common/Select.vue'
@@ -84,15 +84,6 @@ const totalAppeals = computed(() =>
   appealRows.value.reduce((sum, r) => sum + Number(r.n || 0), 0),
 )
 
-watch(
-  () => [queryParams.value.keyword, queryParams.value.platform, queryParams.value.health],
-  () => {},
-)
-
-function handleQuery() {
-  /* client-side filters via computed */
-}
-
 function resetQuery() {
   Object.assign(queryParams.value, { ...initQueryParams })
 }
@@ -115,7 +106,7 @@ onMounted(load)
 
 <template>
   <section id="market-quality-page" class="quality-shell">
-    <TablePageLayout>
+    <TablePageLayout content-mode="content">
       <template #title>
         <div class="page-heading">
           <h2 class="y-title">质量概览</h2>
@@ -129,7 +120,7 @@ onMounted(load)
         </button>
       </template>
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-if="error" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
         <div class="section-block">
           <div class="section-title">基本信息</div>
           <div class="stats-row">
@@ -151,33 +142,43 @@ onMounted(load)
           <div class="section-title">健康筛选</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="quality-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="quality-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
                   placeholder="平台 / 健康 / 等级"
-                  @keyup.enter="handleQuery"
                 />
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">平台</label>
-              <Select v-model="queryParams.platform" class="flex-1 w-full min-w-0" size="sm" :options="platformOptions" />
+              <label class="filter-label" for="quality-platform">平台</label>
+              <Select
+                id="quality-platform"
+                v-model="queryParams.platform"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="platformOptions"
+                aria-label="按平台筛选"
+              />
             </div>
             <div class="filter-item">
-              <label class="filter-label">健康</label>
-              <Select v-model="queryParams.health" class="flex-1 w-full min-w-0" size="sm" :options="healthOptions" />
+              <label class="filter-label" for="quality-health">健康</label>
+              <Select
+                id="quality-health"
+                v-model="queryParams.health"
+                class="flex-1 w-full min-w-0"
+                size="sm"
+                :options="healthOptions"
+                aria-label="按健康状态筛选"
+              />
             </div>
             <div class="filter-actions lg:col-span-4">
               <button type="button" class="btn btn-secondary" @click="resetQuery">
                 <Icon name="refresh" size="sm" />
                 重置
-              </button>
-              <button type="button" class="btn btn-primary" @click="handleQuery">
-                <Icon name="search" size="sm" />
-                搜索
               </button>
             </div>
           </div>
@@ -257,21 +258,24 @@ onMounted(load)
 .stat-card--blue { background: linear-gradient(135deg, #eff6ff, #f8fafc); }
 .stat-card--green { background: linear-gradient(135deg, #ecfdf5, #f8fafc); }
 .stat-card--orange { background: linear-gradient(135deg, #fff7ed, #f8fafc); }
-.stat-card__label { font-size: 12px; color: #64748b; }
+.stat-card__label { font-size: 12px; color: var(--color-text-secondary, #64748b); }
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary, #0f172a);
 }
 .tables-stack {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  overflow-y: auto;
 }
 .table-block {
   min-width: 0;
+  flex-shrink: 0;
 }
 #market-quality-page :deep(.filter-grid .select-trigger),
 #market-quality-page :deep(.filter-grid .select-trigger-sm),
@@ -280,13 +284,14 @@ onMounted(load)
   min-height: 32px;
 }
 #market-quality-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
 }
 #market-quality-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
+  color: var(--color-text-primary, #303133);
   font-size: 13px;
 }
 @media (max-width: 900px) {

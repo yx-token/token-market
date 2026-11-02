@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { HOME_TAB, HOME_TAB_TITLE_KEY, useConsoleTabs } from '@/stores/consoleTabs'
@@ -20,6 +20,13 @@ const menuVisible = ref(false)
 const menuX = ref(0)
 const menuY = ref(0)
 const menuTarget = ref<string | null>(null)
+const menuRef = ref<HTMLElement | null>(null)
+const tabButtons = new Map<string, HTMLButtonElement>()
+let menuReturnFocus: HTMLButtonElement | null = null
+let dragPointerId: number | null = null
+let dragStartY = 0
+let dragStartHeight = DEFAULT_H
+let dragResizer: HTMLElement | null = null
 
 function metaFor(path: string) {
   if (isHome(path)) return { titleKey: HOME_TAB_TITLE_KEY }
@@ -55,18 +62,36 @@ const displayTabs = computed(() =>
   })),
 )
 
+function setTabRef(path: string, element: unknown) {
+  if (element instanceof HTMLButtonElement) tabButtons.set(path, element)
+  else tabButtons.delete(path)
+}
+
+function focusTab(path: string) {
+  void nextTick(() => tabButtons.get(path)?.focus())
+}
+
 function applyHeight() {
   const root = document.querySelector('.console-app') as HTMLElement | null
   root?.style.setProperty('--console-tab-height', `${tabHeight.value}px`)
 }
 
+function persistHeight() {
+  try {
+    localStorage.setItem(HEIGHT_KEY, String(tabHeight.value))
+  } catch {
+    /* ignore */
+  }
+}
+
 watch(
   () => route.path,
-  (path) => {
-    if (!path.startsWith('/admin') && !path.startsWith('/shop')) return
-    open(path, metaFor(path))
+  async (path) => {
+    if (path.startsWith('/admin') || path.startsWith('/shop')) open(path, metaFor(path))
+    await nextTick()
+    tabButtons.get(path)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   },
-  { immediate: true },
+  { immediate: true, flush: 'post' },
 )
 
 function activate(path: string) {
@@ -79,37 +104,127 @@ function closeTab(path: string) {
   if (route.path === path) router.push(next || HOME_TAB.path)
 }
 
-function onResizeStart(event: MouseEvent) {
-  event.preventDefault()
-  const startY = event.clientY
-  const startH = tabHeight.value
-  const move = (ev: MouseEvent) => {
-    tabHeight.value = Math.min(MAX_H, Math.max(MIN_H, startH + ev.clientY - startY) )
-    applyHeight()
+function onTabKeydown(event: KeyboardEvent, path: string) {
+  const tabs = displayTabs.value
+  const index = tabs.findIndex((tab) => tab.path === path)
+  if (index < 0) return
+  let targetIndex: number | null = null
+  if (event.key === 'ArrowRight') targetIndex = (index + 1) % tabs.length
+  if (event.key === 'ArrowLeft') targetIndex = (index - 1 + tabs.length) % tabs.length
+  if (event.key === 'Home') targetIndex = 0
+  if (event.key === 'End') targetIndex = tabs.length - 1
+  if (targetIndex !== null) {
+    event.preventDefault()
+    focusTab(tabs[targetIndex].path)
+    return
   }
-  const up = () => {
-    try {
-      localStorage.setItem(HEIGHT_KEY, String(tabHeight.value))
-    } catch {
-      /* ignore */
-    }
-    window.removeEventListener('mousemove', move)
-    window.removeEventListener('mouseup', up)
+  if (event.key === 'Delete' && !isHome(path)) {
+    event.preventDefault()
+    closeTab(path)
+    void nextTick(() => {
+      const remaining = displayTabs.value
+      remaining[Math.min(index, remaining.length - 1)]?.path && focusTab(remaining[Math.min(index, remaining.length - 1)].path)
+    })
   }
-  window.addEventListener('mousemove', move)
-  window.addEventListener('mouseup', up)
 }
 
-function showMenu(event: MouseEvent, path: string) {
+function onResizeStart(event: PointerEvent) {
+  if (event.button !== 0 || dragPointerId !== null) return
+  event.preventDefault()
+  dragPointerId = event.pointerId
+  dragStartY = event.clientY
+  dragStartHeight = tabHeight.value
+  dragResizer = event.currentTarget as HTMLElement
+  dragResizer.setPointerCapture?.(event.pointerId)
+  window.addEventListener('pointermove', onResizeMove)
+  window.addEventListener('pointerup', onResizeEnd)
+  window.addEventListener('pointercancel', onResizeEnd)
+}
+
+function onResizeMove(event: PointerEvent) {
+  if (event.pointerId !== dragPointerId) return
+  tabHeight.value = Math.min(MAX_H, Math.max(MIN_H, dragStartHeight + event.clientY - dragStartY))
+  applyHeight()
+}
+
+function stopResize() {
+  if (dragPointerId !== null) persistHeight()
+  if (dragResizer && dragPointerId !== null && dragResizer.hasPointerCapture?.(dragPointerId)) {
+    dragResizer.releasePointerCapture(dragPointerId)
+  }
+  window.removeEventListener('pointermove', onResizeMove)
+  window.removeEventListener('pointerup', onResizeEnd)
+  window.removeEventListener('pointercancel', onResizeEnd)
+  dragPointerId = null
+  dragResizer = null
+}
+
+function onResizeEnd(event: PointerEvent) {
+  if (event.pointerId !== dragPointerId) return
+  stopResize()
+}
+
+function onResizeKeydown(event: KeyboardEvent) {
+  let nextHeight: number | null = null
+  if (event.key === 'ArrowUp') nextHeight = tabHeight.value - 2
+  if (event.key === 'ArrowDown') nextHeight = tabHeight.value + 2
+  if (event.key === 'Home') nextHeight = MIN_H
+  if (event.key === 'End') nextHeight = MAX_H
+  if (nextHeight === null) return
+  event.preventDefault()
+  tabHeight.value = Math.min(MAX_H, Math.max(MIN_H, nextHeight))
+  applyHeight()
+  persistHeight()
+}
+
+async function showMenu(event: MouseEvent, path: string) {
+  event.preventDefault()
   menuTarget.value = path
   menuX.value = event.clientX
   menuY.value = event.clientY
+  menuReturnFocus = tabButtons.get(path) || null
   menuVisible.value = true
+  await nextTick()
+  const menu = menuRef.value
+  if (!menu) return
+  const rect = menu.getBoundingClientRect()
+  const margin = 8
+  menuX.value = Math.min(Math.max(margin, menuX.value), Math.max(margin, window.innerWidth - rect.width - margin))
+  menuY.value = Math.min(Math.max(margin, menuY.value), Math.max(margin, window.innerHeight - rect.height - margin))
+  menu.querySelector<HTMLButtonElement>('button.menu-item:not(:disabled)')?.focus()
 }
 
-function hideMenu() {
+function hideMenu(restoreFocus = true) {
+  const returnFocus = menuReturnFocus
   menuVisible.value = false
   menuTarget.value = null
+  menuReturnFocus = null
+  if (restoreFocus) void nextTick(() => returnFocus?.focus())
+}
+
+function closeMenuTarget() {
+  if (menuTarget.value) closeTab(menuTarget.value)
+  hideMenu()
+}
+
+function closeMenuOthers() {
+  if (menuTarget.value) activate(closeOthers(menuTarget.value))
+  hideMenu()
+}
+
+function closeMenuRight() {
+  if (canCloseRight.value && menuTarget.value) closeToRight(menuTarget.value)
+  hideMenu()
+}
+
+function closeMenuLeft() {
+  if (canCloseLeft.value && menuTarget.value) closeToLeft(menuTarget.value)
+  hideMenu()
+}
+
+function closeMenuAll() {
+  activate(closeAll())
+  hideMenu()
 }
 
 const canCloseRight = computed(() => {
@@ -125,7 +240,10 @@ const canCloseLeft = computed(() => {
 })
 
 function onKey(event: KeyboardEvent) {
-  if (event.key === 'Escape') hideMenu()
+  if (event.key === 'Escape' && menuVisible.value) {
+    event.preventDefault()
+    hideMenu()
+  }
 }
 
 onMounted(() => {
@@ -138,39 +256,78 @@ onMounted(() => {
   applyHeight()
   window.addEventListener('keydown', onKey)
 })
-onUnmounted(() => window.removeEventListener('keydown', onKey))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  stopResize()
+})
 </script>
 
 <template>
   <div class="app-tab-bar" :style="{ height: `${tabHeight}px` }">
-    <div class="tab-scroll">
+    <div class="tab-scroll" role="tablist">
       <div
         v-for="tab in displayTabs"
         :key="tab.path"
         class="tab-item"
         :class="{ active: route.path === tab.path }"
-        @click="activate(tab.path)"
-        @contextmenu.prevent="showMenu($event, tab.path)"
-        @click.middle.prevent="closeTab(tab.path)"
       >
-        <span class="tab-title">{{ tab.title }}</span>
-        <button v-if="!isHome(tab.path)" type="button" class="tab-close" :aria-label="t('common.close')" @click.stop="closeTab(tab.path)">
+        <button
+          :id="route.path === tab.path ? 'console-tab-active' : undefined"
+          :ref="(element) => setTabRef(tab.path, element)"
+          type="button"
+          role="tab"
+          class="tab-activate"
+          :aria-selected="route.path === tab.path"
+          :aria-controls="'console-tab-panel'"
+          :tabindex="route.path === tab.path ? 0 : -1"
+          @click="activate(tab.path)"
+          @keydown="onTabKeydown($event, tab.path)"
+          @contextmenu="showMenu($event, tab.path)"
+          @click.middle.prevent="closeTab(tab.path)"
+        >
+          <span class="tab-title">{{ tab.title }}</span>
+        </button>
+        <button
+          v-if="!isHome(tab.path)"
+          type="button"
+          class="tab-close"
+          :aria-label="`${t('common.close')} ${tab.title}`"
+          @click.stop="closeTab(tab.path)"
+        >
           &times;
         </button>
       </div>
     </div>
-    <div class="tab-resizer" :title="t('nav.tabResizeHint')" @mousedown="onResizeStart" />
+    <div
+      class="tab-resizer"
+      role="separator"
+      tabindex="0"
+      aria-orientation="horizontal"
+      :aria-label="t('nav.tabResizeHint')"
+      :aria-valuemin="MIN_H"
+      :aria-valuemax="MAX_H"
+      :aria-valuenow="tabHeight"
+      :title="t('nav.tabResizeHint')"
+      @pointerdown="onResizeStart"
+      @keydown="onResizeKeydown"
+    />
 
     <Teleport to="body">
-      <div v-if="menuVisible" class="tab-context-menu" :style="{ left: `${menuX}px`, top: `${menuY}px` }" @click.stop>
-        <div v-if="menuTarget && !isHome(menuTarget)" class="menu-item" @click="closeTab(menuTarget); hideMenu()">{{ t('nav.tabCloseCurrent') }}</div>
-        <div class="menu-item" @click="menuTarget && activate(closeOthers(menuTarget)); hideMenu()">{{ t('nav.tabCloseOthers') }}</div>
-        <div class="menu-item" :class="{ disabled: !canCloseRight }" @click="canCloseRight && menuTarget && (closeToRight(menuTarget), hideMenu())">{{ t('nav.tabCloseRight') }}</div>
-        <div class="menu-item" :class="{ disabled: !canCloseLeft }" @click="canCloseLeft && menuTarget && (closeToLeft(menuTarget), hideMenu())">{{ t('nav.tabCloseLeft') }}</div>
+      <div
+        v-if="menuVisible"
+        ref="menuRef"
+        class="tab-context-menu"
+        :style="{ left: `${menuX}px`, top: `${menuY}px` }"
+        @click.stop
+      >
+        <button v-if="menuTarget && !isHome(menuTarget)" type="button" class="menu-item" @click="closeMenuTarget">{{ t('nav.tabCloseCurrent') }}</button>
+        <button type="button" class="menu-item" @click="closeMenuOthers">{{ t('nav.tabCloseOthers') }}</button>
+        <button type="button" class="menu-item" :disabled="!canCloseRight" @click="closeMenuRight">{{ t('nav.tabCloseRight') }}</button>
+        <button type="button" class="menu-item" :disabled="!canCloseLeft" @click="closeMenuLeft">{{ t('nav.tabCloseLeft') }}</button>
         <div class="menu-separator" />
-        <div class="menu-item" @click="activate(closeAll()); hideMenu()">{{ t('nav.tabCloseAll') }}</div>
+        <button type="button" class="menu-item" @click="closeMenuAll">{{ t('nav.tabCloseAll') }}</button>
       </div>
-      <div v-if="menuVisible" class="tab-menu-overlay" @click="hideMenu" />
+      <div v-if="menuVisible" class="tab-menu-overlay" @click="hideMenu()" />
     </Teleport>
   </div>
 </template>
@@ -210,6 +367,24 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+}
+.tab-activate {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.tab-activate:focus-visible,
+.tab-close:focus-visible,
+.tab-resizer:focus-visible {
+  outline: 2px solid #0555ce;
+  outline-offset: -2px;
 }
 .tab-item:hover {
   background: rgba(5, 85, 206, 0.06);
@@ -295,9 +470,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   backdrop-filter: blur(18px) saturate(1.6);
   -webkit-backdrop-filter: blur(18px) saturate(1.6);
 }
-.menu-item { padding: 7px 18px; font-size: 13px; cursor: pointer; color: #262626; }
-.menu-item:hover { background: rgba(230, 238, 250, 0.9); color: #0555ce; }
-.menu-item.disabled { opacity: 0.4; pointer-events: none; }
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 18px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  color: #262626;
+}
+.menu-item:hover,
+.menu-item:focus-visible { background: rgba(230, 238, 250, 0.9); color: #0555ce; outline: none; }
+.menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .menu-separator { height: 1px; margin: 4px 0; background: rgba(15, 23, 42, 0.08); }
 .tab-menu-overlay { position: fixed; inset: 0; z-index: 9998; }
 

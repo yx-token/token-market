@@ -3,6 +3,7 @@
   display: grid;
   grid-template-columns: var(--console-side-width, 256px) minmax(0, 1fr);
   min-height: 100vh;
+  min-height: 100dvh;
   background: #f2f4f7;
   color: #262626;
   transition: grid-template-columns 0.2s ease;
@@ -27,7 +28,7 @@
   position: relative;
   z-index: 1;
 }
-@media (max-width: 900px) {
+@media (max-width: 1023.98px) {
   .console-app {
     grid-template-columns: 1fr;
   }
@@ -48,6 +49,7 @@
   flex-direction: column;
   padding: 20px 14px 16px;
   max-height: 100vh;
+  max-height: 100dvh;
   position: sticky;
   top: 0;
   background: rgba(255, 255, 255, 0.72);
@@ -464,7 +466,7 @@
     padding: 10px 14px 14px;
   }
 }
-@media (max-width: 900px) {
+@media (max-width: 1023.98px) {
   .console-top-bar {
     padding-left: 20px;
     padding-right: 20px;

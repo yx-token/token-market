@@ -8,6 +8,8 @@ import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
@@ -51,6 +53,22 @@ const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
 const msg = ref('')
+
+type ResolutionStatus = 'resolved' | 'ignored'
+interface PendingResolution {
+  source: 'risk' | 'anomaly'
+  id: number
+  status: ResolutionStatus
+  target: string
+}
+const pendingResolution = ref<PendingResolution | null>(null)
+const detailRow = ref<RiskEvent | Anomaly | null>(null)
+const resolutionMessage = computed(() => {
+  const pending = pendingResolution.value
+  if (!pending) return ''
+  const action = pending.status === 'resolved' ? '处理' : '忽略'
+  return `确认${action}${pending.source === 'risk' ? '风险事件' : '计费异常'} #${pending.id}？目标：${pending.target}`
+})
 
 const STATUS_OPTIONS = [
   { value: 'open', label: '待处理' },
@@ -226,17 +244,40 @@ async function run(label: string, fn: () => Promise<unknown>) {
   }
 }
 
-function resolveRisk(e: RiskEvent, status: string) {
-  return run('已处理', () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/risk-events/${e.id}/resolve`, { status }),
-  )
+function resolveRisk(e: RiskEvent, status: ResolutionStatus) {
+  if (busy.value) return
+  pendingResolution.value = {
+    source: 'risk',
+    id: e.id,
+    status,
+    target: userLabel(e.user_id ?? e.related_user_id),
+  }
 }
 
-function resolveAnomaly(a: Anomaly, status: string) {
-  const note = window.prompt('处理说明，可留空', '') ?? ''
-  return run('异常已处理', () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/anomalies/${a.id}/resolve`, { status, note }),
-  )
+function resolveAnomaly(a: Anomaly, status: ResolutionStatus) {
+  if (busy.value) return
+  pendingResolution.value = {
+    source: 'anomaly',
+    id: a.id,
+    status,
+    target: `${a.rule} · ${userLabel(a.buyer_user_id)}`,
+  }
+}
+
+async function confirmResolution(note = '') {
+  const pending = pendingResolution.value
+  if (!pending || busy.value) return
+  pendingResolution.value = null
+  const label = pending.status === 'resolved'
+    ? pending.source === 'risk' ? '风险已处理' : '异常已处理'
+    : pending.source === 'risk' ? '风险已忽略' : '异常已忽略'
+  const path = pending.source === 'risk' ? 'risk-events' : 'anomalies'
+  const body = pending.source === 'risk' ? { status: pending.status } : { status: pending.status, note }
+  await run(label, () => marketSend('POST', `${MARKET_API_PREFIX}/${path}/${pending.id}/resolve`, body))
+}
+
+function openDetail(row: RiskEvent | Anomaly) {
+  detailRow.value = row
 }
 
 watch(tab, () => {
@@ -273,19 +314,20 @@ onMounted(async () => {
         </button>
       </template>
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
-        <nav class="y-tabs mb-3">
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'risk' }" @click="tab = 'risk'">风控</button>
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'anomalies' }" @click="tab = 'anomalies'">异常</button>
+        <p v-if="error" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
+        <nav class="y-tabs mb-3" aria-label="风控数据类型">
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'risk' }" :aria-pressed="tab === 'risk'" @click="tab = 'risk'">风控</button>
+          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'anomalies' }" :aria-pressed="tab === 'anomalies'" @click="tab = 'anomalies'">异常</button>
         </nav>
         <div class="section-block">
           <div class="section-title">筛选条件</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="risk-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="risk-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -295,12 +337,12 @@ onMounted(async () => {
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">状态</label>
-              <Select v-model="queryParams.status" class="flex-1 w-full min-w-0" size="sm" :options="STATUS_OPTIONS" />
+              <label class="filter-label" for="risk-status">状态</label>
+              <Select id="risk-status" v-model="queryParams.status" class="flex-1 w-full min-w-0" size="sm" :options="STATUS_OPTIONS" aria-label="风控状态" />
             </div>
             <div v-show="tab === 'risk'" class="filter-item">
-              <label class="filter-label">级别</label>
-              <Select v-model="queryParams.severity" class="flex-1 w-full min-w-0" size="sm" :options="SEVERITY_OPTIONS" />
+              <label class="filter-label" for="risk-severity">级别</label>
+              <Select id="risk-severity" v-model="queryParams.severity" class="flex-1 w-full min-w-0" size="sm" :options="SEVERITY_OPTIONS" aria-label="风险级别" />
             </div>
             <div class="filter-actions lg:col-span-4">
               <button type="button" class="btn btn-secondary" @click="resetQuery">
@@ -340,7 +382,10 @@ onMounted(async () => {
           </template>
           <template #cell-amount="{ row }">{{ row.amount ?? '—' }}</template>
           <template #cell-detail="{ row }">
-            <span class="detail-cell" :title="detailText(row.detail)">{{ detailText(row.detail) }}</span>
+            <button type="button" class="detail-cell detail-button" :aria-label="`查看 ${tab === 'risk' ? '风险事件' : '计费异常'} #${row.id} 详情`" @click="openDetail(row)">
+              <span class="detail-cell__text">{{ detailText(row.detail) }}</span>
+              <span class="detail-cell__action">查看详情</span>
+            </button>
           </template>
           <template #cell-status="{ row }">{{ statusLabel(row.status) }}</template>
           <template #cell-created_at="{ row }">{{ fmtTime(row.created_at) }}</template>
@@ -375,6 +420,36 @@ onMounted(async () => {
         />
       </template>
     </TablePageLayout>
+
+    <ConfirmDialog
+      :show="pendingResolution !== null"
+      :title="pendingResolution?.status === 'resolved' ? '确认处理' : '确认忽略'"
+      :message="resolutionMessage"
+      :confirm-text="pendingResolution?.status === 'resolved' ? '确认处理' : '确认忽略'"
+      cancel-text="取消"
+      :danger="pendingResolution?.status === 'ignored'"
+      :busy="busy"
+      :reason="pendingResolution?.source === 'anomaly'"
+      reason-label="处理说明（可留空）"
+      reason-placeholder="记录处理或忽略原因"
+      @cancel="pendingResolution = null"
+      @confirm="confirmResolution"
+    />
+
+    <BaseDialog
+      :show="detailRow !== null"
+      :title="detailRow ? `${'kind' in detailRow ? '风险事件' : '计费异常'} #${detailRow.id} 详情` : '详情'"
+      width="wide"
+      @close="detailRow = null"
+    >
+      <template v-if="detailRow">
+        <pre class="detail-dialog-content">{{ detailText(detailRow.detail) }}</pre>
+        <div v-if="'note' in detailRow && detailRow.note" class="detail-dialog-note">
+          <h4>处理备注</h4>
+          <p>{{ detailRow.note }}</p>
+        </div>
+      </template>
+    </BaseDialog>
   </section>
 </template>
 
@@ -411,13 +486,38 @@ onMounted(async () => {
   min-width: max-content;
 }
 .detail-cell {
-  display: inline-block;
-  max-width: 14rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  max-width: 16rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+.detail-cell__text {
+  display: block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.detail-cell__action { color: var(--color-primary, #2563eb); }
+.detail-dialog-content {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
 }
+.detail-dialog-note { margin-top: 16px; overflow-wrap: anywhere; }
+.detail-dialog-note h4 { margin: 0 0 4px; font-size: 13px; }
+.detail-dialog-note p { margin: 0; white-space: pre-wrap; }
 #market-risk-page :deep(.filter-grid .select-trigger),
 #market-risk-page :deep(.filter-grid .select-trigger-sm),
 #market-risk-page :deep(.filter-grid .filter-input) {
@@ -425,13 +525,13 @@ onMounted(async () => {
   min-height: 32px;
 }
 #market-risk-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
 }
 #market-risk-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
 }
 #market-risk-page :deep(th.col-ops),
@@ -440,7 +540,8 @@ onMounted(async () => {
   width: 8rem;
   box-sizing: border-box;
 }
-#market-risk-page :deep(thead th.col-ops) { background: #f5f7fa !important; }
-#market-risk-page :deep(tbody td.col-ops) { background: #fff !important; }
-#market-risk-page :deep(tbody tr:hover td.col-ops) { background: #f5f7fa !important; }
+@media (max-width: 767px) {
+  .detail-cell { max-width: min(16rem, 60vw); }
+  .detail-cell__text { white-space: normal; overflow-wrap: anywhere; }
+}
 </style>

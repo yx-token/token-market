@@ -1,9 +1,12 @@
 <template>
-  <header class="glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50">
-    <div class="flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6">
+  <header class="console-header glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50">
+    <div class="console-header-inner flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6">
       <!-- Left: Mobile Menu Toggle + Page Title -->
-      <div class="flex shrink-0 items-center gap-2 sm:gap-4">
+      <div class="console-header-leading flex shrink-0 items-center gap-2 sm:gap-4">
         <button
+          id="console-mobile-menu-button"
+          aria-controls="console-sidebar"
+          :aria-expanded="appStore.mobileOpen"
           @click="toggleMobileSidebar"
           class="btn-ghost btn-icon lg:hidden"
           :aria-label="t('common.toggleMenu')"
@@ -22,12 +25,12 @@
       </div>
 
       <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
-      <div class="flex min-w-0 items-center gap-1 sm:gap-3">
+      <div class="console-header-actions flex min-w-0 items-center gap-1 sm:gap-3">
         <!-- Announcement Bell -->
-        <AnnouncementBell v-if="user" />
+        <AnnouncementBell v-if="user" class="console-header-announcement" />
 
         <!-- 官方客服待回复（仅管理员） -->
-        <SupportBell v-if="authStore.isAdmin" />
+        <SupportBell v-if="authStore.isAdmin" class="console-header-support" />
 
         <!-- Docs Link -->
         <a
@@ -35,7 +38,7 @@
           :href="docUrl"
           target="_blank"
           rel="noopener noreferrer"
-          class="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white sm:flex"
+          class="console-header-doc hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white sm:flex"
         >
           <Icon name="book" size="sm" />
           <span class="hidden sm:inline">{{ t('nav.docs') }}</span>
@@ -47,10 +50,10 @@
           href="/"
           :title="t('nav.backToMarketHint')"
           :aria-label="t('nav.backToMarket')"
-          class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-primary-400 dark:hover:bg-primary-900/20 dark:hover:text-primary-300"
+          class="console-header-market flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:text-primary-400 dark:hover:bg-primary-900/20 dark:hover:text-primary-300"
         >
           <Icon name="globe" size="sm" />
-          <span class="hidden sm:inline">{{ t('nav.backToMarket') }}</span>
+          <span class="console-header-market-label hidden sm:inline">{{ t('nav.backToMarket') }}</span>
         </a>
 
         <!-- Model Plaza Entry (icon only below sm) -->
@@ -59,47 +62,63 @@
           :to="{ path: '/model-plaza', query: { embedded: '1' } }"
           :title="t('nav.modelPlaza')"
           :aria-label="t('nav.modelPlaza')"
-          class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+          class="console-header-model flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
         >
           <Icon name="grid" size="sm" />
           <span class="hidden sm:inline">{{ t('nav.modelPlaza') }}</span>
         </router-link>
 
         <!-- Language Switcher -->
-        <LocaleSwitcher />
+        <LocaleSwitcher class="console-header-locale" />
 
         <!-- Subscription Progress (for users with active subscriptions; not mounted at all when the feature is off) -->
-        <SubscriptionProgressMini v-if="user && subscriptionFeatureEnabled" />
+        <SubscriptionProgressMini v-if="user && subscriptionFeatureEnabled" class="console-header-subscription" />
 
         <!-- Balance Display -->
         <div
           v-if="user"
-          class="group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
+          ref="balanceRef"
+          class="console-header-balance relative hidden sm:block"
+          @mouseenter="openBalance"
+          @mouseleave="closeBalance()"
+          @focusin="onBalanceFocusIn"
+          @focusout="onBalanceFocusOut"
         >
-          <svg
-            class="h-4 w-4 text-primary-600 dark:text-primary-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            stroke-width="1.5"
+          <button
+            type="button"
+            class="balance-trigger flex items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20"
+            :aria-label="t('common.balance')"
+            :aria-expanded="balanceOpen"
+            aria-controls="header-balance-details"
+            @click="openBalance"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"
-            />
-          </svg>
-          <span class="text-sm font-semibold text-primary-700 dark:text-primary-300">
-            {{ formatHeaderMoney(availableBalance) }}
-          </span>
-          <span
-            v-if="frozenBalance > 0"
-            class="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-          >
-            {{ balanceFrozenLabel }}
-          </span>
+            <svg
+              class="h-4 w-4 text-primary-600 dark:text-primary-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="1.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"
+              />
+            </svg>
+            <span class="text-sm font-semibold text-primary-700 dark:text-primary-300">
+              {{ formatHeaderMoney(availableBalance) }}
+            </span>
+            <span
+              v-if="frozenBalance > 0"
+              class="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
+            >
+              {{ balanceFrozenLabel }}
+            </span>
+          </button>
           <div
-            class="pointer-events-none absolute right-0 top-full mt-2 hidden w-56 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg group-hover:block dark:border-dark-700 dark:bg-dark-800"
+            v-if="balanceOpen"
+            id="header-balance-details"
+            class="balance-details absolute right-0 top-full z-50 mt-2 w-56 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg dark:border-dark-700 dark:bg-dark-800"
           >
             <div class="flex items-center justify-between">
               <span class="text-gray-500 dark:text-dark-400">{{ balanceAvailableText }}</span>
@@ -119,11 +138,21 @@
         </div>
 
         <!-- User Dropdown -->
-        <div v-if="user" class="relative" ref="dropdownRef">
+        <div
+          v-if="user"
+          class="console-header-user relative"
+          ref="dropdownRef"
+          @focusin="onUserMenuFocusIn"
+          @focusout="onUserMenuFocusOut"
+        >
           <button
-            @click="toggleDropdown"
+            ref="userMenuTriggerRef"
+            @pointerdown="onUserMenuPointerDown"
+            @click="onUserMenuTriggerClick"
             class="flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800"
             :aria-label="t('common.userMenu')"
+            :aria-expanded="dropdownOpen"
+            aria-controls="header-user-menu"
           >
             <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 text-sm font-medium text-white shadow-sm">
               <img
@@ -134,7 +163,7 @@
               >
               <span v-else>{{ userInitials }}</span>
             </div>
-            <div class="hidden text-left md:block">
+            <div class="console-header-user-copy hidden text-left md:block">
               <div class="text-sm font-medium text-gray-900 dark:text-white">
                 {{ displayName }}
               </div>
@@ -142,12 +171,12 @@
                 {{ t('admin.users.roles.' + user.role) }}
               </div>
             </div>
-            <Icon name="chevronDown" size="sm" class="hidden text-gray-400 md:block" />
+            <Icon name="chevronDown" size="sm" class="console-header-user-caret hidden text-gray-400 md:block" />
           </button>
 
           <!-- Dropdown Menu -->
           <transition name="dropdown">
-            <div v-if="dropdownOpen" class="dropdown right-0 mt-2 w-56">
+            <div v-if="dropdownOpen" id="header-user-menu" ref="userMenuRef" class="dropdown right-0 mt-2 w-56">
               <!-- User Info -->
               <div class="border-b border-gray-100 px-4 py-3 dark:border-dark-700">
                 <div class="text-sm font-medium text-gray-900 dark:text-white">
@@ -267,7 +296,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
@@ -293,6 +322,10 @@ const onboardingStore = useOnboardingStore()
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+const userMenuTriggerRef = ref<HTMLButtonElement | null>(null)
+const userMenuRef = ref<HTMLElement | null>(null)
+const balanceOpen = ref(false)
+const balanceRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
@@ -365,12 +398,87 @@ function toggleMobileSidebar() {
   appStore.toggleMobileSidebar()
 }
 
-function toggleDropdown() {
-  dropdownOpen.value = !dropdownOpen.value
+function openDropdown(focusFirst: boolean) {
+  closeBalance()
+  dropdownOpen.value = true
+  if (focusFirst) {
+    void nextTick(() => {
+      userMenuRef.value?.querySelector<HTMLElement>('.dropdown-item')?.focus()
+    })
+  }
+}
+
+let dropdownPointerGesture = false
+let dropdownOpenedByFocus = false
+let suppressDropdownFocusOpen = false
+
+function onUserMenuFocusIn() {
+  if (dropdownOpen.value || suppressDropdownFocusOpen || dropdownPointerGesture) return
+  dropdownOpenedByFocus = true
+  openDropdown(false)
+}
+
+function onUserMenuFocusOut(event: FocusEvent) {
+  const nextTarget = event.relatedTarget as Node | null
+  if (!nextTarget || !dropdownRef.value?.contains(nextTarget)) closeDropdown()
+}
+
+function onUserMenuPointerDown() {
+  dropdownPointerGesture = true
+}
+
+function onUserMenuTriggerClick() {
+  dropdownPointerGesture = false
+  if (dropdownOpenedByFocus) {
+    dropdownOpenedByFocus = false
+    return
+  }
+  if (dropdownOpen.value) {
+    closeDropdown()
+    return
+  }
+  openDropdown(true)
 }
 
 function closeDropdown() {
   dropdownOpen.value = false
+  dropdownOpenedByFocus = false
+}
+
+function closeDropdownAndRestoreFocus() {
+  closeDropdown()
+  suppressDropdownFocusOpen = true
+  void nextTick(() => {
+    userMenuTriggerRef.value?.focus()
+    suppressDropdownFocusOpen = false
+  })
+}
+
+let suppressBalanceFocus = false
+
+function openBalance() {
+  closeDropdown()
+  balanceOpen.value = true
+}
+
+function onBalanceFocusIn() {
+  if (!suppressBalanceFocus) openBalance()
+}
+
+function closeBalance(restoreFocus = false) {
+  balanceOpen.value = false
+  if (restoreFocus) {
+    suppressBalanceFocus = true
+    void nextTick(() => {
+      balanceRef.value?.querySelector<HTMLButtonElement>('.balance-trigger')?.focus()
+      suppressBalanceFocus = false
+    })
+  }
+}
+
+function onBalanceFocusOut(event: FocusEvent) {
+  const nextTarget = event.relatedTarget as Node | null
+  if (!nextTarget || !balanceRef.value?.contains(nextTarget)) closeBalance()
 }
 
 async function handleLogout() {
@@ -395,21 +503,42 @@ function formatHeaderMoney(value: number) {
 }
 
 function handleClickOutside(event: MouseEvent) {
-  if (dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) {
-    closeDropdown()
+  if (dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) closeDropdown()
+  if (balanceRef.value && !balanceRef.value.contains(event.target as Node)) closeBalance()
+}
+
+function handleEscape(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  if (dropdownOpen.value) {
+    event.preventDefault()
+    closeDropdownAndRestoreFocus()
+  }
+  if (balanceOpen.value) {
+    event.preventDefault()
+    closeBalance(true)
   }
 }
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+  document.addEventListener('keydown', handleEscape)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
+  document.removeEventListener('keydown', handleEscape)
 })
 </script>
 
 <style scoped>
+.console-header-inner {
+  container: console-header / inline-size;
+}
+
+.console-header-actions {
+  flex-shrink: 0;
+}
+
 .dropdown-enter-active,
 .dropdown-leave-active {
   transition: all 0.2s ease;
@@ -419,5 +548,46 @@ onBeforeUnmount(() => {
 .dropdown-leave-to {
   opacity: 0;
   transform: scale(0.95) translateY(-4px);
+}
+
+@container console-header (max-width: 1180px) {
+  .console-header-doc,
+  .console-header-model,
+  .console-header-subscription,
+  .console-header-user-copy,
+  .console-header-user-caret {
+    display: none;
+  }
+}
+
+@container console-header (max-width: 1000px) {
+  .console-header-balance {
+    display: none;
+  }
+}
+
+@container console-header (max-width: 760px) {
+  .console-header-market-label {
+    display: none;
+  }
+}
+
+@container console-header (max-width: 640px) {
+  .console-header-market,
+  .console-header-locale {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-enter-active,
+  .dropdown-leave-active {
+    transition-duration: 1ms;
+  }
+
+  .dropdown-enter-from,
+  .dropdown-leave-to {
+    transform: none;
+  }
 }
 </style>

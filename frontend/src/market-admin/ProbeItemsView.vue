@@ -6,6 +6,9 @@ import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -100,7 +103,7 @@ const msg = ref('')
 
 const initQueryParams = {
   pageNum: 1,
-  pageSize: 15,
+  pageSize: getPersistedPageSize(),
   keyword: '',
   status: 'active',
   suite: '',
@@ -116,6 +119,11 @@ const showCreateRef = ref(false)
 
 const show = ref(false)
 const editing = ref<ProbeItem | null>(null)
+const pendingDestructive = ref<
+  | { kind: 'retire'; item: ProbeItem }
+  | { kind: 'removeRef'; upstream: RefUpstream }
+  | null
+>(null)
 const form = reactive({
   suite: 'inspection_capability',
   category: '',
@@ -218,14 +226,14 @@ const allStats = computed(() => {
   if (tab.value === 'items') {
     const all = rows.value
     return {
-      total: all.length,
+      total: filteredItems.value.length,
       active: all.filter((it) => it.status === 'active').length,
       retired: all.filter((it) => it.status === 'retired').length,
     }
   }
   const all = refs.value
   return {
-    total: all.length,
+    total: filteredRefs.value.length,
     active: all.filter((u) => u.status === 'ready' || u.status === 'active').length,
     retired: all.filter((u) => u.status === 'draft' || u.status === 'authorizing').length,
   }
@@ -253,6 +261,11 @@ watch(
     if (tab.value === 'items') load()
   },
 )
+
+watch(total, (value) => {
+  const maxPage = Math.max(1, Math.ceil(value / queryParams.value.pageSize))
+  queryParams.value.pageNum = Math.min(queryParams.value.pageNum, maxPage)
+})
 
 function suiteText(v: string) {
   return SUITES.find((s) => s.value === v)?.text || v
@@ -344,6 +357,8 @@ async function run<T = unknown>(label: string, fn: () => Promise<T>): Promise<T 
 }
 
 function openNew() {
+  error.value = ''
+  msg.value = ''
   editing.value = null
   Object.assign(form, {
     suite: 'inspection_capability',
@@ -363,6 +378,8 @@ function openNew() {
 }
 
 function openEdit(it: ProbeItem) {
+  error.value = ''
+  msg.value = ''
   editing.value = it
   Object.assign(form, {
     suite: it.suite,
@@ -381,8 +398,20 @@ function openEdit(it: ProbeItem) {
   show.value = true
 }
 
+function openCreateRef() {
+  error.value = ''
+  msg.value = ''
+  showCreateRef.value = true
+}
+
+function closeCreateRef() {
+  showCreateRef.value = false
+  error.value = ''
+}
+
 function closeModal() {
   show.value = false
+  error.value = ''
 }
 
 function parseObject(raw: string, name: string): Record<string, unknown> {
@@ -434,10 +463,8 @@ async function save() {
 
 function retire(it: ProbeItem) {
   if (it.status === 'retired') return
-  if (!window.confirm(`下线题目 #${it.id}？`)) return
-  return run(`题目 #${it.id} 已下线`, () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/probe-items/${it.id}/retire`),
-  )
+  error.value = ''
+  pendingDestructive.value = { kind: 'retire', item: it }
 }
 
 async function createRef() {
@@ -463,9 +490,22 @@ function goAuthorize(u: RefUpstream) {
   return router.push({ path: '/admin/market/upstreams', query: { q: String(u.id), focus: String(u.id) } })
 }
 
-async function removeRef(u: RefUpstream) {
-  if (!window.confirm(`移除基线账号 #${u.id}？`)) return
-  await run('正在移除', () => marketSend('DELETE', `${MARKET_API_PREFIX}/reference-accounts/${u.id}`))
+function removeRef(u: RefUpstream) {
+  error.value = ''
+  pendingDestructive.value = { kind: 'removeRef', upstream: u }
+}
+
+async function confirmDestructive() {
+  const pending = pendingDestructive.value
+  if (!pending) return
+  const result = pending.kind === 'retire'
+    ? await run(`题目 #${pending.item.id} 已下线`, () =>
+        marketSend('POST', `${MARKET_API_PREFIX}/probe-items/${pending.item.id}/retire`),
+      )
+    : await run('基线账号已移除', () =>
+        marketSend('DELETE', `${MARKET_API_PREFIX}/reference-accounts/${pending.upstream.id}`),
+      )
+  if (result !== false) pendingDestructive.value = null
 }
 
 function switchTab(next: 'items' | 'refs') {
@@ -512,7 +552,7 @@ onMounted(load)
           type="button"
           class="btn btn-primary page-action-btn"
           :disabled="busy"
-          @click="showCreateRef = true"
+          @click="openCreateRef"
         >
           <Icon name="plus" size="sm" />
           添加基线
@@ -524,14 +564,26 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
+        <p v-if="error && !show && !showCreateRef" class="y-msg y-msg--error mb-2" role="alert">{{ error }}</p>
+        <p v-else-if="msg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ msg }}</p>
 
-        <nav class="y-tabs mb-3">
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'items' }" @click="switchTab('items')">
+        <nav class="y-tabs mb-3" aria-label="题库视图">
+          <button
+            type="button"
+            class="y-tab"
+            :class="{ 'is-on': tab === 'items' }"
+            :aria-pressed="tab === 'items'"
+            @click="switchTab('items')"
+          >
             题目
           </button>
-          <button type="button" class="y-tab" :class="{ 'is-on': tab === 'refs' }" @click="switchTab('refs')">
+          <button
+            type="button"
+            class="y-tab"
+            :class="{ 'is-on': tab === 'refs' }"
+            :aria-pressed="tab === 'refs'"
+            @click="switchTab('refs')"
+          >
             基线账号
           </button>
         </nav>
@@ -541,19 +593,19 @@ onMounted(load)
           <div class="stats-row">
             <article class="stat-card stat-card--blue">
               <div>
-                <div class="stat-card__label">{{ tab === 'items' ? '题目总数' : '基线总数' }}</div>
+                <div class="stat-card__label">{{ tab === 'items' ? '当前查询题目' : '当前查询基线' }}</div>
                 <div class="stat-card__value">{{ allStats.total.toLocaleString() }}</div>
               </div>
             </article>
             <article class="stat-card stat-card--green">
               <div>
-                <div class="stat-card__label">{{ tab === 'items' ? '启用中' : '已就绪' }}</div>
+                <div class="stat-card__label">{{ tab === 'items' ? '当前加载启用' : '当前加载已就绪' }}</div>
                 <div class="stat-card__value">{{ allStats.active.toLocaleString() }}</div>
               </div>
             </article>
             <article class="stat-card stat-card--orange">
               <div>
-                <div class="stat-card__label">{{ tab === 'items' ? '已下线' : '待授权' }}</div>
+                <div class="stat-card__label">{{ tab === 'items' ? '当前加载已下线' : '当前加载待授权' }}</div>
                 <div class="stat-card__value">{{ allStats.retired.toLocaleString() }}</div>
               </div>
             </article>
@@ -564,9 +616,10 @@ onMounted(load)
           <div class="section-title">{{ tab === 'items' ? '题目信息' : '基线信息' }}</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="probe-items-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="probe-items-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -577,50 +630,60 @@ onMounted(load)
             </div>
             <template v-if="tab === 'items'">
               <div class="filter-item">
-                <label class="filter-label">状态</label>
+                <label class="filter-label" for="probe-items-status">状态</label>
                 <Select
+                  id="probe-items-status"
                   v-model="queryParams.status"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="STATUS_OPTIONS"
+                  aria-label="按题目状态筛选"
                 />
               </div>
               <div class="filter-item">
-                <label class="filter-label">套件</label>
+                <label class="filter-label" for="probe-items-suite">套件</label>
                 <Select
+                  id="probe-items-suite"
                   v-model="queryParams.suite"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="SUITE_OPTIONS"
+                  aria-label="按题库套件筛选"
                 />
               </div>
               <div class="filter-item">
-                <label class="filter-label">分类</label>
+                <label class="filter-label" for="probe-items-category">分类</label>
                 <Select
+                  id="probe-items-category"
                   v-model="queryParams.category"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="categoryFilterOptions"
+                  aria-label="按题目分类筛选"
                 />
               </div>
             </template>
             <template v-else>
               <div class="filter-item">
-                <label class="filter-label">厂商</label>
+                <label class="filter-label" for="probe-refs-platform">厂商</label>
                 <Select
+                  id="probe-refs-platform"
                   v-model="queryParams.platform"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="platformFilterOptions"
+                  aria-label="按基线平台筛选"
                 />
               </div>
               <div class="filter-item">
-                <label class="filter-label">状态</label>
+                <label class="filter-label" for="probe-refs-status">状态</label>
                 <Select
+                  id="probe-refs-status"
                   v-model="queryParams.ref_status"
                   class="flex-1 w-full min-w-0"
                   size="sm"
                   :options="REF_STATUS_OPTIONS"
+                  aria-label="按基线状态筛选"
                 />
               </div>
             </template>
@@ -708,7 +771,7 @@ onMounted(load)
                   : '点右上角「添加基线」创建草稿并完成授权'
               "
               :action-text="tab === 'items' ? '新建题目' : '添加基线'"
-              @action="tab === 'items' ? openNew() : (showCreateRef = true)"
+              @action="tab === 'items' ? openNew() : openCreateRef()"
             />
           </template>
         </DataTable>
@@ -720,7 +783,6 @@ onMounted(load)
           :total="total"
           :page="queryParams.pageNum"
           :page-size="queryParams.pageSize"
-          :page-size-options="[15, 20, 50]"
           show-jump
           @update:page="queryParams.pageNum = $event"
           @update:page-size="queryParams.pageSize = $event"
@@ -728,108 +790,125 @@ onMounted(load)
       </template>
     </TablePageLayout>
 
-    <div v-if="showCreateRef" class="y-modal-mask" @click.self="showCreateRef = false">
-      <div class="y-modal" role="dialog" aria-label="添加基线账号">
-        <header class="y-modal__head">
-          <h3>添加基线账号</h3>
-          <button type="button" class="y-link" @click="showCreateRef = false">关闭</button>
-        </header>
-        <div class="y-modal__body">
-          <label class="y-field">
-            <span>厂商</span>
-            <select
-              v-model="newRef.platform"
-              class="input w-full"
-              @change="newRef.authType = refAuthTypes[0] || 'oauth'"
-            >
-              <option v-for="(label, key) in PLATFORM_LABEL" :key="key" :value="key">{{ label }}</option>
-            </select>
-          </label>
-          <label class="y-field">
-            <span>接入方式</span>
-            <select v-model="newRef.authType" class="input w-full">
-              <option v-for="t in refAuthTypes" :key="t" :value="t">{{ t }}</option>
-            </select>
-          </label>
-          <p class="hint">创建后会跳转到上游页，请在卖家端或上游详情完成 OAuth / 密钥导入。</p>
-        </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="showCreateRef = false">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="createRef">创建</button>
-        </footer>
+    <BaseDialog
+      :show="showCreateRef"
+      title="添加基线账号"
+      close-on-click-outside
+      @close="closeCreateRef"
+    >
+      <div class="dialog-form">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <label class="y-field">
+          <span>厂商</span>
+          <select
+            v-model="newRef.platform"
+            class="input w-full"
+            @change="newRef.authType = refAuthTypes[0] || 'oauth'"
+          >
+            <option v-for="(label, key) in PLATFORM_LABEL" :key="key" :value="key">{{ label }}</option>
+          </select>
+        </label>
+        <label class="y-field">
+          <span>接入方式</span>
+          <select v-model="newRef.authType" class="input w-full">
+            <option v-for="t in refAuthTypes" :key="t" :value="t">{{ t }}</option>
+          </select>
+        </label>
+        <p class="hint">创建后会跳转到上游页，请在卖家端或上游详情完成 OAuth / 密钥导入。</p>
       </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeCreateRef">取消</button>
+        <button type="button" class="btn btn-primary" :disabled="busy" @click="createRef">创建</button>
+      </template>
+    </BaseDialog>
 
-    <div v-if="show" class="y-modal-mask" @click.self="closeModal">
-      <div class="y-modal" role="dialog" :aria-label="editing ? '编辑题目' : '新建题目'">
-        <header class="y-modal__head">
-          <h3>{{ editing ? '编辑题目' : '新建题目' }}</h3>
-          <button type="button" class="y-link" @click="closeModal">关闭</button>
-        </header>
-        <div class="y-modal__body">
-          <div class="y-field-row">
-            <label class="y-field">
-              <span>套件</span>
-              <select v-model="form.suite" class="input w-full">
-                <option v-for="s in SUITES" :key="s.value" :value="s.value">{{ s.text }}</option>
-              </select>
-            </label>
-            <label class="y-field">
-              <span>分类</span>
-              <input v-model="form.category" class="input w-full" />
-            </label>
-          </div>
+    <BaseDialog
+      :show="show"
+      :title="editing ? '编辑题目' : '新建题目'"
+      width="wide"
+      close-on-click-outside
+      @close="closeModal"
+    >
+      <div class="dialog-form">
+        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+        <div class="y-field-row">
           <label class="y-field">
-            <span>题目内容</span>
-            <textarea v-model="form.prompt" class="input w-full y-textarea" rows="4" />
+            <span>套件</span>
+            <select v-model="form.suite" class="input w-full">
+              <option v-for="s in SUITES" :key="s.value" :value="s.value">{{ s.text }}</option>
+            </select>
           </label>
           <label class="y-field">
-            <span>判分规则 (JSON)</span>
-            <textarea v-model="form.grader" class="input w-full y-textarea mono" rows="3" />
-          </label>
-          <div class="y-field-row">
-            <label class="y-field">
-              <span>平台（逗号分隔，空=全部）</span>
-              <input v-model="form.platforms" class="input w-full" placeholder="anthropic, openai" />
-            </label>
-            <label class="y-field">
-              <span>模型（逗号分隔）</span>
-              <input v-model="form.models" class="input w-full" />
-            </label>
-          </div>
-          <div class="y-field-row y-field-row--3">
-            <label class="y-field">
-              <span>max_tokens</span>
-              <input v-model.number="form.max_tokens" type="number" class="input w-full" />
-            </label>
-            <label class="y-field">
-              <span>check_key</span>
-              <input v-model="form.check_key" class="input w-full" />
-            </label>
-            <label class="y-field">
-              <span>权重</span>
-              <input v-model.number="form.weight" type="number" class="input w-full" min="0" step="0.1" />
-            </label>
-          </div>
-          <label class="y-field">
-            <span>模式（逗号分隔：full / quick）</span>
-            <input v-model="form.modes" class="input w-full" />
-          </label>
-          <label class="y-field">
-            <span>请求模板 (JSON)</span>
-            <textarea v-model="form.request" class="input w-full y-textarea mono" rows="2" />
-          </label>
-          <label class="y-field">
-            <span>生成器定义 (JSON)</span>
-            <textarea v-model="form.generator" class="input w-full y-textarea mono" rows="2" />
+            <span>分类</span>
+            <input v-model="form.category" class="input w-full" />
           </label>
         </div>
-        <footer class="y-modal__foot">
-          <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
-          <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
-        </footer>
+        <label class="y-field">
+          <span>题目内容</span>
+          <textarea v-model="form.prompt" class="input w-full y-textarea" rows="4" />
+        </label>
+        <label class="y-field">
+          <span>判分规则 (JSON)</span>
+          <textarea v-model="form.grader" class="input w-full y-textarea mono" rows="3" />
+        </label>
+        <div class="y-field-row">
+          <label class="y-field">
+            <span>平台（逗号分隔，空=全部）</span>
+            <input v-model="form.platforms" class="input w-full" placeholder="anthropic, openai" />
+          </label>
+          <label class="y-field">
+            <span>模型（逗号分隔）</span>
+            <input v-model="form.models" class="input w-full" />
+          </label>
+        </div>
+        <div class="y-field-row y-field-row--3">
+          <label class="y-field">
+            <span>max_tokens</span>
+            <input v-model.number="form.max_tokens" type="number" class="input w-full" />
+          </label>
+          <label class="y-field">
+            <span>check_key</span>
+            <input v-model="form.check_key" class="input w-full" />
+          </label>
+          <label class="y-field">
+            <span>权重</span>
+            <input v-model.number="form.weight" type="number" class="input w-full" min="0" step="0.1" />
+          </label>
+        </div>
+        <label class="y-field">
+          <span>模式（逗号分隔：full / quick）</span>
+          <input v-model="form.modes" class="input w-full" />
+        </label>
+        <label class="y-field">
+          <span>请求模板 (JSON)</span>
+          <textarea v-model="form.request" class="input w-full y-textarea mono" rows="2" />
+        </label>
+        <label class="y-field">
+          <span>生成器定义 (JSON)</span>
+          <textarea v-model="form.generator" class="input w-full y-textarea mono" rows="2" />
+        </label>
       </div>
-    </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
+        <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
+      </template>
+    </BaseDialog>
+
+    <ConfirmDialog
+      :show="!!pendingDestructive"
+      :title="pendingDestructive?.kind === 'retire' ? '下线题目' : '移除基线账号'"
+      :message="pendingDestructive?.kind === 'retire'
+        ? `确认下线题目 #${pendingDestructive.item.id}？下线后将不再用于检测。`
+        : pendingDestructive ? `确认移除基线账号 #${pendingDestructive.upstream.id}？` : ''"
+      :confirm-text="pendingDestructive?.kind === 'retire' ? '确认下线' : '确认移除'"
+      cancel-text="取消"
+      danger
+      :busy="busy"
+      @confirm="confirmDestructive"
+      @cancel="pendingDestructive = null"
+    >
+      <p v-if="pendingDestructive && error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+    </ConfirmDialog>
   </section>
 </template>
 
@@ -896,14 +975,14 @@ onMounted(load)
 
 .stat-card__label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--color-text-primary, #0f172a);
   line-height: 1.2;
 }
 
@@ -962,21 +1041,21 @@ onMounted(load)
 }
 
 #market-probe-items-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-probe-items-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary, #303133);
 }
 
 #market-probe-items-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  background: var(--color-bg-secondary, #f5f7fa);
 }
 
 #market-probe-items-page :deep(th.col-id),
@@ -1008,54 +1087,11 @@ onMounted(load)
   width: 12rem;
   box-sizing: border-box;
 }
-#market-probe-items-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-probe-items-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-probe-items-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
 
-.y-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgb(15 23 42 / 45%);
-}
-.y-modal {
-  width: min(640px, 100%);
-  max-height: min(92vh, 860px);
-  overflow: auto;
-  border-radius: 12px;
-  background: var(--color-bg-elevated, #fff);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 18%);
-}
-.y-modal__head,
-.y-modal__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-}
-.y-modal__head h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-.y-modal__foot {
-  justify-content: flex-end;
-}
-.y-modal__body {
+.dialog-form {
   display: grid;
   gap: 12px;
-  padding: 0 16px 16px;
+  min-width: 0;
 }
 .y-field {
   display: grid;
@@ -1073,10 +1109,13 @@ onMounted(load)
 .y-field-row--3 {
   grid-template-columns: 1fr 1fr 1fr;
 }
-.y-textarea {
+.y-textarea,
+.y-textarea:focus {
   height: auto !important;
   min-height: 72px;
   padding: 8px 10px;
+  line-height: 1.5 !important;
+  tab-size: 2;
   resize: vertical;
 }
 .mono {
@@ -1092,6 +1131,15 @@ onMounted(load)
 @media (max-width: 900px) {
   .stats-row {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 767px) {
+  .prompt-cell {
+    max-width: none;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
   }
 }
 @media (max-width: 720px) {

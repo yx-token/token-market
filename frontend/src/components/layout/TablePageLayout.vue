@@ -11,14 +11,14 @@
     </div>
 
     <!-- 内容：筛选 + 表格 -->
-    <div class="y-container--tight">
+    <div class="y-container--tight" :class="{ 'content-scroll-mode': props.contentMode === 'content' }">
       <div v-if="$slots.filters" class="layout-section-fixed">
         <div class="filter-panel">
           <slot name="filters" />
         </div>
       </div>
 
-      <div class="card table-scroll-container">
+      <div v-if="hasTableContent" class="card table-scroll-container">
         <slot name="table" />
       </div>
     </div>
@@ -31,7 +31,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, useSlots } from 'vue'
+
+interface Props {
+  /**
+   * 内容滚动模式：`table`（默认）保留单表页的内部表格滚动；
+   * `content` 用于支付、检测站、质量、Org 等多区块页面，让整个内容区自行纵向滚动。
+   */
+  contentMode?: 'table' | 'content'
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  contentMode: 'table'
+})
+
+const slots = useSlots()
+const hasTableContent = computed(() => Boolean(slots.table))
 
 const isMobile = ref(false)
 
@@ -107,10 +122,11 @@ onUnmounted(() => {
 
 .filter-panel {
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: var(--color-bg-elevated, rgba(255, 255, 255, 0.96));
+  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.08));
   border-radius: 12px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  color: var(--color-text-primary, #262626);
 }
 
 .table-scroll-container {
@@ -145,7 +161,26 @@ onUnmounted(() => {
   @apply px-5 py-4 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-100 dark:border-dark-800;
 }
 
+/* 多区块内容页：筛选 + 自定义内容 + 分页共用一条纵向滚动链 */
+.table-page-layout .y-container--tight.content-scroll-mode {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.table-page-layout .y-container--tight.content-scroll-mode .table-scroll-container {
+  flex: none;
+  min-height: 0;
+}
+
 /* 移动端：恢复正常滚动 */
+.table-page-layout.mobile-mode {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+
 .table-page-layout.mobile-mode .table-scroll-container {
   @apply h-auto overflow-visible border-none shadow-none bg-transparent;
 }

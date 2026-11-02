@@ -9,6 +9,7 @@ import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
@@ -75,6 +76,14 @@ const STATUS_LABEL: Record<string, string> = {
   upheld: '维持',
   overturned: '推翻',
   retest: '复测',
+  crediting: '到账中',
+  credited: '已到账',
+  cancelled: '已取消',
+  expired: '已过期',
+  locking: '暂停 Key 中',
+  subtracting: '扣减余额中',
+  done: '已完成',
+  retesting: '复测中',
   closed: '已关闭',
 }
 
@@ -86,7 +95,9 @@ const columns = computed<Column[]>(() => {
       { key: 'status', label: '状态', class: 'col-status' },
       { key: 'amount', label: '金额', class: 'col-amount' },
       { key: 'user', label: '用户', class: 'col-user' },
-      { key: 'channel', label: '渠道', class: 'col-channel' },
+      props.kind === 'refunds'
+        ? { key: 'kind', label: '渠道', class: 'col-channel' }
+        : { key: 'channel', label: '渠道', class: 'col-channel' },
     )
   } else if (props.kind === 'withdrawals') {
     base.push(
@@ -144,6 +155,7 @@ const filtered = computed(() => {
         row.status,
         row.amount,
         row.channel,
+        row.kind,
         row.user_email,
         row.user_id,
         row.seller_email,
@@ -168,7 +180,7 @@ const pageRows = computed(() => {
 const allStats = computed(() => {
   const all = rows.value
   const pending = all.filter((r) =>
-    ['pending', 'pending_review', 'paying', 'open', 'approved'].includes(String(r.status ?? '')),
+    ['pending', 'pending_review', 'paying', 'open', 'approved', 'crediting', 'locking', 'subtracting', 'retest', 'retesting'].includes(String(r.status ?? '')),
   ).length
   return { total: all.length, pending, done: all.length - pending }
 })
@@ -200,9 +212,9 @@ function statusLabel(s: unknown) {
 
 function statusTone(s: unknown) {
   const v = String(s ?? '')
-  if (['paid', 'confirmed', 'approved', 'upheld', 'closed'].includes(v)) return 'ok'
+  if (['paid', 'confirmed', 'approved', 'upheld', 'closed', 'credited', 'done'].includes(v)) return 'ok'
   if (['rejected', 'failed', 'overturned', 'error'].includes(v)) return 'err'
-  if (['pending', 'pending_review', 'paying', 'open', 'retest'].includes(v)) return 'progress'
+  if (['pending', 'pending_review', 'paying', 'open', 'retest', 'crediting', 'locking', 'subtracting', 'retesting'].includes(v)) return 'progress'
   return 'idle'
 }
 
@@ -218,6 +230,18 @@ function cellText(v: unknown) {
   if (v == null || v === '') return '—'
   if (typeof v === 'boolean') return v ? '是' : '否'
   return String(v)
+}
+
+const amountFormatter = new Intl.NumberFormat('zh-CN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+function formatAmount(value: unknown) {
+  if (value == null || (typeof value === 'string' && !value.trim())) return '—'
+  if (typeof value !== 'number' && typeof value !== 'string') return '—'
+  const amount = Number(value)
+  return Number.isFinite(amount) ? amountFormatter.format(amount) : '—'
 }
 
 async function load() {
@@ -256,16 +280,75 @@ async function run(label: string, fn: () => Promise<unknown>) {
   }
 }
 
+const confirmation = reactive({
+  show: false,
+  title: '',
+  message: '',
+  confirmText: '确认',
+  danger: false,
+  reason: false,
+  reasonRequired: false,
+  reasonLabel: '',
+  reasonPlaceholder: '',
+  reasonInitialValue: '',
+  execute: ((_reason: string) => Promise.resolve()) as (reason: string) => Promise<unknown>,
+})
+
+function openConfirmation(options: {
+  title: string
+  message: string
+  confirmText?: string
+  danger?: boolean
+  reasonLabel?: string
+  reasonPlaceholder?: string
+  reasonInitialValue?: string
+  reasonRequired?: boolean
+  execute: (reason: string) => Promise<unknown>
+}) {
+  Object.assign(confirmation, {
+    show: true,
+    title: options.title,
+    message: options.message,
+    confirmText: options.confirmText || '确认',
+    danger: options.danger || false,
+    reason: Boolean(options.reasonLabel),
+    reasonRequired: options.reasonRequired || false,
+    reasonLabel: options.reasonLabel || '',
+    reasonPlaceholder: options.reasonPlaceholder || '',
+    reasonInitialValue: options.reasonInitialValue || '',
+    execute: options.execute,
+  })
+}
+
+function closeConfirmation() {
+  confirmation.show = false
+}
+
+async function confirmAction(reason?: string) {
+  const value = reason?.trim() || ''
+  if (confirmation.reasonRequired && !value) {
+    error.value = `${confirmation.reasonLabel}不能为空`
+    return
+  }
+  confirmation.show = false
+  await confirmation.execute(value)
+}
+
 function confirmRecharge(row: Record<string, unknown>) {
   if (row.status !== 'pending') return
-  if (!window.confirm(`确认充值单 ${row.id} 已到账？在线支付单只能由支付渠道确认。`)) return
-  const providerRef = window.prompt('到账流水号', 'manual')
-  if (providerRef == null || !providerRef.trim()) return
-  return run(`充值 ${row.id} 已确认`, () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/recharges/${row.id}/confirm`, {
-      provider_ref: providerRef.trim(),
-    }),
-  )
+  openConfirmation({
+    title: '确认充值到账',
+    message: `确认充值单 ${row.id} 已到账？在线支付单只能由支付渠道确认。`,
+    confirmText: '确认到账',
+    reasonLabel: '到账流水号',
+    reasonInitialValue: 'manual',
+    reasonRequired: true,
+    execute: (providerRef) => run(`充值 ${row.id} 已确认`, () =>
+      marketSend('POST', `${MARKET_API_PREFIX}/recharges/${row.id}/confirm`, {
+        provider_ref: providerRef,
+      }),
+    ),
+  })
 }
 
 function syncRecharge(row: Record<string, unknown>) {
@@ -277,57 +360,75 @@ function syncRecharge(row: Record<string, unknown>) {
 
 function markRefundPaid(row: Record<string, unknown>) {
   if (row.status !== 'paying') return
-  const payoutRef = window.prompt(`退款 ${row.id} 的打款流水号`)
-  if (payoutRef == null || !payoutRef.trim()) return
-  return run(`退款 ${row.id} 已标记打款`, () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/refunds/${row.id}/paid`, {
-      payout_ref: payoutRef.trim(),
-    }),
-  )
+  openConfirmation({
+    title: '登记退款打款',
+    message: `确认退款 ${row.id} 已完成打款？`,
+    confirmText: '标记已打款',
+    reasonLabel: '打款流水号',
+    reasonRequired: true,
+    execute: (payoutRef) => run(`退款 ${row.id} 已标记打款`, () =>
+      marketSend('POST', `${MARKET_API_PREFIX}/refunds/${row.id}/paid`, {
+        payout_ref: payoutRef,
+      }),
+    ),
+  })
 }
 
 function reviewWithdrawal(row: Record<string, unknown>, approve: boolean) {
   if (row.status !== 'pending_review') return
-  let reason = ''
-  if (approve) {
-    if (!window.confirm(`通过提现 ${row.id}？`)) return
-  } else {
-    const input = window.prompt(`拒绝提现 ${row.id} 的原因`)
-    if (input == null || !input.trim()) return
-    reason = input.trim()
-  }
-  return run(`提现 ${row.id} 已${approve ? '通过' : '拒绝'}`, () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/withdrawals/${row.id}/review`, { approve, reason }),
-  )
+  openConfirmation({
+    title: approve ? '通过提现' : '拒绝提现',
+    message: `${approve ? '通过' : '拒绝'}提现 ${row.id}？`,
+    confirmText: approve ? '通过' : '拒绝',
+    danger: !approve,
+    reasonLabel: approve ? undefined : '拒绝原因',
+    reasonRequired: !approve,
+    execute: (reason) => run(`提现 ${row.id} 已${approve ? '通过' : '拒绝'}`, () =>
+      marketSend('POST', `${MARKET_API_PREFIX}/withdrawals/${row.id}/review`, { approve, reason }),
+    ),
+  })
 }
 
 function markWithdrawalPaid(row: Record<string, unknown>, failed: boolean) {
   if (row.status !== 'approved' && row.status !== 'paying') return
-  const payoutRef = failed ? '' : window.prompt(`提现 ${row.id} 的打款流水号`)
-  if (!failed && (payoutRef == null || !payoutRef.trim())) return
-  if (failed && !window.confirm(`标记提现 ${row.id} 打款失败？`)) return
-  return run(`提现 ${row.id} 已${failed ? '标记失败' : '登记打款'}`, () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/withdrawals/${row.id}/paid`, {
-      failed,
-      payout_ref: failed ? undefined : payoutRef!.trim(),
-    }),
-  )
+  openConfirmation({
+    title: failed ? '标记打款失败' : '登记提现已打款',
+    message: failed ? `标记提现 ${row.id} 打款失败？` : `确认提现 ${row.id} 已完成打款？`,
+    confirmText: failed ? '标记失败' : '登记打款',
+    danger: failed,
+    reasonLabel: failed ? undefined : '打款流水号',
+    reasonRequired: !failed,
+    execute: (payoutRef) => run(`提现 ${row.id} 已${failed ? '标记失败' : '登记打款'}`, () =>
+      marketSend('POST', `${MARKET_API_PREFIX}/withdrawals/${row.id}/paid`, {
+        failed,
+        payout_ref: failed ? undefined : payoutRef,
+      }),
+    ),
+  })
 }
 
 function resolveAppeal(row: Record<string, unknown>, action: 'uphold' | 'overturn' | 'retest') {
   if (row.status !== 'open') return
   const label = action === 'uphold' ? '维持原判' : action === 'overturn' ? '推翻并恢复质量' : '安排复测'
-  if (!window.confirm(`申诉 ${row.id}：${label}？`)) return
-  const note = window.prompt('处理说明，可留空', '') ?? ''
-  return run(`申诉 ${row.id}：${label}`, () =>
-    marketSend('POST', `${MARKET_API_PREFIX}/appeals/${row.id}/resolve`, { action, note }),
-  )
+  openConfirmation({
+    title: '处理申诉',
+    message: `申诉 ${row.id}：${label}？`,
+    confirmText: label,
+    danger: action === 'overturn',
+    reasonLabel: '处理说明',
+    reasonPlaceholder: '可留空',
+    execute: (note) => run(`申诉 ${row.id}：${label}`, () =>
+      marketSend('POST', `${MARKET_API_PREFIX}/appeals/${row.id}/resolve`, { action, note }),
+    ),
+  })
 }
 
 onMounted(load)
 watch(
   () => props.kind,
   () => {
+    actionMsg.value = ''
+    confirmation.show = false
     Object.assign(queryParams.value, { ...initQueryParams })
     load()
   },
@@ -360,8 +461,8 @@ watch(
       </template>
 
       <template #filters>
-        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
-        <p v-else-if="actionMsg" class="y-msg y-msg--ok mb-2">{{ actionMsg }}</p>
+        <p v-if="error" class="y-msg y-msg--error mb-2 break-anywhere" role="alert">{{ error }}</p>
+        <p v-else-if="actionMsg" class="y-msg y-msg--ok mb-2" role="status" aria-live="polite">{{ actionMsg }}</p>
 
         <nav v-if="showFundsTabs" class="funds-tabs mb-3">
           <RouterLink
@@ -380,7 +481,7 @@ watch(
           <div class="stats-row">
             <article class="stat-card stat-card--blue">
               <div>
-                <div class="stat-card__label">总数</div>
+                <div class="stat-card__label">已加载</div>
                 <div class="stat-card__value">{{ allStats.total.toLocaleString() }}</div>
               </div>
             </article>
@@ -403,9 +504,10 @@ watch(
           <div class="section-title">筛选</div>
           <div class="filter-grid">
             <div class="filter-item">
-              <label class="filter-label">关键词</label>
+              <label class="filter-label" for="resource-keyword">关键词</label>
               <div class="relative flex-1 w-full min-w-0">
                 <input
+                  id="resource-keyword"
                   v-model="queryParams.keyword"
                   class="filter-input w-full"
                   type="search"
@@ -415,11 +517,13 @@ watch(
               </div>
             </div>
             <div class="filter-item">
-              <label class="filter-label">状态</label>
+              <label class="filter-label" for="resource-status">状态</label>
               <Select
+                id="resource-status"
                 v-model="queryParams.status"
                 class="flex-1 w-full min-w-0"
                 size="sm"
+                aria-label="资金状态筛选"
                 :options="statusOptions"
               />
             </div>
@@ -447,18 +551,27 @@ watch(
           <template #cell-serial="{ row }">
             {{ getSerialNumber(pageRows.findIndex((r) => r.id === row.id)) }}
           </template>
-          <template #cell-id="{ row }">{{ cellText(row.id) }}</template>
+          <template #cell-id="{ row }">
+            <span class="data-table-cell-truncate long-cell" :title="cellText(row.id)">{{ cellText(row.id) }}</span>
+          </template>
           <template #cell-status="{ row }">
             <span class="status-cell">
               <i class="status-dot" :data-tone="statusTone(row.status)" />
               {{ statusLabel(row.status) }}
             </span>
           </template>
-          <template #cell-amount="{ row }">{{ cellText(row.amount) }}</template>
-          <template #cell-user="{ row }">{{ userLabel(row) }}</template>
-          <template #cell-seller="{ row }">{{ sellerLabel(row) }}</template>
+          <template #cell-amount="{ row }"><span class="amount-cell">{{ formatAmount(row.amount) }}</span></template>
+          <template #cell-user="{ row }">
+            <span class="data-table-cell-truncate long-cell" :title="userLabel(row)">{{ userLabel(row) }}</span>
+          </template>
+          <template #cell-seller="{ row }">
+            <span class="data-table-cell-truncate long-cell" :title="sellerLabel(row)">{{ sellerLabel(row) }}</span>
+          </template>
           <template #cell-channel="{ row }">{{ cellText(row.channel) }}</template>
-          <template #cell-report_id="{ row }">{{ cellText(row.report_id) }}</template>
+          <template #cell-kind="{ row }">{{ cellText(row.kind) }}</template>
+          <template #cell-report_id="{ row }">
+            <span class="data-table-cell-truncate long-cell" :title="cellText(row.report_id)">{{ cellText(row.report_id) }}</span>
+          </template>
           <template #cell-platform="{ row }">{{ cellText(row.platform) }}</template>
           <template #cell-actions="{ row }">
             <div class="table-ops">
@@ -551,6 +664,23 @@ watch(
         />
       </template>
     </TablePageLayout>
+
+    <ConfirmDialog
+      :show="confirmation.show"
+      :title="confirmation.title"
+      :message="confirmation.message"
+      :confirm-text="confirmation.confirmText"
+      :danger="confirmation.danger"
+      :busy="busy"
+      :reason="confirmation.reason"
+      :reason-label="confirmation.reasonLabel"
+      :reason-placeholder="confirmation.reasonPlaceholder"
+      :reason-initial-value="confirmation.reasonInitialValue"
+      @confirm="confirmAction"
+      @cancel="closeConfirmation"
+    >
+      <p v-if="confirmation.show && error" class="y-msg y-msg--error break-anywhere" role="alert">{{ error }}</p>
+    </ConfirmDialog>
   </section>
 </template>
 
@@ -595,20 +725,20 @@ watch(
   gap: 4px;
   padding: 4px;
   border-radius: 10px;
-  background: #f1f5f9;
+  background: var(--color-bg-secondary, #f1f5f9);
 }
 
 .funds-tab {
   padding: 6px 14px;
   border-radius: 8px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
   text-decoration: none;
 }
 
 .funds-tab.is-on {
-  background: #fff;
-  color: #0f172a;
+  background: var(--color-bg-elevated, #fff);
+  color: var(--color-text-primary, #0f172a);
   font-weight: 600;
   box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
 }
@@ -625,30 +755,21 @@ watch(
   gap: 12px;
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  background: #f8fafc;
-}
-
-.stat-card--blue {
-  background: linear-gradient(135deg, #eff6ff, #f8fafc);
-}
-.stat-card--green {
-  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
-}
-.stat-card--orange {
-  background: linear-gradient(135deg, #fff7ed, #f8fafc);
+  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.06));
+  background: var(--color-bg-elevated, #f8fafc);
 }
 
 .stat-card__label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary, #64748b);
 }
 
 .stat-card__value {
   margin-top: 4px;
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-primary, #0f172a);
   line-height: 1.2;
 }
 
@@ -698,22 +819,38 @@ watch(
   min-height: 32px;
 }
 
+.amount-cell {
+  display: block;
+  min-width: 5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.long-cell {
+  display: block;
+  max-width: 18rem;
+}
+
+.break-anywhere {
+  overflow-wrap: anywhere;
+}
+
 #market-resource-page :deep(.table-scroll-container table thead th) {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--color-bg-secondary, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
   font-weight: 500;
   font-size: 13px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
 }
 
 #market-resource-page :deep(.table-scroll-container table tbody td) {
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--color-border, #ebeef5);
   font-size: 13px;
-  color: #303133;
+  color: var(--color-text-primary, #303133);
 }
 
 #market-resource-page :deep(.table-scroll-container table tbody tr:hover td) {
-  background: #f5f7fa;
+  background: var(--color-bg-secondary, #f5f7fa);
 }
 
 #market-resource-page :deep(th.col-id),
@@ -742,19 +879,18 @@ watch(
   width: 12rem;
   box-sizing: border-box;
 }
-#market-resource-page :deep(thead th.col-ops) {
-  background: #f5f7fa !important;
-}
-#market-resource-page :deep(tbody td.col-ops) {
-  background: #fff !important;
-}
-#market-resource-page :deep(tbody tr:hover td.col-ops) {
-  background: #f5f7fa !important;
-}
-
 @media (max-width: 900px) {
   .stats-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .long-cell {
+    max-width: 100%;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 </style>

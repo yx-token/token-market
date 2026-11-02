@@ -69,7 +69,7 @@ let providers: { name: string; label: string; enabled: boolean }[]
 
 async function page() {
   const wrapper = mount(PoliciesView, {
-    global: { stubs: { Icon: true, Pagination: true, Select: true } },
+    global: { stubs: { Icon: true, Pagination: true, Select: true, Teleport: true } },
   })
   await flushPromises()
   return wrapper

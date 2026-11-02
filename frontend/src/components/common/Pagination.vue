@@ -1,12 +1,13 @@
 <template>
   <div
-    class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 dark:border-dark-700 dark:bg-dark-800 sm:px-6"
+    class="pagination flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-white px-4 py-3 dark:border-dark-700 dark:bg-dark-800 sm:px-6"
   >
-    <div class="flex flex-1 items-center justify-between sm:hidden">
+    <div class="pagination-mobile flex flex-1 items-center justify-between gap-2 sm:hidden">
       <!-- Mobile pagination -->
       <button
         @click="goToPage(page - 1)"
         :disabled="page === 1"
+        :aria-label="t('pagination.previous')"
         class="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-200 dark:hover:bg-dark-600"
       >
         {{ t('pagination.previous') }}
@@ -17,15 +18,16 @@
       <button
         @click="goToPage(page + 1)"
         :disabled="page === totalPages"
-        class="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-200 dark:hover:bg-dark-600"
+        :aria-label="t('pagination.next')"
+        class="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-200 dark:hover:bg-dark-600"
       >
         {{ t('pagination.next') }}
       </button>
     </div>
 
-    <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+    <div class="pagination-desktop hidden sm:flex sm:flex-1 sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
       <!-- Desktop pagination info -->
-      <div class="flex items-center space-x-4">
+      <div class="pagination-tools flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
         <p class="text-sm text-gray-700 dark:text-gray-300">
           {{ t('pagination.showing') }}
           <span class="font-medium">{{ fromItem }}</span>
@@ -37,7 +39,7 @@
         </p>
 
         <!-- Page size selector -->
-        <div v-if="showPageSizeSelector" class="flex items-center space-x-2">
+        <div v-if="showPageSizeSelector" class="flex items-center gap-2">
           <span class="text-sm text-gray-700 dark:text-gray-300"
             >{{ t('pagination.perPage') }}:</span
           >
@@ -45,12 +47,13 @@
             <Select
               :model-value="pageSize"
               :options="pageSizeSelectOptions"
+              :aria-label="t('pagination.perPage')"
               @update:model-value="handlePageSizeChange"
             />
           </div>
         </div>
 
-        <div v-if="showJump" class="flex items-center space-x-2">
+        <div v-if="showJump" class="pagination-jump hidden items-center gap-2 lg:flex">
           <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('pagination.jumpTo') }}</span>
           <input
             v-model="jumpPage"
@@ -59,6 +62,7 @@
             :max="totalPages"
             class="input w-20 text-sm"
             :placeholder="t('pagination.jumpPlaceholder')"
+            :aria-label="t('pagination.jumpTo')"
             @keyup.enter="submitJump"
           />
           <button type="button" class="btn btn-ghost btn-sm" @click="submitJump">
@@ -69,8 +73,8 @@
 
       <!-- Desktop pagination buttons -->
       <nav
-        class="relative z-0 inline-flex -space-x-px rounded-md shadow-sm"
-        aria-label="Pagination"
+        class="pagination-nav relative z-0 inline-flex max-w-full flex-wrap gap-y-1 -space-x-px rounded-md shadow-sm"
+        :aria-label="t('pagination.pageOf', { page, total: totalPages })"
       >
         <!-- Previous button -->
         <button
@@ -122,7 +126,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import Select from './Select.vue'
-import { getConfiguredTablePageSizeOptions, normalizeTablePageSize } from '@/utils/tablePreferences'
+import { getConfiguredTablePageSizeOptions } from '@/utils/tablePreferences'
 import { setPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
@@ -161,11 +165,35 @@ const toItem = computed(() => {
   return to > props.total ? props.total : to
 })
 
+const availablePageSizeOptions = computed(() => {
+  const options = Array.from(
+    new Set(
+      props.pageSizeOptions
+        .map((size) => Number(size))
+        .filter((size) => Number.isInteger(size) && size >= 5 && size <= 1000)
+    )
+  ).sort((a, b) => a - b)
+
+  return options.length > 0 ? options : getConfiguredTablePageSizeOptions()
+})
+
+const normalizePageSizeToAvailableOptions = (value: unknown): number => {
+  const size = Number(value)
+  const options = availablePageSizeOptions.value
+  if (!Number.isInteger(size) || size < 5 || size > 1000) {
+    return options[0]
+  }
+  return options.find((option) => option >= size) ?? options[options.length - 1]
+}
+
 const pageSizeSelectOptions = computed(() => {
+  const currentPageSize = Number(props.pageSize)
   const options = Array.from(
     new Set([
-      ...getConfiguredTablePageSizeOptions(),
-      normalizeTablePageSize(props.pageSize)
+      ...availablePageSizeOptions.value,
+      ...(Number.isInteger(currentPageSize) && currentPageSize > 0 && currentPageSize <= 1000
+        ? [currentPageSize]
+        : [])
     ])
   ).sort((a, b) => a - b)
 
@@ -224,7 +252,7 @@ const goToPage = (newPage: number) => {
 
 const handlePageSizeChange = (value: string | number | boolean | null) => {
   if (value === null || typeof value === 'boolean') return
-  const newPageSize = normalizeTablePageSize(typeof value === 'string' ? parseInt(value, 10) : value)
+  const newPageSize = normalizePageSizeToAvailableOptions(value)
   setPersistedPageSize(newPageSize)
   emit('update:pageSize', newPageSize)
 }

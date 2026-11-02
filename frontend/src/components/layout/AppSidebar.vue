@@ -1,11 +1,19 @@
 <template>
   <aside
+    id="console-sidebar"
+    ref="sidebarRef"
     class="sidebar"
     :class="[
       sidebarCollapsed ? 'is-collapsed w-[72px]' : 'w-64',
-      { '-translate-x-full lg:translate-x-0': !mobileOpen }
+      {
+        'is-mobile-open': usesConsoleShell && mobileOpen,
+        '-translate-x-full lg:translate-x-0': !usesConsoleShell && !mobileOpen,
+      }
     ]"
     :style="sidebarInlineStyle"
+    :role="mobileDrawerOpen ? 'dialog' : undefined"
+    :aria-modal="mobileDrawerOpen ? 'true' : undefined"
+    :aria-label="mobileDrawerOpen ? t('nav.opsConsole') : undefined"
   >
     <!-- Logo/Brand -->
     <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed }">
@@ -49,6 +57,8 @@
                   'sidebar-link-collapsed': sidebarCollapsed
                 }"
                 :title="sidebarCollapsed ? item.label : undefined"
+                :aria-expanded="!sidebarCollapsed && isGroupExpanded(item)"
+                :aria-controls="groupDomId(item)"
                 @click="handleGroupClick(item)"
               >
                 <component :is="item.icon" class="sidebar-ico sidebar-ico--l1" />
@@ -65,7 +75,11 @@
                 </span>
               </button>
               <!-- Children：参考闲猫多级菜单，纯文字缩进、无左边线 -->
-              <div v-if="!sidebarCollapsed && isGroupExpanded(item)" class="sidebar-submenu sidebar-submenu--l2">
+              <div
+                v-if="!sidebarCollapsed && isGroupExpanded(item)"
+                :id="groupDomId(item)"
+                class="sidebar-submenu sidebar-submenu--l2"
+              >
                 <template v-for="child in item.children" :key="child.path">
                   <template v-if="child.children?.length">
                     <div class="sidebar-group">
@@ -73,6 +87,8 @@
                         type="button"
                         class="sidebar-link sidebar-link--l2 w-full"
                         :class="{ 'sidebar-link-active': isGroupActive(child) }"
+                        :aria-expanded="isGroupExpanded(child)"
+                        :aria-controls="groupDomId(child)"
                         @click="toggleGroup(child)"
                       >
                         <span class="sidebar-label sidebar-label-flex">
@@ -83,7 +99,7 @@
                           />
                         </span>
                       </button>
-                      <div v-if="isGroupExpanded(child)" class="sidebar-submenu sidebar-submenu--l3">
+                      <div v-if="isGroupExpanded(child)" :id="groupDomId(child)" class="sidebar-submenu sidebar-submenu--l3">
                         <template v-for="leaf in child.children" :key="leaf.path">
                           <template v-if="leaf.children?.length">
                             <div class="sidebar-group">
@@ -91,6 +107,8 @@
                                 type="button"
                                 class="sidebar-link sidebar-link--l3 w-full"
                                 :class="{ 'sidebar-link-active': isGroupActive(leaf) }"
+                                :aria-expanded="isGroupExpanded(leaf)"
+                                :aria-controls="groupDomId(leaf)"
                                 @click="toggleGroup(leaf)"
                               >
                                 <span class="sidebar-label sidebar-label-flex">
@@ -101,12 +119,13 @@
                                   />
                                 </span>
                               </button>
-                              <div v-if="isGroupExpanded(leaf)" class="sidebar-submenu sidebar-submenu--l4">
+                              <div v-if="isGroupExpanded(leaf)" :id="groupDomId(leaf)" class="sidebar-submenu sidebar-submenu--l4">
                                 <template v-for="nested in leaf.children" :key="nested.path">
                                   <router-link
                                     :to="nested.path"
                                     class="sidebar-link sidebar-link--l4"
                                     :class="{ 'sidebar-link-active': route.path === nested.path }"
+                                    :aria-current="route.path === nested.path ? 'page' : undefined"
                                     @click="handleMenuItemClick(nested.path)"
                                   >
                                     <span>{{ nested.label }}</span>
@@ -128,6 +147,7 @@
                             :to="leaf.path"
                             class="sidebar-link sidebar-link--l3"
                             :class="{ 'sidebar-link-active': route.path === leaf.path }"
+                            :aria-current="route.path === leaf.path ? 'page' : undefined"
                             @click="handleMenuItemClick(leaf.path)"
                           >
                             <span>{{ leaf.label }}</span>
@@ -149,6 +169,7 @@
                     :to="child.path"
                     class="sidebar-link sidebar-link--l2"
                     :class="{ 'sidebar-link-active': route.path === child.path }"
+                    :aria-current="route.path === child.path ? 'page' : undefined"
                     @click="handleMenuItemClick(child.path)"
                   >
                     <span>{{ child.label }}</span>
@@ -175,6 +196,7 @@
               class="sidebar-link sidebar-link--l1"
               :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
               :title="sidebarCollapsed ? item.label : undefined"
+              :aria-current="isActive(item.path) ? 'page' : undefined"
               :id="
                 item.path === '/admin/accounts'
                   ? 'sidebar-channel-manage'
@@ -212,6 +234,7 @@
             :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
             :title="sidebarCollapsed ? item.label : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
+            :aria-current="isActive(item.path) ? 'page' : undefined"
             @click="handleMenuItemClick(item.path)"
           >
             <span v-if="item.iconSvg" class="sidebar-ico sidebar-ico--l1 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
@@ -232,6 +255,7 @@
             :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
             :title="sidebarCollapsed ? item.label : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
+            :aria-current="isActive(item.path) ? 'page' : undefined"
             @click="handleMenuItemClick(item.path)"
           >
             <span v-if="item.iconSvg" class="sidebar-ico sidebar-ico--l1 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
@@ -352,11 +376,24 @@ const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
 
-const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
+const desktopSidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const mobileOpen = computed(() => appStore.mobileOpen)
+const isMobileViewport = ref(window.matchMedia('(max-width: 1023.98px)').matches)
+const usesConsoleShell = computed(
+  () =>
+    route.path !== '/admin/login' &&
+    (route.path.startsWith('/admin/market') ||
+      (authStore.user?.role === 'admin' &&
+        (route.path.startsWith('/admin') || route.path.startsWith('/shop')))),
+)
+const sidebarCollapsed = computed(
+  () => desktopSidebarCollapsed.value && !(usesConsoleShell.value && isMobileViewport.value),
+)
+const mobileDrawerOpen = computed(() => usesConsoleShell.value && isMobileViewport.value && mobileOpen.value)
 const isAdmin = computed(
   () => authStore.isAdmin || route.path.startsWith('/admin/market')
 )
+const sidebarRef = ref<HTMLElement | null>(null)
 const sidebarNavRef = ref<HTMLElement | null>(null)
 const isDark = ref(document.documentElement.classList.contains('dark'))
 
@@ -1101,26 +1138,31 @@ function isGroupExpanded(item: NavItem): boolean {
   return isGroupActive(item)
 }
 
+function groupDomId(item: NavItem): string {
+  return `sidebar-group-${item.path.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+}
+
 const WIDTH_KEY = 'console.sidebar.width'
 const sidebarWidth = ref(256)
 
 const sidebarInlineStyle = computed(() => {
-  if (sidebarCollapsed.value) return { width: '72px' }
+  if (usesConsoleShell.value && isMobileViewport.value) return {}
+  if (desktopSidebarCollapsed.value) return { width: '72px' }
   return { width: `${sidebarWidth.value}px` }
 })
 
 function applyMenuShell() {
   const root = document.querySelector('.console-app') as HTMLElement | null
   if (!root) return
-  const width = sidebarCollapsed.value ? 72 : sidebarWidth.value
+  const width = desktopSidebarCollapsed.value ? 72 : sidebarWidth.value
   root.style.setProperty('--console-side-width', `${width}px`)
-  root.classList.toggle('is-side-collapsed', sidebarCollapsed.value)
+  root.classList.toggle('is-side-collapsed', desktopSidebarCollapsed.value)
   root.classList.remove('is-menu-horizontal')
 }
 
 function onResizeStart(event: MouseEvent) {
   event.preventDefault()
-  if (sidebarCollapsed.value) return
+  if (desktopSidebarCollapsed.value || isMobileViewport.value) return
   const startX = event.clientX
   const startW = sidebarWidth.value
   const move = (ev: MouseEvent) => {
@@ -1140,7 +1182,7 @@ function onResizeStart(event: MouseEvent) {
   window.addEventListener('mouseup', up)
 }
 
-watch(sidebarCollapsed, () => {
+watch(desktopSidebarCollapsed, () => {
   applyMenuShell()
 })
 
@@ -1149,19 +1191,21 @@ function toggleGroup(item: NavItem) {
 }
 
 /**
- * Click handler for collapsible parent items.
- * - When sidebar is collapsed: do nothing (children are not visible).
- * - When `expandOnly` is true: only toggle expand state.
- * - Otherwise (default, e.g. /admin/orders): navigate to the parent path
- *   (router-link semantics) and ensure the group is expanded.
+ * 折叠侧栏点击分组时先展开侧栏与目标组；expandOnly 分组只切换展开态，
+ * 其余分组保留原有的父路径导航行为。
  */
 function handleGroupClick(item: NavItem) {
+  if (desktopSidebarCollapsed.value && !(isMobileViewport.value && mobileOpen.value)) {
+    appStore.setSidebarCollapsed(false)
+    groupExpandOverrides.value.set(item.path, true)
+    if (!item.expandOnly && route.path !== item.path) router.push(item.path)
+    return
+  }
   if (sidebarCollapsed.value) return
   if (item.expandOnly) {
     toggleGroup(item)
     return
   }
-  // Push to path and ensure expanded
   if (route.path !== item.path) {
     router.push(item.path)
   }
@@ -1189,7 +1233,53 @@ watch(
   { immediate: true }
 )
 
+function setConsoleBackgroundInert(inert: boolean) {
+  const main = document.querySelector<HTMLElement>('.console-main-col')
+  if (!main) return
+  main.inert = inert
+  main.toggleAttribute('inert', inert)
+  if (inert) main.setAttribute('aria-hidden', 'true')
+  else main.removeAttribute('aria-hidden')
+}
+
+let mobileMediaQuery: MediaQueryList | null = null
+
+function onMobileViewportChange(event: MediaQueryListEvent) {
+  isMobileViewport.value = event.matches
+  applyMenuShell()
+}
+
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && mobileDrawerOpen.value) {
+    event.preventDefault()
+    appStore.setMobileOpen(false)
+  }
+}
+
+watch(
+  mobileDrawerOpen,
+  async (open, wasOpen) => {
+    setConsoleBackgroundInert(open)
+    if (open) {
+      await nextTick()
+      sidebarRef.value?.querySelector<HTMLElement>('.sidebar-nav a[href], .sidebar-nav button')?.focus()
+    } else if (wasOpen) {
+      await nextTick()
+      document.querySelector<HTMLButtonElement>('#console-mobile-menu-button')?.focus()
+    }
+  },
+  { immediate: true, flush: 'post' },
+)
+
 onMounted(() => {
+  mobileMediaQuery = window.matchMedia('(max-width: 1023.98px)')
+  isMobileViewport.value = mobileMediaQuery.matches
+  if (typeof mobileMediaQuery.addEventListener === 'function') {
+    mobileMediaQuery.addEventListener('change', onMobileViewportChange)
+  } else {
+    mobileMediaQuery.addListener(onMobileViewportChange)
+  }
+  document.addEventListener('keydown', onDocumentKeydown)
   try {
     const savedWidth = Number(localStorage.getItem(WIDTH_KEY))
     if (savedWidth >= 200 && savedWidth <= 480) sidebarWidth.value = savedWidth
@@ -1214,6 +1304,15 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (sidebarNavRef.value) {
     appStore.sidebarScrollTop = sidebarNavRef.value.scrollTop
+  }
+  setConsoleBackgroundInert(false)
+  document.removeEventListener('keydown', onDocumentKeydown)
+  if (mobileMediaQuery) {
+    if (typeof mobileMediaQuery.removeEventListener === 'function') {
+      mobileMediaQuery.removeEventListener('change', onMobileViewportChange)
+    } else {
+      mobileMediaQuery.removeListener(onMobileViewportChange)
+    }
   }
 })
 </script>
@@ -1368,5 +1467,15 @@ onBeforeUnmount(() => {
 
 .sidebar-footer {
   padding: 4px 0 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-brand,
+  .sidebar-section-title::after,
+  .sidebar-section-title-text,
+  .sidebar-label,
+  .sidebar-caret {
+    transition: none;
+  }
 }
 </style>
