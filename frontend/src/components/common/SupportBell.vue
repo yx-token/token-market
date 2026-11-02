@@ -87,7 +87,8 @@ async function loop() {
 }
 
 function openWorkbench() {
-  void router.push('/admin/market/support')
+  const mobile = window.matchMedia('(max-width: 860px)').matches
+  void router.push(mobile ? '/admin/market/support-h5' : '/admin/market/support')
 }
 
 function onVisible() {

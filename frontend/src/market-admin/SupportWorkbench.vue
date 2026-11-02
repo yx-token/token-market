@@ -3,11 +3,20 @@
  * 官方客服工作台：长轮询同步消息/已读/输入中，列表随未读变化刷新。
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import Icon from '@/components/icons/Icon.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
 
 defineOptions({ name: 'MarketAdminSupport' })
+
+const router = useRouter()
+const LAYOUT_KEY = 'market-support-layout-v1'
+type DragKind = 'queue' | 'list' | 'metrics' | 'compose' | 'log' | 'queueRow' | 'listRow'
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n))
+}
 
 interface Conversation {
   id: number
@@ -76,20 +85,147 @@ let typingSent = false
 let typingConversationId = 0
 let openRequestId = 0
 let openAbort: AbortController | null = null
-let threadRunning = false
-let threadLoopId = 0
 let threadAbort: AbortController | null = null
-let alertsRunning = false
+let threadGen = 0
 let alertsAbort: AbortController | null = null
+let alertsGen = 0
 
-const STATUS_TABS = [
-  { value: 'pending', label: '待回复' },
-  { value: 'overdue', label: '已超时' },
-  { value: 'open', label: '进行中' },
-  { value: 'closed', label: '已关闭' },
-  { value: '', label: '全部' },
+const QUEUE_GROUPS = [
+  {
+    title: '工作队列',
+    items: [
+      { value: 'pending', label: '待回复', countKey: 'pending' as const },
+      { value: 'overdue', label: '已超时', countKey: 'overdue' as const },
+      { value: 'open', label: '进行中', countKey: null },
+      { value: 'closed', label: '已关闭', countKey: null },
+      { value: '', label: '全部会话', countKey: null },
+    ],
+  },
 ]
 
+const detailTab = ref<'thread' | 'customer'>('thread')
+const queueOpen = ref(true)
+const historyOpen = ref(false)
+const historyEl = ref<HTMLElement | null>(null)
+
+const queueW = ref(200)
+const listW = ref(340)
+const queueH = ref(160)
+const listH = ref(220)
+const metricsH = ref(108)
+const composeH = ref(110)
+const logH = ref(140)
+const stacked = ref(false)
+let dragCleanup: (() => void) | null = null
+let stackMqCleanup: (() => void) | null = null
+
+const boardStyle = computed(() => {
+  if (stacked.value) {
+    return {
+      gridTemplateColumns: '1fr',
+      gridTemplateRows: `${queueH.value}px 8px ${listH.value}px 8px minmax(0, 1fr)`,
+      gap: '0',
+    }
+  }
+  return {
+    gridTemplateColumns: `${queueW.value}px 8px ${listW.value}px 8px minmax(0, 1fr)`,
+    gridTemplateRows: 'minmax(0, 1fr)',
+    gap: '0 8px',
+  }
+})
+
+function loadLayout() {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY)
+    if (!raw) return
+    const o = JSON.parse(raw) as Record<string, number>
+    if (Number.isFinite(o.queueW)) queueW.value = clamp(o.queueW, 140, 420)
+    if (Number.isFinite(o.listW)) listW.value = clamp(o.listW, 220, 720)
+    if (Number.isFinite(o.queueH)) queueH.value = clamp(o.queueH, 100, 420)
+    if (Number.isFinite(o.listH)) listH.value = clamp(o.listH, 120, 520)
+    if (Number.isFinite(o.metricsH)) metricsH.value = clamp(o.metricsH, 52, 320)
+    if (Number.isFinite(o.composeH)) composeH.value = clamp(o.composeH, 72, 360)
+    if (Number.isFinite(o.logH)) logH.value = clamp(o.logH, 72, 420)
+  } catch {
+    /* ignore */
+  }
+}
+
+function saveLayout() {
+  localStorage.setItem(
+    LAYOUT_KEY,
+    JSON.stringify({
+      queueW: queueW.value,
+      listW: listW.value,
+      queueH: queueH.value,
+      listH: listH.value,
+      metricsH: metricsH.value,
+      composeH: composeH.value,
+      logH: logH.value,
+    }),
+  )
+}
+
+function startResize(kind: DragKind, e: MouseEvent) {
+  e.preventDefault()
+  dragCleanup?.()
+  const startX = e.clientX
+  const startY = e.clientY
+  const start = {
+    queueW: queueW.value,
+    listW: listW.value,
+    queueH: queueH.value,
+    listH: listH.value,
+    metricsH: metricsH.value,
+    composeH: composeH.value,
+    logH: logH.value,
+  }
+  const vertical = kind === 'metrics' || kind === 'compose' || kind === 'log' || kind === 'queueRow' || kind === 'listRow'
+  const onMove = (ev: MouseEvent) => {
+    const dx = ev.clientX - startX
+    const dy = ev.clientY - startY
+    if (kind === 'queue') queueW.value = clamp(start.queueW + dx, 140, 420)
+    else if (kind === 'list') listW.value = clamp(start.listW + dx, 220, 720)
+    else if (kind === 'queueRow') queueH.value = clamp(start.queueH + dy, 100, 420)
+    else if (kind === 'listRow') listH.value = clamp(start.listH + dy, 120, 520)
+    else if (kind === 'metrics') metricsH.value = clamp(start.metricsH + dy, 52, 320)
+    else if (kind === 'compose') composeH.value = clamp(start.composeH - dy, 72, 360)
+    else if (kind === 'log') logH.value = clamp(start.logH - dy, 72, 420)
+  }
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    document.body.style.removeProperty('cursor')
+    document.body.style.removeProperty('user-select')
+    dragCleanup = null
+    saveLayout()
+  }
+  document.body.style.cursor = vertical ? 'row-resize' : 'col-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+  dragCleanup = onUp
+}
+
+const selected = computed<Conversation | null>(() => {
+  const id = selectedId.value
+  if (!id) return null
+  if (activeConversation.value?.id === id) return activeConversation.value
+  const known =
+    list.value.find((c) => c.id === id) ||
+    alerts.value?.overdue_conversations.find((c) => c.id === id)
+  if (known) return known
+  return {
+    id,
+    user_id: 0,
+    status: 'open',
+    last_message_at: '',
+    last_preview: '',
+    last_sender: '',
+    user_unread_count: 0,
+    staff_unread_count: 0,
+  }
+})
 const lastMsgId = computed(() => messages.value.reduce((m, x) => Math.max(m, x.id), 0))
 const lastOwnId = computed(() => {
   let id = 0
@@ -98,6 +234,67 @@ const lastOwnId = computed(() => {
   }
   return id
 })
+const systemLogs = computed(() => messages.value.filter((m) => m.sender === 'system'))
+const chatMessages = computed(() => messages.value.filter((m) => m.sender !== 'system'))
+
+const stats = computed(() => {
+  const a = alerts.value
+  const overdueAvg = (() => {
+    const rows = a?.overdue_conversations || []
+    if (!rows.length) return '—'
+    const mins = rows.reduce((s, c) => s + (c.waiting_minutes ?? 0), 0) / rows.length
+    if (mins < 1) return '<1m'
+    if (mins < 60) return `${Math.round(mins)}m`
+    return `${(mins / 60).toFixed(1)}h`
+  })()
+  return [
+    { key: 'pending', label: '待回复', value: a?.pending_count ?? '—', hint: '等待官方回复', tone: 'blue', icon: 'inbox' as const },
+    { key: 'overdue', label: '已超时', value: a?.overdue_count ?? '—', hint: `${a?.reply_timeout_minutes ?? 15} 分钟阈值`, tone: 'red', icon: 'exclamationTriangle' as const },
+    { key: 'unread', label: '未读消息', value: a?.staff_unread_total ?? '—', hint: '顶栏角标同步', tone: 'amber', icon: 'chatBubble' as const },
+    { key: 'queue', label: '当前列表', value: total.value, hint: STATUS_LABEL[status.value] || '全部', tone: 'violet', icon: 'clipboard' as const },
+    { key: 'threshold', label: '积压阈值', value: a?.pending_alert_threshold ?? 5, hint: a?.pending_alert_fired ? '已触发告警' : '未触发', tone: 'slate', icon: 'badge' as const },
+    { key: 'avg', label: '超时均等待', value: overdueAvg, hint: '超时会话均值', tone: 'cyan', icon: 'clock' as const },
+  ]
+})
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: '待回复',
+  overdue: '已超时',
+  open: '进行中',
+  closed: '已关闭',
+  '': '全部',
+}
+
+function queueCount(key: 'pending' | 'overdue' | null) {
+  if (key === 'pending') return alerts.value?.pending_count
+  if (key === 'overdue') return alerts.value?.overdue_count
+  return undefined
+}
+
+function avatarText(c: Conversation) {
+  const raw = (c.user_email || String(c.user_id || '')).trim()
+  if (!raw) return '?'
+  const name = raw.includes('@') ? raw.split('@')[0] : raw
+  return name.slice(0, 1).toUpperCase()
+}
+
+function relativeTime(v?: string) {
+  if (!v) return ''
+  const t = new Date(v).getTime()
+  if (Number.isNaN(t)) return v
+  const diff = Date.now() - t
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`
+  return fmtTime(v)
+}
+
+function priorityOf(c: Conversation) {
+  if (c.overdue) return { label: '紧急', tone: 'danger' }
+  if (c.awaiting_staff_since) return { label: '待回复', tone: 'warn' }
+  if (c.status === 'closed') return { label: '已关闭', tone: 'muted' }
+  return { label: '进行中', tone: 'info' }
+}
 
 function fmtTime(v?: string) {
   if (!v) return ''
@@ -105,6 +302,50 @@ function fmtTime(v?: string) {
   if (Number.isNaN(d.getTime())) return v
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function selectQueue(value: string) {
+  status.value = value
+  detailTab.value = 'thread'
+}
+
+function senderLabel(sender: string) {
+  if (sender === 'staff') return '官方'
+  if (sender === 'user') return '用户'
+  if (sender === 'system') return '系统'
+  return sender
+}
+
+async function openHistory() {
+  const conversationId = selectedId.value
+  if (!conversationId) return
+  const requestId = openRequestId
+  historyOpen.value = true
+  // 重新拉全量，避免侧栏截断后漏看早期消息
+  try {
+    const bundle = await marketGet<{ conversation: Conversation; messages: Message[] }>(
+      `${MARKET_API_PREFIX}/support/conversations/${conversationId}`,
+    )
+    if (requestId !== openRequestId || selectedId.value !== conversationId) return
+    if (bundle.conversation.id !== conversationId) return
+    messages.value = (bundle.messages ?? []).filter((m) => m.conversation_id === conversationId)
+    applyConv(bundle.conversation)
+  } catch {
+    /* 仍展示当前内存中的消息 */
+  }
+  await nextTick()
+  if (!historyOpen.value || selectedId.value !== conversationId) return
+  const el = historyEl.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+
+function closeHistory() {
+  historyOpen.value = false
+}
+
+function refreshAll() {
+  void loadList()
+  void loadAlerts()
 }
 
 function waitLabel(c: Conversation) {
@@ -192,6 +433,8 @@ function clearActiveConversation() {
   peerReadId.value = 0
   hasNewMessages.value = false
   newMessageAnnouncement.value = ''
+  historyOpen.value = false
+  closeConfirmationOpen.value = false
 }
 
 async function loadList(keepSelection = true, silent = false) {
@@ -206,9 +449,17 @@ async function loadList(keepSelection = true, silent = false) {
       `${MARKET_API_PREFIX}/support/conversations?${params}`,
     )
     const prevId = selectedId.value
+    // 回复后会话会离开「待回复/已超时」筛选；钉住当前会话，方便连续回多条
+    const pinned =
+      keepSelection && prevId
+        ? list.value.find((c) => c.id === prevId) || activeConversation.value
+        : null
     list.value = res.items ?? []
     total.value = Number(res.total ?? list.value.length)
     if (keepSelection && prevId) {
+      if (!list.value.some((c) => c.id === prevId) && pinned && pinned.id === prevId) {
+        list.value = [{ ...pinned, awaiting_staff_since: null, overdue: false }, ...list.value]
+      }
       selectedId.value = prevId
     } else if (list.value.length) {
       await openConversation(list.value[0].id)
@@ -238,6 +489,7 @@ async function openConversation(id: number) {
     drafts.set(previousId, draft.value)
     void clearTyping(previousId)
   }
+  if (previousId !== id) historyOpen.value = false
   selectedId.value = id
   if (previousId !== id) draft.value = drafts.get(id) ?? ''
   activeConversation.value = null
@@ -278,17 +530,14 @@ async function openConversation(id: number) {
 }
 
 function stopThreadLoop() {
-  threadRunning = false
-  threadLoopId += 1
+  threadGen += 1
   threadAbort?.abort()
   threadAbort = null
 }
 
 async function threadLoop() {
-  if (threadRunning) return
-  threadRunning = true
-  const loopId = ++threadLoopId
-  while (threadRunning && loopId === threadLoopId && selectedId.value) {
+  const gen = ++threadGen
+  while (gen === threadGen && selectedId.value) {
     const id = selectedId.value
     const ac = new AbortController()
     threadAbort = ac
@@ -307,7 +556,7 @@ async function threadLoop() {
         `${MARKET_API_PREFIX}/support/conversations/${id}?${q}`,
         { signal: ac.signal, timeoutMs: WAIT_MS + 8000 },
       )
-      if (!threadRunning || loopId !== threadLoopId || selectedId.value !== id) break
+      if (gen !== threadGen || selectedId.value !== id) break
       if (bundle.conversation.id !== id) continue
       applyConv(bundle.conversation)
       const added = await appendMessages(bundle.messages ?? [], true)
@@ -322,24 +571,21 @@ async function threadLoop() {
         void loadList(true, true)
       }
     } catch {
-      if (!threadRunning || loopId !== threadLoopId || selectedId.value !== id || ac.signal.aborted) break
+      if (gen !== threadGen || selectedId.value !== id || ac.signal.aborted) break
       await new Promise((r) => setTimeout(r, 1000))
     }
   }
-  if (loopId === threadLoopId) threadRunning = false
 }
 
 function stopAlertsLoop() {
-  alertsRunning = false
+  alertsGen += 1
   alertsAbort?.abort()
   alertsAbort = null
 }
 
 async function alertsLoop() {
-  if (alertsRunning) return
-  alertsRunning = true
-  while (alertsRunning) {
-    alertsAbort?.abort()
+  const gen = ++alertsGen
+  while (gen === alertsGen) {
     const ac = new AbortController()
     alertsAbort = ac
     try {
@@ -356,7 +602,7 @@ async function alertsLoop() {
         signal: ac.signal,
         timeoutMs: WAIT_MS + 8000,
       })
-      if (!alertsRunning) break
+      if (gen !== alertsGen) break
       const changed =
         !alerts.value ||
         a.pending_count !== alerts.value.pending_count ||
@@ -365,11 +611,10 @@ async function alertsLoop() {
       alerts.value = a
       if (changed) void loadList(true, true)
     } catch {
-      if (!alertsRunning) break
+      if (gen !== alertsGen) break
       await new Promise((r) => setTimeout(r, 1000))
     }
   }
-  alertsRunning = false
 }
 
 async function send() {
@@ -490,6 +735,14 @@ function onKey(e: KeyboardEvent) {
 watch(status, () => void loadList(false))
 
 onMounted(async () => {
+  loadLayout()
+  const mq = window.matchMedia('(max-width: 960px)')
+  const applyStack = () => {
+    stacked.value = mq.matches
+  }
+  applyStack()
+  mq.addEventListener('change', applyStack)
+  stackMqCleanup = () => mq.removeEventListener('change', applyStack)
   await Promise.all([loadList(false), loadAlerts()])
   void alertsLoop()
 })
@@ -498,6 +751,10 @@ onUnmounted(() => {
   openRequestId += 1
   openAbort?.abort()
   openAbort = null
+  dragCleanup?.()
+  dragCleanup = null
+  stackMqCleanup?.()
+  stackMqCleanup = null
   stopThreadLoop()
   stopAlertsLoop()
   void clearTyping()
@@ -506,13 +763,27 @@ onUnmounted(() => {
 
 <template>
   <section id="market-support-page" class="sw-shell">
-    <header class="y-header">
-      <div class="page-heading">
-        <h2 class="y-title">官方客服</h2>
-        <p class="y-page-desc">用户留言工作台 · {{ alerts?.reply_timeout_minutes ?? 15 }} 分钟未回预警 · 10 分钟无消息自动结束 · 实时同步</p>
+    <header class="sw-top">
+      <div class="sw-top-title">
+        <h2>官方客服工作台</h2>
+        <p>用户留言 · {{ alerts?.reply_timeout_minutes ?? 15 }} 分钟未回预警 · 10 分钟无消息自动结束</p>
       </div>
-      <div class="y-header-actions">
-        <button type="button" class="btn btn-secondary page-action-btn" :disabled="loadingList" @click="loadList(); loadAlerts()">
+      <div class="sw-top-search">
+        <Icon name="search" size="sm" class="sw-search-ico" />
+        <input
+          v-model="q"
+          type="search"
+          aria-label="搜索会话"
+          placeholder="搜索邮箱、内容预览、会话 ID"
+          @keydown.enter="loadList(false)"
+        />
+        <button type="button" class="sw-link-btn" @click="loadList(false)">搜索</button>
+      </div>
+      <div class="sw-top-actions">
+        <button type="button" class="sw-refresh" @click="router.push('/admin/market/support-h5')">
+          手机版
+        </button>
+        <button type="button" class="sw-refresh" :disabled="loadingList" @click="refreshAll">
           <Icon name="refresh" size="sm" :class="{ 'animate-spin': loadingList }" />
           刷新
         </button>
@@ -530,184 +801,283 @@ onUnmounted(() => {
       <template v-else>超时未回 {{ alerts.overdue_count }} 条</template>
     </div>
 
+    <div class="sw-metrics-wrap" :style="{ height: `${metricsH}px` }">
+      <div class="sw-metric-row">
+        <article v-for="s in stats" :key="s.key" class="sw-metric" :class="s.tone">
+          <div class="sw-metric-ico"><Icon :name="s.icon" size="sm" /></div>
+          <div class="sw-metric-body">
+            <span>{{ s.label }}</span>
+            <strong>{{ s.value }}</strong>
+            <em>{{ s.hint }}</em>
+          </div>
+        </article>
+      </div>
+    </div>
+    <div
+      class="sw-splitter sw-splitter--row"
+      title="拖拽调整指标区高度"
+      @mousedown="startResize('metrics', $event)"
+    />
+
     <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
 
-    <div class="sw-grid">
-      <aside class="sw-pane sw-list">
-        <div class="sw-tabs">
-          <button
-            v-for="t in STATUS_TABS"
-            :key="t.value || 'all'"
-            type="button"
-            :class="{ on: status === t.value }"
-            :aria-pressed="status === t.value"
-            @click="status = t.value"
-          >
-            {{ t.label }}
-          </button>
-        </div>
-        <div class="sw-search">
-          <input
-            v-model="q"
-            type="search"
-            aria-label="搜索会话"
-            placeholder="邮箱 / 预览"
-            @keydown.enter="loadList(false)"
-          />
-          <button type="button" class="btn btn-secondary btn-sm" @click="loadList(false)">搜</button>
-        </div>
-        <ul class="sw-convs">
-          <li v-if="loadingList && !list.length" class="sw-empty" role="status">加载中…</li>
-          <li v-else-if="!list.length" class="sw-empty">暂无会话</li>
-          <li
-            v-for="c in list"
-            :key="c.id"
-            :class="{ on: c.id === selectedId, overdue: c.overdue, typing: c.peer_typing || c.user_typing }"
-          >
+    <div class="sw-board" :class="{ stacked }" :style="boardStyle">
+      <aside class="sw-queue">
+        <button
+          type="button"
+          class="sw-queue-head"
+          :aria-expanded="queueOpen"
+          aria-controls="sw-queue-body"
+          @click="queueOpen = !queueOpen"
+        >
+          <span>工作队列</span>
+          <Icon :name="queueOpen ? 'chevronUp' : 'chevronDown'" size="sm" />
+        </button>
+        <div v-show="queueOpen" id="sw-queue-body" class="sw-queue-body">
+          <template v-for="g in QUEUE_GROUPS" :key="g.title">
+            <p class="sw-queue-label">{{ g.title }}</p>
             <button
+              v-for="item in g.items"
+              :key="item.value || 'all'"
               type="button"
-              class="sw-conv-button"
+              class="sw-queue-item"
+              :class="{ on: status === item.value }"
+              :aria-pressed="status === item.value"
+              @click="selectQueue(item.value)"
+            >
+              <span>{{ item.label }}</span>
+              <b v-if="queueCount(item.countKey) != null">{{ queueCount(item.countKey) }}</b>
+            </button>
+          </template>
+          <div v-if="alerts?.overdue_conversations?.length" class="sw-queue-overdue">
+            <p class="sw-queue-label">超时会话</p>
+            <button
+              v-for="c in alerts.overdue_conversations"
+              :key="`od-${c.id}`"
+              type="button"
+              class="sw-queue-mini"
               :aria-current="c.id === selectedId ? 'true' : undefined"
               @click="openConversation(c.id)"
             >
-              <div class="sw-conv-top">
-                <strong :title="c.user_email || `#${c.user_id}`">{{ c.user_email || `#${c.user_id}` }}</strong>
-                <span v-if="c.staff_unread_count" class="sw-dot">{{ c.staff_unread_count }}</span>
-                <time>{{ fmtTime(c.last_message_at) }}</time>
-              </div>
-              <p v-if="c.peer_typing || c.user_typing" class="sw-typing-hint">正在输入…</p>
-              <p v-else>{{ c.last_preview || '（无内容）' }}</p>
-              <div class="sw-conv-meta">
-                <em v-if="c.awaiting_staff_since" :class="{ hot: c.overdue }">{{ waitLabel(c) }}</em>
-                <span>{{ c.status === 'closed' ? '已关闭' : '进行中' }}</span>
+              <strong>{{ c.user_email || `#${c.user_id}` }}</strong>
+              <em>{{ waitLabel(c) }}</em>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <div
+        class="sw-splitter"
+        :class="stacked ? 'sw-splitter--row' : 'sw-splitter--col'"
+        :title="stacked ? '拖拽调整队列高度' : '拖拽调整队列宽度'"
+        @mousedown="startResize(stacked ? 'queueRow' : 'queue', $event)"
+      />
+
+      <section class="sw-list-pane">
+        <header class="sw-list-toolbar">
+          <div class="sw-filters">
+            <span class="sw-chip">{{ STATUS_LABEL[status] || '全部' }}</span>
+            <span class="sw-chip muted">实时长轮询</span>
+          </div>
+          <span class="sw-list-total">共 {{ total }} 条</span>
+        </header>
+        <ul class="sw-cards">
+          <li v-if="loadingList && !list.length" class="sw-empty" role="status">加载中…</li>
+          <li v-else-if="!list.length" class="sw-empty">暂无会话</li>
+          <li v-for="c in list" :key="c.id">
+            <button
+              type="button"
+              class="sw-card"
+              :class="{ on: c.id === selectedId, overdue: c.overdue }"
+              :aria-current="c.id === selectedId ? 'true' : undefined"
+              @click="openConversation(c.id)"
+            >
+              <div class="sw-card-avatar" :data-tone="priorityOf(c).tone">{{ avatarText(c) }}</div>
+              <div class="sw-card-main">
+                <div class="sw-card-top">
+                  <strong>{{ c.user_email || `用户 #${c.user_id}` }}</strong>
+                  <span class="sw-tag" :data-tone="priorityOf(c).tone">{{ priorityOf(c).label }}</span>
+                  <span v-if="c.staff_unread_count" class="sw-dot">{{ c.staff_unread_count }}</span>
+                  <time>{{ relativeTime(c.last_message_at) }}</time>
+                </div>
+                <p v-if="c.peer_typing || c.user_typing" class="sw-typing-hint">对方正在输入…</p>
+                <p v-else class="sw-card-preview">{{ c.last_preview || '（无内容）' }}</p>
+                <div class="sw-card-meta">
+                  <span>#{{ c.id }}</span>
+                  <span>{{ c.last_sender === 'user' ? '用户留言' : c.last_sender === 'staff' ? '官方已回' : '系统消息' }}</span>
+                  <em v-if="c.awaiting_staff_since" :class="{ hot: c.overdue }">{{ waitLabel(c) }}</em>
+                </div>
               </div>
             </button>
           </li>
         </ul>
-        <footer class="sw-list-foot">共 {{ total }} 条</footer>
-      </aside>
+      </section>
 
-      <main class="sw-pane sw-thread">
-        <template v-if="selectedId">
-          <header class="sw-thread-head">
-            <div class="sw-thread-title">
-              <strong :title="activeConversation?.user_email || `会话 #${selectedId}`">
-                {{ activeConversation?.user_email || `会话 #${selectedId}` }}
-              </strong>
-              <span>#{{ selectedId }}</span>
-              <em v-if="peerTyping" class="sw-peer-typing">对方正在输入…</em>
-            </div>
-            <button
-              v-if="activeConversation && activeConversation.status !== 'closed'"
-              type="button"
-              class="btn btn-secondary btn-sm"
-              @click="closeConversation"
-            >
-              结束会话
-            </button>
-            <span v-else-if="activeConversation" class="sw-closed-tag">已结束</span>
-          </header>
-          <div
-            ref="listEl"
-            class="sw-msgs"
-            tabindex="0"
-            aria-label="会话消息"
-            :aria-busy="loadingThread"
-            @scroll="onMessagesScroll"
-          >
-            <p v-if="loadingThread" class="sw-empty" role="status">加载中…</p>
-            <div v-else-if="threadError" class="sw-thread-error" role="alert">
-              <p>{{ threadError }}</p>
-              <button type="button" class="btn btn-secondary btn-sm" @click="openConversation(selectedId)">重试</button>
-            </div>
-            <p v-else-if="!messages.length" class="sw-empty">暂无消息</p>
-            <div
-              v-for="m in messages"
-              :key="m.id"
-              class="sw-msg"
-              :class="{
-                staff: m.sender === 'staff',
-                user: m.sender === 'user',
-                sys: m.sender === 'system',
-              }"
-            >
-              <div class="sw-bubble">
-                <p>{{ m.body }}</p>
-                <div class="sw-meta">
-                  <time>{{ fmtTime(m.created_at) }} · {{ m.sender === 'user' ? '用户' : m.sender === 'staff' ? '官方' : '系统' }}</time>
-                  <span v-if="receiptOf(m)" class="sw-read" :class="{ on: receiptOf(m) === '已读' }">{{ receiptOf(m) }}</span>
+      <div
+        class="sw-splitter"
+        :class="stacked ? 'sw-splitter--row' : 'sw-splitter--col'"
+        :title="stacked ? '拖拽调整列表高度' : '拖拽调整列表宽度'"
+        @mousedown="startResize(stacked ? 'listRow' : 'list', $event)"
+      />
+
+      <main class="sw-detail">
+        <template v-if="selected">
+          <header class="sw-detail-head">
+            <div class="sw-detail-user">
+              <div class="sw-card-avatar lg" :data-tone="priorityOf(selected).tone">{{ avatarText(selected) }}</div>
+              <div>
+                <strong>{{ selected.user_email || (selected.user_id ? `用户 #${selected.user_id}` : `会话 #${selected.id}`) }}</strong>
+                <div class="sw-detail-tags">
+                  <span class="sw-tag" :data-tone="priorityOf(selected).tone">{{ priorityOf(selected).label }}</span>
+                  <span class="sw-tag muted">#{{ selected.id }}</span>
+                  <em v-if="peerTyping" class="sw-peer-typing">对方正在输入…</em>
                 </div>
               </div>
             </div>
-            <div v-if="peerTyping && !loadingThread && !threadError" class="sw-msg user">
-              <div class="sw-bubble sw-typing-dots"><span /><span /><span /></div>
+            <div class="sw-detail-actions">
+              <button
+                type="button"
+                class="sw-btn ghost"
+                :disabled="!activeConversation || loadingThread"
+                @click="openHistory"
+              >
+                全部聊天记录
+              </button>
+              <button
+                v-if="activeConversation && selected.status !== 'closed'"
+                type="button"
+                class="sw-btn ghost sw-close-conversation"
+                @click="closeConversation"
+              >
+                结束会话
+              </button>
+              <span v-else-if="activeConversation" class="sw-closed-tag">已结束</span>
             </div>
+          </header>
+
+          <div class="sw-detail-tabs">
+            <button
+              type="button"
+              :class="{ on: detailTab === 'thread' }"
+              :aria-pressed="detailTab === 'thread'"
+              @click="detailTab = 'thread'"
+            >
+              会话详情
+            </button>
+            <button
+              type="button"
+              :class="{ on: detailTab === 'customer' }"
+              :aria-pressed="detailTab === 'customer'"
+              @click="detailTab = 'customer'"
+            >
+              客户信息
+            </button>
           </div>
-          <div v-if="hasNewMessages" class="sw-new-messages">
-            <button type="button" class="btn btn-secondary btn-sm" @click="jumpToLatest">新消息，跳到最新</button>
-          </div>
-          <p class="sw-sr-only" role="status" aria-live="polite" aria-atomic="true">{{ newMessageAnnouncement }}</p>
-          <footer class="sw-compose">
-            <div class="sw-compose-input">
+
+          <div v-if="detailTab === 'thread'" class="sw-detail-body">
+            <div
+              ref="listEl"
+              class="sw-msgs"
+              tabindex="0"
+              aria-label="会话消息"
+              :aria-busy="loadingThread"
+              @scroll="onMessagesScroll"
+            >
+              <p v-if="loadingThread" class="sw-empty" role="status">加载中…</p>
+              <div v-else-if="threadError" class="sw-thread-error" role="alert">
+                <p>{{ threadError }}</p>
+                <button type="button" class="sw-btn ghost" @click="openConversation(selectedId)">重试</button>
+              </div>
+              <p v-else-if="!chatMessages.length" class="sw-empty">暂无消息</p>
+              <div
+                v-for="m in chatMessages"
+                :key="m.id"
+                class="sw-msg"
+                :class="{ staff: m.sender === 'staff', user: m.sender === 'user' }"
+              >
+                <div class="sw-bubble">
+                  <p>{{ m.body }}</p>
+                  <div class="sw-meta">
+                    <time>{{ fmtTime(m.created_at) }} · {{ m.sender === 'user' ? '用户' : '官方' }}</time>
+                    <span v-if="receiptOf(m)" class="sw-read" :class="{ on: receiptOf(m) === '已读' }">{{ receiptOf(m) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-if="peerTyping && !loadingThread && !threadError" class="sw-msg user">
+                <div class="sw-bubble sw-typing-dots"><span /><span /><span /></div>
+              </div>
+            </div>
+            <div v-if="hasNewMessages" class="sw-new-messages">
+              <button type="button" class="sw-btn ghost" @click="jumpToLatest">新消息，跳到最新</button>
+            </div>
+
+            <div
+              class="sw-splitter sw-splitter--row sw-splitter--inpane"
+              title="拖拽调整输入区高度"
+              @mousedown="startResize('compose', $event)"
+            />
+            <footer class="sw-compose" :style="{ height: `${composeH}px` }">
               <textarea
                 v-model="draft"
-                rows="3"
                 maxlength="2000"
                 aria-label="回复用户"
                 aria-describedby="sw-draft-meta"
-                placeholder="回复用户，Enter 发送"
-                :disabled="!activeConversation || loadingThread || !!threadError || activeConversation.status === 'closed'"
+                placeholder="输入回复内容，Enter 发送，Shift+Enter 换行"
+                :disabled="!activeConversation || loadingThread || !!threadError || selected.status === 'closed'"
                 @input="onDraftInput"
                 @keydown="onKey"
               />
-              <div id="sw-draft-meta" class="sw-draft-meta">草稿按会话保留 · {{ draft.length }} / 2000</div>
-            </div>
-            <button
-              type="button"
-              class="btn btn-primary"
-              :disabled="sending || !draft.trim() || !activeConversation || loadingThread || !!threadError || activeConversation.status === 'closed'"
-              @click="send"
-            >
-              {{ sending ? '发送中…' : '发送' }}
-            </button>
-          </footer>
-        </template>
-        <div v-else class="sw-empty tall">选择左侧会话开始回复</div>
-      </main>
+              <div class="sw-compose-bar">
+                <span id="sw-draft-meta">草稿按会话保留 · {{ draft.length }}/2000</span>
+                <button
+                  type="button"
+                  class="sw-btn primary"
+                  :disabled="sending || !draft.trim() || !activeConversation || loadingThread || !!threadError || selected.status === 'closed'"
+                  @click="send"
+                >
+                  {{ sending ? '发送中…' : '回复' }}
+                </button>
+              </div>
+            </footer>
 
-      <aside class="sw-pane sw-alerts">
-        <h3>预警</h3>
-        <dl class="sw-stats">
-          <div>
-            <dt>待回复</dt>
-            <dd :class="{ hot: alerts?.pending_alert_fired }">{{ alerts?.pending_count ?? '—' }}</dd>
+            <template v-if="systemLogs.length">
+              <div
+                class="sw-splitter sw-splitter--row sw-splitter--inpane"
+                title="拖拽调整处理记录高度"
+                @mousedown="startResize('log', $event)"
+              />
+              <section class="sw-log" :style="{ height: `${logH}px` }">
+                <h4>处理记录</h4>
+                <ol>
+                  <li v-for="m in systemLogs" :key="m.id">
+                    <i />
+                    <div>
+                      <p>{{ m.body }}</p>
+                      <time>{{ fmtTime(m.created_at) }}</time>
+                    </div>
+                  </li>
+                </ol>
+              </section>
+            </template>
           </div>
-          <div>
-            <dt>已超时</dt>
-            <dd :class="{ hot: (alerts?.overdue_count ?? 0) > 0 }">{{ alerts?.overdue_count ?? '—' }}</dd>
+
+          <div v-else class="sw-customer">
+            <dl>
+              <div><dt>邮箱</dt><dd>{{ selected.user_email || '—' }}</dd></div>
+              <div><dt>用户 ID</dt><dd>{{ selected.user_id || '—' }}</dd></div>
+              <div><dt>会话 ID</dt><dd>{{ selected.id }}</dd></div>
+              <div><dt>状态</dt><dd>{{ priorityOf(selected).label }}</dd></div>
+              <div><dt>最近消息</dt><dd>{{ fmtTime(selected.last_message_at) || '—' }}</dd></div>
+              <div><dt>等待时长</dt><dd>{{ waitLabel(selected) || '—' }}</dd></div>
+              <div><dt>未读</dt><dd>{{ selected.staff_unread_count }}</dd></div>
+            </dl>
           </div>
-          <div>
-            <dt>阈值</dt>
-            <dd>{{ alerts?.pending_alert_threshold ?? 5 }} / {{ alerts?.reply_timeout_minutes ?? 15 }}分</dd>
-          </div>
-        </dl>
-        <h4>超时会话</h4>
-        <ul class="sw-overdue">
-          <li v-if="!(alerts?.overdue_conversations?.length)" class="sw-empty">暂无</li>
-          <li v-for="c in alerts?.overdue_conversations || []" :key="c.id">
-            <button
-              type="button"
-              class="sw-overdue-button"
-              :aria-current="c.id === selectedId ? 'true' : undefined"
-              @click="openConversation(c.id)"
-            >
-              <strong :title="c.user_email || `#${c.user_id}`">{{ c.user_email || `#${c.user_id}` }}</strong>
-              <span>{{ waitLabel(c) }}</span>
-              <p>{{ c.last_preview }}</p>
-            </button>
-          </li>
-        </ul>
-      </aside>
+        </template>
+        <div v-else class="sw-empty tall">
+          <p>从中间列表选择一条会话开始处理</p>
+        </div>
+        <p class="sw-sr-only" role="status" aria-live="polite" aria-atomic="true">{{ newMessageAnnouncement }}</p>
+      </main>
     </div>
 
     <ConfirmDialog
@@ -716,6 +1086,7 @@ onUnmounted(() => {
       :message="`确认结束与 ${activeConversation?.user_email || `会话 #${selectedId}`} 的会话？用户仍可再发消息重新打开。`"
       confirm-text="确认结束"
       cancel-text="取消"
+      busy-text="结束中…"
       danger
       :busy="closing"
       @confirm="confirmCloseConversation"
@@ -723,270 +1094,740 @@ onUnmounted(() => {
     >
       <p v-if="closeConfirmationOpen && error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
     </ConfirmDialog>
+
+    <Teleport to="body">
+      <div
+        v-if="historyOpen && selected"
+        class="sw-history-mask"
+        @click.self="closeHistory"
+      >
+        <div class="sw-history" role="dialog" aria-modal="true" aria-label="全部聊天记录">
+          <header class="sw-history-head">
+            <div>
+              <strong>全部聊天记录</strong>
+              <p>
+                {{ selected.user_email || `用户 #${selected.user_id}` }}
+                · #{{ selected.id }}
+                · 共 {{ messages.length }} 条
+              </p>
+            </div>
+            <button type="button" class="sw-history-x" aria-label="关闭" @click="closeHistory">×</button>
+          </header>
+          <div ref="historyEl" class="sw-history-body">
+            <p v-if="!messages.length" class="sw-empty">暂无消息</p>
+            <div
+              v-for="m in messages"
+              :key="`h-${m.id}`"
+              class="sw-history-row"
+              :class="m.sender"
+            >
+              <div class="sw-history-bubble">
+                <div class="sw-history-meta">
+                  <b>{{ senderLabel(m.sender) }}</b>
+                  <time>{{ fmtTime(m.created_at) }}</time>
+                  <span class="sw-history-id">#{{ m.id }}</span>
+                </div>
+                <p>{{ m.body }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </section>
 </template>
 
 <style scoped>
 .sw-shell {
+  --sw-bg: var(--color-bg-secondary, #f3f5f9);
+  --sw-card: var(--color-bg-elevated, var(--color-surface, #fff));
+  --sw-line: var(--color-border, #e8ecf2);
+  --sw-text: var(--color-text-primary, #1f2937);
+  --sw-muted: var(--color-text-secondary, #8b95a7);
+  --sw-primary: var(--color-primary, #3b82f6);
+  --sw-primary-soft: var(--color-bg-secondary, #eff6ff);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-  color: var(--color-text-primary, #0f172a);
-}
-.sw-shell > .y-header,
-.sw-shell > .sw-banner,
-.sw-shell > .y-msg {
-  flex-shrink: 0;
-}
-.sw-shell > .y-header .page-heading {
+  gap: 10px;
   flex: 1;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  color: var(--sw-text);
+}
+.sw-top {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr auto;
+  gap: 14px;
+  align-items: center;
+}
+.sw-top-title h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.sw-top-title p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--sw-muted);
+}
+.sw-top-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--sw-line);
+  border-radius: 10px;
+  background: var(--sw-card);
+}
+.sw-search-ico { color: var(--sw-muted); flex-shrink: 0; }
+.sw-top-search input {
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
   min-width: 0;
 }
-.sw-shell > .y-header .y-header-actions,
-.sw-shell > .y-header .page-action-btn {
-  flex-shrink: 0;
-}
-.sw-shell > .y-header .page-action-btn {
+.sw-link-btn {
+  border: 0;
+  background: transparent;
+  color: var(--sw-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
   white-space: nowrap;
 }
+.sw-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.sw-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--sw-line);
+  border-radius: 10px;
+  background: var(--sw-card);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sw-refresh:disabled { opacity: 0.6; cursor: not-allowed; }
 .sw-banner {
+  flex-shrink: 0;
   padding: 10px 14px;
-  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.08));
+  border: 1px solid var(--sw-line);
   border-radius: 10px;
   background: var(--color-bg-secondary, #fff7ed);
   color: var(--color-warning, #9a3412);
   font-size: 13px;
   font-weight: 600;
 }
-.sw-banner.hot { color: var(--color-error, #b91c1c); }
-.sw-grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(200px, 240px);
-  gap: 12px;
-  min-height: 0;
+.sw-banner.hot {
+  background: var(--color-bg-secondary, #fef2f2);
+  color: var(--color-error, #b91c1c);
 }
-.sw-pane {
-  background: var(--color-bg-elevated, var(--color-surface, #fff));
-  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.08));
+.sw-metrics-wrap {
+  flex-shrink: 0;
+  min-height: 52px;
+  overflow: hidden;
+}
+.sw-metric-row {
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  overflow: auto;
+}
+.sw-splitter {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  touch-action: none;
+}
+.sw-splitter--col {
+  width: 8px;
+  margin: 0 -4px;
+  cursor: col-resize;
+}
+.sw-splitter--row {
+  height: 8px;
+  margin: -2px 0;
+  cursor: row-resize;
+  flex-shrink: 0;
+}
+.sw-splitter--inpane {
+  margin: 0;
+  background: transparent;
+  border-top: 1px solid var(--sw-line);
+}
+.sw-splitter::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+.sw-splitter--col::after {
+  top: 18%;
+  bottom: 18%;
+  left: 3px;
+  right: 3px;
+}
+.sw-splitter--row::after {
+  left: 28%;
+  right: 28%;
+  top: 3px;
+  bottom: 3px;
+}
+.sw-splitter:hover::after,
+.sw-splitter:active::after {
+  background: #93c5fd;
+}
+.sw-metric {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
   border-radius: 12px;
+  background: var(--sw-card);
+  border: 1px solid var(--sw-line);
+}
+.sw-metric-ico {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #f1f5f9;
+  color: var(--sw-muted);
+  flex-shrink: 0;
+}
+.sw-metric.blue .sw-metric-ico { background: #eff6ff; color: #2563eb; }
+.sw-metric.red .sw-metric-ico { background: #fef2f2; color: #dc2626; }
+.sw-metric.amber .sw-metric-ico { background: #fffbeb; color: #d97706; }
+.sw-metric.violet .sw-metric-ico { background: #f5f3ff; color: #7c3aed; }
+.sw-metric.slate .sw-metric-ico { background: var(--color-bg-secondary, #f8fafc); color: var(--sw-muted); }
+.sw-metric.cyan .sw-metric-ico { background: #ecfeff; color: #0891b2; }
+.sw-metric-body {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sw-metric-body span {
+  font-size: 12px;
+  color: var(--sw-muted);
+}
+.sw-metric-body strong {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+.sw-metric-body em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--sw-muted);
+}
+.sw-board {
+  flex: 1;
+  min-height: 0;
+  display: grid;
   overflow: hidden;
+  align-items: stretch;
+}
+.sw-queue,
+.sw-list-pane,
+.sw-detail {
+  background: var(--sw-card);
+  border: 1px solid var(--sw-line);
+  border-radius: 12px;
   min-width: 0;
   min-height: 0;
-}
-.sw-tabs {
+  height: 100%;
+  overflow: hidden;
   display: flex;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-  gap: 4px;
-  padding: 10px 10px 6px;
-  border-bottom: 1px solid var(--color-border, rgba(15, 23, 42, 0.06));
+  flex-direction: column;
 }
-.sw-tabs button {
-  border: none;
+.sw-queue-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 14px 8px;
+  border: 0;
   background: transparent;
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  color: var(--color-text-secondary, #64748b);
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
 }
-.sw-tabs button.on {
-  background: var(--color-primary, #0555ce);
-  color: #fff;
+.sw-queue-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 8px 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.sw-queue-label {
+  margin: 10px 8px 6px;
+  font-size: 11px;
+  color: var(--sw-muted);
+  font-weight: 600;
+}
+.sw-queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font-size: 13px;
+  color: var(--sw-muted);
+  cursor: pointer;
+  text-align: left;
+}
+.sw-queue-item:hover { background: var(--color-bg-secondary, #f8fafc); }
+.sw-queue-item.on {
+  background: var(--sw-primary-soft);
+  color: var(--sw-primary);
   font-weight: 700;
 }
-.sw-search {
+.sw-queue-item b {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: var(--sw-muted);
+  font-size: 11px;
+  display: inline-grid;
+  place-items: center;
+}
+.sw-queue-item.on b {
+  background: #dbeafe;
+  color: #2563eb;
+}
+.sw-queue-mini {
   display: flex;
-  flex-shrink: 0;
-  gap: 6px;
-  padding: 8px 10px;
-}
-.sw-search input {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.12));
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  background: #fff7ed;
   border-radius: 8px;
-  background: var(--color-bg-elevated, #fff);
-  color: var(--color-text-primary, #0f172a);
-  padding: 6px 8px;
-  font-size: 12px;
+  padding: 8px 10px;
+  margin: 0 0 6px;
+  cursor: pointer;
+  text-align: left;
 }
-.sw-convs {
+.sw-queue-mini strong {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sw-queue-mini em {
+  font-style: normal;
+  font-size: 11px;
+  color: #dc2626;
+  font-weight: 700;
+}
+.sw-list-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--sw-line);
+}
+.sw-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.sw-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: var(--sw-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.sw-chip.muted { color: var(--sw-muted); font-weight: 500; }
+.sw-list-total { font-size: 12px; color: var(--sw-muted); }
+.sw-cards {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 8px;
+  overflow-x: hidden;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.sw-convs li { border-bottom: 1px solid var(--color-border, rgba(15, 23, 42, 0.05)); }
-.sw-convs li:hover { background: var(--color-bg-secondary, #f8fafc); }
-.sw-convs li.on {
-  background: var(--color-bg-secondary, #eff6ff);
-  box-shadow: inset 3px 0 0 var(--color-primary, #0555ce);
-}
-.sw-convs li.overdue { box-shadow: inset 3px 0 0 var(--color-error, #dc2626); }
-.sw-convs li.typing { background: var(--color-bg-secondary, #fffbeb); }
-.sw-conv-button,
-.sw-overdue-button {
-  display: block;
+.sw-card {
+  display: flex;
   width: 100%;
   margin: 0;
-  border: 0;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
   background: transparent;
-  color: inherit;
+  color: var(--sw-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
-.sw-conv-button { padding: 10px 12px; }
-.sw-conv-button:focus-visible,
-.sw-overdue-button:focus-visible {
-  outline: 2px solid var(--color-primary, #0555ce);
+.sw-card:focus-visible,
+.sw-queue-mini:focus-visible {
+  outline: 2px solid var(--sw-primary);
   outline-offset: -2px;
 }
-.sw-conv-top {
+.sw-card:hover { background: var(--color-bg-secondary, #f8fafc); }
+.sw-card.on {
+  background: var(--sw-primary-soft);
+  border-color: #dbeafe;
+}
+.sw-card.overdue { box-shadow: inset 3px 0 0 #ef4444; }
+.sw-card-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  background: #60a5fa;
+  flex-shrink: 0;
+}
+.sw-card-avatar.lg { width: 42px; height: 42px; font-size: 15px; }
+.sw-card-avatar[data-tone='danger'] { background: #f87171; }
+.sw-card-avatar[data-tone='warn'] { background: #fb923c; }
+.sw-card-avatar[data-tone='info'] { background: #60a5fa; }
+.sw-card-avatar[data-tone='muted'] { background: #94a3b8; }
+.sw-card-main { min-width: 0; flex: 1; }
+.sw-card-top {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  margin-bottom: 4px;
 }
-.sw-conv-top strong {
-  flex: 1;
+.sw-card-top strong {
+  font-size: 13px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sw-conv-top time {
-  flex-shrink: 0;
+.sw-card-top time {
+  margin-left: auto;
   font-size: 11px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--sw-muted);
+  white-space: nowrap;
 }
+.sw-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #eef2ff;
+  color: #4f46e5;
+  white-space: nowrap;
+}
+.sw-tag[data-tone='danger'] { background: #fef2f2; color: #dc2626; }
+.sw-tag[data-tone='warn'] { background: #fff7ed; color: #ea580c; }
+.sw-tag[data-tone='info'] { background: #eff6ff; color: #2563eb; }
+.sw-tag[data-tone='muted'],
+.sw-tag.muted { background: #f1f5f9; color: var(--sw-muted); }
 .sw-dot {
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--color-error, #dc2626);
+  background: #ef4444;
   color: #fff;
   font-size: 10px;
   font-weight: 800;
-  display: grid;
+  display: inline-grid;
   place-items: center;
 }
-.sw-convs p {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+.sw-card-preview,
+.sw-typing-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--sw-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sw-typing-hint { color: var(--color-warning, #b45309) !important; font-weight: 600; }
-.sw-conv-meta {
+.sw-typing-hint { color: #d97706; font-weight: 600; }
+.sw-card-meta {
   display: flex;
-  justify-content: space-between;
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--color-text-secondary, #64748b);
-}
-.sw-conv-meta em { font-style: normal; color: var(--color-warning, #c2410c); font-weight: 700; }
-.sw-conv-meta em.hot { color: var(--color-error, #dc2626); }
-.sw-list-foot {
-  flex-shrink: 0;
-  padding: 8px 12px;
-  font-size: 11px;
-  color: var(--color-text-secondary, #64748b);
-  border-top: 1px solid var(--color-border, rgba(15, 23, 42, 0.06));
-}
-.sw-thread-head {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--color-border, rgba(15, 23, 42, 0.06));
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--sw-muted);
 }
-.sw-thread-title {
+.sw-card-meta em {
+  font-style: normal;
+  color: #ea580c;
+  font-weight: 700;
+}
+.sw-card-meta em.hot { color: #dc2626; }
+.sw-detail-head {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--sw-line);
+}
+.sw-detail-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
-.sw-thread-title strong {
-  flex: 0 1 auto;
-  min-width: 0;
+.sw-detail-user strong {
+  display: block;
+  font-size: 15px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
 }
-.sw-thread-title span {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+.sw-detail-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
 }
-.sw-thread-head > .btn { flex-shrink: 0; }
 .sw-peer-typing {
   font-style: normal;
   font-size: 12px;
-  color: var(--color-warning, #b45309);
+  color: #d97706;
   font-weight: 600;
 }
 .sw-closed-tag {
-  flex-shrink: 0;
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--sw-muted);
   font-weight: 600;
+}
+.sw-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--sw-line);
+  background: var(--sw-card);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sw-history-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.sw-history {
+  width: min(720px, 100%);
+  height: min(780px, calc(100vh - 48px));
+  background: var(--sw-card);
+  border-radius: 14px;
+  border: 1px solid var(--sw-line);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.22);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sw-history-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--sw-line);
+  background: var(--color-bg-secondary, #f8fafc);
+}
+.sw-history-head strong {
+  font-size: 16px;
+  font-weight: 700;
+}
+.sw-history-head p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--sw-muted);
+}
+.sw-history-x {
+  border: 0;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--sw-muted);
+  cursor: pointer;
+  padding: 0 4px;
+}
+.sw-history-x:hover { color: #1f2937; }
+.sw-history-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--color-bg-secondary, #f8fafc);
+}
+.sw-history-row {
+  display: flex;
+}
+.sw-history-row.staff { justify-content: flex-end; }
+.sw-history-row.user,
+.sw-history-row.system { justify-content: flex-start; }
+.sw-history-bubble {
+  max-width: 86%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--sw-card);
+  border: 1px solid var(--sw-line);
+}
+.sw-history-row.staff .sw-history-bubble {
+  background: var(--sw-primary);
+  border-color: transparent;
+  color: #fff;
+}
+.sw-history-row.system .sw-history-bubble {
+  background: #eef2ff;
+  border-color: transparent;
+  color: #4338ca;
+}
+.sw-history-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.sw-history-meta b {
+  font-size: 12px;
+  font-weight: 700;
+}
+.sw-history-meta time,
+.sw-history-id {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.sw-history-bubble p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sw-btn.ghost:hover { background: var(--color-bg-secondary, #f8fafc); }
+.sw-btn.primary {
+  border-color: transparent;
+  background: var(--sw-primary);
+  color: #fff;
+}
+.sw-btn.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sw-detail-tabs {
+  flex-shrink: 0;
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--sw-line);
+}
+.sw-detail-tabs button {
+  border: 0;
+  background: transparent;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--sw-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.sw-detail-tabs button.on {
+  color: var(--sw-primary);
+  font-weight: 700;
+  border-bottom-color: var(--sw-primary);
+}
+.sw-detail-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .sw-msgs {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
-  padding: 14px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   background: var(--color-bg-secondary, #f8fafc);
 }
 .sw-msgs:focus-visible {
-  outline: 2px solid var(--color-primary, #0555ce);
+  outline: 2px solid var(--sw-primary);
   outline-offset: -2px;
 }
 .sw-msg { display: flex; }
 .sw-msg.staff { justify-content: flex-end; }
-.sw-msg.user, .sw-msg.sys { justify-content: flex-start; }
+.sw-msg.user { justify-content: flex-start; }
 .sw-bubble {
-  max-width: 78%;
-  padding: 8px 11px;
+  max-width: 82%;
+  padding: 9px 12px;
   border-radius: 12px;
-  background: var(--color-bg-elevated, #fff);
-  color: var(--color-text-primary, #0f172a);
-  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.06));
+  background: var(--sw-card);
+  color: var(--sw-text);
+  border: 1px solid var(--sw-line);
   overflow-wrap: anywhere;
 }
 .sw-msg.staff .sw-bubble {
-  background: var(--color-primary, #0555ce);
+  background: var(--sw-primary);
   border-color: transparent;
   color: #fff;
-}
-.sw-msg.sys .sw-bubble {
-  background: var(--color-bg-secondary, #eef2ff);
-  color: var(--color-primary, #4338ca);
 }
 .sw-bubble p {
   margin: 0;
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -999,8 +1840,8 @@ onUnmounted(() => {
 }
 .sw-meta time { font-size: 10px; opacity: 0.78; }
 .sw-read { font-size: 10px; opacity: 0.78; }
-.sw-read.on { opacity: 1; font-weight: 700; }
-.sw-msg.user .sw-read.on { color: var(--color-success, #15803d); }
+.sw-read.on { opacity: 1; font-weight: 700; color: #bbf7d0; }
+.sw-msg.user .sw-read.on { color: var(--color-success, #16a34a); }
 .sw-typing-dots {
   display: inline-flex;
   gap: 4px;
@@ -1012,7 +1853,7 @@ onUnmounted(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--color-text-secondary, #64748b);
+  background: var(--sw-muted);
   animation: sw-bounce 1.2s infinite ease-in-out;
 }
 .sw-typing-dots span:nth-child(2) { animation-delay: 0.15s; }
@@ -1033,8 +1874,8 @@ onUnmounted(() => {
   flex-shrink: 0;
   justify-content: center;
   padding: 6px;
-  border-top: 1px solid var(--color-border, rgba(15, 23, 42, 0.06));
-  background: var(--color-bg-elevated, #fff);
+  border-top: 1px solid var(--sw-line);
+  background: var(--sw-card);
 }
 .sw-sr-only {
   position: absolute;
@@ -1048,124 +1889,160 @@ onUnmounted(() => {
   border: 0;
 }
 .sw-compose {
-  display: grid;
   flex-shrink: 0;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--color-border, rgba(15, 23, 42, 0.06));
-  background: var(--color-bg-elevated, #fff);
-}
-.sw-compose-input { min-width: 0; }
-.sw-compose textarea {
-  display: block;
-  width: 100%;
+  padding: 12px 14px;
+  background: var(--sw-card);
   min-height: 72px;
-  max-height: 180px;
-  resize: vertical;
-  border: 1px solid var(--color-border, rgba(15, 23, 42, 0.12));
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.sw-compose textarea {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  border: 1px solid var(--sw-line);
   border-radius: 10px;
-  background: var(--color-bg-elevated, #fff);
-  color: var(--color-text-primary, #0f172a);
-  padding: 8px 10px;
+  background: var(--sw-card);
+  color: var(--sw-text);
+  padding: 10px 12px;
   font: inherit;
   font-size: 13px;
+  outline: none;
 }
-.sw-draft-meta {
-  margin-top: 4px;
-  color: var(--color-text-secondary, #64748b);
-  font-size: 11px;
-  text-align: right;
+.sw-compose textarea:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12); }
+.sw-compose-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
 }
-.sw-alerts { padding: 14px; }
-.sw-alerts h3 { margin: 0 0 10px; font-size: 14px; }
-.sw-alerts h4 {
-  margin: 16px 0 8px;
+.sw-compose-bar span { font-size: 11px; color: var(--sw-muted); }
+.sw-log {
+  flex-shrink: 0;
+  padding: 12px 14px 14px;
+  background: var(--sw-card);
+  min-height: 72px;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.sw-log h4 {
+  margin: 0 0 10px;
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--sw-muted);
   font-weight: 700;
 }
-.sw-stats {
-  display: grid;
-  flex-shrink: 0;
-  gap: 8px;
-  margin: 0;
-}
-.sw-stats > div {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--color-bg-secondary, #f8fafc);
-}
-.sw-stats dt { font-size: 12px; color: var(--color-text-secondary, #64748b); }
-.sw-stats dd { margin: 0; font-size: 18px; font-weight: 800; }
-.sw-stats dd.hot { color: var(--color-error, #dc2626); }
-.sw-overdue {
+.sw-log ol {
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sw-log li {
+  display: flex;
+  gap: 10px;
+}
+.sw-log i {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #93c5fd;
+  flex-shrink: 0;
+}
+.sw-log p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--sw-muted);
+  line-height: 1.4;
+}
+.sw-log time {
+  font-size: 11px;
+  color: var(--sw-muted);
+}
+.sw-customer {
   flex: 1;
   min-height: 0;
+  padding: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
-.sw-overdue li { border-bottom: 1px solid var(--color-border, rgba(15, 23, 42, 0.05)); }
-.sw-overdue-button { padding: 8px 0; }
-.sw-overdue strong {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sw-customer dl {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.sw-customer dl > div {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-bg-secondary, #f8fafc);
+}
+.sw-customer dt {
   font-size: 12px;
+  color: var(--sw-muted);
 }
-.sw-overdue span { float: right; font-size: 11px; color: var(--color-error, #dc2626); font-weight: 700; }
-.sw-overdue p {
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: var(--color-text-secondary, #64748b);
-  clear: both;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sw-customer dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-all;
 }
 .sw-empty {
-  padding: 20px;
+  padding: 28px 16px;
   text-align: center;
   font-size: 13px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--sw-muted);
 }
 .sw-empty.tall {
   flex: 1;
   display: grid;
   place-items: center;
 }
-@media (max-width: 1100px) {
-  .sw-shell {
-    height: auto;
-    min-height: 100%;
-    overflow: visible;
-  }
-  .sw-grid {
-    flex: none;
-    grid-template-columns: minmax(0, 1fr);
-    min-height: 0;
-  }
-  .sw-list { height: 320px; }
-  .sw-thread { height: min(680px, 75dvh); min-height: 420px; }
-  .sw-alerts { height: 300px; }
+.sw-top-search input,
+.sw-refresh,
+.sw-queue-head,
+.sw-btn {
+  color: var(--sw-text);
 }
-@media (min-width: 1101px) and (max-height: 700px) {
-  .sw-shell { gap: 8px; }
-  .sw-thread-head { padding: 8px 12px; }
-  .sw-compose { padding: 8px 12px; }
-  .sw-compose textarea { min-height: 56px; }
+@media (max-width: 1200px) {
+  .sw-metric-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 960px) {
+  .sw-top { grid-template-columns: 1fr; }
+  .sw-metric-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .sw-typing-dots span,
-  .sw-shell .animate-spin { animation: none; }
-  .sw-msgs { scroll-behavior: auto; }
+  .sw-shell .animate-spin {
+    animation: none;
+  }
+  .sw-splitter::after {
+    transition: none;
+  }
+  .sw-msgs {
+    scroll-behavior: auto;
+  }
+}
+</style>
+
+<style>
+/* 本页占满内容区一屏，避免外层整页滚动 */
+.console-body-slot:has(#market-support-page) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.console-body-slot:has(#market-support-page) > * {
+  flex: 1;
+  min-height: 0;
 }
 </style>

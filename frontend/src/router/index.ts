@@ -427,6 +427,19 @@ const routes: RouteRecordRaw[] = [
     }
   },
 
+  // 客服手机快捷页：独立全屏，不进桌面侧栏壳
+  {
+    path: '/admin/market/support-h5',
+    name: 'MarketAdminSupportH5',
+    component: () => import('@/market-admin/SupportMobile.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: '客服快捷回复',
+      titleKey: 'nav.marketSupportMobile',
+    },
+  },
+
   // ==================== 闲猫市场运营（合并进社区管理壳；目录可独立 rebase） ====================
   {
     path: '/admin/market',

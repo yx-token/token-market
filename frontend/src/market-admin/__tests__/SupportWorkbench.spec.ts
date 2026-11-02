@@ -9,6 +9,7 @@ vi.mock('../api', () => ({
   marketSend: api.send,
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 const PREFIX = '/api/v1/admin/market/support'
 
@@ -116,17 +117,21 @@ async function mountPage() {
 }
 
 async function clickConversation(wrapper: VueWrapper, selector: string, id: number) {
-  const item = wrapper
-    .findAll(`${selector} li`)
-    .find((row) => row.text().includes(`user${id}@example.com`))
-  expect(item, `找不到会话 ${id}`).toBeDefined()
-  const target = item!.find('button').exists() ? item!.get('button') : item!
-  await target.trigger('click')
+  const target = wrapper
+    .findAll(`${selector} button`)
+    .find((button) => button.text().includes(`user${id}@example.com`))
+  expect(target, `找不到会话 ${id}`).toBeDefined()
+  await target!.trigger('click')
   await flushPromises()
 }
 
 function messageRequests() {
   return api.send.mock.calls.filter(([, path]) => String(path).endsWith('/messages'))
+}
+
+function currentDialog() {
+  const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"]')
+  return dialogs[dialogs.length - 1]
 }
 
 beforeEach(() => {
@@ -165,9 +170,9 @@ describe('客服工作台竞态与草稿', () => {
     threadMessages[99] = [message(99, 99, '筛选外超时消息')]
     const wrapper = await mountPage()
 
-    await clickConversation(wrapper, '.sw-overdue', 99)
+    await clickConversation(wrapper, '.sw-queue-overdue', 99)
 
-    expect(wrapper.get('.sw-thread-head').text()).toContain('user99@example.com')
+    expect(wrapper.get('.sw-detail-head').text()).toContain('user99@example.com')
     expect(wrapper.get('.sw-msgs').text()).toContain('筛选外超时消息')
   })
 
@@ -181,17 +186,17 @@ describe('客服工作台竞态与草稿', () => {
       return defaultGet(path)
     })
 
-    const pendingSwitch = clickConversation(wrapper, '.sw-convs', 2)
+    const pendingSwitch = clickConversation(wrapper, '.sw-cards', 2)
     await flushPromises()
     expect(wrapper.get('.sw-msgs').text()).not.toContain('会话一消息')
-    const firstSwitch = clickConversation(wrapper, '.sw-convs', 1)
+    const firstSwitch = clickConversation(wrapper, '.sw-cards', 1)
     fastOne.resolve({ conversation: conversation(1), messages: [message(111, 1, '当前会话消息')] })
     await firstSwitch
     slowTwo.resolve({ conversation: conversation(2), messages: [message(222, 2, '迟到会话消息')] })
     await pendingSwitch
     await flushPromises()
 
-    expect(wrapper.get('.sw-thread-head').text()).toContain('user1@example.com')
+    expect(wrapper.get('.sw-detail-head').text()).toContain('user1@example.com')
     expect(wrapper.get('.sw-msgs').text()).toContain('当前会话消息')
     expect(wrapper.get('.sw-msgs').text()).not.toContain('迟到会话消息')
   })
@@ -208,10 +213,10 @@ describe('客服工作台竞态与草稿', () => {
       return defaultGet(path)
     })
 
-    const switching = clickConversation(wrapper, '.sw-convs', 2)
+    const switching = clickConversation(wrapper, '.sw-cards', 2)
     await flushPromises()
     expect(wrapper.get('.sw-msgs').get('[role="status"]').text()).toBe('加载中…')
-    await clickConversation(wrapper, '.sw-convs', 1)
+    await clickConversation(wrapper, '.sw-cards', 1)
     expect(twoSignal?.aborted).toBe(true)
     pendingTwo.reject(new Error('旧请求失败'))
     await switching
@@ -220,13 +225,13 @@ describe('客服工作台竞态与草稿', () => {
 
     api.get.mockImplementation(defaultGet)
     threadMessages[2] = []
-    await clickConversation(wrapper, '.sw-convs', 2)
+    await clickConversation(wrapper, '.sw-cards', 2)
     expect(wrapper.get('.sw-msgs').text()).toContain('暂无消息')
     api.get.mockImplementation((path: string) => {
       if (path === `${PREFIX}/conversations/2`) return Promise.reject(new Error('线程加载失败'))
       return defaultGet(path)
     })
-    await clickConversation(wrapper, '.sw-convs', 2)
+    await clickConversation(wrapper, '.sw-cards', 2)
     expect(wrapper.get('.sw-msgs').get('[role="alert"]').text()).toContain('线程加载失败')
     expect(wrapper.get('.sw-msgs').text()).not.toContain('暂无消息')
   })
@@ -243,7 +248,7 @@ describe('客服工作台竞态与草稿', () => {
     await flushPromises()
     expect(messageRequests()).toHaveLength(1)
 
-    await clickConversation(wrapper, '.sw-convs', 2)
+    await clickConversation(wrapper, '.sw-cards', 2)
     await wrapper.get('textarea').setValue('会话二新输入')
     sendingOne.resolve(message(101, 1, '会话一已发送', 'staff'))
     await flushPromises()
@@ -251,7 +256,7 @@ describe('客服工作台竞态与草稿', () => {
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('会话二新输入')
     expect(wrapper.get('.sw-msgs').text()).toContain('会话二消息')
     expect(wrapper.get('.sw-msgs').text()).not.toContain('会话一已发送')
-    const rows = wrapper.findAll('.sw-convs li')
+    const rows = wrapper.findAll('.sw-cards li')
     expect(rows[0]!.text()).toContain('会话一草稿')
     expect(rows[1]!.text()).not.toContain('会话一草稿')
   })
@@ -294,12 +299,12 @@ describe('客服工作台竞态与草稿', () => {
     const wrapper = await mountPage()
     await wrapper.get('textarea').setValue('会话一未发送')
 
-    await clickConversation(wrapper, '.sw-convs', 2)
+    await clickConversation(wrapper, '.sw-cards', 2)
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('')
     await wrapper.get('textarea').setValue('会话二未发送')
-    await clickConversation(wrapper, '.sw-convs', 1)
+    await clickConversation(wrapper, '.sw-cards', 1)
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('会话一未发送')
-    await clickConversation(wrapper, '.sw-convs', 2)
+    await clickConversation(wrapper, '.sw-cards', 2)
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('会话二未发送')
   })
 
@@ -386,31 +391,66 @@ describe('客服工作台竞态与草稿', () => {
     expect(wrapper.find('.sw-new-messages').exists()).toBe(false)
   })
 
-  it('会话、页签和输入框提供键盘及可访问名称', async () => {
+  it('会话、超时项、页签和输入框提供键盘及可访问名称', async () => {
+    alerts.overdue_count = 1
+    alerts.overdue_conversations = [conversation(1, { overdue: true })]
     const wrapper = await mountPage()
 
-    expect(wrapper.find('.sw-convs li button[aria-current="true"]').exists()).toBe(true)
-    for (const tab of wrapper.findAll('.sw-tabs button')) {
+    expect(wrapper.find('.sw-cards li button[aria-current="true"]').exists()).toBe(true)
+    expect(wrapper.find('.sw-queue-mini[aria-current="true"]').exists()).toBe(true)
+    for (const tab of [...wrapper.findAll('.sw-queue-item'), ...wrapper.findAll('.sw-detail-tabs button')]) {
       expect(tab.attributes('aria-pressed')).toBeDefined()
     }
+    expect(wrapper.get('.sw-msgs').attributes('tabindex')).toBe('0')
     expect(wrapper.get('input[type="search"]').attributes('aria-label')).toBeTruthy()
     expect(wrapper.get('textarea').attributes('aria-label')).toBeTruthy()
   })
 
-  it('取消结束会话时不发送关闭请求', async () => {
+  it('取消结束会话时不发送关闭请求，确认操作使用危险样式', async () => {
     const wrapper = await mountPage()
-    await wrapper.get('.sw-thread-head button').trigger('click')
+    await wrapper.get('.sw-close-conversation').trigger('click')
     await flushPromises()
 
-    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')
+    const dialog = currentDialog()
     expect(dialog?.textContent).toContain('user1@example.com')
-    const cancel = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
-      (button) => button.textContent?.trim() === '取消',
-    )
+    const buttons = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+    const confirm = buttons.find((button) => button.textContent?.trim() === '确认结束')
+    const cancel = buttons.find((button) => button.textContent?.trim() === '取消')
+    expect(confirm?.className).toContain('bg-red-600')
     expect(cancel).toBeDefined()
     cancel!.click()
     await flushPromises()
 
     expect(api.send.mock.calls.some(([, path]) => String(path).endsWith('/close'))).toBe(false)
+  })
+
+  it('结束会话期间展示 busy 并阻止重复请求', async () => {
+    const closing = deferred<Record<string, never>>()
+    api.send.mockImplementation((method: string, path: string) => {
+      if (path.endsWith('/close')) return closing.promise
+      return Promise.resolve({})
+    })
+    const wrapper = await mountPage()
+    await wrapper.get('.sw-close-conversation').trigger('click')
+    await flushPromises()
+
+    const dialog = currentDialog()
+    const confirm = Array.from(dialog?.querySelectorAll<HTMLButtonElement>('button') ?? []).find(
+      (button) => button.textContent?.trim() === '确认结束',
+    )
+    expect(confirm).toBeDefined()
+    confirm!.click()
+    await flushPromises()
+
+    const closeRequests = () => api.send.mock.calls.filter(([, path]) => String(path).endsWith('/close'))
+    expect(closeRequests()).toHaveLength(1)
+    expect(confirm!.textContent).toContain('结束中')
+    expect(confirm!.disabled).toBe(true)
+    confirm!.click()
+    await flushPromises()
+    expect(closeRequests()).toHaveLength(1)
+
+    closing.resolve({})
+    await flushPromises()
   })
 })

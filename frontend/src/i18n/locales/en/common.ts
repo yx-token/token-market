@@ -254,6 +254,7 @@ export default {
     marketCategories: 'Categories',
     marketExtras: 'Shelf Switches',
     marketSupport: 'Support Desk',
+    marketSupportMobile: 'Support Quick Reply',
     marketSupportUnread: 'unread',
     marketSupportPending: 'pending',
     marketSupportOverdue: 'overdue',

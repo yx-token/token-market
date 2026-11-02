@@ -11,6 +11,9 @@ import { useLoginModal } from '@/stores/loginModal'
 const auth = useAuth()
 const loginModal = useLoginModal()
 
+const PANEL_KEY = 'market-support-chat-size-v1'
+type Edge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+
 const open = ref(false)
 const loading = ref(false)
 const sending = ref(false)
@@ -23,11 +26,83 @@ const peerTyping = ref(false)
 const peerReadId = ref(0)
 const status = ref('open')
 const ending = ref(false)
+const panelW = ref(360)
+const panelH = ref(520)
 let syncAbort: AbortController | null = null
-let syncRunning = false
+let syncGen = 0
+/** 同步水位：面板关闭时也要推进，避免 after_id=0 忙等把循环拖死 */
+const syncAfterId = ref(0)
 let typingTimer: ReturnType<typeof setTimeout> | null = null
 let typingSent = false
+let resizeCleanup: (() => void) | null = null
 const listEl = ref<HTMLElement | null>(null)
+
+const panelStyle = computed(() => ({
+  width: `${panelW.value}px`,
+  height: `${panelH.value}px`,
+}))
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n))
+}
+
+function loadPanelSize() {
+  try {
+    const raw = localStorage.getItem(PANEL_KEY)
+    if (!raw) return
+    const o = JSON.parse(raw) as { w?: number; h?: number }
+    if (Number.isFinite(o.w)) panelW.value = clamp(Number(o.w), 280, Math.max(280, window.innerWidth - 24))
+    if (Number.isFinite(o.h)) panelH.value = clamp(Number(o.h), 320, Math.max(320, window.innerHeight - 80))
+  } catch {
+    /* ignore */
+  }
+}
+
+function savePanelSize() {
+  localStorage.setItem(PANEL_KEY, JSON.stringify({ w: panelW.value, h: panelH.value }))
+}
+
+function startPanelResize(edge: Edge, e: MouseEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+  resizeCleanup?.()
+  const startX = e.clientX
+  const startY = e.clientY
+  const startW = panelW.value
+  const startH = panelH.value
+  const maxW = Math.max(280, window.innerWidth - 24)
+  const maxH = Math.max(320, window.innerHeight - 80)
+  const onMove = (ev: MouseEvent) => {
+    const dx = ev.clientX - startX
+    const dy = ev.clientY - startY
+    // 面板右下锚定：左边拉大/缩小宽度，上边拉大/缩小高度
+    if (edge.includes('e')) panelW.value = clamp(startW + dx, 280, maxW)
+    if (edge.includes('w')) panelW.value = clamp(startW - dx, 280, maxW)
+    if (edge.includes('n')) panelH.value = clamp(startH - dy, 320, maxH)
+    if (edge.includes('s')) panelH.value = clamp(startH + dy, 320, maxH)
+  }
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    document.body.style.removeProperty('cursor')
+    document.body.style.removeProperty('user-select')
+    resizeCleanup = null
+    savePanelSize()
+  }
+  const cursor =
+    edge === 'n' || edge === 's'
+      ? 'ns-resize'
+      : edge === 'e' || edge === 'w'
+        ? 'ew-resize'
+        : edge === 'ne' || edge === 'sw'
+          ? 'nesw-resize'
+          : 'nwse-resize'
+  document.body.style.cursor = cursor
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+  resizeCleanup = onUp
+}
 
 const closed = computed(() => status.value === 'closed')
 
@@ -63,6 +138,15 @@ function applyConv(c?: SupportConversation | null) {
   if (!open.value) unread.value = c.user_unread_count ?? 0
 }
 
+function bumpSyncAfter(rows: SupportMessage[]) {
+  let tip = syncAfterId.value
+  for (const m of rows) {
+    if (m.id > tip) tip = m.id
+  }
+  if (lastId.value > tip) tip = lastId.value
+  syncAfterId.value = tip
+}
+
 async function scrollBottom() {
   await nextTick()
   const el = listEl.value
@@ -70,21 +154,20 @@ async function scrollBottom() {
 }
 
 function stopSync() {
-  syncRunning = false
+  syncGen += 1
   syncAbort?.abort()
   syncAbort = null
 }
 
 async function syncLoop() {
-  if (syncRunning) return
-  syncRunning = true
-  while (syncRunning && auth.loggedIn) {
+  const gen = ++syncGen
+  while (gen === syncGen && auth.loggedIn) {
     const ac = new AbortController()
     syncAbort = ac
     try {
       const bundle = await support.sync(
         {
-          after_id: lastId.value,
+          after_id: Math.max(lastId.value, syncAfterId.value),
           peer_read: peerReadId.value,
           peer_typing: peerTyping.value,
           unread: unread.value,
@@ -93,9 +176,11 @@ async function syncLoop() {
         },
         ac.signal,
       )
-      if (!syncRunning) break
+      if (gen !== syncGen) break
+      const prevUnread = unread.value
       applyConv(bundle.conversation)
       const rows = bundle.messages ?? []
+      bumpSyncAfter(rows)
       if (open.value && rows.length) {
         const known = new Set(messages.value.map((m) => m.id))
         const add = rows.filter((m) => !known.has(m.id))
@@ -106,14 +191,19 @@ async function syncLoop() {
         await support.markRead().catch(() => null)
         unread.value = 0
       } else if (!open.value) {
-        unread.value = bundle.conversation?.user_unread_count ?? unread.value
+        const nextUnread = bundle.conversation?.user_unread_count ?? unread.value
+        unread.value = nextUnread
+        // 有新的官方未读时自动弹出，便于用户立刻看到回复
+        if (nextUnread > prevUnread || (nextUnread > 0 && rows.some((m) => m.sender === 'staff'))) {
+          open.value = true
+          await ensureLoaded()
+        }
       }
-    } catch (e) {
-      if (!syncRunning || ac.signal.aborted) break
+    } catch {
+      if (gen !== syncGen) break
       await new Promise((r) => setTimeout(r, 600))
     }
   }
-  syncRunning = false
 }
 
 function startSync() {
@@ -129,6 +219,7 @@ async function ensureLoaded() {
     const bundle = await support.conversation()
     applyConv(bundle.conversation)
     messages.value = bundle.messages ?? []
+    bumpSyncAfter(messages.value)
     await support.markRead().catch(() => null)
     unread.value = 0
     await scrollBottom()
@@ -245,6 +336,7 @@ watch(
       open.value = false
       messages.value = []
       unread.value = 0
+      syncAfterId.value = 0
       peerTyping.value = false
       stopSync()
       void clearTyping()
@@ -254,11 +346,22 @@ watch(
   },
 )
 
+function onVisible() {
+  if (document.visibilityState !== 'visible' || !auth.loggedIn) return
+  // 后台回来后确保同步还活着（避免被中止竞态掐死）
+  startSync()
+}
+
 onMounted(() => {
+  loadPanelSize()
   if (auth.loggedIn) startSync()
+  document.addEventListener('visibilitychange', onVisible)
 })
 
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisible)
+  resizeCleanup?.()
+  resizeCleanup = null
   stopSync()
   void clearTyping()
 })
@@ -272,7 +375,15 @@ onUnmounted(() => {
       <i v-if="unread > 0" class="sc-badge">{{ unread > 99 ? '99+' : unread }}</i>
     </button>
 
-    <div v-if="open" class="sc-panel" role="dialog" aria-label="官方客服">
+    <div v-if="open" class="sc-panel" role="dialog" aria-label="官方客服" :style="panelStyle">
+      <span class="sc-rz sc-rz-n" title="拖拽调整高度" @mousedown="startPanelResize('n', $event)" />
+      <span class="sc-rz sc-rz-s" title="拖拽调整高度" @mousedown="startPanelResize('s', $event)" />
+      <span class="sc-rz sc-rz-e" title="拖拽调整宽度" @mousedown="startPanelResize('e', $event)" />
+      <span class="sc-rz sc-rz-w" title="拖拽调整宽度" @mousedown="startPanelResize('w', $event)" />
+      <span class="sc-rz sc-rz-ne" title="拖拽缩放" @mousedown="startPanelResize('ne', $event)" />
+      <span class="sc-rz sc-rz-nw" title="拖拽缩放" @mousedown="startPanelResize('nw', $event)" />
+      <span class="sc-rz sc-rz-se" title="拖拽缩放" @mousedown="startPanelResize('se', $event)" />
+      <span class="sc-rz sc-rz-sw" title="拖拽缩放" @mousedown="startPanelResize('sw', $event)" />
       <header class="sc-head">
         <div>
           <strong>闲猫官方</strong>
@@ -392,8 +503,8 @@ onUnmounted(() => {
   position: absolute;
   right: 0;
   bottom: 56px;
-  width: min(360px, calc(100vw - 24px));
-  height: min(520px, calc(100vh - 100px));
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 80px);
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 16px;
@@ -402,6 +513,19 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
 }
+.sc-rz {
+  position: absolute;
+  z-index: 5;
+  background: transparent;
+}
+.sc-rz-n { top: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+.sc-rz-s { bottom: 0; left: 10px; right: 10px; height: 6px; cursor: ns-resize; }
+.sc-rz-e { right: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
+.sc-rz-w { left: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
+.sc-rz-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+.sc-rz-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+.sc-rz-se { bottom: 0; right: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+.sc-rz-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize; }
 .sc-head {
   display: flex;
   align-items: flex-start;
