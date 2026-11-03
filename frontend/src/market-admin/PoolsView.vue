@@ -222,9 +222,10 @@ function openEdit(p: Pool) {
   Object.assign(form, {
     name: p.name,
     platform: p.platform,
-    sell: String(p.sell_multiplier),
-    margin: String(p.min_margin),
-    buffer: String(p.safety_buffer),
+    // 列表接口缺字段时留空，交给 save() 拦下，不能回显成 "undefined"。
+    sell: String(p.sell_multiplier ?? ''),
+    margin: String(p.min_margin ?? ''),
+    buffer: String(p.safety_buffer ?? ''),
     enabled: p.enabled,
     market_published: p.market_published,
     market_title: p.market_title || defaultTitle(p),
@@ -267,6 +268,20 @@ async function save() {
   }
   if (!Number.isFinite(body.sell_multiplier) || body.sell_multiplier <= 0) {
     error.value = '请填写有效的售价 D'
+    return
+  }
+  // 空串会被 Number() 当成 0、非数字会被 JSON 序列化成 null（后端视为不修改），两种都不能静默提交。
+  const ratioOk = (raw: string, n: number) => raw.trim() !== '' && Number.isFinite(n) && n >= 0 && n < 1
+  if (!ratioOk(form.margin, body.min_margin)) {
+    error.value = '请填写有效的最低毛利（0 ≤ 毛利 < 1）'
+    return
+  }
+  if (!ratioOk(form.buffer, body.safety_buffer)) {
+    error.value = '请填写有效的安全缓冲（0 ≤ 缓冲 < 1）'
+    return
+  }
+  if (body.min_margin + body.safety_buffer >= 1) {
+    error.value = '最低毛利与安全缓冲之和必须小于 1'
     return
   }
   const ok = editing.value

@@ -69,7 +69,8 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 	bind("vendors", func(c *gin.Context) (any, error) { return store.ListVendors(c.Request.Context()) })
 	bind("supply/accounts", func(c *gin.Context) (any, error) { return store.ListSupplyAccounts(c.Request.Context()) })
 	bind("supply/groups", func(c *gin.Context) (any, error) { return store.ListSupplyGroups(c.Request.Context()) })
-	bind("pools", func(c *gin.Context) (any, error) { return store.ListPools(c.Request.Context()) })
+	// pools 的读取走 relay（见 registerIdleCatRelay）：编辑弹窗和启停/上架按钮要回传 min_margin、safety_buffer、
+	// market_description，简表没有这几列，弹窗会显示 undefined，上架/启停还会把市场描述当空串写回去。
 	bind("proxies", func(c *gin.Context) (any, error) { return store.ListProxies(c.Request.Context()) })
 	bind("upstreams", func(c *gin.Context) (any, error) { return store.ListUpstreams(c.Request.Context()) })
 	bind("recharges", func(c *gin.Context) (any, error) { return store.ListRecharges(c.Request.Context()) })
@@ -144,6 +145,7 @@ func registerIdleCatRelay(admin *gin.RouterGroup) {
 		"POST proxies/:id/sync",
 		"POST proxies/:id/test",
 		"POST proxies/:id/quality-check",
+		"GET pools",
 		"POST pools",
 		"PUT pools/:id",
 		"POST pools/:id/sync",

@@ -81,6 +81,38 @@ describe('保障池编辑弹窗', () => {
     expect(dialog().querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('失败重试时不能丢失的介绍')
     expect(api.get).toHaveBeenCalledOnce()
   })
+
+  it('回显最低毛利与安全缓冲，保存时原样提交', async () => {
+    api.send.mockResolvedValue({})
+    const wrapper = await page()
+    await click(wrapper, '编辑')
+
+    const values = Array.from(dialog().querySelectorAll<HTMLInputElement>('input')).map((item) => item.value)
+    expect(values).toEqual(expect.arrayContaining(['1.2', '0.1', '0.02']))
+    expect(values).not.toContain('undefined')
+    await clickDialog('保存')
+
+    expect(api.send).toHaveBeenCalledWith(
+      'PUT',
+      '/api/v1/admin/market/pools/1',
+      expect.objectContaining({ sell_multiplier: 1.2, min_margin: 0.1, safety_buffer: 0.02, market_description: '原始介绍' }),
+    )
+  })
+
+  it('列表缺少毛利/缓冲字段时不回显 undefined，也不静默提交', async () => {
+    // 引擎侧曾用简表返回保障池，只有 id/name/platform/enabled/sell_multiplier 等几列。
+    const { min_margin: _m, safety_buffer: _b, market_description: _d, ...thin } = structuredClone(pool)
+    api.get.mockResolvedValue([thin])
+    const wrapper = await page()
+    await click(wrapper, '编辑')
+
+    const values = Array.from(dialog().querySelectorAll<HTMLInputElement>('input')).map((item) => item.value)
+    expect(values).not.toContain('undefined')
+    await clickDialog('保存')
+
+    expect(api.send).not.toHaveBeenCalled()
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toContain('最低毛利')
+  })
 })
 
 describe('保障池删除', () => {

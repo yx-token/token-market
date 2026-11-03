@@ -29,6 +29,8 @@
 
 编辑弹窗要的字段如果走 native 简表，**回显会是空的，管理员保存时又会用空值覆盖库里的配置**。
 
-- 检测策略、第三方检测站的读取已改走 relay。
-- 厂商、保障池、题库、上游、质量概览、市场分类：native 返回与 market 侧返回的字段不一致，**尚未处理**。动这些页面的编辑功能前，先对比两侧返回的字段。
+- 检测策略、第三方检测站、保障池的读取已改走 relay。
+  - 保障池（2026-11-03）：简表缺 `min_margin`、`safety_buffer`、`market_description`，编辑弹窗显示 `undefined`，「上架/下架」「开启/关闭」按钮还会把市场描述当空串写回。
+- 厂商、题库、上游、质量概览、市场分类：native 返回与 market 侧返回的字段不一致，**尚未处理**。动这些页面的编辑功能前，先对比两侧返回的字段。
+- vitest 的 mock 通常照 market 侧的完整结构写，测不出简表缺字段。改这类页面时，在 `backend/internal/server/routes/` 加路由级测试（参考 `market_pools_relay_test.go`），并在真实后台点一遍。
 - 详情与证据：`market/docs/2026-10-29-detection-policy-and-thirdparty-audit.md` §二。
