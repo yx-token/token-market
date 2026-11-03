@@ -1028,7 +1028,6 @@ const adminNavItems = computed((): NavItem[] => {
             { path: '/admin/market/recharges', label: t('nav.marketRecharges'), icon: CreditCardIcon },
             { path: '/admin/market/refunds', label: t('nav.marketRefunds'), icon: CreditCardIcon },
             { path: '/admin/market/withdrawals', label: t('nav.marketWithdrawals'), icon: CreditCardIcon },
-            { path: '/admin/market/payments', label: t('nav.marketPayments'), icon: CreditCardIcon },
           ],
         },
         {

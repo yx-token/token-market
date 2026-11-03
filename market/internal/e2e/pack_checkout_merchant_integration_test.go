@@ -53,9 +53,9 @@ func TestPackCheckoutMerchantInvalidation(t *testing.T) {
 		{name: "pack_commit_failed", faultAt: "commit", errorCode: "PACK_CHECKOUT_WRITE_FAILED"},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			_, configure := withPayments(t)
-			e := setup(t)
-			configure(e, e.login("admin@market.test", "admin-password-1"))
+			p := withPayments(t)
+			e := setup(t, p.gateways)
+			p.configure(e)
 			seller := prepareModelWhitelistSeller(e, "pack-checkout-seller", 1)
 			e.fake.SetAccountModels(0, []string{whitelistSonnet})
 			var upstream listing.Upstream
@@ -238,7 +238,8 @@ func TestPackCheckoutMerchantInvalidation(t *testing.T) {
 			var ordinary struct {
 				Order rechargeView `json:"order"`
 			}
-			rawMarketCall(t, payer, http.StatusCreated, "POST", "/api/buyer/recharge", map[string]any{"amount": 10, "channel": "manual"}, &ordinary)
+			mustScan(t, e.app.DB.QueryRow(e.ctx, `INSERT INTO recharge_orders(user_id, amount, provider, channel)
+				VALUES ($1, 10, 'manual', 'manual') RETURNING id`, payerID), &ordinary.Order.ID)
 			var ordinaryView packCheckoutRechargeView
 			rawMarketCall(t, payer, http.StatusOK, "GET", "/api/buyer/recharge/"+itoa(ordinary.Order.ID), nil, &ordinaryView)
 			if ordinaryView.PackCheckoutStatus != nil {

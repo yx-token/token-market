@@ -44,11 +44,12 @@ func (f *Funds) RefundRechargeOrder(ctx context.Context, userID, orderID int64, 
 	var buyerID int64
 	var channel, status, left string
 	var outTradeNo *string
+	var providerInstanceID *int64
 	var recent bool
 	err = tx.QueryRow(ctx, `SELECT user_id, channel, status, out_trade_no, (amount - refunded_amount)::text,
-			created_at > now() - make_interval(days => $3)
+			created_at > now() - make_interval(days => $3), provider_instance_id
 		FROM recharge_orders WHERE id = $1 AND ($2 = 0 OR user_id = $2) FOR UPDATE`, orderID, userID, st.RefundOriginalRouteDays).
-		Scan(&buyerID, &channel, &status, &outTradeNo, &left, &recent)
+		Scan(&buyerID, &channel, &status, &outTradeNo, &left, &recent, &providerInstanceID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, httpx.NotFound("ORDER_NOT_FOUND", "recharge order not found")
 	}
@@ -101,8 +102,15 @@ func (f *Funds) RefundRechargeOrder(ctx context.Context, userID, orderID int64, 
 	// 人工打款的明细也关联这笔订单，扣减失败时据此释放可退金额
 	payCh, payStatus := payment.ChannelManual, "manual"
 	var outRefundNo *string
-	if st.RefundOriginalRoute && channel != payment.ChannelManual && outTradeNo != nil && recent &&
-		f.registry(ctx).Get(payment.ProviderOf(channel)) != nil {
+	var originalRouteAvailable bool
+	if st.RefundOriginalRoute && channel != payment.ChannelManual && outTradeNo != nil && recent {
+		boundID := instanceID(providerInstanceID)
+		originalRouteAvailable = f.registry(ctx).GetInstance(payment.ProviderOf(channel), boundID) != nil
+		if !originalRouteAvailable && boundID != 0 {
+			f.warnMissingPaymentInstance("payment instance missing while planning order refund", orderID, boundID)
+		}
+	}
+	if originalRouteAvailable {
 		no := fmt.Sprintf("TMF%dO%d", refundID, orderID)
 		payCh, payStatus, outRefundNo = channel, "pending", &no
 	}

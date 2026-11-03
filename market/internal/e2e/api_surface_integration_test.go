@@ -109,18 +109,12 @@ func TestAPISurface(t *testing.T) {
 
 	// 买家
 	buyer := e.newUser("buyer@market.test")
-	var rc struct {
-		Order idOnly `json:"order"`
-	}
-	buyer.must("POST", "/api/buyer/recharge", map[string]any{"amount": 20}, &rc)
-	var cancelMe struct {
-		Order idOnly `json:"order"`
-	}
-	buyer.must("POST", "/api/buyer/recharge", map[string]any{"amount": 5}, &cancelMe)
-	buyer.must("POST", fmt.Sprintf("/api/buyer/recharge/%d/cancel", cancelMe.Order.ID), nil, nil)
-	admin.must("POST", fmt.Sprintf("/api/admin/recharges/%d/confirm", rc.Order.ID), map[string]string{"provider_ref": "bank-9"}, nil)
+	rc := historicalManual(t, e, buyer, 20)
+	cancelMe := historicalManual(t, e, buyer, 5)
+	buyer.must("POST", fmt.Sprintf("/api/buyer/recharge/%d/cancel", cancelMe.ID), nil, nil)
+	admin.must("POST", fmt.Sprintf("/api/admin/recharges/%d/confirm", rc.ID), map[string]string{"provider_ref": "bank-9"}, nil)
 	e.drain()
-	buyer.must("GET", fmt.Sprintf("/api/buyer/recharge/%d", rc.Order.ID), nil, nil)
+	buyer.must("GET", fmt.Sprintf("/api/buyer/recharge/%d", rc.ID), nil, nil)
 
 	var poolKey, chainKey, kimiKey struct {
 		Key    string `json:"key"`

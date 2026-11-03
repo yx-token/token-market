@@ -566,12 +566,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '热搜', titleKey: 'nav.marketHotSearches' }
       },
       {
-        path: 'payments',
-        name: 'MarketAdminPayments',
-        component: () => import('@/market-admin/PaymentsView.vue'),
-        meta: { title: '支付', titleKey: 'nav.marketPayments' }
-      },
-      {
         path: 'recharges',
         name: 'MarketAdminRecharges',
         component: () => import('@/market-admin/ResourceView.vue'),

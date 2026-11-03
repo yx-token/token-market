@@ -8,7 +8,8 @@
 #   scripts/dev.sh reset    停止服务并删除开发数据库
 #   scripts/dev.sh status   查看进程
 #
-# 默认 USE_REAL_ENGINE=1：起真实 backend/cmd/server（:18080，库 tm_sub2api_live）。
+# 默认 USE_REAL_ENGINE=1：起真实 backend/cmd/server（:18080，库 tm_sub2api_live），
+# 通过 MARKET_EMBED 将闲猫 C 端嵌入宿主；8080 由 dev-proxy 统一转发。
 # 仅在需要旧替身时：USE_REAL_ENGINE=0 scripts/dev.sh up
 # 浏览器只开 http://127.0.0.1:8080
 set -euo pipefail
@@ -21,7 +22,7 @@ FRONTEND_DIR="${FRONTEND_DIR:-$SUB2API_REPO/frontend}"
 BACKEND_DIR="${BACKEND_DIR:-$SUB2API_REPO/backend}"
 DATA="${DEV_DATA_DIR:-$ROOT/data/dev}"
 # 端口与容器名可覆盖：同一台机器上已有别的项目占用默认端口时，
-# 用 DEV_PG_PORT / DEV_REDIS_PORT / DEV_PG_CONTAINER / DEV_REDIS_CONTAINER 起一套隔离环境。
+# 用 DEV_PG_PORT / DEV_REDIS_PORT / DEV_PG_CONTAINER / DEV_REDIS_CONTAINER / DEV_ENGINE_PORT 起一套隔离环境。
 PG_PORT="${DEV_PG_PORT:-55432}"
 REDIS_PORT="${DEV_REDIS_PORT:-56379}"
 PG_CONTAINER="${DEV_PG_CONTAINER:-tm-test-pg}"
@@ -38,7 +39,8 @@ SELLER_PASSWORD=seller-password-1
 BUYER_EMAIL=buyer@dev.local
 BUYER_PASSWORD=buyer-password-1
 API=http://127.0.0.1:8080
-ENGINE=http://127.0.0.1:18080
+ENGINE_PORT="${DEV_ENGINE_PORT:-18080}"
+ENGINE=http://127.0.0.1:$ENGINE_PORT
 THIRDPARTY=http://127.0.0.1:18082
 KEYS="$DATA/pay-keys"
 mkdir -p "$DATA"
@@ -135,11 +137,17 @@ start_real_engine() {
   local admin_key=""
   [[ -s "$DATA/engine-admin-key" ]] && admin_key="$(cat "$DATA/engine-admin-key")"
   (
-    export DATA_DIR="$sdata" SERVER_HOST=127.0.0.1 SERVER_PORT=18080 SERVER_MODE=release TZ=Asia/Shanghai
+    export DATA_DIR="$sdata" SERVER_HOST=127.0.0.1 SERVER_PORT="$ENGINE_PORT" SERVER_MODE=release TZ=Asia/Shanghai
     export_engine_auto_setup
     export MARKET_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
     export MARKET_ENGINE_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
-    export TM_ENV=dev
+    export TM_ENV=dev MARKET_EMBED=1 MARKET_EMBED_WORKER=1 MARKET_EMBED_EDGE=1
+    export TM_PAYMENT_ALIPAY_GATEWAY="$THIRDPARTY/gateway.do"
+    export TM_PAYMENT_WECHAT_BASE_URL="$THIRDPARTY"
+    export TM_HTTP_TRUSTED_PROXIES=127.0.0.1/32
+    export TM_EDGE_ADDR=127.0.0.1:8090 TM_EDGE_PUBLIC_URL=http://127.0.0.1:8090
+    export TM_EDGE_SPOOL_DIR="$DATA/edge-spool"
+    export TM_HTTP_WEB_DIR="$ROOT/web/dist" TM_HTTP_ADMIN_WEB_DIR="$ROOT/engine-dist"
     export TM_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
     export TM_REDIS_ADDR=127.0.0.1:$REDIS_PORT TM_REDIS_DB=2
     export TM_CRYPTO_ACTIVE_KEY_ID=k1 TM_CRYPTO_KEYS="k1:ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleS0="
@@ -158,11 +166,17 @@ start_real_engine() {
     kill "$(cat "$sdata/server.pid")" 2>/dev/null || true
     sleep 0.4
     (
-      export DATA_DIR="$sdata" SERVER_HOST=127.0.0.1 SERVER_PORT=18080 SERVER_MODE=release TZ=Asia/Shanghai
+      export DATA_DIR="$sdata" SERVER_HOST=127.0.0.1 SERVER_PORT="$ENGINE_PORT" SERVER_MODE=release TZ=Asia/Shanghai
       export_engine_auto_setup
       export MARKET_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
       export MARKET_ENGINE_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
-      export TM_ENV=dev
+      export TM_ENV=dev MARKET_EMBED=1 MARKET_EMBED_WORKER=1 MARKET_EMBED_EDGE=1
+      export TM_PAYMENT_ALIPAY_GATEWAY="$THIRDPARTY/gateway.do"
+      export TM_PAYMENT_WECHAT_BASE_URL="$THIRDPARTY"
+      export TM_HTTP_TRUSTED_PROXIES=127.0.0.1/32
+      export TM_EDGE_ADDR=127.0.0.1:8090 TM_EDGE_PUBLIC_URL=http://127.0.0.1:8090
+      export TM_EDGE_SPOOL_DIR="$DATA/edge-spool"
+      export TM_HTTP_WEB_DIR="$ROOT/web/dist" TM_HTTP_ADMIN_WEB_DIR="$ROOT/engine-dist"
       export TM_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
       export TM_REDIS_ADDR=127.0.0.1:$REDIS_PORT TM_REDIS_DB=2
       export TM_CRYPTO_ACTIVE_KEY_ID=k1 TM_CRYPTO_KEYS="k1:ZGV2LWtleS1kZXYta2V5LWRldi1rZXktZGV2LWtleS0="
@@ -267,7 +281,7 @@ login_as() {
 seed() {
   [[ -f "$DATA/seeded" ]] && return
   echo "写入演示数据…"
-  login_as "$ADMIN_EMAIL" "$ADMIN_PASSWORD"
+  login_admin
   # 等 worker 完成首次兼容自检，之前对 sub2api 的写入会被拒绝（安全模式）
   for _ in $(seq 1 90); do
     if api GET /api/admin/sub2api/status | grep -q '"guard_state":"normal"'; then
@@ -299,6 +313,12 @@ seed() {
 }
 
 login_admin() {
+  # 真实引擎模式下市场内嵌在宿主进程，不会创建市场引导管理员；/api/admin/* 由 dev-proxy
+  # 改写到 /api/v1/admin/market/* 并换成引擎 Admin Key，这里的 token 只是占位。
+  if [[ "$USE_REAL_ENGINE" == "1" ]]; then
+    TOKEN=dev-proxy-admin
+    return
+  fi
   login_as "$ADMIN_EMAIL" "$ADMIN_PASSWORD"
 }
 
@@ -361,14 +381,47 @@ except Exception:
   touch "$DATA/seeded-accounts"
 }
 
-# 支付配置：通知地址指向本机控制面，支付宝与微信支付商户接入替身（请求体由 fake-thirdparty 生成）
+# 真实引擎支付配置：通过 sub2api Admin API 创建官方支付宝/微信实例，
+# 凭证文件由 fake-thirdparty 生成。替身引擎不配置在线支付（hostpay 未注册）。
+engine_payment_write() {
+  local method=$1 path=$2 body=$3
+  local key code
+  key="$(ensure_engine_admin_key)"
+  code="$(curl --connect-timeout 3 --max-time 20 -sS -o /dev/null -w '%{http_code}' \
+    -X "$method" "$ENGINE$path" -H @- -H 'Content-Type: application/json' -d "$body" <<<"x-api-key: $key" || true)"
+  case "$code" in
+    200|201|204) return 0 ;;
+    *) echo "引擎 API 写入失败 $method $path → HTTP ${code:-err}（请看 sub2api-data/server.log）" >&2; return 1 ;;
+  esac
+}
+
 seed_payments() {
-  [[ -f "$DATA/seeded-payments" ]] && return
-  login_admin
-  api PUT /api/admin/settings "{\"payment_public_url\":\"$API\"}" >/dev/null
-  api PUT /api/admin/payments/merchants/alipay "@$KEYS/merchant-alipay.json" >/dev/null
-  api PUT /api/admin/payments/merchants/wechat "@$KEYS/merchant-wechat.json" >/dev/null
-  touch "$DATA/seeded-payments"
+  if [[ "$USE_REAL_ENGINE" != "1" ]]; then
+    echo "  替身引擎不配置在线支付（hostpay 未注册）"
+    return
+  fi
+  if [[ ! -f "$DATA/seeded-payments-v2" ]]; then
+    local provider path existing id
+    for provider in alipay wxpay; do
+      path="/api/v1/admin/payment/providers"
+      existing="$(curl --connect-timeout 3 --max-time 20 -fsS "$ENGINE$path" \
+        -H @- <<<"x-api-key: $(ensure_engine_admin_key)")"
+      id="$(printf '%s' "$existing" | python3 -c 'import json,sys
+rows=json.load(sys.stdin).get("data")
+if not isinstance(rows,list): raise SystemExit("引擎支付实例响应不是数组")
+for row in rows:
+ if row.get("provider_key")==sys.argv[1] and row.get("name")=="dev-fake-"+sys.argv[1]:
+  print(row["id"]); break' "$provider")"
+      if [[ -n "$id" ]]; then
+        path="$path/$id"
+        engine_payment_write PUT "$path" "$(cat "$KEYS/provider-$provider.json")"
+      else
+        engine_payment_write POST "$path" "$(cat "$KEYS/provider-$provider.json")"
+      fi
+    done
+    touch "$DATA/seeded-payments-v2"
+  fi
+  engine_payment_write PUT /api/v1/admin/payment/config '{"enabled":true,"balance_disabled":false}'
 }
 
 # 第三方检测：BazaarLink 指向替身（Edge 是本机 http 地址，需要允许非 https 目标）。
@@ -399,6 +452,10 @@ up() {
   build_frontends
   echo "构建后端…"
   go build -o bin/ ./cmd/...
+  if [[ "$USE_REAL_ENGINE" == "1" ]]; then
+    echo "构建开发代理…"
+    go build -o bin/dev-proxy ./cmd/dev-proxy
+  fi
   echo "启动服务…"
   if [[ "$USE_REAL_ENGINE" == "1" ]]; then
     start_real_engine
@@ -407,13 +464,18 @@ up() {
     start fake-sub2api bin/fake-sub2api --dsn "$PG_DSN_BASE/$FAKE_DB?sslmode=disable" --sub2api-repo "$SUB2API_REPO" --listen 127.0.0.1:18081
     wait_http "http://127.0.0.1:18081/api/v1/admin/system/version"
   fi
-  start fake-thirdparty bin/fake-thirdparty --keys-dir "$KEYS" --listen 127.0.0.1:18082
+  start fake-thirdparty bin/fake-thirdparty --keys-dir "$KEYS" --listen 127.0.0.1:18082 --notify-origin "$API"
   wait_http "$THIRDPARTY/api/probe/run/none"
-  market_env
-  start api bin/api
-  wait_http "$API/healthz"
-  start worker bin/worker
-  start edge bin/edge
+  if [[ "$USE_REAL_ENGINE" == "1" ]]; then
+    start dev-proxy bin/dev-proxy --listen 127.0.0.1:8080 --target "$ENGINE" --admin-dir "$ROOT/engine-dist" --admin-key-file "$DATA/engine-admin-key"
+    wait_http "$API/healthz"
+  else
+    market_env
+    start api bin/api
+    wait_http "$API/healthz"
+    start worker bin/worker
+    start edge bin/edge
+  fi
   seed
   seed_payments
   seed_thirdparty
@@ -430,13 +492,13 @@ up() {
   卖家                 $SELLER_EMAIL / $SELLER_PASSWORD
   买家                 $BUYER_EMAIL / $BUYER_PASSWORD
 
-  sub2api 引擎  ${TM_SUB2API_BASE_URL:-$ENGINE} (USE_REAL_ENGINE=${USE_REAL_ENGINE:-1})
+  sub2api 引擎  ${ENGINE} (USE_REAL_ENGINE=${USE_REAL_ENGINE:-1})
   第三方替身    ${THIRDPARTY}
 INFO
 }
 
 down() {
-  for name in edge worker api fake-thirdparty fake-sub2api; do
+  for name in edge worker api dev-proxy fake-thirdparty fake-sub2api; do
     if [[ -f "$DATA/$name.pid" ]]; then
       kill "$(cat "$DATA/$name.pid")" 2>/dev/null || true
       rm -f "$DATA/$name.pid"
@@ -461,8 +523,12 @@ case "${1:-}" in
     echo "已重置"
     ;;
   status)
-    for name in fake-sub2api fake-thirdparty api worker edge; do
-      if [[ -f "$DATA/$name.pid" ]] && kill -0 "$(cat "$DATA/$name.pid")" 2>/dev/null; then echo "$name: 运行中"; else echo "$name: 未运行"; fi
+    for name in fake-sub2api fake-thirdparty api worker edge dev-proxy; do
+      if [[ -f "$DATA/$name.pid" ]] && kill -0 "$(cat "$DATA/$name.pid")" 2>/dev/null; then
+        echo "$name: 运行中"
+      else
+        echo "$name: 未运行"
+      fi
     done
     if [[ -f "$DATA/sub2api-data/server.pid" ]] && kill -0 "$(cat "$DATA/sub2api-data/server.pid")" 2>/dev/null; then
       echo "sub2api: 运行中"

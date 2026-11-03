@@ -33,11 +33,8 @@ func TestSellerUsageAndQuota(t *testing.T) {
 		"join_default_pool": false, "categories": []string{"coding"}}, &created)
 
 	buyer := e.newUser("usage-buyer@market.test")
-	var rc struct {
-		Order idOnly `json:"order"`
-	}
-	buyer.must("POST", "/api/buyer/recharge", map[string]any{"amount": 10}, &rc)
-	admin.must("POST", fmt.Sprintf("/api/admin/recharges/%d/confirm", rc.Order.ID), map[string]string{"provider_ref": "bank-u"}, nil)
+	rc := historicalManual(t, e, buyer, 10)
+	admin.must("POST", fmt.Sprintf("/api/admin/recharges/%d/confirm", rc.ID), map[string]string{"provider_ref": "bank-u"}, nil)
 	e.settle()
 	var key struct {
 		Key string `json:"key"`

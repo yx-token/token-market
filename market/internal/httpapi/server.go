@@ -22,7 +22,7 @@ import (
 	"github.com/yx-token/token-market/market/internal/iam"
 	"github.com/yx-token/token-market/market/internal/listing"
 	"github.com/yx-token/token-market/market/internal/market"
-	"github.com/yx-token/token-market/market/internal/payment/merchants"
+	"github.com/yx-token/token-market/market/internal/payment/registry"
 	"github.com/yx-token/token-market/market/internal/platform/auth"
 	"github.com/yx-token/token-market/market/internal/platform/buildinfo"
 	"github.com/yx-token/token-market/market/internal/platform/clientip"
@@ -48,7 +48,7 @@ type Server struct {
 	Pools    *scheduling.PoolService
 	Keys     *buyer.KeyService
 	Funds    *billing.Funds
-	Payments *merchants.Store
+	Payments *registry.Store
 	Market   *market.Service
 	Quality  *quality.Engine
 	Reviews  *review.Service
@@ -180,10 +180,6 @@ func (s *Server) adminRoutes() []route {
 		{"POST /api/admin/recharges/{id}/confirm", s.confirmRecharge},
 		{"POST /api/admin/recharges/{id}/sync", s.syncRecharge},
 		{"POST /api/admin/recharges/{id}/refund", s.adminRefundRecharge},
-		{"GET /api/admin/payments/status", s.paymentStatus},
-		{"GET /api/admin/payments/merchants", s.listMerchants},
-		{"PUT /api/admin/payments/merchants/{provider}", s.updateMerchant},
-		{"POST /api/admin/payments/merchants/{provider}/test", s.testMerchant},
 		{"POST /api/admin/refund-payouts/{id}/retry", s.retryPayout},
 		{"POST /api/admin/refund-payouts/{id}/manual", s.payoutToManual},
 		{"GET /api/admin/refunds", s.adminRefunds},
@@ -378,6 +374,7 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 	}
 	// 支付渠道异步通知：不鉴权，按渠道协议验签与应答
 	mux.HandleFunc("POST /api/payments/{provider}/notify", s.paymentNotify)
+	mux.HandleFunc("POST /api/payments/{provider}/{instance}/notify", s.paymentNotify)
 	for _, r := range user {
 		mux.Handle(r.pattern, httpx.Authenticate(s.Issuer, s.Accounts.CheckActive, r.h))
 	}

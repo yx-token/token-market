@@ -15,6 +15,7 @@ import (
 	"github.com/yx-token/token-market/internal/payment"
 	"github.com/yx-token/token-market/internal/payment/provider"
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
+	"github.com/yx-token/token-market/market/hostpay"
 )
 
 // validateProviderConfig runs the provider's constructor to surface config-level
@@ -169,6 +170,47 @@ func (s *PaymentConfigService) countPendingOrders(ctx context.Context, providerI
 		).Count(ctx)
 }
 
+type providerInFlightCounts struct {
+	sub2api int
+	market  int
+}
+
+func (c providerInFlightCounts) total() int { return c.sub2api + c.market }
+
+func (s *PaymentConfigService) countProviderInFlightOrders(ctx context.Context, providerInstanceID int64, providerKey string) (providerInFlightCounts, error) {
+	sub2apiCount, err := s.countPendingOrders(ctx, providerInstanceID)
+	if err != nil {
+		return providerInFlightCounts{}, err
+	}
+	counts := providerInFlightCounts{sub2api: sub2apiCount}
+	if providerKey != payment.TypeAlipay && providerKey != payment.TypeWxpay {
+		return counts, nil
+	}
+	marketCount, err := hostpay.InFlightOrders(ctx, providerInstanceID)
+	if err != nil {
+		return counts, infraerrors.Conflict("PENDING_ORDERS", "暂时无法核实闲置市场在途充值/退款，请稍后重试").
+			WithCause(err).WithMetadata(map[string]string{
+			"count":         strconv.Itoa(sub2apiCount),
+			"sub2api_count": strconv.Itoa(sub2apiCount),
+			"market_count":  "?",
+		})
+	}
+	counts.market = marketCount
+	return counts, nil
+}
+
+func providerInFlightOrdersConflict(counts providerInFlightCounts) error {
+	message := fmt.Sprintf("该服务商在 sub2api 还有 %d 笔未完成订单", counts.sub2api)
+	if counts.market > 0 {
+		message += fmt.Sprintf("；闲置市场还有 %d 笔在途充值/退款", counts.market)
+	}
+	return infraerrors.Conflict("PENDING_ORDERS", message+"，请等待订单结束后再操作").WithMetadata(map[string]string{
+		"count":         strconv.Itoa(counts.total()),
+		"sub2api_count": strconv.Itoa(counts.sub2api),
+		"market_count":  strconv.Itoa(counts.market),
+	})
+}
+
 func (s *PaymentConfigService) countPendingOrdersByPlan(ctx context.Context, planID int64) (int, error) {
 	return s.entClient.PaymentOrder.Query().
 		Where(
@@ -293,17 +335,17 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 	if err != nil {
 		return nil, fmt.Errorf("load provider instance: %w", err)
 	}
-	var pendingOrderCount *int
-	getPendingOrderCount := func() (int, error) {
-		if pendingOrderCount != nil {
-			return *pendingOrderCount, nil
+	var pendingOrderCounts *providerInFlightCounts
+	getPendingOrderCounts := func() (providerInFlightCounts, error) {
+		if pendingOrderCounts != nil {
+			return *pendingOrderCounts, nil
 		}
-		count, err := s.countPendingOrders(ctx, id)
+		counts, err := s.countProviderInFlightOrders(ctx, id, current.ProviderKey)
 		if err != nil {
-			return 0, fmt.Errorf("check pending orders: %w", err)
+			return counts, fmt.Errorf("check pending orders: %w", err)
 		}
-		pendingOrderCount = &count
-		return count, nil
+		pendingOrderCounts = &counts
+		return counts, nil
 	}
 	nextEnabled := current.Enabled
 	if req.Enabled != nil {
@@ -327,24 +369,22 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 			return nil, err
 		}
 		if hasPendingOrderProtectedConfigChange(current.ProviderKey, currentConfig, mergedConfig) {
-			count, err := getPendingOrderCount()
+			counts, err := getPendingOrderCounts()
 			if err != nil {
 				return nil, err
 			}
-			if count > 0 {
-				return nil, infraerrors.Conflict("PENDING_ORDERS", "instance has pending orders").
-					WithMetadata(map[string]string{"count": strconv.Itoa(count)})
+			if counts.total() > 0 {
+				return nil, providerInFlightOrdersConflict(counts)
 			}
 		}
 	}
 	if req.Enabled != nil && !*req.Enabled {
-		count, err := getPendingOrderCount()
+		counts, err := getPendingOrderCounts()
 		if err != nil {
 			return nil, err
 		}
-		if count > 0 {
-			return nil, infraerrors.Conflict("PENDING_ORDERS", "instance has pending orders").
-				WithMetadata(map[string]string{"count": strconv.Itoa(count)})
+		if counts.total() > 0 {
+			return nil, providerInFlightOrdersConflict(counts)
 		}
 	}
 	configToValidate := mergedConfig
@@ -383,31 +423,14 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 		u.SetConfig(enc)
 	}
 	if req.SupportedTypes != nil {
-		// Check pending orders before removing payment types
-		count, err := getPendingOrderCount()
-		if err != nil {
-			return nil, err
-		}
-		if count > 0 {
-			// Load current instance to compare types
-			oldTypes := strings.Split(current.SupportedTypes, ",")
-			newTypes := req.SupportedTypes
-			for _, ot := range oldTypes {
-				ot = strings.TrimSpace(ot)
-				if ot == "" {
-					continue
-				}
-				found := false
-				for _, nt := range newTypes {
-					if strings.TrimSpace(nt) == ot {
-						found = true
-						break
-					}
-				}
-				if !found {
-					return nil, infraerrors.Conflict("PENDING_ORDERS", "cannot remove payment types while instance has pending orders").
-						WithMetadata(map[string]string{"count": strconv.Itoa(count)})
-				}
+		// Removing a supported type would make in-flight orders impossible to continue.
+		if removesSupportedType(current.SupportedTypes, req.SupportedTypes) {
+			counts, err := getPendingOrderCounts()
+			if err != nil {
+				return nil, err
+			}
+			if counts.total() > 0 {
+				return nil, providerInFlightOrdersConflict(counts)
 			}
 		}
 		u.SetSupportedTypes(joinTypes(req.SupportedTypes))
@@ -500,37 +523,68 @@ func (s *PaymentConfigService) mergeConfig(ctx context.Context, id int64, newCon
 // shim for pre-plaintext records. Remove it (and the encryptionKey field) after
 // a few releases once all live deployments have re-saved their provider configs.
 func (s *PaymentConfigService) decryptConfig(stored string) (map[string]string, error) {
+	cfg, err := s.DecryptProviderConfig(stored)
+	if err != nil {
+		slog.Warn("payment provider config unreadable, treating as empty for re-entry",
+			"stored_len", len(stored))
+		return nil, nil
+	}
+	return cfg, nil
+}
+
+// DecryptProviderConfig decrypts a provider config and reports malformed or
+// unreadable stored values. Runtime consumers should use this when an invalid
+// instance must be excluded instead of treated as an empty draft.
+func (s *PaymentConfigService) DecryptProviderConfig(stored string) (map[string]string, error) {
 	if stored == "" {
 		return nil, nil
 	}
 	var cfg map[string]string
-	if err := json.Unmarshal([]byte(stored), &cfg); err == nil {
+	jsonErr := json.Unmarshal([]byte(stored), &cfg)
+	if jsonErr == nil {
 		return cfg, nil
 	}
 	// Deprecated: legacy AES-256-GCM ciphertext fallback — scheduled for removal.
 	if len(s.encryptionKey) == payment.AES256KeySize {
 		//nolint:staticcheck // SA1019: intentional legacy fallback, scheduled for removal
-		if plaintext, err := payment.Decrypt(stored, s.encryptionKey); err == nil {
-			if err := json.Unmarshal([]byte(plaintext), &cfg); err == nil {
-				return cfg, nil
-			}
+		plaintext, err := payment.Decrypt(stored, s.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt legacy provider config: %w", err)
 		}
+		if err := json.Unmarshal([]byte(plaintext), &cfg); err != nil {
+			return nil, fmt.Errorf("parse decrypted provider config: %w", err)
+		}
+		return cfg, nil
 	}
-	slog.Warn("payment provider config unreadable, treating as empty for re-entry",
-		"stored_len", len(stored))
-	return nil, nil
+	return nil, fmt.Errorf("parse provider config JSON: %w", jsonErr)
 }
 
 func (s *PaymentConfigService) DeleteProviderInstance(ctx context.Context, id int64) error {
-	count, err := s.countPendingOrders(ctx, id)
+	inst, err := s.entClient.PaymentProviderInstance.Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("load provider instance: %w", err)
+	}
+	counts, err := s.countProviderInFlightOrders(ctx, id, inst.ProviderKey)
 	if err != nil {
 		return fmt.Errorf("check pending orders: %w", err)
 	}
-	if count > 0 {
-		return infraerrors.Conflict("PENDING_ORDERS",
-			fmt.Sprintf("this instance has %d in-progress orders and cannot be deleted — wait for orders to complete or disable the instance first", count))
+	if counts.total() > 0 {
+		return providerInFlightOrdersConflict(counts)
 	}
 	return s.entClient.PaymentProviderInstance.DeleteOneID(id).Exec(ctx)
+}
+
+func removesSupportedType(current string, next []string) bool {
+	nextTypes := make(map[string]struct{}, len(next))
+	for _, paymentType := range next {
+		nextTypes[strings.TrimSpace(paymentType)] = struct{}{}
+	}
+	for _, paymentType := range splitTypes(current) {
+		if _, ok := nextTypes[paymentType]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 // encryptConfig serialises a provider config for storage.

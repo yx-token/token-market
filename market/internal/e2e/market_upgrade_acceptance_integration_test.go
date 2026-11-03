@@ -30,11 +30,8 @@ func TestCreditPackPurchaseIsolationAndSnapshot(t *testing.T) {
 		"title": "八十元买一百美元", "price_cny": 80, "face_value_usd": 100,
 		"allowed_platforms": []string{"openai"}, "allowed_models": []string{"gpt-6-astra"},
 	}, &offer)
-	var recharge struct {
-		Order idOnly `json:"order"`
-	}
-	buyer.must("POST", "/api/buyer/recharge", map[string]any{"amount": 100}, &recharge)
-	admin.must("POST", fmt.Sprintf("/api/admin/recharges/%d/confirm", recharge.Order.ID), map[string]string{"provider_ref": "credit-accept-funds"}, nil)
+	recharge := historicalManual(t, e, buyer, 100)
+	admin.must("POST", fmt.Sprintf("/api/admin/recharges/%d/confirm", recharge.ID), map[string]string{"provider_ref": "credit-accept-funds"}, nil)
 	e.drain()
 	var pack, replay billing.CreditPack
 	request := map[string]any{"offer_id": offer.ID, "idempotency_key": "acceptance-purchase-1"}

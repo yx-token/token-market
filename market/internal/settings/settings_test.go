@@ -139,6 +139,39 @@ func TestCreditUSDToBalanceRateValidation(t *testing.T) {
 	}
 }
 
+func TestLegacyPaymentSettingsAreIgnored(t *testing.T) {
+	legacy := json.RawMessage(`{
+		"payment_public_url":"not-a-url",
+		"payment_channels":{"removed-channel":true,"manual":true},
+		"recharge_min":-1,
+		"recharge_max":0,
+		"recharge_order_timeout_minutes":1,
+		"withdraw_min":12
+	}`)
+	db := &settingsDB{raw: legacy}
+	s, err := Load(context.Background(), db)
+	if err != nil {
+		t.Fatalf("load legacy settings: %v", err)
+	}
+	if s.WithdrawMin != 12 {
+		t.Fatalf("unrelated stored settings lost: withdraw_min = %v", s.WithdrawMin)
+	}
+	if _, err := Update(context.Background(), db, legacy); err != nil {
+		t.Fatalf("update must ignore legacy payment settings: %v", err)
+	}
+	var saved map[string]json.RawMessage
+	if err := json.Unmarshal(db.raw, &saved); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		"payment_public_url", "payment_channels", "recharge_min", "recharge_max", "recharge_order_timeout_minutes",
+	} {
+		if _, ok := saved[field]; ok {
+			t.Errorf("removed setting %s was saved", field)
+		}
+	}
+}
+
 type settingsDB struct {
 	raw   []byte
 	saved bool

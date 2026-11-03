@@ -23,22 +23,23 @@ import (
 // 已过期都会入账——钱已经收到。到账的依据只有两个：验签通过的异步通知，或主动查单的结果。
 
 type RechargeOrder struct {
-	ID          int64        `json:"id"`
-	UserID      int64        `json:"user_id"`
-	UserEmail   string       `json:"user_email,omitempty"`
-	Amount      float64      `json:"amount"`
-	Provider    string       `json:"provider"`
-	Channel     string       `json:"channel"`
-	OutTradeNo  *string      `json:"out_trade_no,omitempty"`
-	ProviderRef *string      `json:"provider_ref,omitempty"`
-	Status      string       `json:"status"`
-	CloseReason *string      `json:"close_reason,omitempty"`
-	Refunded    float64      `json:"refunded_amount"`
-	CreatedAt   time.Time    `json:"created_at"`
-	ExpiresAt   *time.Time   `json:"expires_at,omitempty"`
-	PaidAt      *time.Time   `json:"paid_at,omitempty"`
-	CreditedAt  *time.Time   `json:"credited_at,omitempty"`
-	Payment     *PaymentInfo `json:"payment,omitempty"` // 待支付订单的支付方式，前端据此继续支付
+	ID                 int64        `json:"id"`
+	UserID             int64        `json:"user_id"`
+	UserEmail          string       `json:"user_email,omitempty"`
+	Amount             float64      `json:"amount"`
+	Provider           string       `json:"provider"`
+	ProviderInstanceID *int64       `json:"provider_instance_id,omitempty"`
+	Channel            string       `json:"channel"`
+	OutTradeNo         *string      `json:"out_trade_no,omitempty"`
+	ProviderRef        *string      `json:"provider_ref,omitempty"`
+	Status             string       `json:"status"`
+	CloseReason        *string      `json:"close_reason,omitempty"`
+	Refunded           float64      `json:"refunded_amount"`
+	CreatedAt          time.Time    `json:"created_at"`
+	ExpiresAt          *time.Time   `json:"expires_at,omitempty"`
+	PaidAt             *time.Time   `json:"paid_at,omitempty"`
+	CreditedAt         *time.Time   `json:"credited_at,omitempty"`
+	Payment            *PaymentInfo `json:"payment,omitempty"` // 待支付订单的支付方式，前端据此继续支付
 }
 
 // PaymentInfo 告诉前端如何完成支付。
@@ -51,7 +52,7 @@ type PaymentInfo struct {
 }
 
 const rechargeColumns = `id, user_id, amount::float8, provider, channel, out_trade_no, provider_ref, status, close_reason,
-	refunded_amount::float8, created_at, expires_at, paid_at, credited_at, pay_kind, pay_payload, last_synced_at`
+	refunded_amount::float8, created_at, expires_at, paid_at, credited_at, pay_kind, pay_payload, last_synced_at, provider_instance_id`
 
 type rechargeRow struct {
 	RechargeOrder
@@ -62,7 +63,7 @@ type rechargeRow struct {
 func scanRecharge(row pgx.Row) (*rechargeRow, error) {
 	var o rechargeRow
 	if err := row.Scan(&o.ID, &o.UserID, &o.Amount, &o.Provider, &o.Channel, &o.OutTradeNo, &o.ProviderRef, &o.Status, &o.CloseReason,
-		&o.Refunded, &o.CreatedAt, &o.ExpiresAt, &o.PaidAt, &o.CreditedAt, &o.payKind, &o.payPayload, &o.lastSynced); err != nil {
+		&o.Refunded, &o.CreatedAt, &o.ExpiresAt, &o.PaidAt, &o.CreditedAt, &o.payKind, &o.payPayload, &o.lastSynced, &o.ProviderInstanceID); err != nil {
 		return nil, err
 	}
 	if o.Status == "pending" {
@@ -83,28 +84,29 @@ func scanRecharge(row pgx.Row) (*rechargeRow, error) {
 
 const manualInstructions = "请按平台公布的收款方式付款并备注订单号，管理员确认到账后自动入账"
 
-// RechargeChannels 返回买家当前可用的支付方式：在线渠道需要已配置商户信息且后台开关打开。
+// RechargeChannels returns enabled online payment methods from the host.
 func (f *Funds) RechargeChannels(ctx context.Context) ([]string, error) {
-	st, err := f.Settings(ctx)
-	if err != nil {
-		return nil, err
-	}
-	configured := f.registry(ctx).Configured()
-	var out []string
+	reg := f.registry(ctx)
+	configured := reg.Configured()
+	out := []string{}
 	for _, ch := range payment.AllChannels {
-		if !st.PaymentChannels[ch] {
-			continue
-		}
-		if ch == payment.ChannelManual || configured[ch] {
+		if configured[ch] {
 			out = append(out, ch)
 		}
 	}
 	return out, nil
 }
 
-// CreateRecharge 创建充值订单；在线渠道同时向渠道下单，返回收银台地址或二维码内容。
-func (f *Funds) CreateRecharge(ctx context.Context, userID int64, amount float64, channel, ip string) (*RechargeOrder, error) {
-	st, err := f.Settings(ctx)
+// CreateRecharge binds the selected host instance before issuing a payment.
+// requestOrigin is optional for callers outside HTTP; the instance notify origin is the fallback.
+func (f *Funds) CreateRecharge(ctx context.Context, userID int64, amount float64, channel, ip string, requestOrigin ...string) (*RechargeOrder, error) {
+	if channel == "" {
+		return nil, httpx.BadRequest("CHANNEL_REQUIRED", "payment channel is required")
+	}
+	if channel == payment.ChannelManual {
+		return nil, httpx.BadRequest("CHANNEL_UNAVAILABLE", "payment channel is not available")
+	}
+	cfg, err := f.RechargeConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -112,56 +114,40 @@ func (f *Funds) CreateRecharge(ctx context.Context, userID int64, amount float64
 	if err != nil {
 		return nil, err
 	}
-	if amount < st.RechargeMin || amount > st.RechargeMax {
-		return nil, httpx.BadRequest("AMOUNT_OUT_OF_RANGE", fmt.Sprintf("recharge amount must be between %.2f and %.2f", st.RechargeMin, st.RechargeMax))
+	if amount < cfg.MinAmount || amount > cfg.MaxAmount {
+		return nil, httpx.BadRequest("AMOUNT_OUT_OF_RANGE", fmt.Sprintf("recharge amount must be between %.2f and %.2f", cfg.MinAmount, cfg.MaxAmount))
 	}
-	if channel == "" {
-		channel = payment.ChannelManual
-	}
-	channels, err := f.RechargeChannels(ctx)
-	if err != nil {
-		return nil, err
-	}
-	available := false
-	for _, c := range channels {
-		available = available || c == channel
-	}
-	if !available {
+	reg := f.registry(ctx)
+	provider := payment.ProviderOf(channel)
+	p, selectedID := reg.Select(channel)
+	if p == nil {
 		return nil, httpx.BadRequest("CHANNEL_UNAVAILABLE", "payment channel is not available")
 	}
-	provider := payment.ProviderOf(channel)
-	var expires *time.Time
-	if channel != payment.ChannelManual {
-		t := f.now().Add(time.Duration(st.RechargeOrderTimeoutMinutes) * time.Minute)
-		expires = &t
-	}
+	expires := f.now().Add(time.Duration(cfg.OrderTimeoutMinutes) * time.Minute)
 	var id int64
-	if err := f.DB.QueryRow(ctx, `INSERT INTO recharge_orders (user_id, amount, provider, channel, client_ip, expires_at)
-		VALUES ($1, $2::numeric, $3, $4, NULLIF($5, ''), $6) RETURNING id`, userID, amt, provider, channel, ip, expires).Scan(&id); err != nil {
+	if err := f.DB.QueryRow(ctx, `INSERT INTO recharge_orders (user_id, amount, provider, channel, client_ip, expires_at, provider_instance_id)
+		VALUES ($1, $2::numeric, $3, $4, NULLIF($5, ''), $6, $7) RETURNING id`, userID, amt, provider, channel, ip, expires, selectedID).Scan(&id); err != nil {
 		return nil, err
 	}
-	if channel != payment.ChannelManual {
-		if err := f.startPayment(ctx, id, channel, amt, ip, *expires, st.PaymentPublicURL); err != nil {
-			return nil, err
-		}
+	origin := reg.Origin(provider, selectedID)
+	if len(requestOrigin) > 0 && requestOrigin[0] != "" {
+		origin = requestOrigin[0]
+	}
+	if err := f.startPayment(ctx, p, id, channel, amt, ip, expires, origin); err != nil {
+		return nil, err
 	}
 	return f.GetRecharge(ctx, userID, id)
 }
 
-func (f *Funds) startPayment(ctx context.Context, id int64, channel, amt, ip string, expires time.Time, publicURL string) error {
-	p := f.registry(ctx).Get(payment.ProviderOf(channel))
-	if p == nil {
-		return httpx.BadRequest("CHANNEL_UNAVAILABLE", "payment channel is not configured")
-	}
-	// 商户订单号只用字母数字，满足两家渠道的格式要求；随机后缀避免开发环境重建数据库后与渠道侧旧单号冲突
+func (f *Funds) startPayment(ctx context.Context, p payment.Provider, id int64, channel, amt, ip string, expires time.Time, origin string) error {
 	outTradeNo := fmt.Sprintf("TMR%d%s", id, randx.String(6))
 	fen, err := payment.Fen(amt)
 	if err != nil {
 		return err
 	}
 	order := payment.Order{OutTradeNo: outTradeNo, AmountFen: fen, Subject: "Token Market 余额充值", ExpireAt: expires, ClientIP: ip}
-	if publicURL != "" {
-		order.ReturnURL = fmt.Sprintf("%s/buyer/wallet?order=%d", publicURL, id)
+	if origin != "" {
+		order.ReturnURL = fmt.Sprintf("%s/buyer/wallet?order=%d", origin, id)
 	}
 	if _, err := f.DB.Exec(ctx, "UPDATE recharge_orders SET out_trade_no = $2 WHERE id = $1", id, outTradeNo); err != nil {
 		return err
@@ -313,11 +299,19 @@ func (f *Funds) CancelRecharge(ctx context.Context, userID, orderID int64) error
 	if o.Status != "pending" {
 		return httpx.Conflict("ORDER_NOT_PENDING", "order is not pending")
 	}
-	if p := f.registry(ctx).Get(o.Provider); p != nil && o.OutTradeNo != nil {
+	reg := f.registry(ctx)
+	p := reg.GetInstance(o.Provider, instanceID(o.ProviderInstanceID))
+	if p == nil && instanceID(o.ProviderInstanceID) != 0 {
+		f.warnMissingPaymentInstance("payment instance missing for cancellation", o.ID, instanceID(o.ProviderInstanceID))
+		if o.OutTradeNo != nil {
+			return httpx.Unavailable("PAYMENT_UNAVAILABLE", "payment instance is unavailable; cannot safely close the order")
+		}
+	}
+	if p != nil && o.OutTradeNo != nil {
 		if err := p.Close(ctx, *o.OutTradeNo); err != nil {
 			t, qerr := p.Query(ctx, *o.OutTradeNo)
 			if qerr == nil && t.State == payment.TradePaid {
-				if _, err := f.ApplyTrade(ctx, o.Provider, t); err != nil {
+				if _, err := f.ApplyTrade(ctx, o.Provider, t, instanceID(o.ProviderInstanceID)); err != nil {
 					return err
 				}
 				return httpx.Conflict("ORDER_PAID", "order has been paid and is being credited")
@@ -338,7 +332,7 @@ func (f *Funds) CancelRecharge(ctx context.Context, userID, orderID int64) error
 
 // ApplyTrade 按渠道侧的交易状态推进订单，返回处理结果（写入通知日志）：
 // 已支付且金额一致则入账（含已取消、已过期的订单），金额不一致只记录异常不入账；渠道已关单的待支付订单标记过期。
-func (f *Funds) ApplyTrade(ctx context.Context, provider string, t *payment.Trade) (string, error) {
+func (f *Funds) ApplyTrade(ctx context.Context, provider string, t *payment.Trade, sourceInstance int64) (string, error) {
 	o, err := scanRecharge(f.DB.QueryRow(ctx, "SELECT "+rechargeColumns+" FROM recharge_orders WHERE out_trade_no = $1", t.OutTradeNo))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "unknown_order", nil
@@ -347,6 +341,9 @@ func (f *Funds) ApplyTrade(ctx context.Context, provider string, t *payment.Trad
 		return "error", err
 	}
 	if o.Provider != provider {
+		return "ignored", nil
+	}
+	if boundID := instanceID(o.ProviderInstanceID); boundID != sourceInstance {
 		return "ignored", nil
 	}
 	switch t.State {
@@ -408,8 +405,15 @@ func (f *Funds) RecordNotification(ctx context.Context, provider string, t *paym
 
 // syncOrder 主动查单：已支付则入账，已关闭则过期；超过支付时限仍未支付时向渠道关单。closeExpired 为 false 时只查不关。
 func (f *Funds) syncOrder(ctx context.Context, o *rechargeRow, closeExpired bool) error {
-	p := f.registry(ctx).Get(o.Provider)
-	if p == nil || o.OutTradeNo == nil {
+	boundID := instanceID(o.ProviderInstanceID)
+	p := f.registry(ctx).GetInstance(o.Provider, boundID)
+	if p == nil {
+		if boundID != 0 {
+			f.warnMissingPaymentInstance("payment instance missing while syncing order", o.ID, boundID)
+		}
+		return nil
+	}
+	if o.OutTradeNo == nil {
 		return nil
 	}
 	if _, err := f.DB.Exec(ctx, "UPDATE recharge_orders SET last_synced_at = now() WHERE id = $1", o.ID); err != nil {
@@ -423,7 +427,7 @@ func (f *Funds) syncOrder(ctx context.Context, o *rechargeRow, closeExpired bool
 		return err
 	}
 	if t.State != payment.TradePending {
-		_, err := f.ApplyTrade(ctx, o.Provider, t)
+		_, err := f.ApplyTrade(ctx, o.Provider, t, instanceID(o.ProviderInstanceID))
 		return err
 	}
 	if !closeExpired || o.Status != "pending" || o.ExpiresAt == nil || f.now().Before(o.ExpiresAt.Add(time.Minute)) {
@@ -432,7 +436,7 @@ func (f *Funds) syncOrder(ctx context.Context, o *rechargeRow, closeExpired bool
 	if err := p.Close(ctx, *o.OutTradeNo); err != nil {
 		// 关单失败通常是刚刚付款成功，再查一次
 		if t2, qerr := p.Query(ctx, *o.OutTradeNo); qerr == nil && t2.State == payment.TradePaid {
-			_, err := f.ApplyTrade(ctx, o.Provider, t2)
+			_, err := f.ApplyTrade(ctx, o.Provider, t2, instanceID(o.ProviderInstanceID))
 			return err
 		}
 		return fmt.Errorf("close expired payment: %w", err)
@@ -443,10 +447,15 @@ func (f *Funds) syncOrder(ctx context.Context, o *rechargeRow, closeExpired bool
 
 // SyncPayments 由 worker 周期调用：补偿丢失的通知、关闭超时订单。待支付订单前 10 分钟每 20 秒查一次，之后每 2 分钟；
 // 用户取消的订单在支付时限后 10 分钟内继续查询（当面付的二维码在关单前仍可能被扫码支付）。
+//
+// cancelledStillPolledPredicate 是"已取消但仍在查单窗口内"的订单，SyncPayments 与 InFlightPaymentOrders 共用，
+// 不含查单节流条件：计数要包括刚查过单、刚创建的订单。
+const cancelledStillPolledPredicate = `status = 'cancelled' AND expires_at > now() - interval '10 minutes'`
+
 func (f *Funds) SyncPayments(ctx context.Context) error {
 	rows, err := f.DB.Query(ctx, "SELECT "+rechargeColumns+` FROM recharge_orders
 		WHERE channel <> 'manual' AND out_trade_no IS NOT NULL AND created_at < now() - interval '20 seconds'
-			AND (status = 'pending' OR (status = 'cancelled' AND expires_at > now() - interval '10 minutes'))
+			AND (status = 'pending' OR (`+cancelledStillPolledPredicate+`))
 			AND (last_synced_at IS NULL OR last_synced_at < now() - CASE WHEN created_at > now() - interval '10 minutes'
 				THEN interval '20 seconds' ELSE interval '2 minutes' END)
 		ORDER BY id LIMIT 200`)
@@ -472,6 +481,20 @@ func (f *Funds) SyncPayments(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// InFlightPaymentOrders counts recharge orders and original-route payouts that still need an instance's credentials.
+func (f *Funds) InFlightPaymentOrders(ctx context.Context, instanceID int64) (int, error) {
+	var count int
+	err := f.DB.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM recharge_orders
+			WHERE provider_instance_id = $1 AND channel <> 'manual' AND out_trade_no IS NOT NULL AND (
+				status = 'pending' OR (`+cancelledStillPolledPredicate+`)
+			)) +
+		(SELECT count(*) FROM refund_payouts p
+			JOIN recharge_orders o ON o.id = p.recharge_order_id
+			WHERE o.provider_instance_id = $1 AND p.status IN ('pending', 'processing', 'failed'))`, instanceID).Scan(&count)
+	return count, err
 }
 
 // TrackCrediting 推进 crediting 状态的订单：加余额操作完成则到账，进入死信则标记失败待人工处理。

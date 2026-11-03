@@ -33,11 +33,8 @@ func TestSpendingLimitAndRiskControls(t *testing.T) {
 	e.schedule()
 
 	buyer := e.newUser("buyer@market.test")
-	var rc struct {
-		Order idOnly `json:"order"`
-	}
-	buyer.must("POST", "/api/buyer/recharge", map[string]any{"amount": 10}, &rc)
-	admin.must("POST", fmt.Sprintf("/api/admin/recharges/%d/confirm", rc.Order.ID), map[string]string{"provider_ref": "bank-1"}, nil)
+	rc := historicalManual(t, e, buyer, 10)
+	admin.must("POST", fmt.Sprintf("/api/admin/recharges/%d/confirm", rc.ID), map[string]string{"provider_ref": "bank-1"}, nil)
 	e.drain()
 
 	var key struct {

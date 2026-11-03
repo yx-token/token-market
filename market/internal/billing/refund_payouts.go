@@ -67,7 +67,7 @@ func (f *Funds) planPayouts(ctx context.Context, tx pgx.Tx, refundID, userID int
 	}
 	reg := f.registry(ctx)
 	if st.RefundOriginalRoute {
-		rows, err := tx.Query(ctx, `SELECT id, channel, amount::text, refunded_amount::text FROM recharge_orders
+		rows, err := tx.Query(ctx, `SELECT id, channel, amount::text, refunded_amount::text, provider_instance_id FROM recharge_orders
 			WHERE user_id = $1 AND status = 'credited' AND channel <> 'manual' AND out_trade_no IS NOT NULL
 				AND amount > refunded_amount AND created_at > now() - make_interval(days => $2)
 			ORDER BY id DESC FOR UPDATE`, userID, st.RefundOriginalRouteDays)
@@ -76,13 +76,14 @@ func (f *Funds) planPayouts(ctx context.Context, tx pgx.Tx, refundID, userID int
 		}
 		type cand struct {
 			id               int64
+			instanceID       *int64
 			channel          string
 			amount, refunded string
 		}
 		var cands []cand
 		for rows.Next() {
 			var c cand
-			if err := rows.Scan(&c.id, &c.channel, &c.amount, &c.refunded); err != nil {
+			if err := rows.Scan(&c.id, &c.channel, &c.amount, &c.refunded, &c.instanceID); err != nil {
 				rows.Close()
 				return err
 			}
@@ -96,7 +97,10 @@ func (f *Funds) planPayouts(ctx context.Context, tx pgx.Tx, refundID, userID int
 			if remaining <= 0 {
 				break
 			}
-			if reg.Get(payment.ProviderOf(c.channel)) == nil {
+			if reg.GetInstance(payment.ProviderOf(c.channel), instanceID(c.instanceID)) == nil {
+				if instanceID(c.instanceID) != 0 {
+					f.warnMissingPaymentInstance("payment instance missing while planning refund payout", c.id, instanceID(c.instanceID))
+				}
 				continue // 渠道已下线，无法原路退回
 			}
 			total, err := payment.Fen(c.amount)
@@ -146,14 +150,15 @@ var payoutBackoff = []time.Duration{10 * time.Second, 30 * time.Second, time.Min
 
 // AdvanceRefundPayouts 由 worker 周期调用：发起或查询原路退款，全部成功的退款标记完成。
 func (f *Funds) AdvanceRefundPayouts(ctx context.Context) error {
-	rows, err := f.DB.Query(ctx, `SELECT p.id, p.channel, p.amount::text, p.out_refund_no, p.status, p.attempts, o.out_trade_no, o.amount::text
+	rows, err := f.DB.Query(ctx, `SELECT p.id, o.id, p.channel, p.amount::text, p.out_refund_no, p.status, p.attempts, o.out_trade_no, o.amount::text, o.provider_instance_id
 		FROM refund_payouts p JOIN recharge_orders o ON o.id = p.recharge_order_id JOIN refunds r ON r.id = p.refund_id
 		WHERE p.status IN ('pending', 'processing') AND r.status = 'paying' AND p.next_attempt_at <= now() ORDER BY p.id LIMIT 100`)
 	if err != nil {
 		return err
 	}
 	type item struct {
-		id                   int64
+		id, orderID          int64
+		instanceID           *int64
 		channel, amount      string
 		outRefundNo, status  string
 		attempts             int
@@ -162,7 +167,7 @@ func (f *Funds) AdvanceRefundPayouts(ctx context.Context) error {
 	var items []item
 	for rows.Next() {
 		var it item
-		if err := rows.Scan(&it.id, &it.channel, &it.amount, &it.outRefundNo, &it.status, &it.attempts, &it.outTradeNo, &it.orderAmt); err != nil {
+		if err := rows.Scan(&it.id, &it.orderID, &it.channel, &it.amount, &it.outRefundNo, &it.status, &it.attempts, &it.outTradeNo, &it.orderAmt, &it.instanceID); err != nil {
 			rows.Close()
 			return err
 		}
@@ -174,8 +179,12 @@ func (f *Funds) AdvanceRefundPayouts(ctx context.Context) error {
 	}
 	reg := f.registry(ctx)
 	for _, it := range items {
-		p := reg.Get(payment.ProviderOf(it.channel))
+		boundID := instanceID(it.instanceID)
+		p := reg.GetInstance(payment.ProviderOf(it.channel), boundID)
 		if p == nil {
+			if boundID != 0 {
+				f.warnMissingPaymentInstance("payment instance missing while advancing refund payout", it.orderID, boundID)
+			}
 			if err := f.setPayout(ctx, it.id, "failed", nil, "payment channel is not configured", it.attempts, 0); err != nil {
 				return err
 			}

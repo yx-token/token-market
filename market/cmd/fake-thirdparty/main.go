@@ -5,8 +5,8 @@
 //
 //	fake-thirdparty --keys-dir data/dev/pay-keys [--listen 127.0.0.1:18082] [--public-url http://127.0.0.1:18082]
 //
-// 首次启动在 keys-dir 生成密钥，并写出 merchant-alipay.json、merchant-wechat.json：
-// 管理后台"支付配置"接口（PUT /api/admin/payments/merchants/{alipay|wechat}）的请求体，接入这个替身（scripts/dev.sh 会自动提交）。
+// 首次启动在 keys-dir 生成密钥，并写出 provider-alipay.json、provider-wxpay.json：
+// sub2api Admin API 创建官方支付实例的请求体（scripts/dev.sh 自动提交）。
 package main
 
 import (
@@ -17,9 +17,11 @@ import (
 	"flag"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -42,15 +44,21 @@ func main() {
 	keysDir := flag.String("keys-dir", "data/dev/pay-keys", "密钥目录（不存在时生成）")
 	listen := flag.String("listen", "127.0.0.1:18082", "监听地址")
 	publicURL := flag.String("public-url", "", "浏览器访问替身的地址，默认 http://<listen>")
+	notifyOrigin := flag.String("notify-origin", "http://127.0.0.1:8080", "支付通知接收站点")
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if err := run(*keysDir, *listen, *publicURL, log); err != nil {
+	if err := run(*keysDir, *listen, *publicURL, *notifyOrigin, log); err != nil {
 		log.Error("fake-thirdparty exited", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(keysDir, listen, publicURL string, log *slog.Logger) error {
+func run(keysDir, listen, publicURL, notifyOrigin string, log *slog.Logger) error {
+	var err error
+	notifyOrigin, err = normalizeNotifyOrigin(notifyOrigin)
+	if err != nil {
+		return err
+	}
 	keys, err := loadKeys(keysDir)
 	if err != nil {
 		return err
@@ -58,7 +66,7 @@ func run(keysDir, listen, publicURL string, log *slog.Logger) error {
 	if publicURL == "" {
 		publicURL = "http://" + listen
 	}
-	if err := writeMerchants(keysDir, publicURL); err != nil {
+	if err := writeProviders(keysDir, notifyOrigin); err != nil {
 		return err
 	}
 	pay := fakepay.NewUnstarted(fakepay.Config{Keys: keys, AlipayAppID: alipayAppID, WechatAppID: wechatAppID, WechatMchID: wechatMchID,
@@ -83,6 +91,15 @@ func run(keysDir, listen, publicURL string, log *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+func normalizeNotifyOrigin(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return "", errors.New("notify-origin must be an absolute http(s) origin without path, query, or fragment")
+	}
+	return u.Scheme + "://" + u.Host, nil
 }
 
 // loadKeys 读取或生成密钥：商户私钥与平台公钥给 token-market，其余给替身。
@@ -144,8 +161,8 @@ func loadKeys(dir string) (fakepay.Keys, error) {
 		WechatMerchant: &merchant.PublicKey, WechatAPIv3Key: wechatAPIv3Key, WechatPublicKey: wechatPubKeyID}, nil
 }
 
-// writeMerchants 写出接入替身的商户配置（含商户私钥，仅供开发环境）。
-func writeMerchants(dir, publicURL string) error {
+// writeProviders 写出 sub2api 官方实例配置；网关替换由市场进程的开发环境变量完成。
+func writeProviders(dir, notifyOrigin string) error {
 	read := func(name string) (string, error) {
 		b, err := os.ReadFile(filepath.Join(dir, name))
 		return string(b), err
@@ -167,15 +184,34 @@ func writeMerchants(dir, publicURL string) error {
 		return err
 	}
 	bodies := map[string]any{
-		"merchant-alipay.json": map[string]any{"enabled": true, "private_key": appKey, "alipay": map[string]any{
-			"app_id": alipayAppID, "gateway": publicURL + "/gateway.do", "mode": "public_key", "alipay_public_key": alipayPub}},
-		"merchant-wechat.json": map[string]any{"enabled": true, "private_key": merchantKey, "api_v3_key": wechatAPIv3Key, "wechat": map[string]any{
-			"app_id": wechatAppID, "mch_id": wechatMchID, "mch_serial_no": wechatSerial, "public_key_id": wechatPubKeyID,
-			"public_key": wechatPub, "base_url": publicURL}},
+		"provider-alipay.json": map[string]any{
+			"provider_key": "alipay", "name": "dev-fake-alipay", "enabled": true,
+			"supported_types": []string{"alipay"}, "payment_mode": "", "sort_order": -1000,
+			"refund_enabled": true, "allow_user_refund": true,
+			"config": map[string]string{
+				"appId": alipayAppID, "privateKey": appKey, "publicKey": alipayPub,
+				"notifyUrl": notifyOrigin + "/api/payments/alipay/notify", "returnUrl": notifyOrigin + "/buyer/wallet",
+			},
+		},
+		"provider-wxpay.json": map[string]any{
+			"provider_key": "wxpay", "name": "dev-fake-wxpay", "enabled": true,
+			"supported_types": []string{"wxpay"}, "payment_mode": "", "sort_order": -1000,
+			"refund_enabled": true, "allow_user_refund": true,
+			"config": map[string]string{
+				"appId": wechatAppID, "mchId": wechatMchID, "privateKey": merchantKey,
+				"apiV3Key": wechatAPIv3Key, "certSerial": wechatSerial,
+				"publicKeyId": wechatPubKeyID, "publicKey": wechatPub,
+				"notifyUrl": notifyOrigin + "/api/payments/wechat/notify",
+			},
+		},
 	}
 	for name, body := range bodies {
 		raw, _ := json.MarshalIndent(body, "", "  ")
-		if err := os.WriteFile(filepath.Join(dir, name), raw, 0o600); err != nil {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			return err
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
 			return err
 		}
 	}

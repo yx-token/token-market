@@ -7,7 +7,7 @@ import type { RechargeOrder } from '@/api/types'
 import PaymentDialog from '@/components/PaymentDialog.vue'
 
 vi.mock('@/api', () => ({ buyer: { getRecharge: vi.fn() } }))
-vi.mock('@/stores/config', () => ({ useConfig: () => ({ config: { payment_channels: ['manual'] }, ensure: async () => {} }) }))
+vi.mock('@/stores/config', () => ({ useConfig: () => ({ config: { payment_channels: [] }, ensure: async () => {} }) }))
 const dialog = defineComponent({ props: ['open'], template: '<div v-if="open"><slot /><slot name="footer" /></div>' })
 const order = (checkout?: RechargeOrder['pack_checkout_status']) => ({
   id: 12, amount: 20, status: 'credited', channel: 'manual', pack_checkout_status: checkout,

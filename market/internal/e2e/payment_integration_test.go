@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/url"
@@ -10,26 +11,39 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/yx-token/token-market/market/hostpay"
 	"github.com/yx-token/token-market/market/internal/payment"
+	"github.com/yx-token/token-market/market/internal/platform/config"
 	"github.com/yx-token/token-market/market/internal/testutil/fakepay"
 )
 
 type rechargeView struct {
-	ID         int64   `json:"id"`
-	Status     string  `json:"status"`
-	Channel    string  `json:"channel"`
-	OutTradeNo *string `json:"out_trade_no"`
-	Amount     float64 `json:"amount"`
-	Payment    *struct {
+	ID                 int64      `json:"id"`
+	Status             string     `json:"status"`
+	Channel            string     `json:"channel"`
+	ProviderInstanceID *int64     `json:"provider_instance_id"`
+	OutTradeNo         *string    `json:"out_trade_no"`
+	Amount             float64    `json:"amount"`
+	ExpiresAt          *time.Time `json:"expires_at"`
+	Payment            *struct {
 		Kind   string `json:"kind"`
 		URL    string `json:"url"`
 		QRCode string `json:"qr_code"`
 	} `json:"payment"`
 }
 
-// withPayments 启动支付宝与微信支付替身，返回在后台"支付配置"中接入它们的函数（同时检查配置接口）。
-func withPayments(t *testing.T) (*fakepay.Server, func(e *env, admin *client)) {
+type paymentFixture struct {
+	fake   *fakepay.Server
+	config hostpay.Config
+}
+
+// withPayments 模拟宿主提供的支付实例；测试网关仅通过进程配置覆盖。
+func withPayments(t *testing.T) *paymentFixture {
+	t.Helper()
+	hostpay.SetSource(nil)
+	t.Cleanup(func() { hostpay.SetSource(nil) })
 	keys, app, merchant, err := fakepay.GenerateKeys()
 	if err != nil {
 		t.Fatal(err)
@@ -37,42 +51,43 @@ func withPayments(t *testing.T) (*fakepay.Server, func(e *env, admin *client)) {
 	fake := fakepay.New(fakepay.Config{Keys: keys, AlipayAppID: "2021000000000001", WechatAppID: "wx0001", WechatMchID: "1900000001",
 		WechatMchSerial: "MCHSERIAL0001"})
 	t.Cleanup(fake.Close)
-	return fake, func(e *env, admin *client) {
-		t.Helper()
-		appKey := payment.EncodePrivateKeyPEM(app)
-		alipayBody := map[string]any{"enabled": true, "private_key": appKey, "alipay": map[string]any{"app_id": "2021000000000001",
-			"gateway": fake.AlipayGateway(), "mode": "public_key", "alipay_public_key": payment.EncodePublicKeyPEM(&keys.AlipayPlatform.PublicKey)}}
-		// 启用时必须能用这份配置构建客户端：无效私钥被拒绝
-		admin.expect(400, "PUT", "/api/admin/payments/merchants/alipay", map[string]any{"enabled": true, "private_key": "not a key",
-			"alipay": alipayBody["alipay"]})
-		admin.must("PUT", "/api/admin/payments/merchants/alipay", alipayBody, nil)
-		admin.must("PUT", "/api/admin/payments/merchants/wechat", map[string]any{"enabled": true, "private_key": payment.EncodePrivateKeyPEM(merchant),
-			"api_v3_key": keys.WechatAPIv3Key, "wechat": map[string]any{"app_id": "wx0001", "mch_id": "1900000001", "mch_serial_no": "MCHSERIAL0001",
-				"public_key_id": keys.WechatPublicKey, "public_key": payment.EncodePublicKeyPEM(&keys.WechatPlatform.PublicKey),
-				"base_url": fake.WechatBaseURL()}}, nil)
-		// 没有通知地址时商户不可用
-		var ms map[string]struct {
-			Enabled    bool   `json:"enabled"`
-			Ready      bool   `json:"ready"`
-			Problem    string `json:"problem"`
-			HasPrivate bool   `json:"has_private_key"`
-		}
-		admin.must("GET", "/api/admin/payments/merchants", nil, &ms)
-		if ms["alipay"].Ready || !strings.Contains(ms["alipay"].Problem, "通知地址") {
-			t.Fatalf("merchant without notify url: %+v", ms)
-		}
-		admin.must("PUT", "/api/admin/settings", map[string]any{"payment_public_url": e.api.URL + "/"}, nil)
-		_, raw := admin.call("GET", "/api/admin/payments/merchants", nil, &ms)
-		if !ms["alipay"].Ready || !ms["wechat"].Ready || !ms["alipay"].HasPrivate || strings.Contains(raw, "PRIVATE KEY") ||
-			strings.Contains(raw, keys.WechatAPIv3Key) {
-			t.Fatalf("merchants should be ready without exposing secrets: %s", raw)
-		}
-		admin.must("POST", "/api/admin/payments/merchants/alipay/test", nil, nil)
-		admin.must("POST", "/api/admin/payments/merchants/wechat/test", nil, nil)
-		// 只修改非敏感字段时密钥保持不变
-		admin.must("PUT", "/api/admin/payments/merchants/alipay", map[string]any{"alipay": alipayBody["alipay"]}, nil)
-		admin.must("POST", "/api/admin/payments/merchants/alipay/test", nil, nil)
+	return &paymentFixture{fake: fake, config: hostpay.Config{Enabled: true, Instances: []hostpay.Instance{
+		{ID: 101, ProviderKey: hostpay.ProviderAlipay, Enabled: true, SupportedTypes: "alipay", Config: map[string]string{
+			"appId": "2021000000000001", "privateKey": payment.EncodePrivateKeyPEM(app),
+			"publicKey": payment.EncodePublicKeyPEM(&keys.AlipayPlatform.PublicKey),
+		}},
+		{ID: 201, ProviderKey: hostpay.ProviderWxpay, Enabled: true, SupportedTypes: "wxpay", Config: map[string]string{
+			"appId": "wx0001", "mchId": "1900000001", "certSerial": "MCHSERIAL0001",
+			"privateKey": payment.EncodePrivateKeyPEM(merchant), "apiV3Key": keys.WechatAPIv3Key,
+			"publicKeyId": keys.WechatPublicKey, "publicKey": payment.EncodePublicKeyPEM(&keys.WechatPlatform.PublicKey),
+		}},
+	}}}
+}
+
+func (p *paymentFixture) gateways(cfg *config.Config) {
+	cfg.Payment.AlipayGateway = p.fake.AlipayGateway()
+	cfg.Payment.WechatBaseURL = p.fake.WechatBaseURL()
+}
+
+func (p *paymentFixture) configure(e *env) {
+	for i := range p.config.Instances {
+		p.config.Instances[i].Config["notifyUrl"] = e.api.URL
 	}
+	p.publish(e)
+}
+
+func (p *paymentFixture) publish(e *env) {
+	// 每次发布独立快照，避免 HTTP 请求读取配置时与下一次测试修改共享 map。
+	snapshot := p.config
+	snapshot.Instances = append([]hostpay.Instance(nil), p.config.Instances...)
+	for i, instance := range snapshot.Instances {
+		snapshot.Instances[i].Config = make(map[string]string, len(instance.Config))
+		for k, v := range instance.Config {
+			snapshot.Instances[i].Config[k] = v
+		}
+	}
+	hostpay.SetSource(func(context.Context) (*hostpay.Config, error) { return &snapshot, nil })
+	e.app.Payments.Invalidate()
 }
 
 func (e *env) settle() {
@@ -115,18 +130,140 @@ func browse(t *testing.T, link string) (*http.Response, string) {
 	return resp, string(body)
 }
 
-func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
-	fake, configure := withPayments(t)
+func TestRechargeRequiresHostPaymentSourceAndChannel(t *testing.T) {
+	hostpay.SetSource(nil)
+	t.Cleanup(func() { hostpay.SetSource(nil) })
 	e := setup(t)
+	buyer := e.newUser("no-payment-source@market.test")
+	if raw := buyer.expect(400, "POST", "/api/buyer/recharge", map[string]any{"amount": 1}); !strings.Contains(raw, "CHANNEL_REQUIRED") {
+		t.Fatalf("missing channel should be required: %s", raw)
+	}
+	if raw := buyer.expect(400, "POST", "/api/buyer/recharge", map[string]any{"amount": 1, "channel": payment.ChannelManual}); !strings.Contains(raw, "CHANNEL_UNAVAILABLE") {
+		t.Fatalf("manual channel should be unavailable: %s", raw)
+	}
+}
+
+func TestPaymentNotifyRejectsForgedAlipaySignatureOnBothRoutes(t *testing.T) {
+	p := withPayments(t)
+	e := setup(t, p.gateways)
+	p.configure(e)
+	buyer := e.newUser("forged-notify@market.test")
+	var created struct {
+		Order rechargeView `json:"order"`
+	}
+	buyer.must("POST", "/api/buyer/recharge", map[string]any{"amount": 5, "channel": "alipay_f2f"}, &created)
+	if created.Order.Status != "pending" {
+		t.Fatalf("initial order status = %q, want pending", created.Order.Status)
+	}
+
+	for _, route := range []string{
+		"/api/payments/alipay/101/notify",
+		"/api/payments/alipay/notify",
+	} {
+		req, err := http.NewRequest(http.MethodPost, e.api.URL+route, strings.NewReader("app_id=2021000000000001&out_trade_no=forged&sign=invalid"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || strings.TrimSpace(string(body)) != "fail" {
+			t.Fatalf("forged notification %s status/body = %d, want 200 fail", route, resp.StatusCode)
+		}
+		if got := e.orderStatus(created.Order.ID); got != "pending" {
+			t.Fatalf("forged notification %s changed order status to %q", route, got)
+		}
+	}
+	var invalid int
+	mustScan(t, e.app.DB.QueryRow(e.ctx, `SELECT count(*) FROM payment_notifications WHERE provider = 'alipay' AND result = 'invalid'
+		AND error LIKE '%signature%'`), &invalid)
+	if invalid != 2 {
+		t.Fatalf("invalid forged notification records = %d, want 2", invalid)
+	}
+}
+
+func TestInFlightPaymentOrderCounterIncludesOrdersAndOriginalRoutePayouts(t *testing.T) {
+	p := withPayments(t)
+	e := setup(t, p.gateways)
+	p.configure(e)
+	buyer := e.newUser("inflight-counter@market.test")
+	var created struct {
+		Order rechargeView `json:"order"`
+	}
+	buyer.must("POST", "/api/buyer/recharge", map[string]any{"amount": 5, "channel": "alipay_f2f"}, &created)
+
+	count, err := e.app.Funds.InFlightPaymentOrders(e.ctx, 101)
+	if err != nil || count != 1 {
+		t.Fatalf("pending order in-flight count = %d, %v; want 1", count, err)
+	}
+	if _, err := e.app.DB.Exec(e.ctx, `UPDATE recharge_orders SET status = 'cancelled', created_at = now() - interval '1 hour',
+		expires_at = now() + interval '5 minutes', last_synced_at = NULL WHERE id = $1`, created.Order.ID); err != nil {
+		t.Fatal(err)
+	}
+	count, err = e.app.Funds.InFlightPaymentOrders(e.ctx, 101)
+	if err != nil || count != 1 {
+		t.Fatalf("eligible cancelled order in-flight count = %d, %v; want 1", count, err)
+	}
+	// 查单节流只影响 worker 何时再查，不影响"仍依赖原凭证"：刚查过单的已取消订单也要计入
+	if _, err := e.app.DB.Exec(e.ctx, `UPDATE recharge_orders SET last_synced_at = now() WHERE id = $1`, created.Order.ID); err != nil {
+		t.Fatal(err)
+	}
+	count, err = e.app.Funds.InFlightPaymentOrders(e.ctx, 101)
+	if err != nil || count != 1 {
+		t.Fatalf("recently synced cancelled order in-flight count = %d, %v; want 1", count, err)
+	}
+	// 超出查单窗口（支付时限后 10 分钟）的已取消订单不再计入
+	if _, err := e.app.DB.Exec(e.ctx, `UPDATE recharge_orders SET expires_at = now() - interval '11 minutes' WHERE id = $1`, created.Order.ID); err != nil {
+		t.Fatal(err)
+	}
+	count, err = e.app.Funds.InFlightPaymentOrders(e.ctx, 101)
+	if err != nil || count != 0 {
+		t.Fatalf("cancelled order past polling window in-flight count = %d, %v; want 0", count, err)
+	}
+	if other, err := e.app.Funds.InFlightPaymentOrders(e.ctx, 999); err != nil || other != 0 {
+		t.Fatalf("unrelated instance in-flight count = %d, %v; want 0", other, err)
+	}
+
+	var userID int64
+	mustScan(t, e.app.DB.QueryRow(e.ctx, "SELECT user_id FROM recharge_orders WHERE id = $1", created.Order.ID), &userID)
+	var refundID int64
+	if err := e.app.DB.QueryRow(e.ctx, `INSERT INTO refunds (user_id, kind, status, amount, lock_until)
+		VALUES ($1, 'order', 'paying', 1, now()) RETURNING id`, userID).Scan(&refundID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.app.DB.Exec(e.ctx, `INSERT INTO refund_payouts (refund_id, recharge_order_id, channel, amount, out_refund_no, status)
+		VALUES ($1, $2, 'alipay_f2f', 1, 'inflight-counter-refund', 'pending')`, refundID, created.Order.ID); err != nil {
+		t.Fatal(err)
+	}
+	count, err = e.app.Funds.InFlightPaymentOrders(e.ctx, 101)
+	if err != nil || count != 1 {
+		t.Fatalf("payout-only in-flight count = %d, %v; want 1", count, err)
+	}
+}
+
+func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
+	p := withPayments(t)
+	e := setup(t, p.gateways)
 	admin := e.login("admin@market.test", "admin-password-1")
 	var mc0 struct {
 		Channels []string `json:"payment_channels"`
 	}
 	e.anon().must("GET", "/api/market/config", nil, &mc0)
-	if strings.Join(mc0.Channels, ",") != "manual" {
-		t.Fatalf("only manual payment before merchants are configured: %v", mc0.Channels)
+	if len(mc0.Channels) != 0 {
+		t.Fatalf("payment channels must be empty without host payment source: %v", mc0.Channels)
 	}
-	configure(e, admin)
+	p.configure(e)
+	buyerForRejectedRequests := e.newUser("rejected-payment@market.test")
+	if raw := buyerForRejectedRequests.expect(400, "POST", "/api/buyer/recharge", map[string]any{"amount": 1}); !strings.Contains(raw, "CHANNEL_REQUIRED") {
+		t.Fatalf("missing channel must be rejected: %s", raw)
+	}
+	if raw := buyerForRejectedRequests.expect(400, "POST", "/api/buyer/recharge", map[string]any{"amount": 1, "channel": payment.ChannelManual}); !strings.Contains(raw, "CHANNEL_UNAVAILABLE") {
+		t.Fatalf("manual channel must be rejected: %s", raw)
+	}
 	admin.must("PUT", "/api/admin/settings", map[string]any{"refund_lock_seconds": 0}, nil)
 	buyer := e.newUser("payer@market.test")
 
@@ -134,7 +271,7 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 		Channels []string `json:"payment_channels"`
 	}
 	e.anon().must("GET", "/api/market/config", nil, &mc)
-	if strings.Join(mc.Channels, ",") != "alipay_page,alipay_f2f,wechat_native,manual" {
+	if strings.Join(mc.Channels, ",") != "alipay_page,alipay_f2f,wechat_native" {
 		t.Fatalf("payment channels: %v", mc.Channels)
 	}
 
@@ -152,7 +289,7 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 		return res.Order
 	}
 	page := recharge(12.34, "alipay_page")
-	if page.Status != "pending" || page.Payment == nil || page.Payment.Kind != "redirect" || !strings.HasPrefix(page.Payment.URL, fake.AlipayGateway()) {
+	if page.Status != "pending" || page.ProviderInstanceID == nil || *page.ProviderInstanceID != 101 || page.Payment == nil || page.Payment.Kind != "redirect" || !strings.HasPrefix(page.Payment.URL, p.fake.AlipayGateway()) {
 		t.Fatalf("alipay page order: %+v", page)
 	}
 	resp, _ := browse(t, page.Payment.URL)
@@ -164,9 +301,9 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 	}
 
 	// 2. 支付宝当面付，通知丢失：前端轮询订单时主动查单入账
-	fake.SetDropNotify(true)
+	p.fake.SetDropNotify(true)
 	f2f := recharge(20, "alipay_f2f")
-	if f2f.Payment == nil || f2f.Payment.Kind != "qrcode" || f2f.Payment.QRCode == "" {
+	if f2f.ProviderInstanceID == nil || *f2f.ProviderInstanceID != 101 || f2f.Payment == nil || f2f.Payment.Kind != "qrcode" || f2f.Payment.QRCode == "" {
 		t.Fatalf("f2f order: %+v", f2f)
 	}
 	browse(t, f2f.Payment.QRCode)
@@ -175,11 +312,11 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 	if got.Status != "crediting" {
 		t.Fatalf("f2f order should be credited by active query: %+v", got)
 	}
-	fake.SetDropNotify(false)
+	p.fake.SetDropNotify(false)
 
 	// 3. 微信 Native 扫码
 	wx := recharge(9.9, "wechat_native")
-	if wx.Payment == nil || wx.Payment.Kind != "qrcode" {
+	if wx.ProviderInstanceID == nil || *wx.ProviderInstanceID != 201 || wx.Payment == nil || wx.Payment.Kind != "qrcode" {
 		t.Fatalf("wechat order: %+v", wx)
 	}
 	browse(t, wx.Payment.QRCode)
@@ -187,7 +324,7 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 		t.Fatalf("wechat order after notify: %s", s)
 	}
 	// 重复通知不会重复入账
-	if err := fake.Pay(*wx.OutTradeNo); err != nil {
+	if err := p.fake.Pay(*wx.OutTradeNo); err != nil {
 		t.Fatal(err)
 	}
 	var dup int
@@ -219,20 +356,27 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 	if s := e.orderStatus(expired.ID); s != "expired" {
 		t.Fatalf("timed-out order: %s", s)
 	}
-	if st, _, _ := fake.TradeState(*expired.OutTradeNo); st != payment.TradeClosed {
+	if st, _, _ := p.fake.TradeState(*expired.OutTradeNo); st != payment.TradeClosed {
 		t.Fatalf("channel trade should be closed: %s", st)
 	}
 
 	// 6. 金额与订单不一致的通知不入账，记为计费异常
 	mismatch := recharge(3, "alipay_f2f")
-	result, err := e.app.Funds.ApplyTrade(e.ctx, "alipay", &payment.Trade{OutTradeNo: *mismatch.OutTradeNo, State: payment.TradePaid, AmountFen: 1})
+	if _, err := e.app.DB.Exec(e.ctx, "UPDATE recharge_orders SET provider_instance_id = NULL WHERE id = $1", mismatch.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := e.app.Funds.ApplyTrade(e.ctx, "alipay", &payment.Trade{OutTradeNo: *mismatch.OutTradeNo, State: payment.TradePaid, AmountFen: 300}, 101)
+	if err != nil || result != "ignored" || e.orderStatus(mismatch.ID) != "pending" {
+		t.Fatalf("instance callback must not claim a legacy order: %s %v %s", result, err, e.orderStatus(mismatch.ID))
+	}
+	result, err = e.app.Funds.ApplyTrade(e.ctx, "alipay", &payment.Trade{OutTradeNo: *mismatch.OutTradeNo, State: payment.TradePaid, AmountFen: 1}, 0)
 	if err != nil || result != "amount_mismatch" || e.orderStatus(mismatch.ID) != "pending" {
-		t.Fatalf("amount mismatch: %s %v %s", result, err, e.orderStatus(mismatch.ID))
+		t.Fatalf("legacy callback amount mismatch: %s %v %s", result, err, e.orderStatus(mismatch.ID))
 	}
 
 	// 人工充值单不能被渠道入账，在线订单也不能被管理员手工确认
 	admin.expect(409, "POST", "/api/admin/recharges/"+itoa(mismatch.ID)+"/confirm", map[string]string{"provider_ref": "x"})
-	manual := recharge(6, "")
+	manual := historicalManual(t, e, buyer, 6)
 	admin.must("POST", "/api/admin/recharges/"+itoa(manual.ID)+"/confirm", map[string]string{"provider_ref": "bank-001"}, nil)
 	e.settle()
 	for _, id := range []int64{page.ID, f2f.ID, wx.ID, cancelled.ID, manual.ID} {
@@ -265,7 +409,7 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 		t.Fatalf("disabled refund must not create rows: %d", refundRows)
 	}
 	for no := range map[string]struct{}{*page.OutTradeNo: {}, *f2f.OutTradeNo: {}, *wx.OutTradeNo: {}, *cancelled.OutTradeNo: {}} {
-		if _, refunded, _ := fake.TradeState(no); refunded != 0 {
+		if _, refunded, _ := p.fake.TradeState(no); refunded != 0 {
 			t.Fatalf("channel must not refund when buyer refunds disabled: %s refunded=%d", no, refunded)
 		}
 	}
@@ -274,26 +418,10 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 		t.Fatalf("balance after denied refund: %v want %v", w.Balance, credited)
 	}
 
-	var status struct {
-		Channels []struct {
-			Channel   string `json:"channel"`
-			Available bool   `json:"available"`
-		} `json:"channels"`
-		Notifications []struct {
-			Result string `json:"result"`
-		} `json:"notifications"`
-	}
-	admin.must("GET", "/api/admin/payments/status", nil, &status)
-	if len(status.Channels) != 4 || !status.Channels[0].Available || len(status.Notifications) < 4 {
-		t.Fatalf("payment status: %+v", status)
-	}
-	// 关闭某个支付方式后买家不可再用
-	admin.must("PUT", "/api/admin/settings", map[string]any{"payment_channels": map[string]bool{"wechat_native": false}}, nil)
-	buyer.expect(400, "POST", "/api/buyer/recharge", map[string]any{"amount": 1, "channel": "wechat_native"})
-
-	// 停用支付宝商户：不再创建新订单，但已创建的订单付款后照常入账
+	// 停用支付宝实例：不再创建新订单，但已创建的订单付款后照常入账
 	pending := recharge(4, "alipay_f2f")
-	admin.must("PUT", "/api/admin/payments/merchants/alipay", map[string]any{"enabled": false}, nil)
+	p.config.Instances[0].Enabled = false
+	p.publish(e)
 	buyer.expect(400, "POST", "/api/buyer/recharge", map[string]any{"amount": 1, "channel": "alipay_page"})
 	browse(t, pending.Payment.QRCode)
 	if s := e.orderStatus(pending.ID); s != "crediting" {
@@ -303,10 +431,10 @@ func TestOnlinePaymentsAndOriginalRouteRefund(t *testing.T) {
 
 // 按充值单退款入口：产品政策下买家与管理员代退均不可用。
 func TestRechargeOrderRefund(t *testing.T) {
-	fake, configure := withPayments(t)
-	e := setup(t)
+	p := withPayments(t)
+	e := setup(t, p.gateways)
 	admin := e.login("admin@market.test", "admin-password-1")
-	configure(e, admin)
+	p.configure(e)
 	buyer := e.newUser("order-refund@market.test")
 	other := e.newUser("other-buyer@market.test")
 	recharge := func(amount float64, channel string) rechargeView {
@@ -324,7 +452,7 @@ func TestRechargeOrderRefund(t *testing.T) {
 	browse(t, f2f.Payment.QRCode)
 	wx := recharge(9.9, "wechat_native")
 	browse(t, wx.Payment.QRCode)
-	manual := recharge(6, "")
+	manual := historicalManual(t, e, buyer, 6)
 	admin.must("POST", "/api/admin/recharges/"+itoa(manual.ID)+"/confirm", map[string]string{"provider_ref": "bank-002"}, nil)
 	e.settle()
 	refundPath := func(o rechargeView) string { return "/api/buyer/recharge/" + itoa(o.ID) + "/refund" }
@@ -357,7 +485,7 @@ func TestRechargeOrderRefund(t *testing.T) {
 		t.Fatalf("disabled refund must not create rows: %d", refundRows)
 	}
 	for _, no := range []string{*f2f.OutTradeNo, *wx.OutTradeNo} {
-		if _, refunded, _ := fake.TradeState(no); refunded != 0 {
+		if _, refunded, _ := p.fake.TradeState(no); refunded != 0 {
 			t.Fatalf("channel must not refund: %s refunded=%d", no, refunded)
 		}
 	}
@@ -368,3 +496,19 @@ func TestRechargeOrderRefund(t *testing.T) {
 }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
+
+func historicalManual(t *testing.T, e *env, buyer *client, amount float64) rechargeView {
+	t.Helper()
+	var me struct {
+		ID int64 `json:"id"`
+	}
+	buyer.must("GET", "/api/auth/me", nil, &me)
+	var order rechargeView
+	err := e.app.DB.QueryRow(e.ctx, `INSERT INTO recharge_orders (user_id, amount, provider, channel)
+		VALUES ($1, $2::numeric, 'manual', 'manual') RETURNING id, status, channel, amount::float8`, me.ID, amount).
+		Scan(&order.ID, &order.Status, &order.Channel, &order.Amount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return order
+}

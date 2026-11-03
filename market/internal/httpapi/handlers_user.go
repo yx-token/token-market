@@ -190,12 +190,16 @@ func (s *Server) marketConfig(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	paymentConfig, err := s.Funds.RechargeConfig(r.Context())
+	if err != nil {
+		return err
+	}
 	return ok(w, map[string]any{
 		"edge_url": s.EdgeURL, "commission_rate": st.CommissionRate, "freeze_days": st.FreezeDays,
 		"freeze_hours": st.FreezeHours, "credit_usd_to_balance_rate": st.CreditUSDToBalanceRate,
 		"withdraw_min": st.WithdrawMin, "max_hops": 5,
 		"require_seller_proxy": st.RequireSellerProxy,
-		"payment_channels":     channels, "recharge_min": st.RechargeMin, "recharge_max": st.RechargeMax,
+		"payment_channels":     channels, "recharge_min": paymentConfig.MinAmount, "recharge_max": paymentConfig.MaxAmount,
 		"price_models": st.PriceModels,
 	})
 }
@@ -252,7 +256,7 @@ func (s *Server) createRecharge(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	uid := httpx.MustUser(r).UserID
-	o, err := s.Funds.CreateRecharge(r.Context(), uid, in.Amount, in.Channel, httpx.ClientIP(r))
+	o, err := s.Funds.CreateRecharge(r.Context(), uid, in.Amount, in.Channel, httpx.ClientIP(r), requestOrigin(r, s.TrustedProxies))
 	if err != nil {
 		return err
 	}

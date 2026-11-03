@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/yx-token/token-market/market/hostpay"
 	"github.com/yx-token/token-market/market/internal/buyer"
 	"github.com/yx-token/token-market/market/internal/payment"
 	"github.com/yx-token/token-market/market/internal/platform/crypto"
@@ -39,7 +40,7 @@ type Funds struct {
 	KYC      KYCChecker
 	Risk     RiskChecker
 	Settings func(ctx context.Context) (settings.Settings, error)
-	// Payments 返回当前生效的支付渠道（站内"支付配置"，按配置动态构建）
+	// Payments 使用宿主支付配置动态构建渠道客户端。
 	Payments PaymentRegistry
 	Log      *slog.Logger
 	Now      func() time.Time
@@ -47,19 +48,37 @@ type Funds struct {
 
 type PaymentRegistry interface {
 	Registry(ctx context.Context) (*payment.Registry, error)
+	Config(ctx context.Context) (*hostpay.Config, error)
 }
 
 // registry 返回当前的支付渠道；读取配置失败时记录日志并按没有在线渠道处理。
 func (f *Funds) registry(ctx context.Context) *payment.Registry {
 	if f.Payments == nil {
-		return nil
+		return payment.NewInstanceRegistry()
 	}
 	reg, err := f.Payments.Registry(ctx)
 	if err != nil {
-		f.Log.Error("load payment merchants", "err", err)
-		return nil
+		if f.Log != nil {
+			f.Log.Error("load host payment configuration", "err", err)
+		}
+		return payment.NewInstanceRegistry()
 	}
 	return reg
+}
+
+// RechargeConfig exposes the host limits with the same defaults as the registry.
+func (f *Funds) RechargeConfig(ctx context.Context) (*hostpay.Config, error) {
+	if f.Payments == nil {
+		return &hostpay.Config{MinAmount: 1, MaxAmount: 50000, OrderTimeoutMinutes: 30}, nil
+	}
+	return f.Payments.Config(ctx)
+}
+
+func instanceID(id *int64) int64 {
+	if id == nil {
+		return 0
+	}
+	return *id
 }
 
 func (f *Funds) now() time.Time {
@@ -67,6 +86,12 @@ func (f *Funds) now() time.Time {
 		return f.Now()
 	}
 	return time.Now()
+}
+
+func (f *Funds) warnMissingPaymentInstance(message string, orderID, instanceID int64) {
+	if f.Log != nil {
+		f.Log.Warn(message, "order_id", orderID, "instance_id", instanceID)
+	}
 }
 
 // ---- 余额 ----

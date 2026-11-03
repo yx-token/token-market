@@ -10,6 +10,9 @@
           <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
             {{ t('admin.settings.payment.providerManagementDesc') }}
           </p>
+          <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            {{ t('admin.settings.payment.marketRechargeHint') }}
+          </p>
         </div>
         <div class="flex items-center gap-2">
           <button

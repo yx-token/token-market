@@ -242,7 +242,6 @@ export default {
     marketRecharges: 'Buyer Recharges',
     marketRefunds: 'Legacy Refunds',
     marketWithdrawals: 'Seller Withdrawals',
-    marketPayments: 'Payment Merchants',
     marketQualityOverview: 'Quality Overview',
     marketPolicies: 'Inspection Policies',
     marketChecks: 'Inspection Checks',

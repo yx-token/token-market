@@ -373,11 +373,8 @@ func TestModelWhitelistEdgeFailover(t *testing.T) {
 
 	admin := e.login("admin@market.test", "admin-password-1")
 	buyer := e.newUser("whitelist-edge-buyer@market.test")
-	var recharge struct {
-		Order idOnly `json:"order"`
-	}
-	buyer.must(http.MethodPost, "/api/buyer/recharge", map[string]any{"amount": 10}, &recharge)
-	admin.must(http.MethodPost, fmt.Sprintf("/api/admin/recharges/%d/confirm", recharge.Order.ID), map[string]string{"provider_ref": "白名单回退测试充值"}, nil)
+	recharge := historicalManual(t, e, buyer, 10)
+	admin.must(http.MethodPost, fmt.Sprintf("/api/admin/recharges/%d/confirm", recharge.ID), map[string]string{"provider_ref": "白名单回退测试充值"}, nil)
 	e.drain()
 	var key struct {
 		Key    string `json:"key"`

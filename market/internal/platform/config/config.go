@@ -24,6 +24,7 @@ type Config struct {
 	Crypto   CryptoConfig   `yaml:"crypto"`
 	Auth     AuthConfig     `yaml:"auth"`
 	Sub2API  Sub2APIConfig  `yaml:"sub2api"`
+	Payment  PaymentConfig  `yaml:"payment"`
 	Worker   WorkerConfig   `yaml:"worker"`
 	Edge     EdgeConfig     `yaml:"edge"`
 	Update   UpdateConfig   `yaml:"update"`
@@ -102,6 +103,13 @@ type Sub2APIConfig struct {
 	Timeout           time.Duration `yaml:"timeout"`
 }
 
+// PaymentConfig contains development-only overrides for market's payment clients.
+// Leave both empty in production to use the provider's official endpoints.
+type PaymentConfig struct {
+	AlipayGateway string `yaml:"alipay_gateway"`
+	WechatBaseURL string `yaml:"wechat_base_url"`
+}
+
 type WorkerConfig struct {
 	OpsBatchSize        int           `yaml:"ops_batch_size"`
 	OpsPollInterval     time.Duration `yaml:"ops_poll_interval"`
@@ -162,6 +170,8 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 		"TM_BOOTSTRAP_ADMIN_EMAIL":    &cfg.Auth.BootstrapAdminEmail,
 		"TM_BOOTSTRAP_ADMIN_PASSWORD": &cfg.Auth.BootstrapAdminPassword,
 		"TM_SUB2API_GATEWAY_URL":      &cfg.Sub2API.GatewayURL,
+		"TM_PAYMENT_ALIPAY_GATEWAY":   &cfg.Payment.AlipayGateway,
+		"TM_PAYMENT_WECHAT_BASE_URL":  &cfg.Payment.WechatBaseURL,
 		"TM_EDGE_ADDR":                &cfg.Edge.Addr,
 		"TM_EDGE_PUBLIC_URL":          &cfg.Edge.PublicURL,
 		"TM_EDGE_ADMIN_ADDR":          &cfg.Edge.AdminAddr,
@@ -307,6 +317,9 @@ func applyDefaults(cfg *Config) {
 
 // Validate 只校验各进程都必需的配置；进程特有的必填项由各自的 main 检查。
 func (c *Config) Validate() error {
+	if c.Env == "prod" && (c.Payment.AlipayGateway != "" || c.Payment.WechatBaseURL != "") {
+		return errors.New("payment gateway overrides are only allowed outside prod")
+	}
 	if c.Crypto.ActiveKeyID != "" {
 		raw, ok := c.Crypto.Keys[c.Crypto.ActiveKeyID]
 		if !ok {

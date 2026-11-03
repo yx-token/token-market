@@ -70,6 +70,25 @@ func TestApplyEnvRejectsMalformedCryptoKeys(t *testing.T) {
 	}
 }
 
+func TestPaymentGatewayEnvironmentOverrides(t *testing.T) {
+	t.Setenv("TM_PAYMENT_ALIPAY_GATEWAY", "http://127.0.0.1:19090/gateway.do")
+	t.Setenv("TM_PAYMENT_WECHAT_BASE_URL", "http://127.0.0.1:19090")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Payment.AlipayGateway != "http://127.0.0.1:19090/gateway.do" || cfg.Payment.WechatBaseURL != "http://127.0.0.1:19090" {
+		t.Fatalf("payment gateway overrides not loaded: %+v", cfg.Payment)
+	}
+}
+
+func TestPaymentGatewayOverridesAreRejectedInProd(t *testing.T) {
+	cfg := &Config{Env: "prod", Payment: PaymentConfig{AlipayGateway: "http://127.0.0.1:18082/gateway.do"}}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("production config must reject local payment gateway overrides")
+	}
+}
+
 // 仓库根目录的配置示例必须能被解析（只替换占位的密钥）。
 func TestExampleConfigParses(t *testing.T) {
 	raw, err := os.ReadFile("../../../config.example.yaml")

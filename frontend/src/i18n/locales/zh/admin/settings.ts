@@ -898,6 +898,7 @@ export default {
         strategyLeastAmount: '最少金额',
         providerManagement: '服务商管理',
         providerManagementDesc: '管理支付服务商实例',
+        marketRechargeHint: '支付宝官方、微信官方服务商实例同时用于闲置市场 C 端钱包充值（易支付、Stripe 等不用于 C 端）',
         createProvider: '添加服务商',
         editProvider: '编辑服务商',
         deleteProvider: '删除服务商',

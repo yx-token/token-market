@@ -13,6 +13,7 @@ import (
 	"github.com/yx-token/token-market/internal/pkg/websearch"
 	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
+	"github.com/yx-token/token-market/market/hostpay"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/wire"
@@ -30,6 +31,7 @@ var ProviderSet = wire.NewSet(
 func ProvideRouter(
 	cfg *config.Config,
 	handlers *handler.Handlers,
+	paymentConfigService *service.PaymentConfigService,
 	jwtAuth middleware2.JWTAuthMiddleware,
 	optionalJWTAuth middleware2.OptionalJWTAuthMiddleware,
 	adminAuth middleware2.AdminAuthMiddleware,
@@ -43,6 +45,11 @@ func ProvideRouter(
 	compositeResolver *service.CompositeRouteResolver,
 	redisClient *redis.Client,
 ) *gin.Engine {
+	// PublicHandler builds the embedded market app while routes are mounted.
+	// Register its host-owned payment source before SetupRouter reaches it.
+	if paymentConfigService != nil {
+		hostpay.SetSource(paymentConfigService.LoadHostPaymentConfig)
+	}
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}

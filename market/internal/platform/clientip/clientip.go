@@ -46,6 +46,15 @@ func (r Resolver) isTrusted(ip string) bool {
 	return false
 }
 
+// Trusts reports whether forwarded headers from this connection may be used.
+func (r Resolver) Trusts(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	return r.isTrusted(host)
+}
+
 func (r Resolver) Resolve(remoteAddr string, xff []string) string {
 	remote, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// 充值支付：选择金额与支付方式 → 跳转支付宝收银台 / 展示扫码二维码 / 人工付款说明 → 轮询订单直到到账。
-// 也用于"继续支付"与从支付宝网页支付跳回后的结果确认（传入 order）。
+// 充值支付：选择金额与支付方式 → 跳转支付宝收银台 / 展示扫码二维码 → 轮询订单直到到账。
+// 也用于"继续支付"、从支付宝网页支付跳回后的结果确认，以及历史人工单说明（传入 order）。
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { buyer } from '@/api'
 import type { RechargeOrder } from '@/api/types'
@@ -31,7 +31,6 @@ const hints: Record<string, string> = {
   alipay_page: '跳转到支付宝收银台，可登录支付宝账号或扫码付款',
   alipay_f2f: '用支付宝 App 扫描二维码付款',
   wechat_native: '用微信扫描二维码付款',
-  manual: '线下转账，平台人工确认到账（较慢）',
 }
 
 let poll: ReturnType<typeof setInterval> | null = null

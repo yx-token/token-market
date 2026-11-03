@@ -443,7 +443,7 @@ export default {
       WXPAY_CONFIG_MISSING_KEY: 'WeChat Pay config missing required key: {key}.',
       WXPAY_CONFIG_INVALID_KEY_LENGTH: 'WeChat Pay {key} length is invalid (expected {expected} bytes, got {actual}).',
       WXPAY_CONFIG_INVALID_KEY: 'WeChat Pay {key} is malformed. Make sure you copied the full PEM content.',
-      PENDING_ORDERS: 'This provider has pending orders. Please wait for them to complete before making changes.',
+      PENDING_ORDERS: 'This item has unfinished orders (sub2api: {sub2api_count}; idle market recharges/refunds in flight: {market_count}). Wait for completion; ? means the count could not be verified, so try again later.',
       PAYMENT_PROVIDER_CONFLICT: 'Another enabled provider instance is already serving this payment method. Disable it before continuing.',
       CANCEL_RATE_LIMITED: 'Too many cancellations. Please try again later.',
       NOT_FOUND: 'Order not found.',

@@ -17,7 +17,7 @@ import (
 	"github.com/yx-token/token-market/market/internal/iam"
 	"github.com/yx-token/token-market/market/internal/listing"
 	"github.com/yx-token/token-market/market/internal/market"
-	"github.com/yx-token/token-market/market/internal/payment/merchants"
+	"github.com/yx-token/token-market/market/internal/payment/registry"
 	"github.com/yx-token/token-market/market/internal/platform/auth"
 	"github.com/yx-token/token-market/market/internal/platform/config"
 	"github.com/yx-token/token-market/market/internal/platform/crypto"
@@ -42,7 +42,7 @@ type App struct {
 	Redis       *redis.Client
 	Keyring     *crypto.Keyring
 	Issuer      *auth.Issuer
-	Payments    *merchants.Store
+	Payments    *registry.Store
 	Admin       *adminclient.Client
 	User        *userclient.Client
 	Prov        *provision.Provisioner
@@ -135,7 +135,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 	a.Prov = &provision.Provisioner{Admin: a.Admin, Replica: a.Replica}
 	a.Kicker = scheduling.RedisKicker{Redis: a.Redis}
 	a.Settings = func(ctx context.Context) (settings.Settings, error) { return settings.Load(ctx, a.DB) }
-	a.Payments = &merchants.Store{DB: a.DB, Keyring: a.Keyring, Settings: a.Settings, Log: log}
+	a.Payments = &registry.Store{Log: log, AlipayGateway: cfg.Payment.AlipayGateway, WechatBaseURL: cfg.Payment.WechatBaseURL}
 	edgeStore := edgecfg.Store{Redis: a.Redis}
 
 	a.Accounts = account.NewService(a.DB, a.Keyring, a.Issuer)

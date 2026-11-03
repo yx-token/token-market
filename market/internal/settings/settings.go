@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -42,17 +41,10 @@ type Settings struct {
 	AllowNoProxy               bool               `json:"allow_no_proxy"`                // 没有可用代理时是否允许上架（仅开发环境）
 	RequireSellerProxy         bool               `json:"require_seller_proxy"`          // 新接入账号必须选择卖家自己配置的代理
 	PriceModels                []string           `json:"price_models"`                  // 市场展示官方价格的模型（价格取自 sub2api 内置价目表）
-	// PaymentPublicURL 是控制面对外地址：支付异步通知发到 <地址>/api/payments/{alipay|wechat}/notify，网页支付完成后跳回钱包
-	PaymentPublicURL string `json:"payment_public_url"`
-	// 支付方式开关：alipay_page / alipay_f2f / wechat_native / manual。在线渠道还需要在"支付配置"中配置并启用商户才可用
-	PaymentChannels             map[string]bool `json:"payment_channels"`
-	RechargeMin                 float64         `json:"recharge_min"`                   // 单笔充值下限（元）
-	RechargeMax                 float64         `json:"recharge_max"`                   // 单笔充值上限（元）
-	RechargeOrderTimeoutMinutes int             `json:"recharge_order_timeout_minutes"` // 在线支付订单的支付时限
-	RefundOriginalRoute         bool            `json:"refund_original_route"`          // 余额退款优先原路退回到在线充值单
-	RefundOriginalRouteDays     int             `json:"refund_original_route_days"`     // 只原路退回这么多天内的充值单（渠道的可退款期限）
-	ProbeRequestTimeoutSeconds  int             `json:"probe_request_timeout_seconds"`  // 质量检测单次请求（一道题发给被测上游或基线账号）的超时
-	ProbeBatchTimeoutMinutes    int             `json:"probe_batch_timeout_minutes"`    // 一次质量检测（被测上游与基线账号的整批题）的总时限
+	RefundOriginalRoute        bool               `json:"refund_original_route"`         // 余额退款优先原路退回到在线充值单
+	RefundOriginalRouteDays    int                `json:"refund_original_route_days"`    // 只原路退回这么多天内的充值单（渠道的可退款期限）
+	ProbeRequestTimeoutSeconds int                `json:"probe_request_timeout_seconds"` // 质量检测单次请求（一道题发给被测上游或基线账号）的超时
+	ProbeBatchTimeoutMinutes   int                `json:"probe_batch_timeout_minutes"`   // 一次质量检测（被测上游与基线账号的整批题）的总时限
 }
 
 func Defaults() Settings {
@@ -76,14 +68,10 @@ func Defaults() Settings {
 		RequireSellerProxy:         true,
 		PriceModels: []string{"claude-opus-4-1", "claude-sonnet-4-5", "claude-haiku-4-5", "gpt-5.1", "gpt-5.1-codex",
 			"gemini-2.5-pro", "gemini-2.5-flash", "grok-4", "kimi-for-coding", "glm-4.6", "MiniMax-M2"},
-		PaymentChannels:             map[string]bool{"alipay_page": true, "alipay_f2f": true, "wechat_native": true, "manual": true},
-		RechargeMin:                 1,
-		RechargeMax:                 50000,
-		RechargeOrderTimeoutMinutes: 30,
-		RefundOriginalRoute:         true,
-		RefundOriginalRouteDays:     90,
-		ProbeRequestTimeoutSeconds:  180,
-		ProbeBatchTimeoutMinutes:    30,
+		RefundOriginalRoute:        true,
+		RefundOriginalRouteDays:    90,
+		ProbeRequestTimeoutSeconds: 180,
+		ProbeBatchTimeoutMinutes:   30,
 	}
 }
 
@@ -107,10 +95,6 @@ func (s Settings) Validate() error {
 		return errors.New("shadow_concurrency must be > 0")
 	case s.SchedulerChangeBudget <= 0:
 		return errors.New("scheduler_change_budget must be > 0")
-	case s.RechargeMin <= 0 || s.RechargeMax < s.RechargeMin:
-		return errors.New("recharge_min must be > 0 and recharge_max >= recharge_min")
-	case s.RechargeOrderTimeoutMinutes < 5 || s.RechargeOrderTimeoutMinutes > 1440:
-		return errors.New("recharge_order_timeout_minutes must be between 5 and 1440")
 	case s.RefundOriginalRouteDays < 0:
 		return errors.New("refund_original_route_days must be >= 0")
 	case s.ProbeRequestTimeoutSeconds < 10 || s.ProbeRequestTimeoutSeconds > 1800:
@@ -119,19 +103,6 @@ func (s Settings) Validate() error {
 		return errors.New("probe_batch_timeout_minutes must be between 1 and 1440")
 	case s.ProbeBatchTimeoutMinutes*60 < s.ProbeRequestTimeoutSeconds:
 		return errors.New("probe_batch_timeout_minutes must not be shorter than probe_request_timeout_seconds")
-	}
-	if s.PaymentPublicURL != "" {
-		u, err := url.Parse(s.PaymentPublicURL)
-		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.RawQuery != "" {
-			return errors.New("payment_public_url must be an http(s) url")
-		}
-	}
-	for ch := range s.PaymentChannels {
-		switch ch {
-		case "alipay_page", "alipay_f2f", "wechat_native", "manual":
-		default:
-			return fmt.Errorf("unknown payment channel %s", ch)
-		}
 	}
 	for g, c := range s.GradeCoefficients {
 		if c < 0 {
@@ -186,7 +157,6 @@ func Update(ctx context.Context, db DB, patch json.RawMessage) (Settings, error)
 	if err := applyPatch(&s, patch); err != nil {
 		return s, fmt.Errorf("decode patch: %w", err)
 	}
-	s.PaymentPublicURL = strings.TrimRight(strings.TrimSpace(s.PaymentPublicURL), "/")
 	if err := s.Validate(); err != nil {
 		return s, err
 	}

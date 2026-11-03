@@ -34,3 +34,11 @@
 - 厂商、题库、上游、质量概览、市场分类：native 返回与 market 侧返回的字段不一致，**尚未处理**。动这些页面的编辑功能前，先对比两侧返回的字段。
 - vitest 的 mock 通常照 market 侧的完整结构写，测不出简表缺字段。改这类页面时，在 `backend/internal/server/routes/` 加路由级测试（参考 `market_pools_relay_test.go`），并在真实后台点一遍。
 - 详情与证据：`market/docs/2026-10-29-detection-policy-and-thirdparty-audit.md` §二。
+
+## 3. 收款配置归 sub2api：市场只借凭证
+
+C 端钱包充值的支付宝 / 微信商户凭证、充值限额、支付时限，取自 sub2api「设置 → 支付设置」里的**支付宝官方（alipay）/ 微信官方（wxpay）**服务商实例与全局支付配置，经 `market/hostpay` 交给内嵌的市场；市场自己仍负责下单、回调验签、查单、关单、原路退款，订单记下所用实例（`recharge_orders.provider_instance_id`）。闲置市场下原来的「收款配置」页、`payment_merchants` 读写、人工转账充值已移除（2026-11-03，设计见 `market/docs/2026-11-03-payment-config-from-sub2api.md`）。
+
+- **改 sub2api 服务商实例的删除 / 停用 / 凭证变更逻辑时，要保留对市场在途订单的检查**（`hostpay.InFlightOrders`，见 `backend/internal/service/payment_config_providers.go`）。sub2api 原有保护只数自己的订单；市场订单换了凭证就再也无法验签、查单、关单。
+- `hostpay` 只在宿主进程注册。市场以独立进程或替身引擎运行时没有在线支付，钱包显示「暂无可用的支付方式」——这是预期，不是故障。
+- 本地真实引擎模式（`market/scripts/dev.sh`）因此改为 `MARKET_EMBED=1` + `bin/dev-proxy`，嵌入模式**不会创建市场引导管理员**：seed 曾因此在第一步 401（2026-11-03 已修）。浏览器登录管理端的办法见规格文档「本地开发环境的变化」。

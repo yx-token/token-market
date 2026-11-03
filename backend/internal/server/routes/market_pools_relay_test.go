@@ -46,3 +46,22 @@ func TestPoolsRelayCoversReadAndWrite(t *testing.T) {
 		require.True(t, have[want], "缺少路由 %s", want)
 	}
 }
+
+func TestMarketPaymentConfigRelayEndpointsAreRemoved(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerNativeIdleCat(router.Group("/api/v1/admin"), &idlecat.Store{})
+
+	have := map[string]bool{}
+	for _, r := range router.Routes() {
+		have[r.Method+" "+r.Path] = true
+	}
+	for _, removed := range []string{
+		"GET /api/v1/admin/market/payments/status",
+		"GET /api/v1/admin/market/payments/merchants",
+		"PUT /api/v1/admin/market/payments/merchants/:provider",
+		"POST /api/v1/admin/market/payments/merchants/:provider/test",
+	} {
+		require.False(t, have[removed], "已移除的收款配置路由仍被注册：%s", removed)
+	}
+}

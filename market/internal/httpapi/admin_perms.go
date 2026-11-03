@@ -40,7 +40,6 @@ func adminRouteResources(pattern string) []string {
 		{"/api/admin/quality", []string{"console.duty.quality"}},
 		{"/api/admin/appeals", []string{"console.duty.quality"}},
 		{"/api/admin/recharges", []string{"console.duty.funds"}},
-		{"/api/admin/payments", []string{"console.govern.payments", "console.duty.funds"}},
 		{"/api/admin/refund", []string{"console.duty.funds"}},
 		{"/api/admin/withdrawals", []string{"console.duty.funds"}},
 		{"/api/admin/anomalies", []string{"console.duty.billing"}},

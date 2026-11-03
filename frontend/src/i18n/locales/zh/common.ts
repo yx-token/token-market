@@ -242,7 +242,6 @@ export default {
     marketRecharges: '买家充值',
     marketRefunds: '历史退款',
     marketWithdrawals: '卖家提现',
-    marketPayments: '收款配置',
     marketQualityOverview: '质量概览',
     marketPolicies: '检测策略',
     marketChecks: '质检项',

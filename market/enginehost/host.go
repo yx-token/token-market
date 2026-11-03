@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/yx-token/token-market/market/hostpay"
 	"github.com/yx-token/token-market/market/internal/app"
 	"github.com/yx-token/token-market/market/internal/httpapi"
 	"github.com/yx-token/token-market/market/internal/platform/config"
@@ -39,7 +40,9 @@ func market(ctx context.Context) (*app.App, error) {
 		a, open = app.Build(context.Background(), cfg, slog.Default())
 		if open != nil {
 			slog.Error("enginehost", "err", open)
+			return
 		}
+		hostpay.SetInFlightCounter(a.Funds.InFlightPaymentOrders)
 	})
 	return a, open
 }

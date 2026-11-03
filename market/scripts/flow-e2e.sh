@@ -126,8 +126,6 @@ for p in \
   /api/admin/detection-providers \
   /api/admin/probe-items \
   /api/admin/probe-runs \
-  /api/admin/payments/status \
-  /api/admin/payments/merchants \
   /api/admin/settings
 do
   expect "market $p" 200 "$API$p" -H "Authorization: Bearer $MT"

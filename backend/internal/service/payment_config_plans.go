@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	dbent "github.com/yx-token/token-market/ent"
@@ -209,7 +210,12 @@ func (s *PaymentConfigService) DeletePlan(ctx context.Context, id int64) error {
 	}
 	if count > 0 {
 		return infraerrors.Conflict("PENDING_ORDERS",
-			fmt.Sprintf("this plan has %d in-progress orders and cannot be deleted — wait for orders to complete first", count))
+			fmt.Sprintf("this plan has %d in-progress orders and cannot be deleted — wait for orders to complete first", count)).
+			WithMetadata(map[string]string{
+				"count":         strconv.Itoa(count),
+				"sub2api_count": strconv.Itoa(count),
+				"market_count":  "0",
+			})
 	}
 	return s.entClient.SubscriptionPlan.DeleteOneID(id).Exec(ctx)
 }

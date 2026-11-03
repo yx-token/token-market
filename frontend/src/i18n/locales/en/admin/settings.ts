@@ -903,6 +903,7 @@ export default {
         strategyLeastAmount: 'Least Daily Amount',
         providerManagement: 'Provider Management',
         providerManagementDesc: 'Manage payment provider instances',
+        marketRechargeHint: 'Official Alipay and WeChat Pay provider instances are also used for wallet top-ups in the Idle Market customer app (EasyPay, Stripe, and other providers are not used there)',
         createProvider: 'Add Provider',
         editProvider: 'Edit Provider',
         deleteProvider: 'Delete Provider',
