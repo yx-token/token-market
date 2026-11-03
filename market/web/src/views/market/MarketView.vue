@@ -25,7 +25,6 @@ import {
   type MarketAction,
   type PlatBrand,
 } from '@/market/config'
-import { buildDemoFeedSkus, isDemoFeedId } from '@/market/demoFeed'
 
 const route = useRoute()
 const router = useRouter()
@@ -160,10 +159,6 @@ async function copy(text: string) {
 }
 
 async function quickOpen(sku: FeedSku) {
-  if (isDemoFeedId(sku.id)) {
-    toast.info('演示商品，仅用于布局预览')
-    return
-  }
   if (sku.kind === 'pack') return
   if (!auth.loggedIn) {
     loginModal.show({ redirect: '/' })
@@ -470,13 +465,10 @@ function hasCat(s: FeedSku, id: string) {
   return (s.categories ?? []).includes(id)
 }
 
-const demoSkus = buildDemoFeedSkus(42)
-
 const allSkus = computed(() => {
   const listingSkus = (listings.data.value ?? []).map(toSku)
   const poolSkus = (pools.data.value ?? []).filter((p) => p.market_published).map(toPoolSku)
-  // 演示商品靠前，方便预览弹性栅格
-  return [...demoSkus, ...poolSkus, ...listingSkus]
+  return [...poolSkus, ...listingSkus]
 })
 
 const popularBrands = computed(() => {
@@ -742,7 +734,7 @@ watch(
                   <button type="button" class="mh-tab" :class="{ on: state.feedTab === 'new' }" @click="state.feedTab = 'new'">最新上架</button>
                 </div>
                 <div class="mh-tools">
-                  <span class="mh-count">{{ feedSkus.length }} 个<span v-if="demoSkus.length" class="mh-demo-tag">含演示 {{ demoSkus.length }}</span></span>
+                  <span class="mh-count">{{ feedSkus.length }} 个</span>
                   <select v-model="state.sort" class="mh-select mh-select--tool" aria-label="排序">
                     <option value="default">默认排序</option>
                     <option value="price">价格从低到高</option>
