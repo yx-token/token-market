@@ -299,7 +299,7 @@ type engineGroup struct {
 func (s *Store) ListSupplyGroups(ctx context.Context) ([]FusedGroup, error) {
 	rows, err := s.Market.QueryContext(ctx, `
 		SELECT id, name, platform, enabled, sell_multiplier, sub2api_group_id
-		FROM pools ORDER BY id`)
+		FROM pools WHERE deleted_at IS NULL ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}

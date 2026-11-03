@@ -246,6 +246,22 @@ func (s *Server) syncPool(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, p)
 }
 
+func (s *Server) deletePool(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	p, err := s.Pools.Delete(r.Context(), id)
+	if err != nil {
+		return err
+	}
+	s.audit(r, "pool.delete", fmt.Sprintf("pool:%d", id), map[string]any{"name": p.Name, "sub2api_group_id": p.Sub2APIGroupID})
+	if s.Kicker != nil {
+		s.Kicker.Kick(r.Context())
+	}
+	return ok(w, map[string]string{"status": "deleted"})
+}
+
 func (s *Server) listPolicies(w http.ResponseWriter, r *http.Request) error {
 	ps, err := quality.ListPolicies(r.Context(), s.DB)
 	if err != nil {

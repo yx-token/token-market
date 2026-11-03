@@ -61,8 +61,9 @@ func scanPool(row pgx.Row) (*Pool, error) {
 	return &p, nil
 }
 
+// ListPools 列出未删除的默认分组；onlyEnabled 时只返回启用的。
 func ListPools(ctx context.Context, db DB, onlyEnabled bool) ([]Pool, error) {
-	rows, err := db.Query(ctx, "SELECT "+poolColumns+" FROM pools WHERE NOT $1 OR enabled ORDER BY id", onlyEnabled)
+	rows, err := db.Query(ctx, "SELECT "+poolColumns+" FROM pools WHERE deleted_at IS NULL AND (NOT $1 OR enabled) ORDER BY id", onlyEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -78,17 +79,18 @@ func ListPools(ctx context.Context, db DB, onlyEnabled bool) ([]Pool, error) {
 	return out, rows.Err()
 }
 
+// GetPool 按 ID 查找未删除的默认分组。
 func GetPool(ctx context.Context, db DB, id int64) (*Pool, error) {
-	p, err := scanPool(db.QueryRow(ctx, "SELECT "+poolColumns+" FROM pools WHERE id = $1", id))
+	p, err := scanPool(db.QueryRow(ctx, "SELECT "+poolColumns+" FROM pools WHERE id = $1 AND deleted_at IS NULL", id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, httpx.NotFound("POOL_NOT_FOUND", "pool not found")
 	}
 	return p, err
 }
 
-// GetPoolByName 按名称查找默认分组。
+// GetPoolByName 按名称查找未删除的默认分组（已删除的同名分组可能有多条）。
 func GetPoolByName(ctx context.Context, db DB, name string) (*Pool, error) {
-	p, err := scanPool(db.QueryRow(ctx, "SELECT "+poolColumns+" FROM pools WHERE name = $1", name))
+	p, err := scanPool(db.QueryRow(ctx, "SELECT "+poolColumns+" FROM pools WHERE name = $1 AND deleted_at IS NULL", name))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, httpx.NotFound("POOL_NOT_FOUND", "pool not found")
 	}
@@ -162,6 +164,15 @@ func (s *PoolService) Create(ctx context.Context, in PoolInput) (*Pool, error) {
 	}
 	if margin < 0 || buffer < 0 || margin+buffer >= 1 {
 		return nil, httpx.BadRequest("INVALID_MARGIN", "min_margin and safety_buffer must be >= 0 and sum to less than 1")
+	}
+	// 同名分组刚删除时，sub2api 里的旧分组要等出站表执行完才消失；这期间按名称会找回旧分组。
+	var deleting bool
+	if err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pools p WHERE p.name = $1 AND p.deleted_at IS NOT NULL AND p.sub2api_group_id IS NOT NULL
+		AND NOT EXISTS (SELECT 1 FROM sub2api_ops o WHERE o.idempotency_key = 'pool-delete-' || p.id AND o.status = 'done'))`, in.Name).Scan(&deleting); err != nil {
+		return nil, err
+	}
+	if deleting {
+		return nil, httpx.Conflict("POOL_GROUP_DELETING", "a deleted pool with this name is still being removed from sub2api, retry shortly")
 	}
 	var id int64
 	err := s.DB.QueryRow(ctx, `INSERT INTO pools (name, platform, sell_multiplier, min_margin, safety_buffer) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
@@ -274,4 +285,40 @@ func (s *PoolService) Update(ctx context.Context, id int64, in PoolInput) (*Pool
 		}
 	}
 	return GetPool(ctx, s.DB, id)
+}
+
+// Delete 删除已关闭的默认分组。
+//
+// 本地记录只做软删除：晚到的用量仍要按 sub2api_group_id 归为 pool 渠道计费。
+// sub2api 中的分组经出站表删除（引擎会级联解绑账号与授权）；买家 Key 指向它的一跳随之失效，
+// 遗留的内部 key 由 CleanupDeletedKeys 回收。要求先关闭，是为了让调度器先把账号移出该分组。
+func (s *PoolService) Delete(ctx context.Context, id int64) (*Pool, error) {
+	p, err := GetPool(ctx, s.DB, id)
+	if err != nil {
+		return nil, err
+	}
+	if p.Enabled {
+		return nil, httpx.Conflict("POOL_ENABLED", "disable the pool before deleting it")
+	}
+	tag, err := s.DB.Exec(ctx, `UPDATE pools SET deleted_at = now(), market_published = false, updated_at = now()
+		WHERE id = $1 AND deleted_at IS NULL AND NOT enabled`, id)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		// 读取之后被并发删除或重新开启
+		return nil, httpx.Conflict("POOL_CHANGED", "pool was changed concurrently, reload and retry")
+	}
+	if p.Sub2APIGroupID != nil {
+		if _, err := ops.Enqueue(ctx, s.DB, ops.NewOp{
+			Type:           opshandlers.TypeGroupDelete,
+			Target:         fmt.Sprintf("group:%d", *p.Sub2APIGroupID),
+			Payload:        opshandlers.GroupDeletePayload{GroupID: *p.Sub2APIGroupID},
+			IdempotencyKey: fmt.Sprintf("pool-delete-%d", p.ID),
+		}); err != nil {
+			return nil, fmt.Errorf("pool deleted but sub2api group deletion was not queued: %w", err)
+		}
+	}
+	p.Enabled, p.MarketPublished = false, false
+	return p, nil
 }

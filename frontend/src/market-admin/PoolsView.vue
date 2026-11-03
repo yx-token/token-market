@@ -6,6 +6,7 @@ import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -78,6 +79,7 @@ const msg = ref('')
 
 const show = ref(false)
 const editing = ref<Pool | null>(null)
+const deleteTarget = ref<Pool | null>(null)
 const form = reactive({
   name: 'tm-pool-',
   platform: 'anthropic',
@@ -317,6 +319,29 @@ async function toggleEnabled(p: Pool) {
   }
 }
 
+function remove(p: Pool) {
+  if (p.enabled) return
+  error.value = ''
+  msg.value = ''
+  deleteTarget.value = p
+}
+
+function cancelRemove() {
+  deleteTarget.value = null
+  error.value = ''
+}
+
+async function confirmRemove() {
+  const target = deleteTarget.value
+  if (!target) return
+  const removed = await run(`分组 ${target.name} 已删除`, () =>
+    marketSend('DELETE', `${MARKET_API_PREFIX}/pools/${target.id}`),
+  )
+  if (!removed) return
+  deleteTarget.value = null
+  await load()
+}
+
 onMounted(load)
 </script>
 
@@ -342,7 +367,7 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error && !show" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-if="error && !show && !deleteTarget" class="y-msg y-msg--error mb-2">{{ error }}</p>
         <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
 
         <div class="section-block">
@@ -483,6 +508,15 @@ onMounted(load)
               >
                 {{ row.market_published ? '下架' : '上架' }}
               </button>
+              <button
+                type="button"
+                class="y-link y-link--danger"
+                :disabled="busy || row.enabled"
+                :title="row.enabled ? '需先关闭分组' : ''"
+                @click="remove(row)"
+              >
+                删除
+              </button>
             </div>
           </template>
           <template #empty>
@@ -578,6 +612,24 @@ onMounted(load)
         <button type="button" class="btn btn-primary" :disabled="busy" @click="save">保存</button>
       </template>
     </BaseDialog>
+
+    <ConfirmDialog
+      :show="!!deleteTarget"
+      title="删除默认分组"
+      :message="
+        deleteTarget
+          ? `确认删除分组「${deleteTarget.name}」？sub2api 中的同名分组会一并删除，仍指向它的买家 Key 将无法再经此分组调用。此操作不可撤销。`
+          : ''
+      "
+      confirm-text="确认删除"
+      cancel-text="取消"
+      danger
+      :busy="busy"
+      @confirm="confirmRemove"
+      @cancel="cancelRemove"
+    >
+      <p v-if="deleteTarget && error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
+    </ConfirmDialog>
   </section>
 </template>
 
@@ -733,8 +785,8 @@ onMounted(load)
 }
 #market-pools-page :deep(th.col-ops),
 #market-pools-page :deep(td.col-ops) {
-  min-width: 14rem;
-  width: 14rem;
+  min-width: 16.5rem;
+  width: 16.5rem;
   box-sizing: border-box;
 }
 

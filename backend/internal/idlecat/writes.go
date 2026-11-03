@@ -61,7 +61,7 @@ func (s *Store) SetPoolEnabled(ctx context.Context, id int64, enabled bool) erro
 		SET enabled = $2,
 		    market_published = CASE WHEN $2 THEN market_published ELSE false END,
 		    updated_at = now()
-		WHERE id = $1`, id, enabled)
+		WHERE id = $1 AND deleted_at IS NULL`, id, enabled)
 	if err != nil {
 		return err
 	}

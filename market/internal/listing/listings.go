@@ -25,7 +25,7 @@ func round2(f float64) float64 { return math.Round(f*100) / 100 }
 func PoolCap(ctx context.Context, db DB, platform string) (float64, bool, error) {
 	var cap *float64
 	err := db.QueryRow(ctx, `SELECT min(sell_multiplier * (1 - min_margin - safety_buffer)) FROM pools
-		WHERE enabled AND (platform = $1 OR platform = 'composite')`, platform).Scan(&cap)
+		WHERE enabled AND deleted_at IS NULL AND (platform = $1 OR platform = 'composite')`, platform).Scan(&cap)
 	if err != nil || cap == nil {
 		return 0, false, err
 	}

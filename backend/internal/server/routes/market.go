@@ -147,6 +147,7 @@ func registerIdleCatRelay(admin *gin.RouterGroup) {
 		"POST pools",
 		"PUT pools/:id",
 		"POST pools/:id/sync",
+		"DELETE pools/:id",
 		"PUT detection-providers/:name",
 		"GET detection-policies",
 		"GET detection-providers",

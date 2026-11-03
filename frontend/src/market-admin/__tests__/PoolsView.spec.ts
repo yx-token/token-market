@@ -82,3 +82,54 @@ describe('保障池编辑弹窗', () => {
     expect(api.get).toHaveBeenCalledOnce()
   })
 })
+
+describe('保障池删除', () => {
+  function deleteButton(wrapper: VueWrapper) {
+    const button = wrapper.findAll('button').find((item) => item.text() === '删除')
+    expect(button, '找不到删除按钮').toBeDefined()
+    return button!
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('启用中的分组不能直接删除，提示先关闭', async () => {
+    api.get.mockResolvedValue([structuredClone(pool)])
+    const wrapper = await page()
+
+    const button = deleteButton(wrapper)
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('title')).toBe('需先关闭分组')
+  })
+
+  it('关闭后确认删除，调用 DELETE 并刷新列表', async () => {
+    api.get.mockResolvedValueOnce([{ ...structuredClone(pool), enabled: false, market_published: false }])
+    api.get.mockResolvedValueOnce([])
+    api.send.mockResolvedValue({ status: 'deleted' })
+    const wrapper = await page()
+
+    await deleteButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(dialog().textContent).toContain('tm-pool-openai')
+    await clickDialog('确认删除')
+
+    expect(api.send).toHaveBeenCalledWith('DELETE', '/api/v1/admin/market/pools/1')
+    expect(api.get).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('[role="dialog"]:not(.modal-leave-active)')).toBeNull()
+    expect(wrapper.text()).toContain('分组 tm-pool-openai 已删除')
+  })
+
+  it('删除失败时在确认框内显示错误', async () => {
+    api.get.mockResolvedValue([{ ...structuredClone(pool), enabled: false, market_published: false }])
+    api.send.mockRejectedValue(new Error('disable the pool before deleting it'))
+    const wrapper = await page()
+
+    await deleteButton(wrapper).trigger('click')
+    await flushPromises()
+    await clickDialog('确认删除')
+
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toContain('disable the pool before deleting it')
+    expect(api.get).toHaveBeenCalledOnce()
+  })
+})

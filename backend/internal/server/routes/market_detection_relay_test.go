@@ -53,3 +53,15 @@ func TestDetectionRelayCoversReadAndWrite(t *testing.T) {
 		require.True(t, have[want], "缺少路由 %s", want)
 	}
 }
+
+// 保障池删除只有 market 侧实现（软删除 + 出站删除 sub2api 分组），引擎必须转发；漏注册时后台点删除会 404。
+func TestPoolDeleteUsesRelay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerNativeIdleCat(router.Group("/api/v1/admin"), &idlecat.Store{})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/admin/market/pools/7", nil)
+	require.NotPanics(t, func() { router.ServeHTTP(recorder, request) })
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code, recorder.Body.String())
+}
