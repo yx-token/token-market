@@ -154,12 +154,18 @@ async function closeListing(row: Listing) {
     </PageHeader>
     <div class="seller-filters" role="group" aria-label="按状态筛选">
       <button v-for="item in statusChoices" :key="item.id" type="button" class="seller-chip" :class="{ 'is-on': statusFilter === item.id }" @click="statusFilter = item.id">{{ item.label }}</button>
-      <button v-for="item in [
-        ['', '全部形态'],
-        ['consignment', '按量'],
-        ['pack', '订阅套餐'],
-        ['buyback', '回收'],
-      ]" :key="item[0] || 'all-mode'" type="button" class="seller-chip" :class="{ 'is-on': modeFilter === item[0] }" @click="modeFilter = item[0]">{{ item[1] }}</button>
+      <button
+        v-for="item in [
+          ['consignment', '按量'],
+          ['pack', '订阅套餐'],
+          ['buyback', '回收'],
+        ]"
+        :key="item[0]"
+        type="button"
+        class="seller-chip"
+        :class="{ 'is-on': modeFilter === item[0] }"
+        @click="modeFilter = modeFilter === item[0] ? '' : item[0]"
+      >{{ item[1] }}</button>
     </div>
     <div v-if="listingsError && !listings.loading.value" class="seller-empty">
       <strong>挂单没有载入</strong>

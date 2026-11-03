@@ -325,6 +325,8 @@ import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+// 打进 admin-assets，避免 MARKET_EMBED 同端口时根路径 /xianmao-logo.svg 被 C 端抢走
+import xianmaoLogoUrl from '@/assets/xianmao-logo.svg?url'
 
 interface NavItem {
   path: string
@@ -408,7 +410,7 @@ const groupExpandOverrides = ref<Map<string, boolean>>(new Map())
 // Site settings from appStore (cached, no flicker)
 const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
-const brandLogo = computed(() => (isAdmin.value ? '/xianmao-logo.svg' : (siteLogo.value || '/xianmao-logo.svg')))
+const brandLogo = computed(() => (isAdmin.value ? xianmaoLogoUrl : (siteLogo.value || xianmaoLogoUrl)))
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 

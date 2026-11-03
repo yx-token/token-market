@@ -1,25 +1,138 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { buyer, market } from '@/api'
 import { merchants } from '@/api/merchants'
 import type { BuyerKey, Limits, MarketItem, PoolItem, QuotaPack } from '@/api/types'
 import { useAction, useLoader } from '@/composables/useAsync'
+import { useProductGuide } from '@/composables/useProductGuide'
 import { useConfig } from '@/stores/config'
 import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
+import ProductGuideCoach from '@/components/ProductGuideCoach.vue'
+import UseKeyModal from '@/components/UseKeyModal.vue'
 import DateField from '@/components/common/DateField.vue'
 import RouteEditor from '@/components/RouteEditor.vue'
 import { dateTime, money } from '@/utils/format'
 import { toRoute, validateChain, type HopChoice } from '@/utils/route'
 import { copyText } from '@/utils/clipboard'
 import { sampleRequest } from '@/utils/keySample'
+import {
+  buildCcSwitchImportDeeplink,
+  normalizeCcSwitchPlatform,
+  type CcSwitchClientType,
+} from '@/utils/ccswitchImport'
 
 const route = useRoute()
+const router = useRouter()
 const toast = useToast()
 const cfg = useConfig()
+const productGuide = useProductGuide()
 const keys = useLoader(() => buyer.keys(), [] as BuyerKey[] | null)
+
+const BUYER_COACH = [
+  {
+    title: '复制调用地址',
+    body: '把 Base URL 指到闲猫 Edge。Claude Code / Codex / SDK 都用这个地址，不要再用官方默认域名。',
+    spotlight: '[data-guide="keys-base"]',
+    primary: '已复制，下一步',
+  },
+  {
+    title: '创建或打开 Key',
+    body: '还没有 Key 就点「创建 Key」；已有则跳过创建。创建后请立刻复制明文。',
+    spotlight: '[data-guide="keys-create"]',
+    primary: '打开创建',
+    secondary: '已有 Key，跳过',
+  },
+  {
+    title: '使用密钥',
+    body: '点「使用密钥」打开配置弹窗：可复制 Claude Code / Codex / curl 环境变量与 settings.json（与引擎一致）。',
+    spotlight: '[data-guide="keys-use"]',
+    primary: '打开使用密钥',
+    secondary: '下一步',
+  },
+  {
+    title: '导入到 CCS',
+    body: '若已安装 CC Switch，点「导入到 CCS」一键写入提供商；未安装会提示。也可继续手动配置。',
+    spotlight: '[data-guide="keys-ccs"]',
+    primary: '试一下导入',
+    secondary: '跳过',
+  },
+  {
+    title: '接到客户端里用',
+    body: '环境变量或 settings.json 填好后即可调用。需要对照模板可回帮助中心。',
+    spotlight: '[data-guide="keys-card"]',
+    primary: '结束引导',
+    secondary: '回帮助中心',
+  },
+] as const
+
+const coachOpen = computed(() => productGuide.active.value && productGuide.kind.value === 'buyer-key')
+const coachIdx = computed(() => productGuide.subStep.value)
+const coachTip = computed(() => BUYER_COACH[Math.min(coachIdx.value, BUYER_COACH.length - 1)]!)
+
+function endBuyerCoach() {
+  productGuide.stop()
+}
+
+function firstKey(): BuyerKey | undefined {
+  return (keys.data.value ?? [])[0]
+}
+
+async function buyerCoachPrimary() {
+  const i = coachIdx.value
+  if (i === 0) {
+    void copy(baseURL.value)
+    productGuide.setSubStep(1)
+    return
+  }
+  if (i === 1) {
+    openCreate()
+    productGuide.setSubStep(2)
+    return
+  }
+  if (i === 2) {
+    const k = firstKey()
+    if (k) await openUseKey(k)
+    productGuide.setSubStep(3)
+    return
+  }
+  if (i === 3) {
+    const k = firstKey()
+    if (k) await importToCcs(k)
+    productGuide.setSubStep(4)
+    return
+  }
+  endBuyerCoach()
+}
+
+function buyerCoachSecondary() {
+  const i = coachIdx.value
+  if (i === 1) {
+    productGuide.setSubStep(2)
+    return
+  }
+  if (i === 2 || i === 3) {
+    productGuide.setSubStep(i + 1)
+    return
+  }
+  if (i === 4) {
+    endBuyerCoach()
+    router.push({ path: '/', hash: '#guide' })
+  }
+}
+
+watch(
+  () => [coachOpen.value, coachIdx.value, keys.data.value?.length] as const,
+  () => {
+    if (!coachOpen.value) return
+    // 没有 Key 时使用密钥 / CCS 步退回创建
+    if ((coachIdx.value === 2 || coachIdx.value === 3) && !(keys.data.value?.length)) {
+      productGuide.setSubStep(1)
+    }
+  },
+)
 const packs = useLoader(() => buyer.packs(), [] as QuotaPack[] | null)
 const listings = ref<MarketItem[]>([])
 const listingsLoading = ref(false)
@@ -47,9 +160,21 @@ const created = ref<{ key: string; platform: string } | null>(null)
 const revealed = reactive<Record<number, { key: string; platform: string }>>({})
 const revealing = ref(0)
 
+const useKeyOpen = ref(false)
+const useKeyTarget = ref<{ key: string; platform: string; name: string } | null>(null)
+const ccsClientOpen = ref(false)
+const ccsPending = ref<BuyerKey | null>(null)
+
 const baseURL = computed(() => cfg.config.edge_url || window.location.origin)
 
 onMounted(async () => {
+  productGuide.restore()
+  if (route.query.guide === '1' || route.query.guide === 'buyer') {
+    productGuide.start('buyer-key', 0)
+    const q = { ...route.query }
+    delete q.guide
+    router.replace({ path: route.path, query: q, hash: route.hash })
+  }
   packs.load()
   await cfg.ensure()
   const [, , ps] = await Promise.all([keys.load(), loadMerchantListings(), market.pools().catch(() => null)])
@@ -229,13 +354,104 @@ const createdSample = computed(() =>
   created.value ? sample(created.value.platform, created.value.key) : null,
 )
 
+async function openUseKey(k: BuyerKey) {
+  const plain = await plainOf(k)
+  if (!plain) {
+    if (k.recoverable === false) toast.error('这个 Key 无法再次查看明文，请新建一个')
+    return
+  }
+  useKeyTarget.value = {
+    key: plain,
+    platform: revealed[k.id]?.platform || k.platform || '',
+    name: k.name,
+  }
+  useKeyOpen.value = true
+}
+
+async function openUseKeyCreated() {
+  if (!created.value) return
+  useKeyTarget.value = {
+    key: created.value.key,
+    platform: created.value.platform,
+    name: '刚创建的 Key',
+  }
+  useKeyOpen.value = true
+}
+
+function executeCcsImport(apiKey: string, platform: string | undefined, clientType: CcSwitchClientType) {
+  const deeplink = buildCcSwitchImportDeeplink({
+    baseUrl: baseURL.value,
+    platform: normalizeCcSwitchPlatform(platform),
+    clientType,
+    providerName: '闲猫',
+    apiKey,
+  })
+  try {
+    window.open(deeplink, '_self')
+    setTimeout(() => {
+      if (document.hasFocus()) toast.error('未检测到 CC Switch，请先安装后再导入，或改用「使用密钥」手动配置')
+    }, 120)
+  } catch {
+    toast.error('未检测到 CC Switch，请先安装后再导入')
+  }
+}
+
+async function importToCcs(k: BuyerKey) {
+  const plain = await plainOf(k)
+  if (!plain) {
+    if (k.recoverable === false) toast.error('这个 Key 无法再次查看明文，请新建一个')
+    return
+  }
+  const platform = normalizeCcSwitchPlatform(revealed[k.id]?.platform || k.platform)
+  if (platform === 'antigravity') {
+    ccsPending.value = k
+    ccsClientOpen.value = true
+    return
+  }
+  executeCcsImport(plain, platform, platform === 'gemini' ? 'gemini' : 'claude')
+}
+
+async function importCreatedToCcs() {
+  if (!created.value) return
+  const platform = normalizeCcSwitchPlatform(created.value.platform)
+  if (platform === 'antigravity') {
+    // 创建弹窗里的 Key 不在列表里，临时构造
+    ccsPending.value = {
+      id: 0,
+      name: '刚创建的 Key',
+      key_prefix: created.value.key.slice(0, 8),
+      route_type: 'chain',
+      status: 'active',
+      limits: {},
+      hops: null,
+      platform: created.value.platform,
+      recoverable: true,
+      created_at: new Date().toISOString(),
+    }
+    revealed[0] = { key: created.value.key, platform: created.value.platform }
+    ccsClientOpen.value = true
+    return
+  }
+  executeCcsImport(created.value.key, platform, platform === 'gemini' ? 'gemini' : 'claude')
+}
+
+async function handleCcsClientSelect(clientType: CcSwitchClientType) {
+  const k = ccsPending.value
+  ccsClientOpen.value = false
+  ccsPending.value = null
+  if (!k) return
+  const plain = k.id === 0 ? revealed[0]?.key : await plainOf(k)
+  if (!plain) return
+  executeCcsImport(plain, k.platform, clientType)
+}
+
 </script>
 
 <template>
   <div>
     <PageHeader title="API Key" description="先在市场把商家加入清单，再选择清单内的挂单创建 Key。挂单按排列顺序优先调用，也可添加平台默认分组兜底。订阅套餐从期内额度扣；购买与充值不可退款。">
       <RouterLink to="/buyer/merchants" class="xm-btn xm-btn-ghost">商家清单</RouterLink>
-      <button type="button" class="xm-btn xm-btn-primary" @click="openCreate">创建 Key</button>
+      <button type="button" class="xm-btn xm-btn-primary" data-guide="keys-create" @click="openCreate">创建 Key</button>
     </PageHeader>
 
     <div v-if="(packs.data.value ?? []).length" class="xm-pack-list">
@@ -248,7 +464,7 @@ const createdSample = computed(() =>
       </div>
     </div>
 
-    <div class="xm-edge-box">
+    <div class="xm-edge-box" data-guide="keys-base">
       <div class="lab">调用地址 · Base URL</div>
       <code>{{ baseURL }}</code>
       <p>兼容官方协议。把 SDK Base URL 换成上面地址，Key 换成下方创建的 Key。失败不计费；余额不足时请求会被拒绝。</p>
@@ -262,7 +478,12 @@ const createdSample = computed(() =>
     <div v-if="keys.loading.value && !keys.data.value?.length" class="py-10 text-center text-[#888]">加载中…</div>
     <div v-else-if="!keys.data.value?.length" class="xm-key-card py-10 text-center text-[#888]">还没有 Key，先创建一个或去市场选用闲置TOKEN。</div>
     <div v-else class="xm-card-list">
-      <div v-for="k in keys.data.value ?? []" :key="k.id" class="xm-key-card">
+      <div
+        v-for="(k, ki) in keys.data.value ?? []"
+        :key="k.id"
+        class="xm-key-card"
+        :data-guide="ki === 0 ? 'keys-card' : undefined"
+      >
         <div class="xm-key-top">
           <span class="name">{{ k.name }}</span>
           <span class="prefix">{{ k.key_prefix }}…</span>
@@ -270,6 +491,20 @@ const createdSample = computed(() =>
           <span v-if="packForKey(k.id)" class="xm-tag pack">订阅套餐</span>
           <span v-if="k.limit_blocked_until" class="xm-tag warn">已限额</span>
           <div class="xm-key-actions">
+            <button
+              type="button"
+              class="xm-btn xm-btn-primary xm-btn-sm"
+              :data-guide="ki === 0 ? 'keys-use' : undefined"
+              :disabled="revealing === k.id || k.recoverable === false"
+              @click="openUseKey(k)"
+            >使用密钥</button>
+            <button
+              type="button"
+              class="xm-btn xm-btn-ghost xm-btn-sm"
+              :data-guide="ki === 0 ? 'keys-ccs' : undefined"
+              :disabled="revealing === k.id || k.recoverable === false"
+              @click="importToCcs(k)"
+            >导入到 CCS</button>
             <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="revealing === k.id" @click="copyKey(k)">
               {{ keyPlain(k) ? '复制 Key' : '查看并复制' }}
             </button>
@@ -379,8 +614,43 @@ const createdSample = computed(() =>
         <p class="hint">{{ createdSample.note }}</p>
       </div>
       <template #footer>
+        <button type="button" class="btn-secondary" @click="importCreatedToCcs">导入到 CCS</button>
+        <button type="button" class="btn-secondary" @click="openUseKeyCreated">使用密钥</button>
         <button class="btn-primary" @click="created = null">关闭</button>
       </template>
     </ModalDialog>
+
+    <UseKeyModal
+      v-model:open="useKeyOpen"
+      :api-key="useKeyTarget?.key ?? ''"
+      :base-url="baseURL"
+      :platform="useKeyTarget?.platform"
+      :key-name="useKeyTarget?.name"
+    />
+
+    <ModalDialog :open="ccsClientOpen" title="选择 CCS 客户端" @update:open="(v: boolean) => !v && (ccsClientOpen = false, ccsPending = null)">
+      <p class="hint mb-3">Antigravity 可导入为 Claude Code 或 Gemini CLI，请选择你要使用的客户端。</p>
+      <div class="flex flex-col gap-2">
+        <button type="button" class="btn-primary" @click="handleCcsClientSelect('claude')">Claude Code</button>
+        <button type="button" class="btn-secondary" @click="handleCcsClientSelect('gemini')">Gemini CLI</button>
+      </div>
+      <template #footer>
+        <button type="button" class="btn-secondary" @click="ccsClientOpen = false; ccsPending = null">取消</button>
+      </template>
+    </ModalDialog>
+
+    <ProductGuideCoach
+      :open="coachOpen"
+      :step-index="coachIdx"
+      :step-total="BUYER_COACH.length"
+      :title="coachTip.title"
+      :body="coachTip.body"
+      :primary-label="coachTip.primary"
+      :secondary-label="'secondary' in coachTip ? coachTip.secondary : undefined"
+      :spotlight="coachTip.spotlight"
+      @close="endBuyerCoach"
+      @primary="buyerCoachPrimary"
+      @secondary="buyerCoachSecondary"
+    />
   </div>
 </template>

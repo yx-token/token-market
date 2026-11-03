@@ -689,6 +689,16 @@ func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
 	}
 }
 
+func TestMarketEmbedServesAdminPublicBrandAssets(t *testing.T) {
+	t.Setenv("MARKET_EMBED", "1")
+	for _, path := range []string{"/admin", "/admin/dashboard", "/admin-assets/app.js", "/xianmao-logo.svg", "/logo.svg"} {
+		require.False(t, shouldBypassEmbeddedFrontend(path), "path=%s should be served by admin embed", path)
+	}
+	for _, path := range []string{"/", "/buyer/keys", "/assets/app.js", "/api/v1/settings/public"} {
+		require.True(t, shouldBypassEmbeddedFrontend(path), "path=%s should bypass to market", path)
+	}
+}
+
 func TestNewFrontendServer(t *testing.T) {
 	t.Run("creates_server_successfully", func(t *testing.T) {
 		provider := &mockSettingsProvider{

@@ -34,10 +34,11 @@ func RegisterMarketEmbed(r *gin.Engine) {
 		r.Any(p, wrap)
 		r.Any(p+"/*filepath", wrap)
 	}
-	// 根路径与未命中路由：交给市场 SPA（排除 /admin*）
+	// 根路径与未命中路由：交给市场 SPA（排除 /admin* 与管理端 public 根图标）
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		if path == "/admin" || strings.HasPrefix(path, "/admin/") || strings.HasPrefix(path, "/admin-assets/") {
+		if path == "/admin" || strings.HasPrefix(path, "/admin/") || strings.HasPrefix(path, "/admin-assets/") ||
+			path == "/xianmao-logo.svg" || path == "/logo.svg" || path == "/favicon.ico" || path == "/logo.png" {
 			c.Status(http.StatusNotFound)
 			return
 		}

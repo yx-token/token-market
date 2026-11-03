@@ -230,19 +230,28 @@ async function ensureLoaded() {
   }
 }
 
-async function toggle() {
+async function openPanel() {
   if (!auth.loggedIn) {
     loginModal.show({ redirect: '/' })
     return
   }
-  open.value = !open.value
+  open.value = true
+  await ensureLoaded()
+  startSync()
+}
+
+async function toggle() {
   if (open.value) {
-    await ensureLoaded()
-    startSync()
-  } else {
+    open.value = false
     void clearTyping()
     startSync()
+    return
   }
+  await openPanel()
+}
+
+function onOpenSupportEvent() {
+  void openPanel()
 }
 
 async function send() {
@@ -356,10 +365,12 @@ onMounted(() => {
   loadPanelSize()
   if (auth.loggedIn) startSync()
   document.addEventListener('visibilitychange', onVisible)
+  window.addEventListener('market-open-support', onOpenSupportEvent)
 })
 
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', onVisible)
+  window.removeEventListener('market-open-support', onOpenSupportEvent)
   resizeCleanup?.()
   resizeCleanup = null
   stopSync()

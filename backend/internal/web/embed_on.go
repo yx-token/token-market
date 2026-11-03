@@ -359,6 +359,11 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 		if trimmed == "/admin" || strings.HasPrefix(trimmed, "/admin/") || strings.HasPrefix(trimmed, "/admin-assets/") {
 			return false
 		}
+		// Vite public/ 根图标仍落在管理端 dist 根路径，不会进 admin-assets；
+		// 若不放行，浏览器请求 /xianmao-logo.svg 会落到 C 端 SPA → 裂图。
+		if isEmbeddedAdminPublicAsset(trimmed) {
+			return false
+		}
 		return true
 	}
 	return strings.HasPrefix(trimmed, "/api/") ||
@@ -379,6 +384,16 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 func marketEmbedFrontend() bool {
 	v := strings.TrimSpace(os.Getenv("MARKET_EMBED"))
 	return v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
+}
+
+// isEmbeddedAdminPublicAsset 识别管理端 public/ 下需从 embed 根路径提供的品牌静态文件。
+func isEmbeddedAdminPublicAsset(path string) bool {
+	switch path {
+	case "/xianmao-logo.svg", "/logo.svg", "/favicon.ico", "/logo.png":
+		return true
+	default:
+		return false
+	}
 }
 
 func serveIndexHTML(c *gin.Context, fsys fs.FS) {

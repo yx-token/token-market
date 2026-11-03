@@ -33,7 +33,7 @@
           <div
             class="mb-4 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl shadow-lg shadow-primary-500/30"
           >
-            <img src="/xianmao-logo.svg" alt="闲猫" class="h-full w-full object-contain" />
+            <img :src="brandLogo" alt="闲猫" class="h-full w-full object-contain" />
           </div>
           <h1 class="text-gradient mb-2 text-3xl font-bold">
             闲猫
@@ -65,11 +65,13 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
+import xianmaoLogoUrl from '@/assets/xianmao-logo.svg?url'
 
 const appStore = useAppStore()
 
 const siteName = computed(() => '闲猫')
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
+const brandLogo = xianmaoLogoUrl
 
 const currentYear = computed(() => new Date().getFullYear())
 

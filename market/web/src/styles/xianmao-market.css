@@ -1873,83 +1873,261 @@ html.is-market body::-webkit-scrollbar {
   user-select: none;
 }
 
-/* 新手指南弹层 */
-.mh-guide-dialog { display: flex; flex-direction: column; gap: 16px; }
+/* 帮助中心弹层 */
+.mh-guide-dialog { display: flex; flex-direction: column; gap: 14px; }
 .mh-guide-dialog-lead {
   margin: 0;
   font-size: 13px;
   line-height: 1.55;
   color: var(--muted);
 }
-.mh-guide-steps {
+.mh-guide-dialog-lead code {
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f3f3f3;
+}
+.mh-coach-launch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fff8c8 0%, #fff 70%);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+.mh-coach-launch strong {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1f1f1f;
+}
+.mh-coach-launch p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #555;
+}
+.mh-coach-launch .btn-primary {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.mh-help-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #f5f5f5;
+}
+.mh-help-tab {
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  color: #777;
+  cursor: pointer;
+}
+.mh-help-tab.on {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.mh-help-base {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fffdf5;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+.mh-help-base-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #888;
+}
+.mh-help-base-val {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mh-help-copy {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--ink);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mh-help-clients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mh-help-client {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #666;
+  cursor: pointer;
+}
+.mh-help-client.on {
+  background: var(--yellow-btn);
+  border-color: transparent;
+  color: var(--ink);
+}
+.mh-help-snippet {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #fafafa;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+.mh-help-snippet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mh-help-snippet-head strong {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.mh-help-snippet pre {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #1f1f1f;
+  color: #f5f5f5;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.mh-help-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #777;
+}
+.mh-help-note code {
+  font-size: 11px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #eee;
+}
+.mh-help-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mh-help-link {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+.mh-help-link:hover {
+  border-color: rgba(0, 0, 0, 0.14);
+  background: #fffdf5;
+}
+.mh-seller-steps {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.mh-guide-step {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  gap: 12px;
-  align-items: start;
-  padding: 12px 12px 12px 10px;
-  border-radius: 12px;
-  background: #fffdf5;
-  border: 1px solid rgba(0, 0, 0, 0.04);
+.mh-seller-step { margin: 0; }
+.mh-seller-step-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  border-radius: 999px;
+  padding: 5px 10px 5px 5px;
+  font: inherit;
+  cursor: pointer;
+  color: #666;
 }
-.mh-guide-step-n {
+.mh-seller-step.on .mh-seller-step-hit {
+  background: var(--yellow-btn);
+  border-color: transparent;
+  color: var(--ink);
+}
+.mh-seller-step.done .mh-seller-step-n {
+  background: #e8e8e8;
+}
+.mh-seller-step-n {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #f0f0f0;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #fff8b8 0%, #fff07a 100%);
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--ink);
-  letter-spacing: 0.02em;
-}
-.mh-guide-step-body strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 800;
-  color: var(--ink);
-  margin-bottom: 4px;
-}
-.mh-guide-step-body p {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.55;
-  color: #777;
-}
-.mh-guide-tips {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.mh-guide-tip {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: #fafafa;
-  border: 1px solid rgba(0, 0, 0, 0.04);
-}
-.mh-guide-tip strong {
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--ink);
-}
-.mh-guide-tip span {
   font-size: 11px;
-  line-height: 1.5;
-  color: #888;
+  font-weight: 800;
 }
-@media (max-width: 640px) {
-  .mh-guide-tips { grid-template-columns: 1fr; }
+.mh-seller-step.on .mh-seller-step-n {
+  background: #fff;
+}
+.mh-seller-step-t {
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.mh-seller-panel {
+  padding: 14px;
+  border-radius: 12px;
+  background: #fffdf5;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+.mh-seller-panel strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.mh-seller-panel > p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #666;
+}
+.mh-seller-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .mh-guarantee ul,
 .mh-promise ul {

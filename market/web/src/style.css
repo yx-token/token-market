@@ -1475,11 +1475,11 @@ html:not(.is-console) .console-tp-card {
   inset: 0;
   z-index: 50;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  overflow-y: auto;
+  /* 蒙层不滚动：长内容在弹窗 body 内滚，避免弹窗「铺满整屏」 */
+  overflow: hidden;
   padding: 1rem;
-  padding-top: 8vh;
 }
 .yh-modal-mask--market {
   background: rgba(0, 0, 0, 0.35);
@@ -1493,35 +1493,21 @@ html:not(.is-console) .console-tp-card {
 
 .yh-modal-panel {
   position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 32rem;
+  max-height: min(86vh, 720px);
   overflow: hidden;
 }
 .yh-modal-panel--wide {
   max-width: 48rem;
+  max-height: min(88vh, 800px);
 }
-/* 超大弹层（检测明细等数据密集场景）：上下居中，宽约 min(1680px, 视口 - 2rem)、高 92vh；
-   头/脚固定，内容区只纵向滚动，内容自行折行，不出现横向滚动条 */
-.yh-modal-mask--xl {
-  align-items: center;
-  padding-top: 1rem;
-}
+/* 超大弹层（检测明细等）：更宽更高，仍只在 body 内滚动 */
 .yh-modal-panel--xl {
-  display: flex;
-  flex-direction: column;
   max-width: min(1680px, calc(100vw - 2rem));
   max-height: 92vh;
-}
-.yh-modal-panel--xl .yh-modal-body {
-  flex: 1;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-.yh-modal-panel--xl .yh-modal-head,
-.yh-modal-panel--xl .yh-modal-foot {
-  flex-shrink: 0;
 }
 .yh-modal-panel--market {
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -1616,11 +1602,22 @@ html:not(.is-console) .console-tp-card {
   color: #0555ce;
 }
 
+.yh-modal-head,
+.yh-modal-foot {
+  flex-shrink: 0;
+}
+
 .yh-modal-body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
   padding: 1.25rem 1.5rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .yh-modal-panel--console .yh-modal-body {
   padding: 1.25rem;

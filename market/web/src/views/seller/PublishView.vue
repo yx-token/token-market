@@ -4,10 +4,11 @@
  * 代理 → 接入 → 选择模型 → 检测 → 商品形态 → 定价上架 → 完成（全部走真实 API）
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { market, seller } from '@/api'
 import type { Listing, ListingCategoryOption, Proxy, Quote, Upstream, VendorView } from '@/api/types'
 import { useAction } from '@/composables/useAsync'
+import { useProductGuide } from '@/composables/useProductGuide'
 import { useConfig } from '@/stores/config'
 import { useToast } from '@/stores/toast'
 import { authGuides, takesTeam } from '@/utils/authGuides'
@@ -16,20 +17,97 @@ import { multiplier, percent } from '@/utils/format'
 import InspectionAppraisal from '@/components/InspectionAppraisal.vue'
 import MarketDetectionSummary from '@/components/MarketDetectionSummary.vue'
 import ModelWhitelistSelector from '@/components/ModelWhitelistSelector.vue'
+import ProductGuideCoach from '@/components/ProductGuideCoach.vue'
 import SellerOAuthPanel from '@/components/SellerOAuthPanel.vue'
 import { privacyBlocksListing, sellerUntested } from '@/components/seller/listingGate'
 import { assignedUpstreamCount, canSelectSellerProxy } from '@/utils/proxyBindings'
 import '@/styles/seller-center.css'
 
 const route = useRoute()
+const router = useRouter()
 const cfg = useConfig()
 const toast = useToast()
 const { busy, run } = useAction()
+const productGuide = useProductGuide()
 
 const step = ref(0)
 const selectedModels = ref<string[]>([])
 const modelsValid = ref(false)
 const steps = ['代理', '接入', '模型', '检测', '商品', '定价', '完成'] as const
+
+const PUBLISH_COACH = [
+  {
+    title: '第 1 步 · 选好出口代理',
+    body: '高亮区里选一个「连通性检测通过」的代理。没有可用代理时，先去「代理 IP」添加并测通，再回到这里继续。',
+    spotlight: '[data-guide="publish-panel"]',
+    primary: '知道了，我来选',
+    secondary: '去添加代理',
+  },
+  {
+    title: '第 2 步 · 接入上游账号',
+    body: '选择平台与授权方式。OAuth 会打开官方登录页；Coding Key 则粘贴订阅 Key。完成授权后点页面上的下一步。',
+    spotlight: '[data-guide="publish-panel"]',
+    primary: '知道了，去接入',
+  },
+  {
+    title: '第 3 步 · 勾选挂售模型',
+    body: '只勾选你愿意卖给买家的模型。白名单越干净，后续检测与挂单越稳。',
+    spotlight: '[data-guide="publish-panel"]',
+    primary: '知道了，去勾选',
+  },
+  {
+    title: '第 4 步 · 质量检测（可选）',
+    body: '按量/套餐可以先上架（买家会看到未检测）。要进保障池或做平台回收，需要通过质量检测。隐私检查不能跳过。',
+    spotlight: '[data-guide="publish-panel"]',
+    primary: '知道了，继续',
+  },
+  {
+    title: '第 5 步 · 选商品形态',
+    body: '按量通道按倍率计费；订阅套餐按面额售卖；回收则卖给平台保障池。按你的目标选一种。',
+    spotlight: '[data-guide="publish-panel"]',
+    primary: '知道了，去选择',
+  },
+  {
+    title: '第 6 步 · 定价并上架',
+    body: '填分类、标题与价格，确认买家看到的价格后提交。提交成功会出现在市场。',
+    spotlight: '[data-guide="publish-panel"]',
+    primary: '知道了，去填写',
+  },
+  {
+    title: '完成 · 挂单已就绪',
+    body: '可以去「我的闲置 TOKEN」改价、暂停或下架，也可以再发布下一个。',
+    spotlight: '[data-guide="publish-panel"]',
+    primary: '结束引导',
+    secondary: '查看我的挂单',
+  },
+] as const
+
+const coachOpen = computed(() => productGuide.active.value && productGuide.kind.value === 'seller-publish')
+const coachTip = computed(() => PUBLISH_COACH[Math.min(step.value, PUBLISH_COACH.length - 1)]!)
+
+function endPublishCoach() {
+  productGuide.stop()
+}
+
+function coachPrimary() {
+  if (step.value >= PUBLISH_COACH.length - 1) {
+    endPublishCoach()
+    return
+  }
+  // 用户在真实表单上点下一步；教练文案会随 step 自动切换
+  document.querySelector<HTMLElement>('[data-guide="publish-panel"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+
+function coachSecondary() {
+  if (step.value === 0) {
+    router.push('/seller/proxies')
+    return
+  }
+  if (step.value >= PUBLISH_COACH.length - 1) {
+    endPublishCoach()
+    router.push('/seller/listings')
+  }
+}
 
 const vendors = ref<VendorView[]>([])
 const proxies = ref<Proxy[]>([])
@@ -73,6 +151,13 @@ const buyerPrice = computed(() => {
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
+  productGuide.restore()
+  if (route.query.guide === '1' || route.query.guide === 'seller') {
+    productGuide.start('seller-publish')
+    const q = { ...route.query }
+    delete q.guide
+    router.replace({ path: route.path, query: q, hash: route.hash })
+  }
   await cfg.ensure()
   const [vs, ps, conf, us, ls, cats] = await Promise.all([
     seller.vendors().catch(() => null),
@@ -365,7 +450,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       授权订阅账号 → 选择挂售模型 → 可直接挂「按量通道」或「订阅套餐」。质量检测可选；未检测会标给买家，不能进保障池，也不能做平台回收。隐私检查不能跳过。
     </p>
 
-    <ol class="xm-stepper" aria-label="发布步骤">
+    <ol class="xm-stepper" data-guide="publish-stepper" aria-label="发布步骤">
       <li
         v-for="(label, i) in steps"
         :key="label"
@@ -387,7 +472,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     </ol>
 
     <!-- 0 代理 -->
-    <section v-if="step === 0" class="xm-pub-panel">
+    <section v-if="step === 0" class="xm-pub-panel" data-guide="publish-panel">
       <h2>配置出口代理</h2>
       <p class="sub">授权与调用走同一固定代理；卖家自有代理可同时绑定多个账号。</p>
 
@@ -425,7 +510,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     </section>
 
     <!-- 1 接入 -->
-    <section v-else-if="step === 1" class="xm-pub-panel">
+    <section v-else-if="step === 1" class="xm-pub-panel" data-guide="publish-panel">
       <h2>接入上游账号</h2>
       <p class="sub">只做授权，不交密码。选择 OAuth 可在官方页面登录订阅账号，无需 API Key；也可使用已有订阅 Key。</p>
 
@@ -500,7 +585,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     </section>
 
     <!-- 2 选择挂售模型 -->
-    <section v-else-if="step === 2" class="xm-pub-panel">
+    <section v-else-if="step === 2" class="xm-pub-panel" data-guide="publish-panel">
       <h2>选择挂售模型</h2>
       <p class="sub">账号接入已完成。选择可供买家调用的模型，可直接挂单，也可先做质量检测。</p>
       <ModelWhitelistSelector v-if="upstream" v-model="selectedModels" :upstream-id="upstream.id" :disabled="busy" @valid="modelsValid = $event" />
@@ -512,7 +597,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     </section>
 
     <!-- 3 检测 -->
-    <section v-else-if="step === 3" class="xm-pub-panel">
+    <section v-else-if="step === 3" class="xm-pub-panel" data-guide="publish-panel">
       <h2>上架检测</h2>
       <p class="sub">质量检测可选。未检测也可以挂寄售或额度包，买家会看到「未检测」。平台回收仍须有效检测。上游 #{{ upstream?.id }}{{ upstream?.account_email ? ` · ${upstream.account_email}` : '' }}</p>
 
@@ -548,7 +633,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     </section>
 
     <!-- 4 商品形态 -->
-    <section v-else-if="step === 4" class="xm-pub-panel">
+    <section v-else-if="step === 4" class="xm-pub-panel" data-guide="publish-panel">
       <h2>选择商品形态</h2>
       <p class="sub">同一上游同时只能有一条有效挂单；形态决定买家怎么下单。</p>
       <div v-if="privacyBlocked" class="seller-callout seller-callout-bad mb-3">隐私检查未通过，不能挂单。</div>
@@ -585,7 +670,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     </section>
 
     <!-- 5 定价 -->
-    <section v-else-if="step === 5" class="xm-pub-panel">
+    <section v-else-if="step === 5" class="xm-pub-panel" data-guide="publish-panel">
       <h2>定价与上架内容</h2>
       <p class="sub">设置买家看到的价格与标题。</p>
       <InspectionAppraisal v-if="upstream && !untested" class="mb-4" :appraisal="upstream.appraisal" :grade="upstream.grade" :quality-factor="upstream.quality_factor" :inspection-mode="upstream.inspection_mode" :price="sku === 'buyback' ? undefined : Number(mult)" />
@@ -689,7 +774,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
     </section>
 
     <!-- 6 完成 -->
-    <section v-else class="xm-pub-panel text-center">
+    <section v-else class="xm-pub-panel text-center" data-guide="publish-panel">
       <h2 class="!mb-2">已发布</h2>
       <p class="sub !mb-4">
         <template v-if="sku === 'pack'">订阅套餐已上架，买家可在市场订阅。</template>
@@ -721,5 +806,19 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
         <button type="button" class="xm-btn xm-btn-ghost" @click="resetWizard">再发一条</button>
       </div>
     </section>
+
+    <ProductGuideCoach
+      :open="coachOpen"
+      :step-index="step"
+      :step-total="PUBLISH_COACH.length"
+      :title="coachTip.title"
+      :body="coachTip.body"
+      :primary-label="coachTip.primary"
+      :secondary-label="'secondary' in coachTip ? coachTip.secondary : undefined"
+      :spotlight="coachTip.spotlight"
+      @close="endPublishCoach"
+      @primary="coachPrimary"
+      @secondary="coachSecondary"
+    />
   </div>
 </template>

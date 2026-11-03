@@ -6,6 +6,7 @@ import { merchants } from '@/api/merchants'
 import { isTested } from '@/api/market-detection'
 import type { BuyerKey, MarketItem, PoolItem } from '@/api/types'
 import { useLoader } from '@/composables/useAsync'
+import { startProductGuide } from '@/composables/useProductGuide'
 import MarketListingCard from '@/components/MarketListingCard.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import { useAuth } from '@/stores/auth'
@@ -57,63 +58,89 @@ const viewMode = ref<'grid' | 'list'>('grid')
 const showAllBrands = ref(false)
 const trendTab = ref<'hot' | 'price'>('hot')
 const guideOpen = ref(false)
+const helpTab = ref<'buyer' | 'seller'>('buyer')
+const keyClient = ref<'claude' | 'openai' | 'curl'>('claude')
 
-const GUIDE_STEPS = [
-  {
-    n: '01',
-    title: '挑选商品',
-    desc: '用左侧筛选或顶部搜索锁定模型，对比倍率、成功率与响应速度。',
-  },
-  {
-    n: '02',
-    title: '选用开通',
-    desc: '点击「选用」登录后加入商家，平台会为你签发可调用的 API Key。',
-  },
-  {
-    n: '03',
-    title: '充值余额',
-    desc: '按量通道按实际用量扣费；余额不足时先在钱包充值即可继续调用。',
-  },
-  {
-    n: '04',
-    title: '配置调用',
-    desc: '把 Edge 地址与 API Key 填进你的客户端或代码，即可像官网一样调用。',
-  },
-  {
-    n: '05',
-    title: '查看用量',
-    desc: '在买家中心查看用量统计与账单，订单与结算记录可随时追溯。',
-  },
-] as const
+const helpEdgeBase = computed(() => (appCfg.config.edge_url || window.location.origin).replace(/\/$/, ''))
 
-function openGuide() {
+const KEY_CLIENTS = [
+  { id: 'claude' as const, label: 'Claude Code' },
+  { id: 'openai' as const, label: 'Codex / OpenAI' },
+  { id: 'curl' as const, label: 'curl 探测' },
+]
+
+const keySnippets = computed(() => {
+  const base = helpEdgeBase.value
+  const key = 'YOUR_API_KEY'
+  return {
+    claudeEnv: `export ANTHROPIC_BASE_URL="${base}"\nexport ANTHROPIC_AUTH_TOKEN="${key}"\nexport CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`,
+    claudeJson: `{\n  "env": {\n    "ANTHROPIC_BASE_URL": "${base}",\n    "ANTHROPIC_AUTH_TOKEN": "${key}"\n  }\n}`,
+    openaiEnv: `export OPENAI_BASE_URL="${base}/v1"\nexport OPENAI_API_KEY="${key}"`,
+    curl: `curl ${base}/v1/messages \\\n  -H "x-api-key: ${key}" \\\n  -H "anthropic-version: 2023-06-01" \\\n  -H "content-type: application/json" \\\n  -d '{"model":"claude-sonnet-4-5","max_tokens":64,"messages":[{"role":"user","content":"ping"}]}'`,
+  }
+})
+
+function openGuide(tab: 'buyer' | 'seller' = 'buyer') {
+  helpTab.value = tab
+  keyClient.value = 'claude'
   guideOpen.value = true
 }
 
 function closeGuide() {
   guideOpen.value = false
-  if (route.hash === '#guide') {
+  if (route.hash === '#guide' || route.hash === '#guide-seller') {
     router.replace({ path: route.path, query: route.query, hash: '' })
   }
 }
 
+function guideGo(path: string) {
+  closeGuide()
+  if (!auth.loggedIn && (path.startsWith('/buyer') || path.startsWith('/seller'))) {
+    loginModal.show({ redirect: path })
+    return
+  }
+  if (path === '/seller/publish') {
+    goPublish()
+    return
+  }
+  router.push(path)
+}
+
 function guideGoFeed() {
   closeGuide()
+  if (route.path !== '/') {
+    router.push('/')
+    return
+  }
   requestAnimationFrame(() => document.getElementById('feed')?.scrollIntoView({ behavior: 'smooth' }))
 }
 
-function guideGoPublish() {
+function guideOpenSupport() {
   closeGuide()
-  goPublish()
+  window.dispatchEvent(new CustomEvent('market-open-support'))
 }
 
-function guideGoWallet() {
+/** 进入真实页面并启动操作引导（高亮 + 教练气泡） */
+function startBuyerKeyGuide() {
   closeGuide()
+  const path = '/buyer/keys?guide=1'
   if (!auth.loggedIn) {
-    loginModal.show({ redirect: '/buyer/wallet' })
+    loginModal.show({ redirect: path })
     return
   }
-  router.push('/buyer/wallet')
+  startProductGuide('buyer-key', 0)
+  router.push({ path: '/buyer/keys', query: { guide: '1' } })
+}
+
+function startSellerPublishGuide() {
+  closeGuide()
+  const path = '/seller/publish?guide=1'
+  if (!auth.loggedIn) {
+    loginModal.show({ redirect: path })
+    return
+  }
+  startProductGuide('seller-publish')
+  router.push({ path: '/seller/publish', query: { guide: '1' } })
 }
 
 const MODEL_TYPES = [
@@ -586,7 +613,8 @@ onMounted(() => {
 watch(
   () => route.hash,
   (hash) => {
-    if (hash !== '#guide') return
+    if (hash !== '#guide' && hash !== '#guide-seller') return
+    helpTab.value = hash === '#guide-seller' ? 'seller' : 'buyer'
     guideOpen.value = true
     requestAnimationFrame(() => document.getElementById('guide')?.scrollIntoView({ behavior: 'smooth' }))
   },
@@ -877,9 +905,9 @@ watch(
 
         <div id="guide" class="mh-widget mh-guide">
           <div class="mh-guide-copy">
-            <strong>新手入门指南</strong>
-            <p>3 分钟了解如何选购与使用 Token</p>
-            <button type="button" class="mh-guide-btn" @click="openGuide">查看教程</button>
+            <strong>帮助中心</strong>
+            <p>Key 用法 · 卖家上架指引 · 客服</p>
+            <button type="button" class="mh-guide-btn" @click="openGuide('buyer')">打开帮助</button>
           </div>
           <div class="mh-guide-art" aria-hidden="true">
             <img class="mh-guide-art-img" src="/assets/guide-ai-coins.png" alt="" />
@@ -962,33 +990,90 @@ watch(
       </template>
     </ModalDialog>
 
-    <ModalDialog :open="guideOpen" title="新手入门指南" size="wide" @update:open="(v: boolean) => !v && closeGuide()">
+    <ModalDialog :open="guideOpen" title="帮助中心" size="wide" @update:open="(v: boolean) => !v && closeGuide()">
       <div class="mh-guide-dialog">
-        <p class="mh-guide-dialog-lead">从挑商品到发出第一次调用，按这 5 步走一遍即可。</p>
-        <ol class="mh-guide-steps">
-          <li v-for="step in GUIDE_STEPS" :key="step.n" class="mh-guide-step">
-            <span class="mh-guide-step-n" aria-hidden="true">{{ step.n }}</span>
-            <div class="mh-guide-step-body">
-              <strong>{{ step.title }}</strong>
-              <p>{{ step.desc }}</p>
-            </div>
-          </li>
-        </ol>
-        <div class="mh-guide-tips">
-          <div class="mh-guide-tip">
-            <strong>买家提示</strong>
-            <span>选用后 Key 可在「我的订单 / API Key」随时复制；平台担保交易，用量与结算可查。</span>
-          </div>
-          <div class="mh-guide-tip">
-            <strong>卖家提示</strong>
-            <span>有闲置额度？点「发布」上架按量通道或订阅套餐，检测合格后可进入保障池。</span>
-          </div>
+        <div class="mh-help-tabs" role="tablist" aria-label="帮助对象">
+          <button type="button" role="tab" class="mh-help-tab" :class="{ on: helpTab === 'buyer' }" :aria-selected="helpTab === 'buyer'" @click="helpTab = 'buyer'">买家 · 怎么用 Key</button>
+          <button type="button" role="tab" class="mh-help-tab" :class="{ on: helpTab === 'seller' }" :aria-selected="helpTab === 'seller'" @click="helpTab = 'seller'">卖家 · 上架指引</button>
         </div>
+
+        <template v-if="helpTab === 'buyer'">
+          <div class="mh-coach-launch">
+            <strong>跟着页面操作一遍</strong>
+            <p>会打开「API Key」页：复制 Base URL → 创建 Key →「使用密钥」（Claude / Codex / curl）→「导入到 CCS」，边点边学。</p>
+            <button type="button" class="btn-primary" @click="startBuyerKeyGuide">开始 Key 配置引导</button>
+          </div>
+          <p class="mh-guide-dialog-lead">
+            也可先看配置模板（把 <code>YOUR_API_KEY</code> 换成真实 Key）。正式密钥在「买家中心 → API Key」用「使用密钥」或「导入到 CCS」。
+          </p>
+          <div class="mh-help-base">
+            <span class="mh-help-base-label">调用地址 · Base URL</span>
+            <code class="mh-help-base-val">{{ helpEdgeBase }}</code>
+            <button type="button" class="mh-help-copy" @click="copy(helpEdgeBase)">复制</button>
+          </div>
+          <div class="mh-help-clients" role="tablist" aria-label="客户端">
+            <button
+              v-for="c in KEY_CLIENTS"
+              :key="c.id"
+              type="button"
+              class="mh-help-client"
+              :class="{ on: keyClient === c.id }"
+              @click="keyClient = c.id"
+            >{{ c.label }}</button>
+          </div>
+          <div v-if="keyClient === 'claude'" class="mh-help-snippet">
+            <div class="mh-help-snippet-head">
+              <strong>环境变量（推荐）</strong>
+              <button type="button" class="mh-help-copy" @click="copy(keySnippets.claudeEnv)">复制</button>
+            </div>
+            <pre>{{ keySnippets.claudeEnv }}</pre>
+            <div class="mh-help-snippet-head">
+              <strong>~/.claude/settings.json</strong>
+              <button type="button" class="mh-help-copy" @click="copy(keySnippets.claudeJson)">复制</button>
+            </div>
+            <pre>{{ keySnippets.claudeJson }}</pre>
+            <p class="mh-help-note">Claude Code 会走 Anthropic 协议；Base URL 用上面地址（一般不要手动加 /v1）。</p>
+          </div>
+          <div v-else-if="keyClient === 'openai'" class="mh-help-snippet">
+            <div class="mh-help-snippet-head">
+              <strong>环境变量</strong>
+              <button type="button" class="mh-help-copy" @click="copy(keySnippets.openaiEnv)">复制</button>
+            </div>
+            <pre>{{ keySnippets.openaiEnv }}</pre>
+            <p class="mh-help-note">Codex CLI / OpenAI SDK 把 Base URL 指到 <code>{{ helpEdgeBase }}/v1</code>，API Key 换成闲猫 Key。</p>
+          </div>
+          <div v-else class="mh-help-snippet">
+            <div class="mh-help-snippet-head">
+              <strong>curl 探测（Anthropic）</strong>
+              <button type="button" class="mh-help-copy" @click="copy(keySnippets.curl)">复制</button>
+            </div>
+            <pre>{{ keySnippets.curl }}</pre>
+            <p class="mh-help-note">创建 Key 后也可在「买家中心 → API Key」查看带真实密钥的平台专用示例。</p>
+          </div>
+          <div class="mh-help-links" role="group" aria-label="买家快捷入口">
+            <button type="button" class="mh-help-link" @click="guideGoFeed">去市场选用</button>
+            <button type="button" class="mh-help-link" @click="guideGo('/buyer/keys')">我的 API Key</button>
+            <button type="button" class="mh-help-link" @click="guideGo('/buyer/wallet')">钱包充值</button>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="mh-coach-launch">
+            <strong>跟着发布向导做一遍</strong>
+            <p>会打开「发布闲置 TOKEN」页，高亮当前步骤表单；你在页面上点下一步，右下角教练会跟着进度走（代理 → 接入 → 模型 → 检测 → 商品 → 定价 → 完成）。</p>
+            <button type="button" class="btn-primary" @click="startSellerPublishGuide">开始上架引导</button>
+          </div>
+          <div class="mh-help-links" role="group" aria-label="卖家快捷入口">
+            <button type="button" class="mh-help-link" @click="guideGo('/seller/proxies')">先去配代理</button>
+            <button type="button" class="mh-help-link" @click="guideGo('/seller/listings')">我的挂单</button>
+            <button type="button" class="mh-help-link" @click="guideGo('/seller/upstreams')">我的上游</button>
+          </div>
+        </template>
       </div>
       <template #footer>
-        <button type="button" class="btn-secondary" @click="guideGoPublish">去发布</button>
-        <button type="button" class="btn-secondary" @click="guideGoWallet">去充值</button>
-        <button type="button" class="btn-primary" @click="guideGoFeed">去逛市场</button>
+        <button type="button" class="btn-secondary" @click="guideOpenSupport">联系官方客服</button>
+        <button v-if="helpTab === 'buyer'" type="button" class="btn-primary" @click="startBuyerKeyGuide">开始 Key 引导</button>
+        <button v-else type="button" class="btn-primary" @click="startSellerPublishGuide">开始上架引导</button>
       </template>
     </ModalDialog>
   </div>
