@@ -56,7 +56,7 @@ func (s *Store) queryMaps(ctx context.Context, q string, args ...any) ([]map[str
 func (s *Store) ListPools(ctx context.Context) ([]map[string]any, error) {
 	return s.queryMaps(ctx, `
 		SELECT id, name, platform, enabled, sell_multiplier, market_published, market_title, sub2api_group_id
-		FROM pools ORDER BY id`)
+		FROM pools WHERE deleted_at IS NULL ORDER BY id`)
 }
 
 func (s *Store) ListProxies(ctx context.Context) ([]map[string]any, error) {

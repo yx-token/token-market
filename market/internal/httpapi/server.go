@@ -120,6 +120,7 @@ func (s *Server) adminRoutes() []route {
 		{"POST /api/admin/pools", s.createPool},
 		{"PUT /api/admin/pools/{id}", s.updatePool},
 		{"POST /api/admin/pools/{id}/sync", s.syncPool},
+		{"DELETE /api/admin/pools/{id}", s.deletePool},
 		{"GET /api/admin/detection-policies", s.listPolicies},
 		{"PUT /api/admin/detection-policies/{platform}", s.upsertPolicy},
 		{"GET /api/admin/detection-providers", s.listDetectionProviders},

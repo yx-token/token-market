@@ -118,7 +118,8 @@ func attribute(ctx context.Context, tx pgx.Tx, fromID int64) error {
 			AND ur.sub2api_usage_id > $1`, fromID); err != nil {
 		return err
 	}
-	// 买家与渠道：内部 key → 买家 Key；分组决定是默认分组还是指定卖家
+	// 买家与渠道：内部 key → 买家 Key；分组决定是默认分组还是指定卖家。
+	// 已软删除的默认分组也要算：删除前的用量可能晚到。
 	if _, err := tx.Exec(ctx, `UPDATE usage_records ur SET buyer_key_id = ik.buyer_key_id, buyer_user_id = ik.buyer_user_id,
 			channel = CASE
 				WHEN EXISTS (SELECT 1 FROM pools p WHERE p.sub2api_group_id = ur.sub2api_group_id) THEN 'pool'

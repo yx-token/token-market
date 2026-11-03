@@ -3,6 +3,7 @@ package scheduling
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/sub2api/opshandlers"
 	"github.com/yx-token/token-market/market/internal/sub2api/provision"
 )
@@ -31,13 +33,23 @@ func (r poolRowStub) Scan(dest ...any) error { return r.scan(dest...) }
 
 type poolDBStub struct {
 	pool          Pool
+	deleted       bool
+	groupDeleting bool // 已删除的同名分组在 sub2api 中尚未删掉
 	updatePayload []opshandlers.GroupUpdatePayload
+	opTypes       []string
 }
 
 func (db *poolDBStub) Exec(_ context.Context, query string, args ...any) (pgconn.CommandTag, error) {
-	if strings.Contains(query, "UPDATE pools SET sub2api_group_id") {
+	switch {
+	case strings.Contains(query, "UPDATE pools SET sub2api_group_id"):
 		groupID := args[1].(int64)
 		db.pool.Sub2APIGroupID = &groupID
+	case strings.Contains(query, "UPDATE pools SET deleted_at"):
+		if db.deleted || db.pool.Enabled {
+			return pgconn.NewCommandTag("UPDATE 0"), nil
+		}
+		db.deleted, db.pool.MarketPublished = true, false
+		return pgconn.NewCommandTag("UPDATE 1"), nil
 	}
 	return pgconn.CommandTag{}, nil
 }
@@ -48,14 +60,23 @@ func (db *poolDBStub) Query(_ context.Context, query string, _ ...any) (pgx.Rows
 
 func (db *poolDBStub) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
 	switch {
+	case strings.Contains(query, "o.idempotency_key = 'pool-delete-'"):
+		return poolRowStub{scan: func(dest ...any) error {
+			*dest[0].(*bool) = db.groupDeleting
+			return nil
+		}}
 	case strings.Contains(query, "INSERT INTO pools"):
 		return poolRowStub{scan: func(dest ...any) error {
 			*dest[0].(*int64) = db.pool.ID
 			return nil
 		}}
 	case strings.Contains(query, "FROM pools WHERE id = $1"):
+		if db.deleted && strings.Contains(query, "deleted_at IS NULL") {
+			return poolRowStub{scan: func(...any) error { return pgx.ErrNoRows }}
+		}
 		return poolRowStub{scan: db.scanPool}
 	case strings.Contains(query, "INSERT INTO sub2api_ops"):
+		db.opTypes = append(db.opTypes, args[0].(string))
 		payload := opshandlers.GroupUpdatePayload{}
 		if err := json.Unmarshal(args[2].([]byte), &payload); err != nil {
 			return poolRowStub{scan: func(...any) error { return err }}
@@ -133,5 +154,80 @@ func TestPoolUpdateUsesEngineSupportedProfitControl(t *testing.T) {
 				t.Errorf("profit_control_enabled = %v, want %v", got, want)
 			}
 		})
+	}
+}
+
+func httpStatus(err error) int {
+	var he *httpx.Error
+	if errors.As(err, &he) {
+		return he.Status
+	}
+	return 0
+}
+
+func TestPoolDeleteRequiresDisabled(t *testing.T) {
+	groupID := int64(200)
+	db := &poolDBStub{pool: Pool{ID: 1, Name: "tm-pool-test", Platform: "openai", Sub2APIGroupID: &groupID, SellMultiplier: 0.6, Enabled: true}}
+	svc := &PoolService{DB: db, Prov: &poolGroupProvisionerStub{}}
+
+	_, err := svc.Delete(context.Background(), 1)
+	if httpStatus(err) != 409 {
+		t.Fatalf("Delete(enabled) error = %v, want 409", err)
+	}
+	if db.deleted || len(db.opTypes) != 0 {
+		t.Fatalf("enabled pool must stay untouched: deleted=%v ops=%v", db.deleted, db.opTypes)
+	}
+}
+
+func TestPoolDeleteSoftDeletesAndQueuesGroupDelete(t *testing.T) {
+	groupID := int64(200)
+	db := &poolDBStub{pool: Pool{ID: 1, Name: "tm-pool-test", Platform: "openai", Sub2APIGroupID: &groupID, SellMultiplier: 0.6, MarketPublished: true}}
+	svc := &PoolService{DB: db, Prov: &poolGroupProvisionerStub{}}
+
+	if _, err := svc.Delete(context.Background(), 1); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if !db.deleted || db.pool.MarketPublished {
+		t.Fatalf("pool should be soft-deleted and unpublished: deleted=%v published=%v", db.deleted, db.pool.MarketPublished)
+	}
+	if len(db.opTypes) != 1 || db.opTypes[0] != opshandlers.TypeGroupDelete {
+		t.Fatalf("queued ops = %v, want [%s]", db.opTypes, opshandlers.TypeGroupDelete)
+	}
+	if got := db.updatePayload[0].GroupID; got != groupID {
+		t.Errorf("group.delete group_id = %d, want %d", got, groupID)
+	}
+
+	// 删除后不再可见：再删返回 404，编辑与同步同样找不到
+	if _, err := svc.Delete(context.Background(), 1); httpStatus(err) != 404 {
+		t.Fatalf("second Delete() error = %v, want 404", err)
+	}
+	if _, err := svc.Update(context.Background(), 1, PoolInput{SellMultiplier: f64(0.7)}); httpStatus(err) != 404 {
+		t.Fatalf("Update(deleted) error = %v, want 404", err)
+	}
+}
+
+func TestPoolDeleteWithoutEngineGroupQueuesNothing(t *testing.T) {
+	db := &poolDBStub{pool: Pool{ID: 1, Name: "tm-pool-test", Platform: "openai", SellMultiplier: 0.6}}
+	svc := &PoolService{DB: db, Prov: &poolGroupProvisionerStub{}}
+
+	if _, err := svc.Delete(context.Background(), 1); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if !db.deleted || len(db.opTypes) != 0 {
+		t.Fatalf("deleted=%v ops=%v, want soft delete without sub2api op", db.deleted, db.opTypes)
+	}
+}
+
+func TestPoolCreateWaitsForSameNameGroupDeletion(t *testing.T) {
+	db := &poolDBStub{pool: Pool{ID: 2, Name: "tm-pool-test", Platform: "openai", SellMultiplier: 0.6}, groupDeleting: true}
+	prov := &poolGroupProvisionerStub{}
+	svc := &PoolService{DB: db, Prov: prov}
+
+	_, err := svc.Create(context.Background(), PoolInput{Name: "tm-pool-test", Platform: "openai", SellMultiplier: f64(0.6)})
+	if httpStatus(err) != 409 {
+		t.Fatalf("Create() error = %v, want 409 while old group is being deleted", err)
+	}
+	if len(prov.specs) != 0 {
+		t.Fatalf("must not look up / create sub2api group yet: %+v", prov.specs)
 	}
 }

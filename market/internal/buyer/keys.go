@@ -294,6 +294,15 @@ func (s *KeyService) Provision(ctx context.Context, keyID int64) error {
 				continue
 			}
 		}
+		if h.poolID != nil {
+			var live bool
+			if err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pools WHERE id = $1 AND deleted_at IS NULL)`, *h.poolID).Scan(&live); err != nil {
+				return err
+			}
+			if !live {
+				continue // 默认分组已删除，这一跳不再开通
+			}
+		}
 		groupID, err := s.hopGroup(ctx, h)
 		if err != nil {
 			return err
@@ -745,7 +754,8 @@ func (s *KeyService) CleanupDeletedKeys(ctx context.Context) (int, error) {
 	rows, err := s.DB.Query(ctx, `SELECT ik.id, ik.sub2api_key_id, ik.buyer_user_id FROM internal_keys ik
 		JOIN buyer_keys bk ON bk.id = ik.buyer_key_id
 		WHERE ik.status <> 'deleted' AND (bk.status = 'deleted'
-			OR NOT EXISTS (SELECT 1 FROM buyer_key_hops h LEFT JOIN pools p ON p.id = h.pool_id LEFT JOIN listings l ON l.id = h.listing_id
+			OR NOT EXISTS (SELECT 1 FROM buyer_key_hops h LEFT JOIN pools p ON p.id = h.pool_id AND p.deleted_at IS NULL
+				LEFT JOIN listings l ON l.id = h.listing_id
 				WHERE h.key_id = bk.id AND COALESCE(p.sub2api_group_id, l.listing_group_id) = ik.sub2api_group_id))
 		LIMIT 100`)
 	if err != nil {
