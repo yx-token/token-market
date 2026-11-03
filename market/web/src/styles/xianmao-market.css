@@ -310,18 +310,49 @@
     .user-menu-drop .user-menu-item:hover {
       background: rgba(255, 230, 15, 0.45);
     }
+    .mh-nav-m {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      overscroll-behavior-x: contain;
+    }
+    .mh-nav-m::-webkit-scrollbar { display: none; }
+    .mh-nav-m-link {
+      flex: 0 0 auto;
+      border: none;
+      background: #f3f3f3;
+      color: #555;
+      font: inherit;
+      font-size: 12.5px;
+      font-weight: 750;
+      padding: 6px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .mh-nav-m-link.on {
+      background: #ffe60f;
+      color: #1f1f1f;
+    }
     @media (max-width: 1100px) {
       .mh-row { grid-template-columns: auto 1fr; }
       .mh-nav { display: none; }
       .mh-logo-tag { display: none; }
       .mh-search { width: min(240px, 40vw); }
+      .mh-nav-m {
+        display: flex;
+        grid-column: 1 / -1;
+      }
     }
     @media (max-width: 720px) {
       .mh-row {
         display: flex;
         flex-wrap: wrap;
         gap: 8px 10px;
-        padding: 10px 12px 12px;
+        padding: 10px 12px 10px;
       }
       .mh-right { margin-left: auto; }
       .mh-search {
@@ -329,6 +360,11 @@
         order: 3;
         width: auto;
         min-width: 0;
+      }
+      .mh-nav-m {
+        order: 4;
+        flex: 1 1 100%;
+        padding-bottom: 2px;
       }
       .mh-uname, .user-caret {
         position: absolute;
@@ -763,7 +799,8 @@ html.is-market body::-webkit-scrollbar {
   --mh-bar-h: 53px;
   height: auto;
   max-height: none;
-  overflow: visible;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 .xm-market .market-home,
 .xm-market .page.market-home {
@@ -2208,23 +2245,153 @@ html.is-market body::-webkit-scrollbar {
   .mh-body { padding: 0 12px 8px; }
   .mh-hero {
     grid-template-columns: 1fr;
-    padding: 20px 16px 32px;
+    padding: 20px 16px 28px;
   }
   .mh-hero-main { grid-template-columns: 1fr; min-height: 0; }
   .mh-hero-art { display: none; }
   .mh-hero-side { width: 100%; }
   .mh-layout { grid-template-columns: 1fr; }
-  .mh-filterbar { gap: 6px; }
-  .mh-select--sm { max-width: none; flex: 1 1 calc(50% - 6px); }
-  .mh-select--model { flex: 1 1 100%; max-width: none; }
+  .mh-filterbar {
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+    padding-bottom: 2px;
+    margin-right: -4px;
+  }
+  .mh-filterbar::-webkit-scrollbar { display: none; }
+  .mh-select--sm,
+  .mh-select--model {
+    flex: 0 0 auto;
+    max-width: none;
+    width: auto;
+  }
+  .mh-filter-reset {
+    flex: 0 0 auto;
+  }
   .mh-rail { grid-template-columns: 1fr; }
   .mh-feed { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .mh-hero-copy h1,
+  .mh-hero-copy .mh-hero-lead {
+    white-space: normal;
+  }
+  .mh-hero-search { min-width: 0; }
+}
+@media (max-width: 720px) {
+  /* 顶栏变两行+芯片导航后，筛选条不再 sticky，避免盖住商品 */
+  .mh-feed-chrome {
+    position: static;
+    top: auto;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .mh-feed-chrome::before { display: none; }
+  .mh-view-toggle { display: none; }
 }
 @media (max-width: 560px) {
+  .mh-hero {
+    padding: 16px 12px 22px;
+  }
+  .mh-hero-copy {
+    padding-top: 0;
+  }
+  .mh-hero-copy h1 {
+    max-width: none;
+    white-space: normal;
+    font-size: clamp(22px, 7vw, 28px);
+    line-height: 1.3;
+  }
+  .mh-hero-copy .mh-hero-lead {
+    white-space: normal;
+    font-size: 12.5px;
+    margin-bottom: 14px;
+  }
   .mh-hero-search-row { flex-direction: column; align-items: stretch; }
-  .mh-hero-search { max-width: none; }
-  .mh-hero-copy h1 { max-width: none; }
-  .mh-feed { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .mh-hero-search {
+    max-width: none;
+    min-width: 0;
+    width: 100%;
+  }
+  .mh-hero-side {
+    padding: 10px;
+    gap: 8px;
+  }
+  .mh-hero-points { gap: 6px; }
+  .mh-hero-points li { gap: 8px; }
+  .mh-hero-points strong { font-size: 12px; }
+  .mh-hero-points span:not(.ico) { font-size: 11px; }
+  .mh-body { padding: 0 10px 20px; }
+  .mh-board { padding: 10px 10px 14px; border-radius: 14px; }
+  .mh-feed {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .sku-card { padding: 12px; }
+  .sku-card-foot {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sku-buy {
+    flex: 1 1 auto;
+    min-width: 96px;
+    padding: 9px 12px;
+    font-size: 13px;
+  }
+  .mh-toolbar {
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .mh-tab {
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+  .mh-tools .mh-select { min-width: 0; flex: 1; }
+  .mh-select--sm,
+  .mh-select--model {
+    height: 28px;
+    padding: 0 20px 0 8px;
+    font-size: 12px;
+  }
+  .mh-popular { gap: 6px; }
+  .mh-pop {
+    flex: 0 0 auto;
+    min-width: 72px;
+    padding: 8px 10px;
+  }
+  .mh-guide-copy strong,
+  .mh-guide-copy p {
+    white-space: normal;
+  }
+  .mh-guarantee li > div > span,
+  .mh-promise li > div > span {
+    white-space: normal;
+  }
+  .mh-guide-art { display: none; }
+  .market-home,
+  .page.market-home {
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+  }
+  .mh-guide-dialog {
+    gap: 12px;
+  }
+  .mh-help-tabs {
+    grid-template-columns: 1fr;
+  }
+  .mh-help-base {
+    flex-wrap: wrap;
+  }
+  .mh-help-base-val {
+    flex: 1 1 100%;
+    word-break: break-all;
+  }
+  .mh-coach-launch .btn-primary {
+    width: 100%;
+    text-align: center;
+  }
 }
 
 @keyframes lib-rise {

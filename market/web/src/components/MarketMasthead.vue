@@ -144,6 +144,18 @@ function goBuyer() {
           登录
         </button>
       </div>
+
+      <!-- ≤1100 桌面导航隐藏后的 H5 入口，横向滑动 -->
+      <nav class="mh-nav-m" aria-label="移动导航">
+        <button
+          v-for="item in navItems"
+          :key="`m-${item.id}`"
+          type="button"
+          class="mh-nav-m-link"
+          :class="{ on: navOn(item) }"
+          @click="goNav(item)"
+        >{{ item.label }}</button>
+      </nav>
     </div>
   </header>
 </template>
