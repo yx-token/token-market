@@ -1,0 +1,289 @@
+import { describe, expect, it } from 'vitest'
+import { CC_SWITCH_USAGE_SCRIPT } from '../ccswitchImport'
+import {
+  buildCCSwitchImportURL,
+  buildClientConfigFiles,
+  buildConfigFile,
+  buildDirectImportURL,
+  configFileName,
+  defaultImportBaseURL,
+  describeKeyPlatform,
+  fallbackClientModel,
+  getClientImportTarget,
+  maskAPIKey,
+  mergeClientModels,
+  normalizeImportBaseURL,
+  normalizeKeyModels,
+  supportsConfigFile,
+  supportsMultiModel,
+  targetsForKind,
+} from '../clientImport'
+
+// 市场侧的买家 Key 没有分组：平台由首跳平台字段给出，可能为空。
+const key = {
+  id: 1,
+  key: 'sk-test-1234567890',
+  name: '测试密钥',
+  status: 'active',
+  platform: 'anthropic',
+  created_at: '2026-09-24T00:00:00Z',
+}
+
+describe('client-import helpers', () => {
+  it('describes the key platform after normalizing display names', () => {
+    expect(describeKeyPlatform(key)).toBe('Anthropic')
+    expect(describeKeyPlatform({ ...key, platform: 'antigravity' })).toBe('Antigravity')
+    expect(describeKeyPlatform({ ...key, platform: 'Claude' })).toBe('Anthropic')
+    expect(describeKeyPlatform({ ...key, platform: 'ChatGPT' })).toBe('OpenAI')
+    expect(describeKeyPlatform({ ...key, platform: 'Gemini' })).toBe('Gemini')
+    expect(describeKeyPlatform({ ...key, platform: 'xAI' })).toBe('Grok')
+    expect(describeKeyPlatform({ ...key, platform: 'composite' })).toBe('composite')
+    expect(describeKeyPlatform({ ...key, platform: undefined })).toBe('未识别平台')
+    expect(describeKeyPlatform({ ...key, platform: '   ' })).toBe('未识别平台')
+  })
+
+  it('normalizes only safe HTTP(S) gateway roots', () => {
+    expect(normalizeImportBaseURL('https://api.example.com/v1/')).toBe('https://api.example.com')
+    expect(normalizeImportBaseURL('https://user:pass@api.example.com')).toBeNull()
+    expect(normalizeImportBaseURL('javascript:alert(1)')).toBeNull()
+  })
+
+  it('defaults to the current page origin, including when embedded in a portal', () => {
+    expect(defaultImportBaseURL('?ui_mode=embedded&src_host=https%3A%2F%2Fgateway.example.com', 'https://aux.example.com')).toBe('https://aux.example.com')
+    expect(defaultImportBaseURL('?src_host=https%3A%2F%2Fgateway.example.com', 'https://aux.example.com')).toBe('https://aux.example.com')
+    expect(defaultImportBaseURL('?api_base=https%3A%2F%2Fmanual.example.com&ui_mode=embedded&src_host=https%3A%2F%2Fgateway.example.com', 'https://aux.example.com')).toBe('https://manual.example.com')
+  })
+
+  it('builds a CC Switch deep link with the local balance script and without exposing the key in the UI helper output', () => {
+    const url = buildCCSwitchImportURL({
+      key,
+      target: { id: 'claude-code', name: 'Claude Code', description: '', kind: 'cc-switch', app: 'claude', icon: 'CC' },
+      baseURL: 'https://api.example.com',
+      providerName: 'Gateway',
+      model: 'claude-opus-5',
+    })
+    const parsed = new URL(url)
+    expect(parsed.protocol).toBe('ccswitch:')
+    expect(parsed.hostname).toBe('v1')
+    expect(parsed.pathname).toBe('/import')
+    expect(parsed.searchParams.get('app')).toBe('claude')
+    expect(parsed.searchParams.get('endpoint')).toBe('https://api.example.com')
+    expect(parsed.searchParams.get('apiKey')).toBe(key.key)
+    expect(parsed.searchParams.get('enabled')).toBe('false')
+    expect(parsed.searchParams.get('usageEnabled')).toBe('true')
+    expect(atob(parsed.searchParams.get('usageScript')!)).toBe(CC_SWITCH_USAGE_SCRIPT)
+    expect(parsed.searchParams.get('usageAutoInterval')).toBe('30')
+    expect(maskAPIKey(key.key)).not.toBe(key.key)
+  })
+
+  it('builds provider payloads accepted by Cherry Studio and Chatbox', () => {
+    expect(buildConfigFile('cherry-studio', key, 'https://api.example.com', 'gpt-5.5', 'Gateway')).toEqual({
+      id: 'idlecat-api-example-com-1',
+      name: 'Gateway',
+      type: 'openai',
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: key.key,
+    })
+    expect(buildConfigFile('chatbox', key, 'https://api.example.com', 'gpt-5.5', 'Gateway')).toEqual({
+      id: 'idlecat-api-example-com-1',
+      name: 'Gateway',
+      type: 'openai',
+      isCustom: true,
+      urls: { website: 'https://api.example.com' },
+      settings: { apiHost: 'https://api.example.com', apiPath: '/v1/chat/completions', apiKey: key.key, models: [{ modelId: 'gpt-5.5', type: 'chat' }] },
+    })
+  })
+
+  it('builds downloadable ZCode provider reference files', () => {
+    expect(buildConfigFile('zcode', key, 'https://api.example.com', 'claude-opus-5', 'Gateway')).toEqual({
+      name: 'Gateway',
+      baseUrl: 'https://api.example.com',
+      apiFormat: 'anthropic-messages',
+      apiKey: key.key,
+      models: [{ id: 'claude-opus-5', name: 'claude-opus-5' }],
+    })
+  })
+
+  it('builds WorkBuddy models.json with the selected model', () => {
+    expect(buildConfigFile('workbuddy', key, 'https://api.example.com', 'claude-opus-5', 'Gateway')).toEqual({
+      models: [{
+        id: 'claude-opus-5',
+        name: 'claude-opus-5',
+        vendor: 'Gateway',
+        apiKey: key.key,
+        url: 'https://api.example.com/v1/chat/completions',
+        supportsToolCall: true,
+      }],
+      availableModels: ['claude-opus-5'],
+    })
+  })
+
+  it('builds Pi models.json with the gateway provider on the Chat Completions endpoint', () => {
+    expect(buildConfigFile('pi', key, 'https://api.example.com', 'gpt-5.5', 'Gateway')).toEqual({
+      providers: {
+        gateway: {
+          baseUrl: 'https://api.example.com/v1',
+          api: 'openai-completions',
+          apiKey: key.key,
+          models: [{ id: 'gpt-5.5', name: 'gpt-5.5' }],
+        },
+      },
+    })
+  })
+
+  it('merges candidate models after the default model without duplicates', () => {
+    expect(mergeClientModels(' gpt-5.5 ', ['gpt-5.5-mini', 'gpt-5.5', ' ', 'gpt-5.5-mini', 'o5'])).toEqual(['gpt-5.5', 'gpt-5.5-mini', 'o5'])
+    expect(mergeClientModels('', ['o5', 'gpt-5.5'])).toEqual(['o5', 'gpt-5.5'])
+    expect(mergeClientModels('')).toEqual([])
+  })
+
+  it('only allows multiple models for clients whose import format supports them', () => {
+    expect(supportsMultiModel('pi')).toBe(true)
+    expect(supportsMultiModel('workbuddy')).toBe(true)
+    expect(supportsMultiModel('zcode')).toBe(true)
+    expect(supportsMultiModel('chatbox')).toBe(true)
+    expect(supportsMultiModel('claude-code')).toBe(false)
+    expect(supportsMultiModel('cherry-studio')).toBe(false)
+    expect(supportsMultiModel('codex')).toBe(false)
+  })
+
+  it('writes candidate models after the default model for multi-model clients', () => {
+    const candidates = ['claude-sonnet-5', 'claude-opus-5', 'claude-haiku-5']
+    expect(buildConfigFile('pi', key, 'https://api.example.com', 'claude-opus-5', 'Gateway', candidates)).toMatchObject({
+      providers: { gateway: { models: [
+        { id: 'claude-opus-5', name: 'claude-opus-5' },
+        { id: 'claude-sonnet-5', name: 'claude-sonnet-5' },
+        { id: 'claude-haiku-5', name: 'claude-haiku-5' },
+      ] } },
+    })
+    expect(buildConfigFile('zcode', key, 'https://api.example.com', 'claude-opus-5', 'Gateway', candidates)).toMatchObject({
+      models: [{ id: 'claude-opus-5' }, { id: 'claude-sonnet-5' }, { id: 'claude-haiku-5' }],
+    })
+    expect(buildConfigFile('chatbox', key, 'https://api.example.com', '', 'Gateway', candidates)).toMatchObject({
+      settings: { models: candidates.map((modelId) => ({ modelId, type: 'chat' })) },
+    })
+    const workbuddy = buildConfigFile('workbuddy', key, 'https://api.example.com', 'claude-opus-5', 'Gateway', ['claude-sonnet-5'])
+    expect(workbuddy.availableModels).toEqual(['claude-opus-5', 'claude-sonnet-5'])
+    expect((workbuddy.models as { id: string, vendor: string }[]).map((model) => [model.id, model.vendor])).toEqual([['claude-opus-5', 'Gateway'], ['claude-sonnet-5', 'Gateway']])
+    expect(buildConfigFile('cherry-studio', key, 'https://api.example.com', 'claude-opus-5', 'Gateway', candidates)).not.toHaveProperty('models')
+  })
+
+  it('does not offer Pi as a CC Switch deep link target', () => {
+    expect(getClientImportTarget('pi')).toMatchObject({ kind: 'config-file' })
+    expect(getClientImportTarget('pi').app).toBeUndefined()
+  })
+
+  it('uses the expected filenames for downloadable configurations', () => {
+    expect(configFileName('zcode')).toBe('zcode-provider.json')
+    expect(configFileName('workbuddy')).toBe('models.json')
+    expect(configFileName('pi')).toBe('models.json')
+  })
+
+  it.each(['cherry-studio', 'chatbox'] as const)('encodes Unicode and the key in the %s deep link', (targetId) => {
+    const config = buildConfigFile(targetId, key, 'https://api.example.com', 'gpt-5.5', '中文供应商')
+    const link = new URL(buildDirectImportURL(targetId, config))
+    expect(link.protocol).toBe(targetId === 'cherry-studio' ? 'cherrystudio:' : 'chatbox:')
+    expect(link.hostname).toBe(targetId === 'cherry-studio' ? 'providers' : 'provider')
+    expect(link.pathname).toBe(targetId === 'cherry-studio' ? '/api-keys' : '/import')
+    expect(link.searchParams.get('v')).toBe(targetId === 'cherry-studio' ? '1' : null)
+    const encoded = link.searchParams.get(targetId === 'cherry-studio' ? 'data' : 'config')!
+      .replace(/_/g, '+').replace(/-/g, '/')
+    const decoded = new TextDecoder().decode(Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0)))
+    expect(JSON.parse(decoded)).toEqual(config)
+    expect(link.href).not.toContain(key.key)
+  })
+})
+
+describe('native client configuration files', () => {
+  const baseURL = 'https://api.example.com'
+  const openaiKey = { ...key, platform: 'openai' }
+
+  it('lists CC Switch clients with native files in the config-file tab without duplicating ids', () => {
+    expect(targetsForKind('config-file').map((target) => target.id)).toEqual(['claude-code', 'codex', 'gemini', 'grok-build', 'opencode', 'openclaw', 'zcode', 'workbuddy', 'pi'])
+    expect(targetsForKind('cc-switch').map((target) => target.id)).toContain('claude-desktop')
+    expect(supportsConfigFile('claude-desktop')).toBe(false)
+    expect(supportsConfigFile('hermes')).toBe(false)
+    expect(supportsConfigFile('cherry-studio')).toBe(false)
+  })
+
+  it('writes Claude Code settings.json with the gateway root and omits an empty model', () => {
+    const [file] = buildClientConfigFiles('claude-code', key, baseURL, 'claude-opus-5', 'Gateway')
+    expect(file).toMatchObject({ fileName: 'settings.json', path: '~/.claude/settings.json', format: 'JSON' })
+    expect(JSON.parse(file.content)).toEqual({ env: { ANTHROPIC_BASE_URL: baseURL, ANTHROPIC_AUTH_TOKEN: key.key, ANTHROPIC_MODEL: 'claude-opus-5' } })
+    expect(JSON.parse(buildClientConfigFiles('claude-code', key, baseURL, ' ', 'Gateway')[0].content).env).not.toHaveProperty('ANTHROPIC_MODEL')
+  })
+
+  it('splits Codex into config.toml and auth.json and keeps the fallback model on the /v1 endpoint', () => {
+    const files = buildClientConfigFiles('codex', openaiKey, baseURL, '', 'Gateway "主"')
+    expect(files.map((file) => [file.fileName, file.path, file.format])).toEqual([
+      ['config.toml', '~/.codex/config.toml', 'TOML'],
+      ['auth.json', '~/.codex/auth.json', 'JSON'],
+    ])
+    expect(files[0].content).toBe('model = "gpt-5.5"\nmodel_provider = "gateway"\ncli_auth_credentials_store = "file"\n\n[model_providers.gateway]\nname = "Gateway \\"主\\""\nbase_url = "https://api.example.com/v1"\nwire_api = "responses"\nrequires_openai_auth = true\n')
+    expect(files[0].content).not.toContain(key.key)
+    expect(JSON.parse(files[1].content)).toEqual({ OPENAI_API_KEY: key.key })
+    expect(fallbackClientModel('codex', 'openai')).toBe('gpt-5.5')
+  })
+
+  it('keeps the Codex CC Switch endpoint on the /v1-free base URL', () => {
+    const params = new URL(buildCCSwitchImportURL({
+      key: openaiKey,
+      target: getClientImportTarget('codex'),
+      baseURL,
+      providerName: 'Gateway',
+      model: '',
+    })).searchParams
+    expect(params.get('app')).toBe('codex')
+    // CC Switch 的 Codex 供应商会自己拼 OpenAI 路径，带 /v1 会变成 /v1/v1。
+    expect(params.get('endpoint')).toBe(baseURL)
+    expect(params.get('model')).toBe('gpt-5.5')
+    expect(params.get('usageEnabled')).toBe('true')
+    expect(params.get('usageAutoInterval')).toBe('30')
+  })
+
+  it('writes Gemini CLI variables to a .env file that the browser can download', () => {
+    const [file] = buildClientConfigFiles('gemini', key, baseURL, 'gemini-3-pro', 'Gateway')
+    expect(file).toMatchObject({ fileName: 'gemini.env', path: '~/.gemini/.env', format: 'ENV' })
+    expect(file.content).toBe(`GOOGLE_GEMINI_BASE_URL="${baseURL}"\nGEMINI_API_KEY="${key.key}"\nGEMINI_MODEL="gemini-3-pro"\n`)
+  })
+
+  it('registers the Grok Build model table on the /v1 endpoint', () => {
+    const [file] = buildClientConfigFiles('grok-build', key, baseURL, '', 'Gateway')
+    expect(file).toMatchObject({ fileName: 'config.toml', path: '~/.grok/config.toml' })
+    expect(file.content).toContain('[models]\ndefault = "grok-4.5"')
+    expect(file.content).toContain('[model."grok-4.5"]')
+    expect(file.content).toContain('base_url = "https://api.example.com/v1"')
+    expect(file.content).toContain('api_backend = "chat_completions"')
+  })
+
+  it('adds an OpenAI compatible provider to OpenCode and OpenClaw', () => {
+    expect(JSON.parse(buildClientConfigFiles('opencode', openaiKey, baseURL, 'gpt-5.5', '网关')[0].content)).toEqual({
+      $schema: 'https://opencode.ai/config.json',
+      model: 'gateway/gpt-5.5',
+      provider: { gateway: { npm: '@ai-sdk/openai-compatible', name: '网关', options: { baseURL: `${baseURL}/v1`, apiKey: key.key }, models: { 'gpt-5.5': { name: 'gpt-5.5' } } } },
+    })
+    expect(JSON.parse(buildClientConfigFiles('opencode', key, baseURL, '', 'Gateway')[0].content)).not.toHaveProperty('model')
+    expect(JSON.parse(buildClientConfigFiles('openclaw', openaiKey, baseURL, 'gpt-5.5', 'Gateway')[0].content)).toEqual({
+      models: { mode: 'merge', providers: { gateway: { baseUrl: `${baseURL}/v1`, apiKey: key.key, api: 'openai-completions', models: [{ id: 'gpt-5.5', name: 'gpt-5.5' }] } } },
+      agents: { defaults: { model: { primary: 'gateway/gpt-5.5' }, models: { 'gateway/gpt-5.5': {} } } },
+    })
+  })
+
+  it('wraps the existing JSON configurations without changing their content', () => {
+    const [pi] = buildClientConfigFiles('pi', key, baseURL, 'gpt-5.5', 'Gateway', ['gpt-5.5-mini'])
+    expect(pi).toMatchObject({ fileName: 'models.json', path: '~/.pi/agent/models.json', format: 'JSON' })
+    expect(JSON.parse(pi.content)).toEqual(buildConfigFile('pi', key, baseURL, 'gpt-5.5', 'Gateway', ['gpt-5.5-mini']))
+    expect(buildClientConfigFiles('chatbox', key, baseURL, 'gpt-5.5', 'Gateway')[0]).toMatchObject({ fileName: 'chatbox-provider.json', path: '' })
+  })
+})
+
+describe('normalizeKeyModels', () => {
+  it('keeps valid model ID strings once in gateway order', () => {
+    expect(normalizeKeyModels([' claude-opus-5 ', 'claude-sonnet-5', 'claude-opus-5', '', 42, null, 'bad\nmodel', 'x'.repeat(161)])).toEqual(['claude-opus-5', 'claude-sonnet-5'])
+  })
+
+  it('returns an empty list for malformed responses', () => {
+    expect(normalizeKeyModels(undefined)).toEqual([])
+    expect(normalizeKeyModels({ items: ['claude-opus-5'] })).toEqual([])
+  })
+})

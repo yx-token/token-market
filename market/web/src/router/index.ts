@@ -8,6 +8,9 @@ const adminMeta = { auth: true, admin: true } as const
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'market', component: () => import('@/views/market/MarketView.vue') },
   { path: '/market/listings/:id', name: 'market-listing', component: () => import('@/views/market/ListingView.vue'), props: true },
+  // API 文档：公开页面，不需要登录
+  { path: '/docs', name: 'api-docs', component: () => import('@/views/docs/ApiDocsView.vue') },
+  { path: '/api-docs', redirect: (to) => ({ path: '/docs', query: to.query, hash: to.hash }) },
   { path: '/login', name: 'login', component: () => import('@/views/auth/LoginView.vue') },
   { path: '/register', name: 'register', component: () => import('@/views/auth/RegisterView.vue') },
   { path: '/me', name: 'me', component: () => import('@/views/auth/ProfileView.vue'), meta: { auth: true } },
@@ -15,6 +18,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/buyer', redirect: '/buyer/keys' },
   { path: '/buyer/wallet', name: 'buyer-wallet', component: () => import('@/views/buyer/WalletView.vue'), meta: { auth: true } },
   { path: '/buyer/keys', name: 'buyer-keys', component: () => import('@/views/buyer/KeysView.vue'), meta: { auth: true } },
+  { path: '/buyer/client-import', name: 'buyer-client-import', component: () => import('@/views/buyer/ClientImportView.vue'), meta: { auth: true } },
   { path: '/buyer/merchants', name: 'buyer-merchants', component: () => import('@/views/buyer/MerchantsView.vue'), meta: { auth: true } },
   { path: '/buyer/store-credits', name: 'buyer-store-credits', component: () => import('@/views/buyer/StoreCreditsView.vue'), meta: { auth: true } },
   { path: '/buyer/usage', name: 'buyer-usage', component: () => import('@/views/buyer/UsageView.vue'), meta: { auth: true } },
