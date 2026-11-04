@@ -190,8 +190,8 @@ func TestSellerProxyConcurrencyAndPlatformFallback(t *testing.T) {
 		t.Fatal("direct upstream did not reach listing")
 	}
 	var platformProxy listing.Proxy
-	admin.must("POST", "/api/admin/proxies", listing.CreateProxyInput{Name: "platform", Protocol: "http", Host: "10.1.2.2", Port: 1080, IsShared: true}, &platformProxy)
-	admin.must("POST", fmt.Sprintf("/api/admin/proxies/%d/test", platformProxy.ID), nil, &platformProxy)
+	admin.must("POST", "/api/admin/proxies", listing.CreateProxyInput{Name: "platform", Protocol: "http", Host: "10.1.2.2", Port: 1080}, &platformProxy)
+	admin.must("PUT", fmt.Sprintf("/api/admin/engine-proxies/%d/sharing", *platformProxy.Sub2APIProxyID), map[string]bool{"is_shared": true}, nil)
 	var upstream listing.Upstream
 	seller.must("POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"}, &upstream)
 	if upstream.ProxyID == nil || *upstream.ProxyID != platformProxy.ID {
@@ -207,8 +207,8 @@ func TestSellerProxyConcurrencyAndPlatformFallback(t *testing.T) {
 		t.Fatalf("invalid shared availability response: %s", raw)
 	}
 	var secondPlatform listing.Proxy
-	admin.must("POST", "/api/admin/proxies", listing.CreateProxyInput{Name: "platform second", Protocol: "http", Host: "10.1.2.3", Port: 1080, IsShared: true}, &secondPlatform)
-	admin.must("POST", fmt.Sprintf("/api/admin/proxies/%d/test", secondPlatform.ID), nil, &secondPlatform)
+	admin.must("POST", "/api/admin/proxies", listing.CreateProxyInput{Name: "platform second", Protocol: "http", Host: "10.1.2.3", Port: 1080}, &secondPlatform)
+	admin.must("PUT", fmt.Sprintf("/api/admin/engine-proxies/%d/sharing", *secondPlatform.Sub2APIProxyID), map[string]bool{"is_shared": true}, nil)
 	want := []int64{secondPlatform.ID, platformProxy.ID, secondPlatform.ID, platformProxy.ID, secondPlatform.ID, platformProxy.ID}
 	for index, expectedProxyID := range want {
 		var rotated listing.Upstream

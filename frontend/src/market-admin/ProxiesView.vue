@@ -5,7 +5,6 @@
 import { computed, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
-import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -19,7 +18,6 @@ defineOptions({ name: 'MarketAdminProxies' })
 interface ProxyRow {
   id: number
   seller_id?: number | null
-  is_shared?: boolean
   seller_email?: string
   name: string
   protocol: string
@@ -65,12 +63,6 @@ const STATUS_OPTIONS = [
   { value: 'pending', label: '待同步' },
 ]
 
-const OWNER_OPTIONS = [
-  { value: '', label: '全部' },
-  { value: 'platform', label: '平台' },
-  { value: 'seller', label: '卖家' },
-]
-
 const BIND_OPTIONS = [
   { value: '', label: '全部' },
   { value: 'bound', label: '已绑定上游' },
@@ -97,7 +89,6 @@ const initQueryParams = {
   pageSize: 15,
   keyword: '',
   status: '',
-  owner: '',
   seller_id: '',
   bind: '',
   protocol: '',
@@ -116,24 +107,11 @@ const error = ref('')
 const msg = ref('')
 const checking = ref<{ id: number; quality: boolean } | null>(null)
 
-const show = ref(false)
-const form = reactive({
-  name: '',
-  protocol: 'socks5',
-  host: '',
-  port: '',
-  username: '',
-  password: '',
-  region: '',
-  isShared: false,
-})
-
 const columns: Column[] = [
   { key: 'serial', label: '序号', class: 'w-16' },
   { key: 'name', label: '名称', class: 'col-name' },
   { key: 'endpoint', label: '地址', class: 'col-endpoint' },
   { key: 'owner', label: '来源/卖家', class: 'col-owner' },
-  { key: 'sharing', label: '共享', class: 'col-sharing' },
   { key: 'region', label: '地区', class: 'col-region' },
   { key: 'connection', label: '连接', class: 'col-conn' },
   { key: 'quality', label: '质量', class: 'col-quality' },
@@ -142,15 +120,6 @@ const columns: Column[] = [
   { key: 'created_at', label: '创建时间', class: 'col-time' },
   { key: 'actions', label: '操作', class: 'col-ops' },
 ]
-
-const valid = computed(
-  () =>
-    !!form.name.trim() &&
-    !!form.host.trim() &&
-    Number.isInteger(Number(form.port)) &&
-    Number(form.port) > 0 &&
-    Number(form.port) <= 65535,
-)
 
 const sellerFilterOptions = computed(() => {
   const map = new Map<string, string>()
@@ -180,10 +149,8 @@ const regionFilterOptions = computed(() => {
 })
 
 const filtered = computed(() => {
-  let list = rows.value
+  let list = rows.value.filter((proxy) => proxy.seller_id != null)
   if (queryParams.value.status) list = list.filter((p) => p.status === queryParams.value.status)
-  if (queryParams.value.owner === 'platform') list = list.filter((p) => p.seller_id == null)
-  if (queryParams.value.owner === 'seller') list = list.filter((p) => p.seller_id != null)
   if (queryParams.value.seller_id) {
     list = list.filter((p) => String(p.seller_id || '') === queryParams.value.seller_id)
   }
@@ -211,7 +178,7 @@ const pageRows = computed(() => {
 })
 
 const allStats = computed(() => {
-  const all = rows.value
+  const all = rows.value.filter((proxy) => proxy.seller_id != null)
   return {
     total: all.length,
     ready: all.filter((p) => p.status === 'ready').length,
@@ -225,7 +192,6 @@ watch(
   () => [
     queryParams.value.keyword,
     queryParams.value.status,
-    queryParams.value.owner,
     queryParams.value.seller_id,
     queryParams.value.bind,
     queryParams.value.protocol,
@@ -306,7 +272,8 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    rows.value = (await marketGet<ProxyRow[] | null>(`${MARKET_API_PREFIX}/proxies`)) ?? []
+    const result = await marketGet<ProxyRow[] | null>(`${MARKET_API_PREFIX}/proxies`)
+    rows.value = Array.isArray(result) ? result.filter((proxy) => proxy.seller_id != null) : []
   } catch (e) {
     error.value = e instanceof Error ? e.message : '加载失败'
     rows.value = []
@@ -332,41 +299,6 @@ async function run(label: string, fn: () => Promise<unknown>) {
   }
 }
 
-function openCreate() {
-  Object.assign(form, {
-    name: '',
-    protocol: 'socks5',
-    host: '',
-    port: '',
-    username: '',
-    password: '',
-    region: '',
-    isShared: false,
-  })
-  show.value = true
-}
-
-function closeModal() {
-  show.value = false
-}
-
-async function save() {
-  if (!valid.value) return
-  const body = {
-    name: form.name.trim(),
-    protocol: form.protocol,
-    host: form.host.trim(),
-    port: Number(form.port),
-    username: form.username.trim() || undefined,
-    password: form.password || undefined,
-    region: form.region.trim() || undefined,
-    is_shared: form.isShared,
-  }
-  if (await run('代理已添加', () => marketSend('POST', `${MARKET_API_PREFIX}/proxies`, body))) {
-    closeModal()
-  }
-}
-
 function toggle(p: ProxyRow) {
   const off = p.status === 'disabled'
   if (!off && assignedUpstreamCount(p)) return
@@ -378,13 +310,6 @@ function toggle(p: ProxyRow) {
 function sync(p: ProxyRow) {
   return run(`代理 ${p.name} 连接配置已就绪`, () =>
     marketSend('POST', `${MARKET_API_PREFIX}/proxies/${p.id}/sync`),
-  )
-}
-
-function toggleSharing(p: ProxyRow) {
-  if (p.seller_id != null) return
-  return run(`代理 ${p.name} 已${p.is_shared ? '设为独占' : '设为共享'}`, () =>
-    marketSend('PUT', `${MARKET_API_PREFIX}/proxies/${p.id}/sharing`, { is_shared: !p.is_shared }),
   )
 }
 
@@ -411,15 +336,11 @@ onMounted(load)
       <template #title>
         <div class="page-heading">
           <h2 class="y-title">卖家代理</h2>
-          <p class="y-page-desc">共享平台代理和卖家自有代理可绑定多个账号，独占平台代理只绑定一个账号；全部解绑后才可停用</p>
+          <p class="y-page-desc">查看并检测卖家同步的代理；平台代理统一在引擎代理页管理</p>
         </div>
       </template>
 
       <template #actions>
-        <button type="button" class="btn btn-primary page-action-btn" :disabled="busy" @click="openCreate">
-          <Icon name="plus" size="sm" />
-          添加代理
-        </button>
         <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
           <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
           刷新
@@ -427,7 +348,7 @@ onMounted(load)
       </template>
 
       <template #filters>
-        <p v-if="error && !show" class="y-msg y-msg--error mb-2">{{ error }}</p>
+        <p v-if="error" class="y-msg y-msg--error mb-2">{{ error }}</p>
         <p v-else-if="msg" class="y-msg y-msg--ok mb-2">{{ msg }}</p>
         <p v-if="checking" class="y-msg mb-2">
           正在{{ checking.quality ? '检测代理质量（可能 1–3 分钟）' : '检测连通性和出口地区' }}…
@@ -491,15 +412,6 @@ onMounted(load)
                 class="flex-1 w-full min-w-0"
                 size="sm"
                 :options="STATUS_OPTIONS"
-              />
-            </div>
-            <div class="filter-item">
-              <label class="filter-label">来源</label>
-              <Select
-                v-model="queryParams.owner"
-                class="flex-1 w-full min-w-0"
-                size="sm"
-                :options="OWNER_OPTIONS"
               />
             </div>
             <div class="filter-item">
@@ -571,10 +483,6 @@ onMounted(load)
           <template #cell-owner="{ row }">
             <span class="data-table-cell-truncate" :title="ownerLabel(row)">{{ ownerLabel(row) }}</span>
           </template>
-          <template #cell-sharing="{ row }">
-            <span v-if="row.seller_id != null">不适用</span>
-            <span v-else>{{ row.is_shared ? '共享' : '独占' }}</span>
-          </template>
           <template #cell-region="{ row }">
             <div>{{ row.region || '—' }}</div>
             <div v-if="exitIp(row)" class="row-sub mono-cell">{{ exitIp(row) }}</div>
@@ -633,15 +541,6 @@ onMounted(load)
                 重试连接
               </button>
               <button
-                v-if="row.seller_id == null"
-                type="button"
-                class="y-link"
-                :disabled="busy"
-                @click="toggleSharing(row)"
-              >
-                {{ row.is_shared ? '设为独占' : '设为共享' }}
-              </button>
-              <button
                 type="button"
                 class="y-link"
                 :disabled="busy || (assignedUpstreamCount(row) > 0 && row.status !== 'disabled')"
@@ -660,9 +559,8 @@ onMounted(load)
           <template #empty>
             <EmptyState
               title="暂无代理"
-              description="点右上角「添加代理」录入平台库存，或调整筛选条件"
-              action-text="添加代理"
-              @action="openCreate"
+              description="卖家代理将在卖家同步后显示在这里"
+              data-testid="empty-proxy-list"
             />
           </template>
         </DataTable>
@@ -682,58 +580,6 @@ onMounted(load)
       </template>
     </TablePageLayout>
 
-    <BaseDialog
-      :show="show"
-      title="添加代理 IP"
-      :z-index="80"
-      close-on-click-outside
-      @close="closeModal"
-    >
-      <div class="dialog-form">
-        <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
-        <label class="y-field">
-          <span>名称</span>
-          <input v-model="form.name" class="input w-full" placeholder="例如 美国固定 IP 01" />
-        </label>
-        <div class="y-field-row">
-          <label class="y-field">
-            <span>协议</span>
-            <select v-model="form.protocol" class="input w-full">
-              <option v-for="p in ['socks5', 'socks5h', 'http', 'https']" :key="p" :value="p">{{ p }}</option>
-            </select>
-          </label>
-          <label class="y-field">
-            <span>地区（可选）</span>
-            <input v-model="form.region" class="input w-full" placeholder="us / jp …" />
-          </label>
-        </div>
-        <div class="y-field-row">
-          <label class="y-field">
-            <span>IP 或域名</span>
-            <input v-model="form.host" class="input w-full font-mono" placeholder="203.0.113.10" />
-          </label>
-          <label class="y-field">
-            <span>端口</span>
-            <input v-model="form.port" class="input w-full" type="number" min="1" max="65535" placeholder="1080" />
-          </label>
-        </div>
-        <div class="y-field-row">
-          <label class="y-field">
-            <span>用户名（可选）</span>
-            <input v-model="form.username" class="input w-full" autocomplete="off" />
-          </label>
-          <label class="y-field">
-            <span>密码（可选）</span>
-            <input v-model="form.password" class="input w-full" type="password" autocomplete="new-password" />
-          </label>
-        </div>
-        <label class="y-check"><input v-model="form.isShared" type="checkbox" /> 作为平台共享代理参与自动分配</label>
-      </div>
-      <template #footer>
-        <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>
-        <button type="button" class="btn btn-primary" :disabled="busy || !valid" @click="save">添加</button>
-      </template>
-    </BaseDialog>
   </section>
 </template>
 

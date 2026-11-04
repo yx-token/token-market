@@ -144,23 +144,24 @@ func (s *Server) listProxies(w http.ResponseWriter, r *http.Request) error {
 	if err := s.attachProxySellerEmails(r.Context(), ps); err != nil {
 		return err
 	}
-	return ok(w, ps)
+	sellerProxies := make([]listing.Proxy, 0, len(ps))
+	for _, proxy := range ps {
+		if proxy.SellerID != nil {
+			sellerProxies = append(sellerProxies, proxy)
+		}
+	}
+	return ok(w, sellerProxies)
 }
 
-func (s *Server) createProxy(w http.ResponseWriter, r *http.Request) error {
-	var in listing.CreateProxyInput
-	if err := httpx.Decode(r, &in); err != nil {
-		return err
-	}
-	p, err := s.Proxies.Create(r.Context(), in)
+func (s *Server) listEngineProxySharing(w http.ResponseWriter, r *http.Request) error {
+	items, err := s.Proxies.ListEngineProxySharing(r.Context())
 	if err != nil {
 		return err
 	}
-	s.audit(r, "proxy.create", fmt.Sprintf("proxy:%d", p.ID), map[string]any{"host": p.Host, "port": p.Port})
-	return created(w, p)
+	return ok(w, items)
 }
 
-func (s *Server) setProxyShared(w http.ResponseWriter, r *http.Request) error {
+func (s *Server) setEngineProxySharing(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathID(r, "id")
 	if err != nil {
 		return err
@@ -174,12 +175,40 @@ func (s *Server) setProxyShared(w http.ResponseWriter, r *http.Request) error {
 	if in.IsShared == nil {
 		return httpx.BadRequest("INVALID_PROXY_SHARING", "is_shared is required")
 	}
-	p, err := s.Proxies.SetShared(r.Context(), id, *in.IsShared)
+	item, err := s.Proxies.SetEngineProxyShared(r.Context(), id, *in.IsShared)
 	if err != nil {
 		return err
 	}
-	s.audit(r, "proxy.set_shared", fmt.Sprintf("proxy:%d", id), map[string]bool{"is_shared": *in.IsShared})
-	return ok(w, p)
+	s.audit(r, "engine_proxy.set_shared", fmt.Sprintf("engine_proxy:%d", id), map[string]bool{"is_shared": *in.IsShared})
+	return ok(w, item)
+}
+
+func (s *Server) testEngineProxy(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	item, err := s.Proxies.TestEngineProxy(r.Context(), id)
+	if err != nil {
+		return err
+	}
+	return ok(w, item)
+}
+
+func (s *Server) createProxy(w http.ResponseWriter, r *http.Request) error {
+	var in listing.CreateProxyInput
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	if in.IsShared {
+		return httpx.BadRequest("ENGINE_PROXY_SHARING_REQUIRED", "configure IdleCat sharing from the engine proxy page")
+	}
+	p, err := s.Proxies.Create(r.Context(), in)
+	if err != nil {
+		return err
+	}
+	s.audit(r, "proxy.create", fmt.Sprintf("proxy:%d", p.ID), map[string]any{"host": p.Host, "port": p.Port})
+	return created(w, p)
 }
 
 func (s *Server) deleteProxy(w http.ResponseWriter, r *http.Request) error {

@@ -20,6 +20,35 @@ type proxyRow struct {
 	ids []int64
 }
 
+type emptyProxyRows struct{ pgx.Rows }
+
+func (emptyProxyRows) Next() bool { return false }
+func (emptyProxyRows) Close()     {}
+func (emptyProxyRows) Err() error { return nil }
+
+type emptyProxyDB struct{ pgx.Tx }
+
+func (emptyProxyDB) Begin(context.Context) (pgx.Tx, error) { return nil, nil }
+func (emptyProxyDB) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	return emptyProxyRows{}, nil
+}
+
+func TestProxyListsReturnEmptyArray(t *testing.T) {
+	s := &ProxyService{DB: emptyProxyDB{}}
+	all, err := s.List(context.Background())
+	if err != nil || all == nil || len(all) != 0 {
+		t.Fatalf("admin empty list must be []: %#v %v", all, err)
+	}
+	seller, err := s.ListSeller(context.Background(), 7)
+	if err != nil || seller == nil || len(seller) != 0 {
+		t.Fatalf("seller empty list must be []: %#v %v", seller, err)
+	}
+	sharing, err := s.ListEngineProxySharing(context.Background())
+	if err != nil || sharing == nil || len(sharing) != 0 {
+		t.Fatalf("sharing empty list must be []: %#v %v", sharing, err)
+	}
+}
+
 func (row proxyRow) Scan(dest ...any) error {
 	if len(dest) == 1 {
 		*dest[0].(*int64) = 1

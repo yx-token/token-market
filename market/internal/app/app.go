@@ -141,10 +141,10 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 	a.Accounts = account.NewService(a.DB, a.Keyring, a.Issuer)
 	a.IAM = iam.New(a.DB)
 	a.Risk = &risk.Service{DB: a.DB, Settings: a.Settings}
-	a.Proxies = &listing.ProxyService{DB: a.DB, Admin: a.Admin, Keyring: a.Keyring}
+	a.Proxies = &listing.ProxyService{DB: a.DB, Admin: a.Admin, Keyring: a.Keyring, EngineProxyState: a.ReplicaPool}
 	a.Pools = &scheduling.PoolService{DB: a.DB, Prov: a.Prov}
 	a.Listings = &listing.Service{
-		DB: a.DB, Admin: a.Admin, Prov: a.Prov, Keyring: a.Keyring, Kicker: a.Kicker, Settings: a.Settings, Log: log,
+		DB: a.DB, Admin: a.Admin, Prov: a.Prov, Keyring: a.Keyring, Kicker: a.Kicker, Settings: a.Settings, Log: log, EngineProxies: a.Proxies,
 	}
 	a.Shadow = &buyer.ShadowService{
 		DB: a.DB, Admin: a.Admin, User: a.User, Replica: a.Replica, Keyring: a.Keyring,

@@ -10,6 +10,11 @@ const { listProxies, getAllWithCount } = vi.hoisted(() => ({
 vi.mock('@/api/admin', () => ({
   adminAPI: { proxies: { list: listProxies, getAllWithCount } }
 }))
+vi.mock('@/market-admin/api', () => ({
+  getEngineProxySharing: vi.fn().mockResolvedValue([]),
+  setEngineProxySharing: vi.fn(),
+  testEngineProxy: vi.fn(),
+}))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError: vi.fn() }) }))
 vi.mock('vue-i18n', async () => ({
   ...await vi.importActual<typeof import('vue-i18n')>('vue-i18n'),

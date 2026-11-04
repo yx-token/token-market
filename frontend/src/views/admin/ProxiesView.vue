@@ -267,6 +267,14 @@
             </span>
           </template>
 
+          <template #cell-market_sharing="{ row }">
+            <span v-if="marketSharingLoading" class="text-xs text-gray-400">{{ t('admin.proxies.marketSharingLoading') }}</span>
+            <span v-else-if="marketSharedProxyIDs.has(row.id)" class="badge badge-primary">
+              {{ t('admin.proxies.marketShared') }}
+            </span>
+            <span v-else class="text-sm text-gray-400">-</span>
+          </template>
+
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1">
               <button
@@ -327,6 +335,7 @@
               </button>
               <button
                 @click="handleEdit(row)"
+                :disabled="marketSharingLoading"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
               >
                 <Icon name="edit" size="sm" />
@@ -527,7 +536,11 @@
           <label class="input-label">{{ t('admin.proxies.backupProxy') }}</label>
           <Select v-model="createForm.backup_proxy_id" :options="backupProxyOptions()" />
         </div>
-
+        <label class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-200">
+          <input v-model="createForm.market_shared" type="checkbox" class="mt-0.5" :disabled="isExpiryInPast(createForm.expires_at)" />
+          <span>{{ t('admin.proxies.marketSharingLabel') }}</span>
+        </label>
+        <p v-if="isExpiryInPast(createForm.expires_at)" class="text-xs text-gray-500">{{ t('admin.proxies.marketSharingEligibility') }}</p>
       </form>
 
       <!-- Batch Add Form -->
@@ -760,6 +773,11 @@
           <label class="input-label">{{ t('admin.proxies.backupProxy') }}</label>
           <Select v-model="editForm.backup_proxy_id" :options="backupProxyOptions(editingProxy?.id)" />
         </div>
+        <label v-if="editingProxy" class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-200">
+          <input v-model="editForm.market_shared" type="checkbox" class="mt-0.5" :disabled="!marketSharingReady || (!editForm.market_shared && !canShareEditedProxy)" />
+          <span>{{ t('admin.proxies.marketSharingLabel') }}</span>
+        </label>
+        <p v-if="!canShareEditedProxy && !editForm.market_shared" class="text-xs text-gray-500">{{ t('admin.proxies.marketSharingEligibility') }}</p>
 
       </form>
 
@@ -988,6 +1006,7 @@ import { useTableSelection } from '@/composables/useTableSelection'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatDateTime } from '@/utils/format'
 import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
+import { getEngineProxySharing, setEngineProxySharing, testEngineProxy } from '@/market-admin/api'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -1005,6 +1024,7 @@ const columns = computed<Column[]>(() => [
   { key: 'expiry', label: t('admin.proxies.columns.expiry'), sortable: true },
   { key: 'created_at', label: t('admin.proxies.columns.createdAt'), sortable: true },
   { key: 'status', label: t('admin.proxies.columns.status'), sortable: true },
+  { key: 'market_sharing', label: t('admin.proxies.columns.marketSharing'), sortable: false },
   { key: 'actions', label: t('admin.proxies.columns.actions'), sortable: false }
 ])
 
@@ -1038,6 +1058,9 @@ const editStatusOptions = computed(() => [
 ])
 
 const proxies = ref<Proxy[]>([])
+const marketSharedProxyIDs = ref<Set<number>>(new Set())
+const marketSharingLoading = ref(false)
+const marketSharingReady = ref(false)
 const visiblePasswordIds = reactive(new Set<number>())
 const copyMenuProxyId = ref<number | null>(null)
 const loading = ref(false)
@@ -1132,6 +1155,7 @@ const createForm = reactive({
   fallback_mode: 'none' as 'none' | 'proxy' | 'direct',
   backup_proxy_id: null as number | null,
   expiry_warn_days: 7 as number,
+  market_shared: false,
 })
 
 const editForm = reactive({
@@ -1146,7 +1170,46 @@ const editForm = reactive({
   fallback_mode: 'none' as 'none' | 'proxy' | 'direct',
   backup_proxy_id: null as number | null,
   expiry_warn_days: 7 as number,
+  market_shared: false,
 })
+
+const canShareEditedProxy = computed(() =>
+  editForm.status === 'active' && !isExpiryInPast(editForm.expires_at),
+)
+
+const loadMarketProxySharing = async () => {
+  marketSharingLoading.value = true
+  try {
+    const items = await getEngineProxySharing()
+    marketSharedProxyIDs.value = new Set(
+      (Array.isArray(items) ? items : [])
+        .filter((item: { is_shared?: boolean }) => item.is_shared)
+        .map((item: { proxy_id: number }) => item.proxy_id),
+    )
+    marketSharingReady.value = true
+  } catch (error) {
+    marketSharedProxyIDs.value = new Set()
+    marketSharingReady.value = false
+    appStore.showError(t('admin.proxies.marketSharingLoadFailed'))
+    console.error('Error loading market proxy sharing:', error)
+  } finally {
+    marketSharingLoading.value = false
+  }
+}
+
+const setMarketProxySharing = async (proxyID: number, isShared: boolean) => {
+  const result = await setEngineProxySharing(proxyID, isShared)
+  if (result.is_shared) marketSharedProxyIDs.value.add(proxyID)
+  else marketSharedProxyIDs.value.delete(proxyID)
+  marketSharedProxyIDs.value = new Set(marketSharedProxyIDs.value)
+  marketSharingReady.value = true
+}
+
+const isExpiryInPast = (expiresAt: string | null | undefined) => {
+  if (!expiresAt) return false
+  const time = new Date(expiresAt).getTime()
+  return Number.isFinite(time) && time <= Date.now()
+}
 
 const allProxiesForBackup = ref<Proxy[]>([])
 const loadBackupProxyOptions = async () => {
@@ -1205,6 +1268,7 @@ const loadProxies = async () => {
       return
     }
     proxies.value = response.items
+    await loadMarketProxySharing()
     pagination.total = response.total
     pagination.pages = response.pages
   } catch (error) {
@@ -1266,6 +1330,7 @@ const closeCreateModal = () => {
   createForm.fallback_mode = 'none'
   createForm.backup_proxy_id = null
   createForm.expiry_warn_days = 7
+  createForm.market_shared = false
   createPasswordVisible.value = false
   batchInput.value = ''
   batchParseResult.total = 0
@@ -1391,7 +1456,7 @@ const handleCreateProxy = async () => {
   }
   submitting.value = true
   try {
-    await adminAPI.proxies.create({
+    const created = await adminAPI.proxies.create({
       name: createForm.name.trim(),
       protocol: createForm.protocol,
       host: createForm.host.trim(),
@@ -1403,6 +1468,18 @@ const handleCreateProxy = async () => {
       backup_proxy_id: createForm.fallback_mode === 'proxy' ? createForm.backup_proxy_id : null,
       expiry_warn_days: createForm.expiry_warn_days,
     })
+    if (createForm.market_shared) {
+      try {
+        await setMarketProxySharing(created.id, true)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        appStore.showError(t('admin.proxies.marketSharingEnableFailed', { reason }))
+        closeCreateModal()
+        handleEdit(created)
+        loadProxies()
+        return
+      }
+    }
     appStore.showSuccess(t('admin.proxies.proxyCreated'))
     closeCreateModal()
     loadProxies()
@@ -1427,6 +1504,7 @@ const handleEdit = (proxy: Proxy) => {
   editForm.fallback_mode = proxy.fallback_mode || 'none'
   editForm.backup_proxy_id = proxy.backup_proxy_id ?? null
   editForm.expiry_warn_days = proxy.expiry_warn_days ?? 7
+  editForm.market_shared = marketSharedProxyIDs.value.has(proxy.id)
   editPasswordVisible.value = false
   editPasswordDirty.value = false
   showEditModal.value = true
@@ -1456,6 +1534,14 @@ const handleUpdateProxy = async () => {
 
   submitting.value = true
   try {
+    const wasMarketShared = marketSharingReady.value && marketSharedProxyIDs.value.has(editingProxy.value.id)
+    if (!wasMarketShared && editForm.market_shared && !canShareEditedProxy.value) {
+      appStore.showError(t('admin.proxies.marketSharingEligibility'))
+      return
+    }
+    if (wasMarketShared && !editForm.market_shared) {
+      await setMarketProxySharing(editingProxy.value.id, false)
+    }
     const updateData: any = {
       name: editForm.name.trim(),
       protocol: editForm.protocol,
@@ -1475,11 +1561,14 @@ const handleUpdateProxy = async () => {
     }
 
     await adminAPI.proxies.update(editingProxy.value.id, updateData)
+    if (marketSharingReady.value && !wasMarketShared && editForm.market_shared) {
+      await setMarketProxySharing(editingProxy.value.id, editForm.market_shared)
+    }
     appStore.showSuccess(t('admin.proxies.proxyUpdated'))
     closeEditModal()
     loadProxies()
   } catch (error: any) {
-    appStore.showError(error.response?.data?.detail || t('admin.proxies.failedToUpdate'))
+    appStore.showError(error.response?.data?.detail || error.message || t('admin.proxies.failedToUpdate'))
     console.error('Error updating proxy:', error)
   } finally {
     submitting.value = false
@@ -1569,7 +1658,18 @@ const stopQualityCheckingProxy = (proxyId: number) => {
 const runProxyTest = async (proxyId: number, notify: boolean) => {
   startTestingProxy(proxyId)
   try {
-    const result = await adminAPI.proxies.testProxy(proxyId)
+    const marketResult = await testEngineProxy(proxyId)
+    const report = marketResult.connection_report
+    if (marketResult.is_shared) marketSharedProxyIDs.value.add(proxyId)
+    else marketSharedProxyIDs.value.delete(proxyId)
+    marketSharedProxyIDs.value = new Set(marketSharedProxyIDs.value)
+    const result = {
+      success: report?.success ?? false,
+      message: report?.message || '',
+      latency_ms: report?.latency_ms,
+      ip_address: report?.ip,
+      region: report?.region,
+    }
     applyLatencyResult(proxyId, result)
     if (notify) {
       if (result.success) {
@@ -1583,7 +1683,7 @@ const runProxyTest = async (proxyId: number, notify: boolean) => {
     }
     return result
   } catch (error: any) {
-    const message = error.response?.data?.detail || t('admin.proxies.failedToTest')
+    const message = error.response?.data?.detail || error.message || t('admin.proxies.failedToTest')
     applyLatencyResult(proxyId, { success: false, message })
     if (notify) {
       appStore.showError(message)

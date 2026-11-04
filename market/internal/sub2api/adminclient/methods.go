@@ -42,8 +42,27 @@ type Account struct {
 }
 
 type Proxy struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID        int64      `json:"id"`
+	Name      string     `json:"name"`
+	Protocol  string     `json:"protocol"`
+	Host      string     `json:"host"`
+	Port      int        `json:"port"`
+	Status    string     `json:"status"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// GetProxy reads live engine state used to decide whether an engine proxy can
+// receive new market bindings. Password is intentionally not part of this DTO.
+func (c *Client) GetProxy(ctx context.Context, id int64) (*Proxy, error) {
+	var out *Proxy
+	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("/api/v1/admin/proxies/%d", id), nil, "", &out); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		return nil, errors.New("sub2api returned no proxy")
+	}
+	return out, nil
 }
 
 // ---- 系统 ----

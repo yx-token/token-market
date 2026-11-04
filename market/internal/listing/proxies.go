@@ -51,7 +51,8 @@ type CreateProxyInput struct {
 	IsShared bool   `json:"is_shared"`
 }
 
-const proxyColumns = `id, seller_id, name, protocol, host, port, username, region, sub2api_proxy_id, status, is_shared,
+const proxyColumns = `id, seller_id, name, protocol, host, port, username, region, sub2api_proxy_id, status,
+	(is_shared OR EXISTS(SELECT 1 FROM engine_proxy_sharing e WHERE e.market_proxy_id=proxies.id AND e.is_shared)),
 	ARRAY(SELECT up.id FROM upstreams up WHERE up.proxy_id = proxies.id AND up.status <> 'removed' ORDER BY up.id),
 	created_at, connection_report, quality_report, connection_checked_at, quality_checked_at`
 
@@ -88,8 +89,13 @@ type ProxyService struct {
 		DB
 		Begin(context.Context) (pgx.Tx, error)
 	}
-	Admin   *adminclient.Client
-	Keyring *crypto.Keyring
+	Admin            *adminclient.Client
+	Keyring          *crypto.Keyring
+	EngineProxyState EngineProxyStateReader
+}
+
+type EngineProxyStateReader interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
 func (s *ProxyService) Create(ctx context.Context, in CreateProxyInput) (*Proxy, error) {
@@ -255,7 +261,7 @@ func (s *ProxyService) list(ctx context.Context, sellerID *int64) ([]Proxy, erro
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Proxy
+	out := make([]Proxy, 0)
 	for rows.Next() {
 		p, err := scanProxy(rows)
 		if err != nil {

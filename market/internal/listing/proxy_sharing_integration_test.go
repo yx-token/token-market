@@ -40,6 +40,12 @@ func (rep proxySharingReplica) Query(ctx context.Context, _ string, _ ...any) (p
 	return rep.Pool.Query(ctx, "SELECT 1 WHERE false")
 }
 
+type proxySharingEngineReader struct{ *pgxpool.Pool }
+
+func (r proxySharingEngineReader) QueryRow(ctx context.Context, _ string, args ...any) pgx.Row {
+	return r.Pool.QueryRow(ctx, `SELECT $1::bigint,'engine proxy'::text,'http'::text,'engine-proxy.test'::text,8080,'active'::text,NULL::timestamptz,'2026-01-01T00:00:00Z'::timestamptz`, args...)
+}
+
 type proxySharingFixture struct {
 	ctx            context.Context
 	service        *Service
@@ -47,6 +53,8 @@ type proxySharingFixture struct {
 	sellerID       int64
 	otherID        int64
 	accountProxies chan int64
+	proxyTests     atomic.Int64
+	proxyTestError atomic.Bool
 }
 
 func newProxySharingFixture(t *testing.T) *proxySharingFixture {
@@ -81,6 +89,10 @@ func newProxySharingFixture(t *testing.T) *proxySharingFixture {
 	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		var data any
 		switch {
+		case request.Method == http.MethodGet && strings.HasPrefix(request.URL.Path, "/api/v1/admin/proxies/"):
+			var id int64
+			_, _ = fmt.Sscanf(request.URL.Path, "/api/v1/admin/proxies/%d", &id)
+			data = adminclient.Proxy{ID: id, Name: "engine proxy", Status: "active"}
 		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/admin/groups":
 			data = map[string]any{"id": nextID.Add(1)}
 		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/admin/accounts":
@@ -95,6 +107,11 @@ func newProxySharingFixture(t *testing.T) *proxySharingFixture {
 		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/models/sync-upstream"):
 			data = map[string]any{"models": []string{"claude-sonnet-4-6"}}
 		case request.Method == http.MethodPost && strings.HasPrefix(request.URL.Path, "/api/v1/admin/proxies/") && strings.HasSuffix(request.URL.Path, "/test"):
+			fixture.proxyTests.Add(1)
+			if fixture.proxyTestError.Load() {
+				w.WriteHeader(http.StatusBadGateway)
+				return
+			}
 			data = adminclient.ProxyTestResult{Success: true, Message: "connected"}
 		case request.Method == http.MethodDelete && strings.HasPrefix(request.URL.Path, "/api/v1/admin/proxies/"):
 			data = map[string]any{}
@@ -116,6 +133,13 @@ func newProxySharingFixture(t *testing.T) *proxySharingFixture {
 		Settings: func(context.Context) (settings.Settings, error) { return settings.Settings{}, nil },
 	}
 	fixture.proxies = &ProxyService{DB: pool, Admin: admin, Keyring: keyring}
+	enginePool, err := pgxpool.New(ctx, pool.Config().ConnString())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(enginePool.Close)
+	fixture.proxies.EngineProxyState = proxySharingEngineReader{enginePool}
+	fixture.service.EngineProxies = fixture.proxies
 	return fixture
 }
 
@@ -395,7 +419,7 @@ func TestProxySharingConcurrentBindings(t *testing.T) {
 			}
 			proxy := fixture.proxy(t, owner)
 			if mode == "platform" {
-				if _, err := fixture.proxies.SetShared(fixture.ctx, proxy.ID, true); err != nil {
+				if _, err := fixture.proxies.SetEngineProxyShared(fixture.ctx, *proxy.Sub2APIProxyID, true); err != nil {
 					t.Fatal(err)
 				}
 			}

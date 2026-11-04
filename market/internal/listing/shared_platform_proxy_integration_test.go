@@ -5,8 +5,10 @@ package listing
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -30,7 +32,7 @@ func TestSharedPlatformProxyRotationAndDirectFallback(t *testing.T) {
 	}
 	first, second := f.proxy(t, nil), f.proxy(t, nil)
 	for _, proxy := range []*Proxy{first, second} {
-		if _, err := f.proxies.SetShared(f.ctx, proxy.ID, true); err != nil {
+		if _, err := f.proxies.SetEngineProxyShared(f.ctx, *proxy.Sub2APIProxyID, true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -52,7 +54,7 @@ func TestSharedPlatformProxyRotationAndDirectFallback(t *testing.T) {
 		t.Fatalf("shared availability ignores already assigned proxies: %v %d %v", available, count, err)
 	}
 	// A failed most-recent test removes the proxy from both status and allocation.
-	if _, err := f.service.DB.Exec(f.ctx, `UPDATE proxies SET connection_report='{"success":false}' WHERE id=$1`, first.ID); err != nil {
+	if _, err := f.service.DB.Exec(f.ctx, `UPDATE engine_proxy_sharing SET connection_report='{"success":false}' WHERE proxy_id=$1`, *first.Sub2APIProxyID); err != nil {
 		t.Fatal(err)
 	}
 	if available, count, err := f.proxies.SharedProxyAvailability(f.ctx); err != nil || !available || count != 1 {
@@ -72,7 +74,7 @@ func TestSharedPlatformProxyConcurrentRotation(t *testing.T) {
 	}
 	proxies := []*Proxy{f.proxy(t, nil), f.proxy(t, nil), f.proxy(t, nil)}
 	for _, proxy := range proxies {
-		if _, err := f.proxies.SetShared(f.ctx, proxy.ID, true); err != nil {
+		if _, err := f.proxies.SetEngineProxyShared(f.ctx, *proxy.Sub2APIProxyID, true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -91,6 +93,8 @@ func TestSharedPlatformProxyConcurrentRotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	const attempts = 18
+	testsBefore := f.proxyTests.Load()
+	started := time.Now()
 	type result struct {
 		u   *Upstream
 		err error
@@ -111,6 +115,12 @@ func TestSharedPlatformProxyConcurrentRotation(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("concurrent allocation unexpectedly slow: %v", elapsed)
+	}
+	if f.proxyTests.Load() != testsBefore {
+		t.Fatal("allocation performed an engine connectivity test while holding rotation lock")
+	}
 	close(results)
 	counts := map[int64]int{}
 	for result := range results {
@@ -159,7 +169,7 @@ func TestSharedPlatformProxyPolicyAndMutationGuards(t *testing.T) {
 	_, err = f.service.ImportAccount(f.ctx, f.sellerID, importDraft.ID, ImportAccountInput{Data: []byte(`{"accounts":[{"platform":"anthropic","type":"oauth","credentials":{"access_token":"no-proxy"}}]}`)})
 	assertProxySharingHTTPError(t, err, http.StatusBadRequest, "SELLER_PROXY_REQUIRED")
 	proxy := f.proxy(t, nil)
-	if _, err := f.proxies.SetShared(f.ctx, proxy.ID, true); err != nil {
+	if _, err := f.proxies.SetEngineProxyShared(f.ctx, *proxy.Sub2APIProxyID, true); err != nil {
 		t.Fatal(err)
 	}
 	for _, sellerID := range []int64{f.sellerID, f.otherID} {
@@ -167,18 +177,22 @@ func TestSharedPlatformProxyPolicyAndMutationGuards(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, err = f.proxies.SetShared(f.ctx, proxy.ID, false)
+	_, err = f.proxies.SetEngineProxyShared(f.ctx, *proxy.Sub2APIProxyID, false)
 	assertProxySharingHTTPError(t, err, http.StatusConflict, "PROXY_SHARED_IN_USE")
 	_, err = f.proxies.SetDisabled(f.ctx, proxy.ID, true)
 	assertProxySharingHTTPError(t, err, http.StatusConflict, "PROXY_IN_USE")
 	err = f.proxies.Delete(f.ctx, proxy.ID)
 	assertProxySharingHTTPError(t, err, http.StatusConflict, "PROXY_IN_USE")
 	for _, query := range []string{
-		`UPDATE proxies SET is_shared=false WHERE id=$1`,
+		`UPDATE engine_proxy_sharing SET is_shared=false WHERE proxy_id=$1`,
 		`UPDATE proxies SET status='disabled' WHERE id=$1`,
 		`DELETE FROM proxies WHERE id=$1`,
 	} {
-		_, err := f.service.DB.Exec(f.ctx, query, proxy.ID)
+		id := proxy.ID
+		if strings.Contains(query, "engine_proxy_sharing") {
+			id = *proxy.Sub2APIProxyID
+		}
+		_, err := f.service.DB.Exec(f.ctx, query, id)
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || pgErr.Code != "23514" {
 			t.Fatalf("database guard accepted invalid mutation %q: %v", query, err)

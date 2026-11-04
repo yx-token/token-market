@@ -40,15 +40,16 @@ var thresholdPlatforms = map[string]bool{
 func SupportsSelfReserve(platform string) bool { return thresholdPlatforms[platform] }
 
 type Service struct {
-	DB       *pgxpool.Pool
-	Admin    *adminclient.Client
-	Prov     *provision.Provisioner
-	Keyring  *crypto.Keyring
-	Quality  QualityHook
-	Kicker   Kicker
-	Settings func(ctx context.Context) (settings.Settings, error)
-	Log      *slog.Logger
-	Now      func() time.Time
+	DB            *pgxpool.Pool
+	Admin         *adminclient.Client
+	Prov          *provision.Provisioner
+	Keyring       *crypto.Keyring
+	Quality       QualityHook
+	Kicker        Kicker
+	Settings      func(ctx context.Context) (settings.Settings, error)
+	Log           *slog.Logger
+	Now           func() time.Time
+	EngineProxies *ProxyService
 
 	modelLocksOnce sync.Once
 	modelLockSlots chan struct{}
@@ -156,6 +157,7 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 		case reference || bypassSellerProxy:
 			err = tx.QueryRow(ctx, `SELECT id FROM proxies WHERE seller_id IS NULL AND status = 'available'
 				AND is_shared = false
+				AND NOT EXISTS (SELECT 1 FROM engine_proxy_sharing e WHERE e.market_proxy_id=proxies.id)
 				AND NOT EXISTS (SELECT 1 FROM upstreams WHERE proxy_id = proxies.id AND status <> 'removed')
 				AND sub2api_proxy_id IS NOT NULL
 				ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&proxyID)
@@ -167,11 +169,11 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 			}
 			var lastProxyID *int64
 			if err = tx.QueryRow(ctx, `SELECT last_proxy_id FROM shared_proxy_rotation WHERE id = 1 FOR UPDATE`).Scan(&lastProxyID); err == nil {
-				err = tx.QueryRow(ctx, `SELECT id FROM proxies
-					WHERE seller_id IS NULL AND is_shared AND status <> 'disabled' AND sub2api_proxy_id IS NOT NULL
-					AND connection_report->>'success' = 'true' AND connection_checked_at IS NOT NULL
-					ORDER BY CASE WHEN id > COALESCE($1, 0) THEN 0 ELSE 1 END, id
-					LIMIT 1 FOR UPDATE`, lastProxyID).Scan(&proxyID)
+				proxies := s.EngineProxies
+				if proxies == nil {
+					proxies = &ProxyService{DB: s.DB, Admin: s.Admin, Keyring: s.Keyring}
+				}
+				proxyID, err = proxies.nextSharedEngineProxy(ctx, tx, lastProxyID)
 				if err == nil {
 					_, err = tx.Exec(ctx, `UPDATE shared_proxy_rotation SET last_proxy_id = $1, updated_at = now() WHERE id = 1`, proxyID)
 				}
@@ -214,11 +216,7 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 
 // SharedProxyAvailability exposes only a count and readiness bit to sellers.
 func (s *ProxyService) SharedProxyAvailability(ctx context.Context) (bool, int, error) {
-	var count int
-	err := s.DB.QueryRow(ctx, `SELECT count(*) FROM proxies
-		WHERE seller_id IS NULL AND is_shared AND status <> 'disabled' AND sub2api_proxy_id IS NOT NULL
-		AND connection_report->>'success' = 'true' AND connection_checked_at IS NOT NULL`).Scan(&count)
-	return count > 0, count, err
+	return s.SharedEngineProxyAvailability(ctx)
 }
 
 // ensureProbeGroup 确保上游的探测分组（只含该账号的独占分组）存在。

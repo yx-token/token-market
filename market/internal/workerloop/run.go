@@ -76,6 +76,7 @@ func Run(ctx context.Context, a *app.App, cfg *config.Config, log *slog.Logger) 
 	a.Ingester.Gate = guard.AllowWrites
 	a.Quality.Gate = guard.AllowWrites
 	jobs := []job{
+		{"proxies.refresh_shared", 5 * time.Minute, writes(a.Proxies.RefreshEngineSharedProxies)},
 		{"funds.track_crediting", 10 * time.Second, a.Funds.TrackCrediting},
 		{"funds.advance_refunds", 10 * time.Second, a.Funds.AdvanceRefunds},
 		{"funds.sync_payments", 15 * time.Second, a.Funds.SyncPayments},

@@ -46,6 +46,9 @@ tables:
   api_keys:
     used_by: [billing, edge]
     columns: [id, user_id, key, group_id, status, deleted_at]
+  proxies:
+    used_by: [listing]
+    columns: [id, name, protocol, host, port, status, expires_at, updated_at, deleted_at]
   schema_migrations:
     used_by: [compat]
     columns: [filename, checksum]
@@ -88,6 +91,7 @@ admin_api:
   - {method: PUT,    path: "/api/v1/admin/groups/:id"}
   - {method: DELETE, path: "/api/v1/admin/groups/:id"}
   - {method: POST,   path: /api/v1/admin/proxies,                request: [name, protocol, host, port, username, password], idempotency_key: required}
+  - {method: GET,    path: "/api/v1/admin/proxies/:id"}
   - {method: DELETE, path: "/api/v1/admin/proxies/:id"}
   - {method: POST,   path: "/api/v1/admin/proxies/:id/test"}
   - {method: POST,   path: "/api/v1/admin/proxies/:id/quality-check"}

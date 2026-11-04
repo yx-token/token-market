@@ -22,7 +22,7 @@ const proxy = { id: 1, seller_id: 5, name: 'shared-proxy', protocol: 'http', hos
 async function page() {
   const wrapper = mount(ProxiesView, {
     attachTo: document.body,
-    global: { stubs: { Icon: true, Pagination: true, Select: select } },
+    global: { stubs: { Icon: true, Pagination: true, Select: select, EmptyState: { template: '<div class="empty-state">{{ title }} {{ description }}</div>', props: ['title', 'description'] } } },
   })
   await flushPromises()
   return wrapper
@@ -56,11 +56,12 @@ describe('market admin proxy bindings', () => {
     expect(rows[0]!.text()).toContain('已绑定 2 个账号')
     expect(rows[0]!.text()).toContain('账号 #71')
     expect(rows[0]!.text()).toContain('账号 #98765')
-    expect(rows[4]!.text()).toContain('账号 #91')
-    expect(stat(wrapper, '绑定账号总数')).toBe('7')
+    expect(rows[3]!.text()).toContain('账号 #91')
+    expect(stat(wrapper, '绑定账号总数')).toBe('6')
     expect(stat(wrapper, '未绑定')).toBe('1')
     expect(stat(wrapper, '卖家代理')).toBe('4')
-    for (const index of [0, 1, 3, 4]) {
+    expect(wrapper.find('tbody').text()).not.toContain('platform-proxy')
+    for (const index of [0, 1, 3]) {
       const disable = rows[index]!.findAll('button').find((button) => button.text() === '停用')!
       expect(disable.attributes('disabled')).toBeDefined()
       await disable.trigger('click')
@@ -73,7 +74,7 @@ describe('market admin proxy bindings', () => {
   it('filters bindings by count and searches the second account ID', async () => {
     const wrapper = await page()
     await filter(wrapper, '绑定').setValue('bound')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(4)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(3)
     expect(wrapper.find('tbody').text()).not.toContain('released')
     await filter(wrapper, '绑定').setValue('unbound')
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
@@ -108,49 +109,19 @@ describe('market admin proxy bindings', () => {
     expect(row.get('.disable-reason').text()).toContain('需全部解绑后才能停用')
   })
 
-  it('仅平台代理可切换共享，发送专用字段并按返回列表回显', async () => {
-    api.send.mockResolvedValue({})
+  it('只展示卖家自有代理，不提供平台代理共享管理', async () => {
     const wrapper = await page()
-    const sellerRow = wrapper.findAll('tbody tr')[0]!
-    expect(sellerRow.findAll('button').some((button) => button.text().includes('设为共享'))).toBe(false)
-    const platformRow = wrapper.findAll('tbody tr')[3]!
-    api.get.mockResolvedValue([{ ...proxy, id: 4, name: 'platform-proxy', seller_id: null, is_shared: true, assigned_upstream_ids: [81], assigned_upstream_count: 1 }])
-    await platformRow.findAll('button').find((button) => button.text() === '设为共享')!.trigger('click')
-    await flushPromises()
-    expect(api.send).toHaveBeenCalledWith('PUT', '/api/v1/admin/market/proxies/4/sharing', { is_shared: true })
-    expect(wrapper.get('tbody').text()).toContain('设为独占')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(4)
+    expect(wrapper.get('tbody').text()).not.toContain('platform-proxy')
+    expect(wrapper.text()).not.toContain('设为共享')
+    expect(wrapper.text()).not.toContain('设为独占')
+    expect(wrapper.text()).not.toContain('作为平台共享代理')
   })
 
-  it('保存失败时在活动弹窗内播报错误并保留表单', async () => {
-    api.send.mockRejectedValue(new Error('代理保存失败'))
+  it('treats a null list payload as an empty seller proxy list', async () => {
+    api.get.mockResolvedValue(null)
     const wrapper = await page()
-    const open = wrapper.findAll('button').find((button) => button.text() === '添加代理')!
-    await open.trigger('click')
-    await flushPromises()
-
-    const currentDialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!
-    const values: Array<[string, string]> = [
-      ['input[placeholder="例如 美国固定 IP 01"]', '待保留的代理名称'],
-      ['input[placeholder="203.0.113.10"]', '198.51.100.8'],
-      ['input[placeholder="1080"]', '1080'],
-    ]
-    for (const [selector, value] of values) {
-      const input = currentDialog().querySelector<HTMLInputElement>(selector)!
-      input.value = value
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    }
-    await flushPromises()
-    const save = Array.from(currentDialog().querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent?.trim() === '添加',
-    )!
-    save.click()
-    await flushPromises()
-
-    expect(currentDialog().getAttribute('aria-modal')).toBe('true')
-    expect(currentDialog().querySelector('[role="alert"]')?.textContent).toContain('代理保存失败')
-    expect(
-      currentDialog().querySelector<HTMLInputElement>('input[placeholder="例如 美国固定 IP 01"]')?.value,
-    ).toBe('待保留的代理名称')
-    expect(api.get).toHaveBeenCalledOnce()
+    expect(wrapper.get('.empty-state').text()).toContain('暂无代理')
   })
+
 })

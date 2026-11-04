@@ -6,6 +6,7 @@ import (
 	"github.com/yx-token/token-market/internal/pkg/response"
 	"github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
+	"github.com/yx-token/token-market/market/enginehost"
 
 	"github.com/gin-gonic/gin"
 )
@@ -421,7 +422,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		// 账号导出泄露上游凭证原文——要求 step-up 2FA
 		accounts.GET("/data", gin.HandlerFunc(stepUpAuth), h.Admin.Account.ExportData)
-		accounts.POST("/data", h.Admin.Account.ImportData)
+		accounts.POST("/data", guardProxyImport(enginehost.LockEngineProxyMutation, h.Admin.Proxy.ListForMarketMutationGuard), h.Admin.Account.ImportData)
 		accounts.POST("/batch-update-credentials", h.Admin.Account.BatchUpdateCredentials)
 		accounts.POST("/batch-refresh-tier", h.Admin.Account.BatchRefreshTier)
 		accounts.POST("/bulk-update", h.Admin.Account.BulkUpdate)
@@ -539,16 +540,16 @@ func registerProxyRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth
 		proxies.GET("/all", h.Admin.Proxy.GetAll)
 		// 代理导出泄露账号密码原文——要求 step-up 2FA
 		proxies.GET("/data", gin.HandlerFunc(stepUpAuth), h.Admin.Proxy.ExportData)
-		proxies.POST("/data", h.Admin.Proxy.ImportData)
+		proxies.POST("/data", guardProxyImport(enginehost.LockEngineProxyMutation, h.Admin.Proxy.ListForMarketMutationGuard), h.Admin.Proxy.ImportData)
 		proxies.GET("/:id", h.Admin.Proxy.GetByID)
 		proxies.POST("", h.Admin.Proxy.Create)
-		proxies.PUT("/:id", h.Admin.Proxy.Update)
-		proxies.DELETE("/:id", h.Admin.Proxy.Delete)
+		proxies.PUT("/:id", proxyMutationGuard(h.Admin.Proxy.GetForMarketMutationGuard, enginehost.LockEngineProxyMutation), h.Admin.Proxy.Update)
+		proxies.DELETE("/:id", guardProxyIDs(h.Admin.Proxy.GetForMarketMutationGuard, enginehost.LockEngineProxyMutation), h.Admin.Proxy.Delete)
 		proxies.POST("/:id/test", h.Admin.Proxy.Test)
 		proxies.POST("/:id/quality-check", h.Admin.Proxy.CheckQuality)
 		proxies.GET("/:id/stats", h.Admin.Proxy.GetStats)
 		proxies.GET("/:id/accounts", h.Admin.Proxy.GetProxyAccounts)
-		proxies.POST("/batch-delete", h.Admin.Proxy.BatchDelete)
+		proxies.POST("/batch-delete", proxyBatchMutationGuard(enginehost.LockEngineProxyMutation), h.Admin.Proxy.BatchDelete)
 		proxies.POST("/batch", h.Admin.Proxy.BatchCreate)
 	}
 }
