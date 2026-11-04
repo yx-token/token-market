@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="Row extends Record<string, any>">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useIsConsole } from '@/composables/useIsConsole'
 
 export interface Column {
@@ -17,6 +17,23 @@ const props = defineProps<{
 }>()
 
 const isConsole = useIsConsole()
+
+/** 只挂载一种布局，避免表格+卡片双份 DOM 拖垮测试与无障碍树 */
+const isH5 = ref(false)
+let mq: MediaQueryList | null = null
+function syncH5() {
+  isH5.value = !!mq?.matches
+}
+onMounted(() => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+  mq = window.matchMedia('(max-width: 720px)')
+  syncH5()
+  mq.addEventListener('change', syncH5)
+})
+onUnmounted(() => {
+  mq?.removeEventListener('change', syncH5)
+  mq = null
+})
 
 /** H5 卡片：首列作标题，其余 label/value，操作列沉底 */
 const titleCol = computed(() => props.columns.find((c) => c.key !== 'actions') ?? null)
@@ -87,9 +104,9 @@ function rowId(row: Row, i: number) {
     </table>
   </div>
 
-  <!-- 市场 / 买卖中心：桌面表格 + H5 卡片 -->
+  <!-- 市场 / 买卖中心：桌面表格；H5 卡片（按媒体查询二选一挂载） -->
   <div v-else class="xm-data">
-    <div class="xm-table-wrap xm-data-table overflow-x-auto">
+    <div v-if="!isH5" class="xm-table-wrap xm-data-table overflow-x-auto">
       <table class="xm-table">
         <thead>
           <tr>
@@ -114,7 +131,7 @@ function rowId(row: Row, i: number) {
       </table>
     </div>
 
-    <div class="xm-data-cards" aria-live="polite">
+    <div v-else class="xm-data-cards" aria-live="polite">
       <div v-if="loading" class="xm-data-empty">载入中…</div>
       <div v-else-if="!rows || rows.length === 0" class="xm-data-empty">{{ empty ?? '暂无数据' }}</div>
       <template v-else>
@@ -242,7 +259,9 @@ function rowId(row: Row, i: number) {
 
 /* ---- 市场 H5 卡片 ---- */
 .xm-data-cards {
-  display: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .xm-data-empty {
@@ -348,22 +367,5 @@ function rowId(row: Row, i: number) {
   flex: 1 1 auto;
   min-height: 36px;
   justify-content: center;
-}
-
-@media (max-width: 720px) {
-  .xm-data-table {
-    display: none;
-  }
-  .xm-data-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-}
-
-@media (min-width: 721px) {
-  .xm-data-cards {
-    display: none !important;
-  }
 }
 </style>
