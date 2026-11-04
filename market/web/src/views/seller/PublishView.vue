@@ -497,7 +497,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       <p class="sub">先选择平台与授权方式，再按厂商要求选择代理。</p>
 
       <label class="xm-field-label">厂商</label>
-      <div class="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3">
+      <div class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
         <button
           v-for="v in vendors"
           :key="v.platform"
@@ -652,7 +652,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label class="xm-field-label">识别档位</label>
           <input class="xm-input" readonly :value="upstream?.tier || '—'" />

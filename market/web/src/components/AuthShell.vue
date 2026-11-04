@@ -24,9 +24,9 @@ defineProps<{ title: string; subtitle?: string }>()
         alt=""
       />
     </div>
-    <div class="p-8 md:p-12">
+    <div class="p-5 sm:p-8 md:p-12">
       <div class="mb-3 text-[13px] font-extrabold text-[#888]">闲猫 · Token 集市</div>
-      <h1 class="text-[28px] font-extrabold tracking-tight text-[#1f1f1f]">{{ title }}</h1>
+      <h1 class="text-[24px] font-extrabold tracking-tight text-[#1f1f1f] sm:text-[28px]">{{ title }}</h1>
       <p v-if="subtitle" class="mt-2 text-[14px] text-[#666]">{{ subtitle }}</p>
       <div class="mt-8"><slot /></div>
     </div>

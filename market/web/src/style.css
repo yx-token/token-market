@@ -1664,6 +1664,42 @@ html:not(.is-console) .console-tp-card {
   border-color: #0555ce !important;
   box-shadow: 0 0 0 3px rgba(5, 85, 206, 0.15) !important;
 }
+/* 用户端弹层 H5：贴底、安全区、脚栏按钮可换行 */
+@media (max-width: 720px) {
+  .yh-modal-mask {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .yh-modal-panel,
+  .yh-modal-panel--wide,
+  .yh-modal-panel--xl {
+    max-width: 100%;
+    max-height: min(92dvh, 100%);
+    border-radius: 18px 18px 0 0;
+  }
+  .yh-modal-panel--market,
+  .yh-modal-panel--console {
+    border-radius: 18px 18px 0 0;
+  }
+  .yh-modal-head {
+    padding: 0.875rem 1rem;
+  }
+  .yh-modal-body {
+    padding: 1rem;
+  }
+  .yh-modal-foot {
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    gap: 0.5rem;
+  }
+  .yh-modal-foot > .btn,
+  .yh-modal-foot > .btn-primary,
+  .yh-modal-foot > .btn-secondary,
+  .yh-modal-foot > button {
+    flex: 1 1 auto;
+    min-height: 42px;
+  }
+}
+
 .yh-modal-panel--console .btn,
 .yh-modal-panel--console .btn-primary,
 .yh-modal-panel--console .btn-secondary,

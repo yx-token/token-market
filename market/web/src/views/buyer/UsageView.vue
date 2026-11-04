@@ -65,22 +65,22 @@ async function openDetail(requestID?: string) {
   <div>
     <PageHeader title="用量明细" description="已入账的实际消费，调用结束后通常几秒内可查，刷新即可查看。使用活动包时，费用为消耗的人民币预付款与平台余额扣款之和。" />
     <div class="card mb-4 flex flex-wrap items-end gap-3">
-      <div>
+      <div class="min-w-0 flex-1 basis-[140px] sm:flex-none">
         <label class="label" for="key">Key</label>
-        <select id="key" v-model="filter.key_id" class="input w-48">
+        <select id="key" v-model="filter.key_id" class="input w-full sm:w-48">
           <option value="">全部</option>
           <option v-for="k in keys.data.value ?? []" :key="k.id" :value="k.id">{{ k.name }}</option>
         </select>
       </div>
-      <div>
+      <div class="min-w-0 flex-1 basis-[140px] sm:flex-none">
         <label class="label" for="model">模型</label>
-        <input id="model" v-model="filter.model" class="input w-48" placeholder="例如 claude-sonnet-4-5" />
+        <input id="model" v-model="filter.model" class="input w-full sm:w-48" placeholder="例如 claude-sonnet-4-5" />
       </div>
-      <div class="min-w-[220px] flex-1">
+      <div class="min-w-0 flex-[1_1_100%] sm:min-w-[220px] sm:flex-1">
         <label class="label">日期范围</label>
         <DateRangePicker v-model:start-date="filter.from" v-model:end-date="filter.to" />
       </div>
-      <button class="btn-primary" @click="search">查询</button>
+      <button class="btn-primary w-full sm:w-auto" @click="search">查询</button>
     </div>
     <div class="card">
       <DataTable

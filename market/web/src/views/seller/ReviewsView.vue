@@ -34,7 +34,7 @@ const avgText = computed(() => {
       <button type="button" class="xm-btn xm-btn-ghost" :disabled="data.loading.value" @click="data.load()">刷新</button>
     </PageHeader>
 
-    <div class="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-3">
+    <div class="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
       <div class="stat">
         <div class="stat-label">综合评分</div>
         <div class="stat-value flex items-center gap-2">

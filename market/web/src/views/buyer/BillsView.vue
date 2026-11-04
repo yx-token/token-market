@@ -28,7 +28,7 @@ const prepaid = computed(() => (bills.data.value ?? []).reduce((s, b) => s + (b.
         <option :value="90">近 90 天</option>
       </select>
     </PageHeader>
-    <div class="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div class="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
       <StatCard label="实际消费" :value="money(total)" hint="活动预付消耗 + 平台余额扣款" />
       <StatCard label="平台余额扣款" :value="money(cash)" />
       <StatCard label="活动额度抵扣" :value="usd(creditUSD)" :hint="`消耗预付款 ${money(prepaid)}`" />

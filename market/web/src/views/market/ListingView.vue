@@ -565,18 +565,45 @@ async function cancelPay() {
   overflow: hidden;
 }
 @media (max-width: 900px) {
+  .sku-page--neat {
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
   .sku-board {
     grid-template-columns: 1fr;
     height: auto;
     max-height: none;
+    min-height: 0;
+    overflow: visible;
+  }
+  .sku-left,
+  .sku-side {
+    overflow: visible;
+    min-height: 0;
   }
   .sku-side {
     border-left: 0;
     border-top: 1px solid var(--sku-line);
-    max-height: min(52vh, 480px);
+    max-height: none;
+    display: flex;
+    flex-direction: column;
   }
   .sku-main {
-    max-height: min(48vh, 420px);
+    max-height: none;
+    overflow: visible;
+  }
+  /* 结账条沉底并 sticky，避免嵌套滚动 */
+  .sku-reviews { order: 1; }
+  .sku-checkout {
+    order: 2;
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    border-bottom: 0;
+    border-top: 1px solid var(--sku-line);
+    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.08);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts" generic="Row extends Record<string, any>">
+import { computed } from 'vue'
 import { useIsConsole } from '@/composables/useIsConsole'
 
 export interface Column {
@@ -7,7 +8,7 @@ export interface Column {
   align?: 'left' | 'right'
 }
 
-defineProps<{
+const props = defineProps<{
   columns: Column[]
   rows: Row[] | null | undefined
   rowKey?: string
@@ -16,6 +17,17 @@ defineProps<{
 }>()
 
 const isConsole = useIsConsole()
+
+/** H5 卡片：首列作标题，其余 label/value，操作列沉底 */
+const titleCol = computed(() => props.columns.find((c) => c.key !== 'actions') ?? null)
+const bodyCols = computed(() =>
+  props.columns.filter((c) => c.key !== 'actions' && c.key !== titleCol.value?.key),
+)
+const actionCol = computed(() => props.columns.find((c) => c.key === 'actions') ?? null)
+
+function rowId(row: Row, i: number) {
+  return props.rowKey ? row[props.rowKey] : i
+}
 </script>
 
 <template>
@@ -58,7 +70,7 @@ const isConsole = useIsConsole()
           </td>
         </tr>
         <template v-else>
-          <tr v-for="(row, i) in rows" :key="rowKey ? row[rowKey] : i">
+          <tr v-for="(row, i) in rows" :key="rowId(row, i)">
             <td
               v-for="c in columns"
               :key="c.key"
@@ -75,30 +87,63 @@ const isConsole = useIsConsole()
     </table>
   </div>
 
-  <!-- 市场 / 买卖中心：闲猫圆角表 -->
-  <div v-else class="xm-table-wrap overflow-x-auto">
-    <table class="xm-table">
-      <thead>
-        <tr>
-          <th v-for="c in columns" :key="c.key" :class="c.align === 'right' ? 'text-right' : ''">{{ c.label }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-if="loading">
-          <td :colspan="columns.length" class="py-8 text-center text-[#888]">载入中…</td>
-        </tr>
-        <tr v-else-if="!rows || rows.length === 0">
-          <td :colspan="columns.length" class="py-8 text-center text-[#888]">{{ empty ?? '暂无数据' }}</td>
-        </tr>
-        <template v-else>
-          <tr v-for="(row, i) in rows" :key="rowKey ? row[rowKey] : i">
-            <td v-for="c in columns" :key="c.key" :class="c.align === 'right' ? 'num text-right' : ''">
-              <slot :name="`cell-${c.key}`" :row="row">{{ row[c.key] ?? '—' }}</slot>
-            </td>
+  <!-- 市场 / 买卖中心：桌面表格 + H5 卡片 -->
+  <div v-else class="xm-data">
+    <div class="xm-table-wrap xm-data-table overflow-x-auto">
+      <table class="xm-table">
+        <thead>
+          <tr>
+            <th v-for="c in columns" :key="c.key" :class="c.align === 'right' ? 'text-right' : ''">{{ c.label }}</th>
           </tr>
-        </template>
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          <tr v-if="loading">
+            <td :colspan="columns.length" class="py-8 text-center text-[#888]">载入中…</td>
+          </tr>
+          <tr v-else-if="!rows || rows.length === 0">
+            <td :colspan="columns.length" class="py-8 text-center text-[#888]">{{ empty ?? '暂无数据' }}</td>
+          </tr>
+          <template v-else>
+            <tr v-for="(row, i) in rows" :key="rowId(row, i)">
+              <td v-for="c in columns" :key="c.key" :class="c.align === 'right' ? 'num text-right' : ''">
+                <slot :name="`cell-${c.key}`" :row="row">{{ row[c.key] ?? '—' }}</slot>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="xm-data-cards" aria-live="polite">
+      <div v-if="loading" class="xm-data-empty">载入中…</div>
+      <div v-else-if="!rows || rows.length === 0" class="xm-data-empty">{{ empty ?? '暂无数据' }}</div>
+      <template v-else>
+        <article v-for="(row, i) in rows" :key="rowId(row, i)" class="xm-data-card">
+          <header v-if="titleCol" class="xm-data-card__head">
+            <span v-if="titleCol.label" class="xm-data-card__kicker">{{ titleCol.label }}</span>
+            <div class="xm-data-card__title" :class="titleCol.align === 'right' ? 'is-right' : ''">
+              <slot :name="`cell-${titleCol.key}`" :row="row">{{ row[titleCol.key] ?? '—' }}</slot>
+            </div>
+          </header>
+          <dl v-if="bodyCols.length" class="xm-data-card__dl">
+            <div
+              v-for="c in bodyCols"
+              :key="c.key"
+              class="xm-data-card__row"
+              :class="c.align === 'right' ? 'is-right' : ''"
+            >
+              <dt>{{ c.label || c.key }}</dt>
+              <dd>
+                <slot :name="`cell-${c.key}`" :row="row">{{ row[c.key] ?? '—' }}</slot>
+              </dd>
+            </div>
+          </dl>
+          <footer v-if="actionCol" class="xm-data-card__actions">
+            <slot :name="`cell-${actionCol.key}`" :row="row">{{ row[actionCol.key] ?? '' }}</slot>
+          </footer>
+        </article>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -193,5 +238,132 @@ const isConsole = useIsConsole()
 
 .table-body tr:hover .sticky-col {
   background-color: #f8fafc;
+}
+
+/* ---- 市场 H5 卡片 ---- */
+.xm-data-cards {
+  display: none;
+}
+
+.xm-data-empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: #888;
+  background: #fafafa;
+  border: 1px dashed rgba(0, 0, 0, 0.1);
+  border-radius: 14px;
+}
+
+.xm-data-card {
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 14px;
+  padding: 14px 14px 12px;
+}
+
+.xm-data-card__head {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.xm-data-card__kicker {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #999;
+}
+
+.xm-data-card__title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1f1f1f;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.xm-data-card__title.is-right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.xm-data-card__dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.xm-data-card__row {
+  display: grid;
+  grid-template-columns: minmax(72px, 34%) minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: start;
+}
+
+.xm-data-card__row dt {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #888;
+  line-height: 1.45;
+}
+
+.xm-data-card__row dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f1f1f;
+  line-height: 1.45;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.xm-data-card__row.is-right dd {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.xm-data-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+/* 无按钮时不占位（slot 条件渲染为空） */
+.xm-data-card__actions:not(:has(button, a, .xm-btn, .btn-ghost, .btn-primary, .btn-secondary)) {
+  display: none;
+}
+
+.xm-data-card__actions :deep(.xm-btn),
+.xm-data-card__actions :deep(.btn-ghost),
+.xm-data-card__actions :deep(.btn-secondary),
+.xm-data-card__actions :deep(.btn-primary),
+.xm-data-card__actions :deep(button) {
+  flex: 1 1 auto;
+  min-height: 36px;
+  justify-content: center;
+}
+
+@media (max-width: 720px) {
+  .xm-data-table {
+    display: none;
+  }
+  .xm-data-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
+@media (min-width: 721px) {
+  .xm-data-cards {
+    display: none !important;
+  }
 }
 </style>

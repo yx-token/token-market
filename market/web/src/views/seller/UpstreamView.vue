@@ -428,7 +428,7 @@ function runStatusText(status: string) {
             <input v-model="mode" type="radio" value="buyback" :disabled="untested" /> 平台回收
           </label>
         </div>
-        <div v-if="mode === 'consignment'" class="mt-3 grid max-w-xl grid-cols-2 gap-3">
+        <div v-if="mode === 'consignment'" class="mt-3 grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="label" for="mult">倍率（相对官方价）</label>
             <input id="mult" v-model="mult" class="input" inputmode="decimal" :placeholder="vendor ? `${vendor.consignment_min}–${vendor.consignment_max}` : ''" />
@@ -443,7 +443,7 @@ function runStatusText(status: string) {
             <input v-model="joinPool" type="checkbox" :disabled="untested" /> 加入平台默认分组 / 保障池<span v-if="untested">（未检测不可加入）</span>
           </label>
         </div>
-        <div v-else-if="mode === 'pack'" class="mt-3 grid max-w-xl grid-cols-2 gap-3">
+        <div v-else-if="mode === 'pack'" class="mt-3 grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="label" for="face">套餐价 / 期内额度（元）</label>
             <input id="face" v-model="faceValue" class="input" inputmode="decimal" />

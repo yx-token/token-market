@@ -576,7 +576,7 @@ async function handleCcsClientSelect(clientType: CcSwitchClientType) {
       </div>
       <details class="border border-ink-200 bg-paper/60 p-3">
         <summary class="cursor-pointer text-sm font-medium text-slate-700">限制（可选）</summary>
-        <div class="mt-3 grid grid-cols-2 gap-3">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="label" for="quota">总花费上限（元）</label>
             <input id="quota" v-model="form.quota" class="input" inputmode="decimal" />
@@ -593,7 +593,7 @@ async function handleCcsClientSelect(clientType: CcSwitchClientType) {
             <label class="label" for="d7">每 7 天上限</label>
             <input id="d7" v-model="form.d7" class="input" inputmode="decimal" />
           </div>
-          <div class="col-span-2">
+          <div class="sm:col-span-2">
             <label class="label" for="ips">IP 白名单（逗号分隔，支持 CIDR）</label>
             <input id="ips" v-model="form.ips" class="input" placeholder="203.0.113.0/24, 198.51.100.7" />
           </div>

@@ -85,7 +85,7 @@ function logout() {
   <LoginModal />
   <RouterView v-if="isConsole" />
 
-  <div v-else class="xm-market flex min-h-screen flex-col" :class="{ 'is-browse': isMarketBrowse }">
+  <div v-else class="xm-market flex min-h-screen flex-col overflow-x-hidden" :class="{ 'is-browse': isMarketBrowse }">
     <MarketMasthead />
 
     <!-- 市场浏览：整页原生滚动（避免内外层交接卡顿） -->
@@ -98,7 +98,7 @@ function logout() {
     </main>
 
     <!-- 买卖中心：一体通高工作台（侧栏 + 主区同框铺满） -->
-    <div v-else class="xm-center-shell mx-auto w-full max-w-[1480px] flex-1 px-4 py-5 md:px-8 lg:px-10">
+    <div v-else class="xm-center-shell mx-auto w-full max-w-[1480px] flex-1 px-0 py-0 sm:px-4 sm:py-5 md:px-8 lg:px-10">
       <div class="xm-center-frame">
         <aside v-if="section" class="xm-center-side" aria-label="分区导航">
           <div class="xm-center-side__head">

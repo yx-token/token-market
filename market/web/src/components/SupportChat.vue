@@ -681,4 +681,27 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .sc-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+@media (max-width: 720px) {
+  .sc-root {
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  }
+  .sc-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100% !important;
+    height: min(78dvh, 640px) !important;
+    max-width: none;
+    max-height: none;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.16);
+  }
+  .sc-rz { display: none; }
+  .sc-foot {
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+}
 </style>
