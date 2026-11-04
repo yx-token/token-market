@@ -31,13 +31,15 @@ const navItems: NavItem[] = [
   { id: 'market', label: '市场', to: '/' },
   { id: 'publish', label: '发布', to: '/seller/publish', auth: true },
   { id: 'orders', label: '使用', to: '/buyer/keys', auth: true },
+  { id: 'docs', label: 'API 文档', to: '/docs' },
   { id: 'help', label: '帮助中心', to: '/#guide' },
 ]
 
 function navOn(item: NavItem) {
   if (item.id === 'market') return route.path === '/' || route.path.startsWith('/market')
   if (item.id === 'publish') return route.path.startsWith('/seller/publish')
-  if (item.id === 'orders') return route.path.startsWith('/buyer/keys')
+  if (item.id === 'orders') return route.path.startsWith('/buyer/keys') || route.path.startsWith('/buyer/client-import')
+  if (item.id === 'docs') return route.path === '/docs'
   return false
 }
 

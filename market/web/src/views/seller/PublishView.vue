@@ -96,12 +96,8 @@ function endPublishCoach() {
 }
 
 function coachPrimary() {
-  if (step.value >= PUBLISH_COACH.length - 1) {
-    endPublishCoach()
-    return
-  }
-  // 用户在真实表单上点下一步；教练文案会随 step 自动切换
-  document.querySelector<HTMLElement>('[data-guide="publish-panel"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  if (step.value >= PUBLISH_COACH.length - 1) endPublishCoach()
+  // 其余步骤：引导卡片收起并把当前面板滚到卡片上方，用户在真实表单上点下一步，文案随 step 切换
 }
 
 function coachSecondary() {
@@ -854,6 +850,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       :primary-label="coachTip.primary"
       :secondary-label="'secondary' in coachTip ? coachTip.secondary : undefined"
       :spotlight="coachTip.spotlight"
+      collapse-on-primary
       @close="endPublishCoach"
       @primary="coachPrimary"
       @secondary="coachSecondary"

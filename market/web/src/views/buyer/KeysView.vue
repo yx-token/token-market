@@ -514,6 +514,11 @@ async function handleCcsClientSelect(clientType: CcSwitchClientType) {
               :disabled="revealing === k.id || k.recoverable === false"
               @click="importToCcs(k)"
             >导入到 CCS</button>
+            <RouterLink
+              v-if="k.status === 'active' && k.recoverable !== false"
+              class="xm-btn xm-btn-ghost xm-btn-sm"
+              :to="{ path: '/buyer/client-import', query: { key: String(k.id) } }"
+            >更多客户端</RouterLink>
             <button type="button" class="xm-btn xm-btn-ghost xm-btn-sm" :disabled="revealing === k.id" @click="copyKey(k)">
               {{ keyPlain(k) ? '复制 Key' : '查看并复制' }}
             </button>

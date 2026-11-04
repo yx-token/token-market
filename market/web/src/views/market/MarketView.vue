@@ -1053,6 +1053,8 @@ watch(
           <div class="mh-help-links" role="group" aria-label="买家快捷入口">
             <button type="button" class="mh-help-link" @click="guideGoFeed">去市场选用</button>
             <button type="button" class="mh-help-link" @click="guideGo('/buyer/keys')">我的 API Key</button>
+            <button type="button" class="mh-help-link" @click="guideGo('/buyer/client-import')">导入客户端</button>
+            <button type="button" class="mh-help-link" @click="guideGo('/docs')">API 文档</button>
             <button type="button" class="mh-help-link" @click="guideGo('/buyer/wallet')">钱包充值</button>
           </div>
         </template>

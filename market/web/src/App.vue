@@ -22,6 +22,7 @@ const sections: Record<string, { title: string; items: NavItem[] }> = {
     title: '买家中心',
     items: [
       { to: '/buyer/keys', text: 'API Key' },
+      { to: '/buyer/client-import', text: '导入客户端' },
       { to: '/buyer/merchants', text: '商家清单' },
       { to: '/buyer/store-credits', text: '店铺活动包' },
       { to: '/buyer/wallet', text: '钱包' },
@@ -49,8 +50,8 @@ const isConsole = computed(() => route.path.startsWith('/admin'))
 const top = computed(() => route.path.split('/')[1] || 'market')
 const section = computed(() => (isConsole.value ? undefined : sections[top.value]))
 const isActive = (to: string) => route.path === to || route.path.startsWith(`${to}/`)
-/** 市场首页：全宽闲鱼布局，无侧栏 */
-const isMarketBrowse = computed(() => route.path === '/' || route.path.startsWith('/market'))
+/** 市场首页、API 文档：全宽布局，无侧栏 */
+const isMarketBrowse = computed(() => route.path === '/' || route.path.startsWith('/market') || route.path === '/docs')
 
 watch(
   isConsole,
