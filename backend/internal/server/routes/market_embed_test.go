@@ -127,7 +127,8 @@ func TestMarketEdgeMatcherCoversRegisteredGatewayRoutes(t *testing.T) {
 func TestMarketEdgeDispatchPreservesDirectEdgeRejection(t *testing.T) {
 	// enginehost owns a process-wide sync.Once runtime; isolate its lifecycle for repeatable tests.
 	if os.Getenv("TM_EDGE_REJECTION_TEST_CHILD") != "1" {
-		cmd := exec.Command(os.Args[0], "-test.run=^TestMarketEdgeDispatchPreservesDirectEdgeRejection$")
+		// Re-executes this test binary with a fixed -test.run pattern; no external input reaches the command.
+		cmd := exec.Command(os.Args[0], "-test.run=^TestMarketEdgeDispatchPreservesDirectEdgeRejection$") //nolint:gosec // G702: re-exec of the current test binary
 		cmd.Env = append(os.Environ(), "TM_EDGE_REJECTION_TEST_CHILD=1")
 		output, err := cmd.CombinedOutput()
 		require.NoError(t, err, "%s", output)
@@ -143,7 +144,7 @@ func TestMarketEdgeDispatchPreservesDirectEdgeRejection(t *testing.T) {
 	t.Setenv("TM_CRYPTO_KEYS", "k1:"+base64.StdEncoding.EncodeToString([]byte(strings.Repeat("e", 32))))
 	mr := miniredis.RunT(t)
 	// Use the wire format without importing market internals.
-	mr.Set(fmt.Sprintf("tm:edge:key:%x", sha256.Sum256([]byte("tm-buyer"))), `{"buyer_key_id":41,"buyer_user_id":73,"status":"active","hops":[]}`)
+	require.NoError(t, mr.Set(fmt.Sprintf("tm:edge:key:%x", sha256.Sum256([]byte("tm-buyer"))), `{"buyer_key_id":41,"buyer_user_id":73,"status":"active","hops":[]}`))
 	t.Setenv("TM_REDIS_ADDR", mr.Addr())
 	t.Setenv("TM_REDIS_PASSWORD", "")
 	t.Setenv("TM_REDIS_DB", "0")
@@ -227,7 +228,7 @@ func TestMarketEdgeDispatchInternalRequestDoesNotLoop(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
 	}), enginehost.IsEdgeRequest))
@@ -245,7 +246,7 @@ func TestMarketEdgeDispatchInternalRequestDoesNotLoop(t *testing.T) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -265,7 +266,9 @@ func TestMarketEdgeDispatchPreservesStreamingAndRequestMetadata(t *testing.T) {
 		require.True(t, ok, "WebSocket hijacking must remain available")
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "data: first\n\n")
-		w.(http.Flusher).Flush()
+		flusher, ok := w.(http.Flusher)
+		require.True(t, ok, "SSE flushing must remain available")
+		flusher.Flush()
 		select {
 		case <-release:
 		case <-r.Context().Done():
@@ -281,7 +284,7 @@ func TestMarketEdgeDispatchPreservesStreamingAndRequestMetadata(t *testing.T) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	line, err := bufio.NewReader(resp.Body).ReadString('\n')
 	require.NoError(t, err)
 	require.Equal(t, "data: first\n", line, "first event must arrive before handler completes")

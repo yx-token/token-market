@@ -418,22 +418,6 @@ func idleCatID(c *gin.Context) (int64, bool) {
 	return id, true
 }
 
-func idleCatProxy(c *gin.Context, store *idlecat.Store, disabled bool) {
-	id, ok := idleCatID(c)
-	if !ok {
-		return
-	}
-	if err := store.SetProxyDisabled(c.Request.Context(), id, disabled); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	status := "available"
-	if disabled {
-		status = "disabled"
-	}
-	response.Success(c, gin.H{"id": id, "status": status})
-}
-
 func mountMarketUpstream(admin *gin.RouterGroup) bool {
 	upstream := strings.TrimSpace(os.Getenv("MARKET_UPSTREAM_URL"))
 	if upstream == "" {

@@ -83,7 +83,7 @@ func matchesPath(path string, patterns ...string) bool {
 			if strings.HasPrefix(part, "*") {
 				return i == len(parts)-1
 			}
-			if part != segments[i] && !(strings.HasPrefix(part, ":") && segments[i] != "") {
+			if part != segments[i] && (!strings.HasPrefix(part, ":") || segments[i] == "") {
 				matched = false
 				break
 			}
