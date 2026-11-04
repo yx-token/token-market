@@ -30,14 +30,14 @@ type NavItem = { id: string; label: string; to: string; auth?: boolean }
 const navItems: NavItem[] = [
   { id: 'market', label: '市场', to: '/' },
   { id: 'publish', label: '发布', to: '/seller/publish', auth: true },
-  { id: 'orders', label: '我的订单', to: '/buyer/bills', auth: true },
+  { id: 'orders', label: '使用', to: '/buyer/keys', auth: true },
   { id: 'help', label: '帮助中心', to: '/#guide' },
 ]
 
 function navOn(item: NavItem) {
   if (item.id === 'market') return route.path === '/' || route.path.startsWith('/market')
   if (item.id === 'publish') return route.path.startsWith('/seller/publish')
-  if (item.id === 'orders') return route.path.startsWith('/buyer')
+  if (item.id === 'orders') return route.path.startsWith('/buyer/keys')
   return false
 }
 
@@ -87,6 +87,14 @@ function goPublish() {
 function goBuyer() {
   router.push('/buyer/keys')
 }
+
+function goWallet() {
+  if (!auth.loggedIn) {
+    loginModal.show({ redirect: '/buyer/wallet' })
+    return
+  }
+  void router.push('/buyer/wallet')
+}
 </script>
 
 <template>
@@ -126,20 +134,35 @@ function goBuyer() {
 
         <a v-if="auth.canConsole" class="mh-admin" href="/open-admin?to=/admin/dashboard" title="运营控制台">控制台</a>
 
-        <div v-if="auth.loggedIn" class="user-menu">
-          <button class="mh-user" type="button" aria-haspopup="menu">
-            <span class="mh-avatar" aria-hidden="true">{{ initial }}</span>
-            <span class="mh-uname">{{ displayName }}</span>
-            <svg class="user-caret" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-              <path d="M3 4.5L6 7.5L9 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+        <template v-if="auth.loggedIn">
+          <RouterLink
+            class="mh-wallet"
+            to="/buyer/wallet"
+            aria-label="我的钱包"
+            title="我的钱包"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="1.5" y="3.5" width="13" height="10" rx="2" stroke="currentColor" stroke-width="1.4" />
+              <path d="M1.5 6.5h13" stroke="currentColor" stroke-width="1.4" />
+              <circle cx="11.5" cy="10" r="1.1" fill="currentColor" />
             </svg>
-          </button>
-          <div class="user-menu-drop" role="menu">
-            <button class="user-menu-item" role="menuitem" type="button" @click="goBuyer">买家中心</button>
-            <button class="user-menu-item" role="menuitem" type="button" @click="goPublish">发布闲置</button>
-            <button class="user-menu-item" role="menuitem" type="button" @click="logout">退出登录</button>
+          </RouterLink>
+          <div class="user-menu">
+            <button class="mh-user" type="button" aria-haspopup="menu">
+              <span class="mh-avatar" aria-hidden="true">{{ initial }}</span>
+              <span class="mh-uname">{{ displayName }}</span>
+              <svg class="user-caret" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                <path d="M3 4.5L6 7.5L9 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+              </svg>
+            </button>
+            <div class="user-menu-drop" role="menu">
+              <button class="user-menu-item" role="menuitem" type="button" @click="goBuyer">买家中心</button>
+              <button class="user-menu-item" role="menuitem" type="button" @click="goWallet">我的钱包</button>
+              <button class="user-menu-item" role="menuitem" type="button" @click="goPublish">发布闲置</button>
+              <button class="user-menu-item" role="menuitem" type="button" @click="logout">退出登录</button>
+            </div>
           </div>
-        </div>
+        </template>
         <button v-else type="button" class="mh-login" @click="loginModal.show({ redirect: route.fullPath })">
           登录
         </button>

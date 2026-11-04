@@ -280,6 +280,13 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 只限制列表高度，页面其它区域不动 */
+  max-height: min(560px, 60vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  padding-bottom: 4px;
 }
 .xm-market .xm-key-card {
   background: #fff;
@@ -381,6 +388,20 @@
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 14px;
   overflow: hidden;
+}
+/* 只限制表格列表高度，表头 sticky；不改页面壳层 */
+.xm-market .card .xm-table-wrap,
+.xm-market .table-scroll-container {
+  max-height: min(560px, 60vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.xm-market .card .xm-table thead th,
+.xm-market .table-scroll-container thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fafafa;
 }
 /* 列表页外壳已有边框时，内表不再套一层 */
 .xm-market .table-scroll-container .xm-table-wrap,

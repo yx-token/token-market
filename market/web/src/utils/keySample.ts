@@ -54,7 +54,7 @@ const presets: Record<string, Preset> = {
   antigravity: claudeStyle('claude-sonnet-4-5', 'claude-', 'Antigravity 分组走 Anthropic Messages 协议，模型名与 Claude 一致。'),
   grok: openaiStyle('grok-4', 'grok-', 'Grok 走 OpenAI 兼容协议。'),
   kimi: openaiStyle('kimi-for-coding', 'kimi', 'Kimi 走 OpenAI 兼容协议，Coding Plan 用专用模型名。'),
-  zhipu: openaiStyle('glm-4.6', 'glm', '智谱走 OpenAI 兼容协议。'),
+  zhipu: openaiStyle('glm-5.2', 'glm', '智谱走 OpenAI 兼容协议。'),
   minimax: openaiStyle('MiniMax-M2', 'minimax', 'MiniMax 走 OpenAI 兼容协议。'),
   opencode_go: openaiStyle('glm-5.3', 'glm', 'OpenCode Go 走 OpenAI 兼容协议。'),
   composite: claudeStyle('claude-sonnet-4-5', 'claude-', '全模型分组按请求里的模型名路由：填 Claude 模型名走 Anthropic 协议，填 GPT 等模型名走对应协议。'),

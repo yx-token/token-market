@@ -196,6 +196,27 @@
       color: #888;
     }
     .mh-admin:hover { color: var(--ink); }
+    .mh-wallet {
+      display: inline-grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 50%;
+      cursor: pointer;
+      flex-shrink: 0;
+      line-height: 0;
+      text-decoration: none;
+      position: relative;
+      z-index: 2;
+    }
+    .mh-wallet:hover {
+      border-color: rgba(0, 0, 0, 0.14);
+      background: #fffdf0;
+    }
+    .mh-wallet svg { display: block; }
     .mh-login {
       border: none;
       background: #1f1f1f;
@@ -372,6 +393,10 @@
         overflow: hidden; clip: rect(0,0,0,0); border: 0;
       }
       .mh-admin { display: none; }
+      .mh-wallet {
+        width: 30px;
+        height: 30px;
+      }
     }
 
     .xm-market .page { width: 100%; padding: 0 0 24px; }
@@ -409,6 +434,7 @@
   background: rgba(0, 0, 0, 0.45);
   opacity: 0;
   visibility: hidden;
+  pointer-events: none;
   overflow-x: hidden;
   overflow-y: auto;
   transition: opacity 0.28s ease, visibility 0.28s;
@@ -416,6 +442,7 @@
 .xm-login-mask.is-open {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
 }
 .xm-login-wrap {
   position: relative;

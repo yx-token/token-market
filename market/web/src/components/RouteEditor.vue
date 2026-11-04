@@ -41,6 +41,13 @@ function setPool(i: number, name: string) {
   const p = props.pools.find((x) => x.name === name)
   hops.value[i] = { pool: name, platform: p?.platform ?? '' }
 }
+/** 下拉展示用；option value 仍为内部 name。 */
+function poolLabel(p: PoolItem) {
+  const title = p.market_title?.trim()
+  if (title) return title
+  const base = p.name.replace(/^tm-pool-/, '') || p.name
+  return p.platform === 'composite' ? `${base} · 平台保障池` : `${base} · 平台保障`
+}
 function move(i: number, d: number) {
   const j = i + d
   if (j < 0 || j >= hops.value.length) return
@@ -66,7 +73,7 @@ defineExpose({ error })
     <div v-if="type === 'default'">
       <select v-model="pool" class="input" aria-label="默认分组">
         <option value="" disabled>选择默认分组</option>
-        <option v-for="p in pools" :key="p.name" :value="p.name">{{ p.name }}（{{ label('platform', p.platform).text }}，{{ multiplier(p.price) }}）</option>
+        <option v-for="p in pools" :key="p.name" :value="p.name">{{ poolLabel(p) }}（{{ label('platform', p.platform).text }}，{{ multiplier(p.price) }}）</option>
       </select>
     </div>
     <div v-else class="space-y-2">
@@ -81,7 +88,7 @@ defineExpose({ error })
           </option>
         </select>
         <select v-else class="input" :value="h.pool" :aria-label="`第 ${i + 1} 跳默认分组`" @change="setPool(i, ($event.target as HTMLSelectElement).value)">
-          <option v-for="p in poolOptions()" :key="p.name" :value="p.name">默认分组 {{ p.name }}（{{ multiplier(p.price) }}）</option>
+          <option v-for="p in poolOptions()" :key="p.name" :value="p.name">默认分组 {{ poolLabel(p) }}（{{ multiplier(p.price) }}）</option>
         </select>
         <button type="button" class="btn-ghost btn-sm" :disabled="i === 0 || !!h.pool" aria-label="上移" @click="move(i, -1)">↑</button>
         <button type="button" class="btn-ghost btn-sm" :disabled="i >= hops.length - 1 || !!hops[i + 1]?.pool || !!h.pool" aria-label="下移" @click="move(i, 1)">↓</button>

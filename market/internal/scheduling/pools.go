@@ -223,11 +223,28 @@ func (s *PoolService) ensureGroup(ctx context.Context, id int64) (int64, error) 
 	return gid, err
 }
 
-// Update 修改默认分组售价、毛利、启用状态，同步到 sub2api 分组。
+// Update 修改默认分组名称、售价、毛利、启用状态，同步到 sub2api 分组。
 func (s *PoolService) Update(ctx context.Context, id int64, in PoolInput) (*Pool, error) {
 	p, err := GetPool(ctx, s.DB, id)
 	if err != nil {
 		return nil, err
+	}
+	nameChanged := false
+	if name := strings.TrimSpace(in.Name); name != "" && name != p.Name {
+		if !strings.HasPrefix(name, "tm-pool-") {
+			return nil, httpx.BadRequest("INVALID_NAME", "pool name must start with tm-pool-")
+		}
+		// 新名若正被软删池占用且引擎分组未清完，按名称建/改会撞上旧组。
+		var deleting bool
+		if err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pools p WHERE p.name = $1 AND p.deleted_at IS NOT NULL AND p.sub2api_group_id IS NOT NULL
+			AND NOT EXISTS (SELECT 1 FROM sub2api_ops o WHERE o.idempotency_key = 'pool-delete-' || p.id AND o.status = 'done'))`, name).Scan(&deleting); err != nil {
+			return nil, err
+		}
+		if deleting {
+			return nil, httpx.Conflict("POOL_GROUP_DELETING", "a deleted pool with this name is still being removed from sub2api, retry shortly")
+		}
+		p.Name = name
+		nameChanged = true
 	}
 	if in.SellMultiplier != nil {
 		if *in.SellMultiplier <= 0 {
@@ -267,18 +284,27 @@ func (s *PoolService) Update(ctx context.Context, id int64, in PoolInput) (*Pool
 	if p.MinMargin < 0 || p.SafetyBuffer < 0 || p.MinMargin+p.SafetyBuffer >= 1 {
 		return nil, httpx.BadRequest("INVALID_MARGIN", "min_margin and safety_buffer must be >= 0 and sum to less than 1")
 	}
-	if _, err := s.DB.Exec(ctx, `UPDATE pools SET sell_multiplier = $2, min_margin = $3, safety_buffer = $4, enabled = $5, market_published = $6, market_title = $7, market_description = $8, updated_at = now() WHERE id = $1`,
-		p.ID, p.SellMultiplier, p.MinMargin, p.SafetyBuffer, p.Enabled, p.MarketPublished, p.MarketTitle, p.MarketDescription); err != nil {
+	_, err = s.DB.Exec(ctx, `UPDATE pools SET name = $2, sell_multiplier = $3, min_margin = $4, safety_buffer = $5, enabled = $6, market_published = $7, market_title = $8, market_description = $9, updated_at = now() WHERE id = $1`,
+		p.ID, p.Name, p.SellMultiplier, p.MinMargin, p.SafetyBuffer, p.Enabled, p.MarketPublished, p.MarketTitle, p.MarketDescription)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return nil, httpx.Conflict("POOL_EXISTS", "pool name already exists")
+	}
+	if err != nil {
 		return nil, err
 	}
 	if p.Sub2APIGroupID != nil {
 		rate, margin, buffer, on := p.SellMultiplier, p.MinMargin, p.SafetyBuffer, engineProfitControlSupported(p.Platform)
+		inGroup := adminclient.UpdateGroupInput{
+			RateMultiplier: &rate, ProfitControlEnabled: &on, ProfitMinMargin: &margin, ProfitSafetyBuffer: &buffer,
+		}
+		if nameChanged {
+			inGroup.Name = p.Name
+		}
 		if _, err := ops.Enqueue(ctx, s.DB, ops.NewOp{
-			Type:   opshandlers.TypeGroupUpdate,
-			Target: fmt.Sprintf("group:%d", *p.Sub2APIGroupID),
-			Payload: opshandlers.GroupUpdatePayload{GroupID: *p.Sub2APIGroupID, Input: adminclient.UpdateGroupInput{
-				RateMultiplier: &rate, ProfitControlEnabled: &on, ProfitMinMargin: &margin, ProfitSafetyBuffer: &buffer,
-			}},
+			Type:           opshandlers.TypeGroupUpdate,
+			Target:         fmt.Sprintf("group:%d", *p.Sub2APIGroupID),
+			Payload:        opshandlers.GroupUpdatePayload{GroupID: *p.Sub2APIGroupID, Input: inGroup},
 			IdempotencyKey: fmt.Sprintf("pool-update-%d-%d", p.ID, time.Now().UnixNano()),
 		}); err != nil {
 			return nil, err

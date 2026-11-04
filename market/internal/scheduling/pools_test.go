@@ -44,6 +44,15 @@ func (db *poolDBStub) Exec(_ context.Context, query string, args ...any) (pgconn
 	case strings.Contains(query, "UPDATE pools SET sub2api_group_id"):
 		groupID := args[1].(int64)
 		db.pool.Sub2APIGroupID = &groupID
+	case strings.Contains(query, "UPDATE pools SET name ="):
+		db.pool.Name = args[1].(string)
+		db.pool.SellMultiplier = args[2].(float64)
+		db.pool.MinMargin = args[3].(float64)
+		db.pool.SafetyBuffer = args[4].(float64)
+		db.pool.Enabled = args[5].(bool)
+		db.pool.MarketPublished = args[6].(bool)
+		db.pool.MarketTitle = args[7].(string)
+		db.pool.MarketDescription = args[8].(string)
 	case strings.Contains(query, "UPDATE pools SET deleted_at"):
 		if db.deleted || db.pool.Enabled {
 			return pgconn.NewCommandTag("UPDATE 0"), nil
@@ -153,7 +162,39 @@ func TestPoolUpdateUsesEngineSupportedProfitControl(t *testing.T) {
 			if got != want {
 				t.Errorf("profit_control_enabled = %v, want %v", got, want)
 			}
+			if db.updatePayload[0].Input.Name != "" {
+				t.Errorf("Name = %q, want empty when name unchanged", db.updatePayload[0].Input.Name)
+			}
 		})
+	}
+}
+
+func TestPoolUpdateRenamesAndSyncsGroupName(t *testing.T) {
+	groupID := int64(200)
+	db := &poolDBStub{pool: Pool{ID: 1, Name: "tm-pool-old", Platform: "openai", Sub2APIGroupID: &groupID, SellMultiplier: 0.6, MinMargin: 0.1, SafetyBuffer: 0.02, Enabled: true}}
+	svc := &PoolService{DB: db, Prov: &poolGroupProvisionerStub{}}
+	_, err := svc.Update(context.Background(), 1, PoolInput{Name: "tm-pool-new"})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if db.pool.Name != "tm-pool-new" {
+		t.Fatalf("pool name = %q, want tm-pool-new", db.pool.Name)
+	}
+	if len(db.updatePayload) != 1 {
+		t.Fatalf("group update payloads = %d, want 1", len(db.updatePayload))
+	}
+	if got := db.updatePayload[0].Input.Name; got != "tm-pool-new" {
+		t.Errorf("synced Name = %q, want tm-pool-new", got)
+	}
+}
+
+func TestPoolUpdateRejectsInvalidRename(t *testing.T) {
+	groupID := int64(200)
+	db := &poolDBStub{pool: Pool{ID: 1, Name: "tm-pool-old", Platform: "openai", Sub2APIGroupID: &groupID, SellMultiplier: 0.6, Enabled: true}}
+	svc := &PoolService{DB: db, Prov: &poolGroupProvisionerStub{}}
+	_, err := svc.Update(context.Background(), 1, PoolInput{Name: "gpt-pool"})
+	if httpStatus(err) != 400 {
+		t.Fatalf("Update(invalid name) error = %v, want 400", err)
 	}
 }
 

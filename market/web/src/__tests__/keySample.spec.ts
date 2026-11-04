@@ -27,11 +27,19 @@ describe('sampleRequest', () => {
     expect(s.code).toContain(`x-goog-api-key: ${key}`)
   })
 
+  it('gives an OpenAI-style example for Zhipu groups with a current GLM model', () => {
+    const s = sampleRequest('zhipu', base, key)
+    expect(s.code).toContain(`${base}/v1/chat/completions`)
+    expect(s.code).toContain(`Authorization: Bearer ${key}`)
+    expect(s.code).toContain('"model":"glm-5.2"')
+  })
+
   it('prefers a model of the same platform from the market price list', () => {
-    const models = ['claude-opus-4-1', 'gpt-5.1', 'gemini-2.5-pro']
+    const models = ['claude-opus-4-1', 'gpt-5.1', 'gemini-2.5-pro', 'glm-5.3']
     expect(sampleRequest('openai', base, key, models).code).toContain('"model":"gpt-5.1"')
     expect(sampleRequest('anthropic', base, key, models).code).toContain('"model":"claude-opus-4-1"')
     expect(sampleRequest('gemini', base, key, models).code).toContain('models/gemini-2.5-pro:generateContent')
+    expect(sampleRequest('zhipu', base, key, models).code).toContain('"model":"glm-5.3"')
   })
 
   it('keeps the Anthropic example for the composite group', () => {

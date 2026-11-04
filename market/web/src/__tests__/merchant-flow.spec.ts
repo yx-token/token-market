@@ -194,7 +194,7 @@ describe('买家商家清单与 Key 调用顺序', () => {
     const hops = wrapper.findAll('.xm-hop')
     expect(hops[0]!.text()).toContain('卖家挂单 #11')
     expect(hops[0]!.text()).toContain('已跳过')
-    expect(hops[1]!.text()).toContain('默认分组 tm-pool-all')
+    expect(hops[1]!.text()).toContain('默认分组 all · 平台保障池')
     expect(hops[1]!.text()).not.toContain('已跳过')
     wrapper.unmount()
   })

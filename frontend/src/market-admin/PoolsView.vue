@@ -255,8 +255,13 @@ async function run(label: string, fn: () => Promise<unknown>) {
 }
 
 async function save() {
+  const name = form.name.trim()
+  if (!name.startsWith('tm-pool-') || name === 'tm-pool-') {
+    error.value = '名称必须以 tm-pool- 开头，且不能为空'
+    return
+  }
   const body = {
-    name: form.name,
+    name,
     platform: form.platform,
     sell_multiplier: Number(form.sell),
     min_margin: Number(form.margin),
@@ -569,8 +574,8 @@ onMounted(load)
       <div class="dialog-form">
         <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
         <label class="y-field">
-          <span>名称（sub2api 分组名，以 tm-pool- 开头）</span>
-          <input v-model="form.name" class="input w-full" :disabled="!!editing" />
+          <span>名称（引擎分组名，以 tm-pool- 开头；改名会同步到分组管理）</span>
+          <input v-model="form.name" class="input w-full" />
         </label>
         <label class="y-field">
           <span>平台</span>

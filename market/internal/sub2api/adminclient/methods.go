@@ -150,6 +150,7 @@ func (c *Client) CreateGroup(ctx context.Context, in CreateGroupInput) (*Group, 
 }
 
 type UpdateGroupInput struct {
+	Name                 string   `json:"name,omitempty"`
 	Description          *string  `json:"description,omitempty"`
 	RateMultiplier       *float64 `json:"rate_multiplier,omitempty"`
 	IsExclusive          *bool    `json:"is_exclusive,omitempty"`

@@ -301,8 +301,17 @@ async function remove(k: BuyerKey) {
   if (await run(() => buyer.deleteKey(k.id), '已删除')) keys.load()
 }
 
+/** 买家侧展示用：优先市场标题，否则去掉 tm-pool- 前缀；路由仍用内部 name。 */
+function poolLabel(name: string) {
+  const p = pools.value.find((x) => x.name === name)
+  const title = p?.market_title?.trim()
+  if (title) return title
+  const base = name.replace(/^tm-pool-/, '') || name
+  return p?.platform === 'composite' ? `${base} · 平台保障池` : `${base} · 平台保障`
+}
+
 function hopText(h: { listing_id?: number; pool?: string }) {
-  return h.pool ? `默认分组 ${h.pool}` : `卖家挂单 #${h.listing_id}`
+  return h.pool ? `默认分组 ${poolLabel(h.pool)}` : `卖家挂单 #${h.listing_id}`
 }
 
 function packForKey(keyId: number): QuotaPack | undefined {
