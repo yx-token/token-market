@@ -198,8 +198,7 @@ func (s *Server) marketConfig(w http.ResponseWriter, r *http.Request) error {
 		"edge_url": s.EdgeURL, "commission_rate": st.CommissionRate, "freeze_days": st.FreezeDays,
 		"freeze_hours": st.FreezeHours, "credit_usd_to_balance_rate": st.CreditUSDToBalanceRate,
 		"withdraw_min": st.WithdrawMin, "max_hops": 5,
-		"require_seller_proxy": st.RequireSellerProxy,
-		"payment_channels":     channels, "recharge_min": paymentConfig.MinAmount, "recharge_max": paymentConfig.MaxAmount,
+		"payment_channels": channels, "recharge_min": paymentConfig.MinAmount, "recharge_max": paymentConfig.MaxAmount,
 		"price_models": st.PriceModels,
 	})
 }
@@ -216,11 +215,12 @@ func (s *Server) marketPrices(w http.ResponseWriter, r *http.Request) error {
 }
 
 type vendorView struct {
-	Platform       string   `json:"platform"`
-	AuthTypes      []string `json:"auth_types"`
-	ConsignmentMin float64  `json:"consignment_min"`
-	ConsignmentMax float64  `json:"consignment_max"`
-	SelfReserve    bool     `json:"self_reserve_supported"`
+	Platform           string   `json:"platform"`
+	AuthTypes          []string `json:"auth_types"`
+	RequireSellerProxy bool     `json:"require_seller_proxy"`
+	ConsignmentMin     float64  `json:"consignment_min"`
+	ConsignmentMax     float64  `json:"consignment_max"`
+	SelfReserve        bool     `json:"self_reserve_supported"`
 }
 
 func (s *Server) marketVendors(w http.ResponseWriter, r *http.Request) error {
@@ -231,7 +231,7 @@ func (s *Server) marketVendors(w http.ResponseWriter, r *http.Request) error {
 	var out []vendorView
 	for _, v := range vs {
 		if v.Enabled {
-			out = append(out, vendorView{v.Platform, v.AuthTypes, v.ConsignmentMin, v.ConsignmentMax, listing.SupportsSelfReserve(v.Platform)})
+			out = append(out, vendorView{v.Platform, v.AuthTypes, v.RequireSellerProxy, v.ConsignmentMin, v.ConsignmentMax, listing.SupportsSelfReserve(v.Platform)})
 		}
 	}
 	return ok(w, out)

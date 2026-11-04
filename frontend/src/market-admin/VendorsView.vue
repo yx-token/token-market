@@ -26,6 +26,7 @@ interface VendorConfig {
   appraisal_base?: Record<string, number>
   default_concurrency: number
   extra_limits: Record<string, unknown>
+  require_seller_proxy: boolean
 }
 
 const PLATFORM_LABEL: Record<string, string> = {
@@ -76,6 +77,7 @@ const msg = ref('')
 const editing = ref<VendorConfig | null>(null)
 const form = reactive({
   enabled: false,
+  requireSellerProxy: true,
   authTypes: [] as string[],
   min: '',
   max: '',
@@ -195,6 +197,7 @@ function openEdit(v: VendorConfig) {
   editing.value = v
   Object.assign(form, {
     enabled: v.enabled,
+    requireSellerProxy: v.require_seller_proxy,
     authTypes: [...(v.auth_types || [])],
     min: String(v.consignment_min),
     max: String(v.consignment_max),
@@ -242,6 +245,7 @@ async function save() {
   }
   const body = {
     enabled: form.enabled,
+    require_seller_proxy: form.requireSellerProxy,
     auth_types: form.authTypes,
     consignment_min: Number(form.min),
     consignment_max: Number(form.max),
@@ -264,7 +268,7 @@ onMounted(load)
       <template #title>
         <div class="page-heading">
           <h2 class="y-title">厂商</h2>
-          <p class="y-page-desc">开放接入、寄售倍率区间、回收/估价基准与默认并发</p>
+          <p class="y-page-desc">开放接入、代理要求、寄售倍率区间、回收/估价基准与默认并发</p>
         </div>
       </template>
 
@@ -415,6 +419,7 @@ onMounted(load)
       <div class="dialog-form">
         <p v-if="error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
         <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 开放卖家接入</label>
+        <label class="y-check"><input v-model="form.requireSellerProxy" type="checkbox" /> 必须使用卖家自己的代理</label>
         <div class="y-field">
           <span>开放的接入方式</span>
           <div class="auth-list">

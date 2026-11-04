@@ -16,6 +16,14 @@ func (s *Server) listSellerProxies(w http.ResponseWriter, r *http.Request) error
 	return ok(w, ps)
 }
 
+func (s *Server) sharedProxyAvailability(w http.ResponseWriter, r *http.Request) error {
+	available, count, err := s.Proxies.SharedProxyAvailability(r.Context())
+	if err != nil {
+		return err
+	}
+	return ok(w, map[string]any{"available": available, "count": count})
+}
+
 func (s *Server) createSellerProxy(w http.ResponseWriter, r *http.Request) error {
 	var in listing.CreateProxyInput
 	if err := httpx.Decode(r, &in); err != nil {

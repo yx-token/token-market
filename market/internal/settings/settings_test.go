@@ -36,6 +36,28 @@ func TestProbeTimeoutValidation(t *testing.T) {
 	}
 }
 
+func TestLegacyGlobalProxyPolicyIsRemoved(t *testing.T) {
+	db := &settingsDB{raw: []byte(`{"require_seller_proxy":true,"withdraw_min":12}`)}
+	value, err := Update(context.Background(), db, json.RawMessage(`{"require_seller_proxy":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := fields["require_seller_proxy"]; exists {
+		t.Fatalf("legacy proxy policy remains public: %s", raw)
+	}
+	if value.WithdrawMin != 12 {
+		t.Fatalf("unrelated setting lost: %+v", value)
+	}
+}
+
 func TestFreezeSettingsCompatibility(t *testing.T) {
 	for _, tc := range []struct {
 		name, stored, patch string

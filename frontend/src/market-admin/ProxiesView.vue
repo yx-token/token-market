@@ -19,6 +19,7 @@ defineOptions({ name: 'MarketAdminProxies' })
 interface ProxyRow {
   id: number
   seller_id?: number | null
+  is_shared?: boolean
   seller_email?: string
   name: string
   protocol: string
@@ -124,6 +125,7 @@ const form = reactive({
   username: '',
   password: '',
   region: '',
+  isShared: false,
 })
 
 const columns: Column[] = [
@@ -131,6 +133,7 @@ const columns: Column[] = [
   { key: 'name', label: '名称', class: 'col-name' },
   { key: 'endpoint', label: '地址', class: 'col-endpoint' },
   { key: 'owner', label: '来源/卖家', class: 'col-owner' },
+  { key: 'sharing', label: '共享', class: 'col-sharing' },
   { key: 'region', label: '地区', class: 'col-region' },
   { key: 'connection', label: '连接', class: 'col-conn' },
   { key: 'quality', label: '质量', class: 'col-quality' },
@@ -338,6 +341,7 @@ function openCreate() {
     username: '',
     password: '',
     region: '',
+    isShared: false,
   })
   show.value = true
 }
@@ -356,6 +360,7 @@ async function save() {
     username: form.username.trim() || undefined,
     password: form.password || undefined,
     region: form.region.trim() || undefined,
+    is_shared: form.isShared,
   }
   if (await run('代理已添加', () => marketSend('POST', `${MARKET_API_PREFIX}/proxies`, body))) {
     closeModal()
@@ -373,6 +378,13 @@ function toggle(p: ProxyRow) {
 function sync(p: ProxyRow) {
   return run(`代理 ${p.name} 连接配置已就绪`, () =>
     marketSend('POST', `${MARKET_API_PREFIX}/proxies/${p.id}/sync`),
+  )
+}
+
+function toggleSharing(p: ProxyRow) {
+  if (p.seller_id != null) return
+  return run(`代理 ${p.name} 已${p.is_shared ? '设为独占' : '设为共享'}`, () =>
+    marketSend('PUT', `${MARKET_API_PREFIX}/proxies/${p.id}/sharing`, { is_shared: !p.is_shared }),
   )
 }
 
@@ -399,7 +411,7 @@ onMounted(load)
       <template #title>
         <div class="page-heading">
           <h2 class="y-title">卖家代理</h2>
-          <p class="y-page-desc">卖家自有代理可绑定多个账号，平台代理按账号独占；全部绑定账号移除完成后释放</p>
+          <p class="y-page-desc">共享平台代理和卖家自有代理可绑定多个账号，独占平台代理只绑定一个账号；全部解绑后才可停用</p>
         </div>
       </template>
 
@@ -559,6 +571,10 @@ onMounted(load)
           <template #cell-owner="{ row }">
             <span class="data-table-cell-truncate" :title="ownerLabel(row)">{{ ownerLabel(row) }}</span>
           </template>
+          <template #cell-sharing="{ row }">
+            <span v-if="row.seller_id != null">不适用</span>
+            <span v-else>{{ row.is_shared ? '共享' : '独占' }}</span>
+          </template>
           <template #cell-region="{ row }">
             <div>{{ row.region || '—' }}</div>
             <div v-if="exitIp(row)" class="row-sub mono-cell">{{ exitIp(row) }}</div>
@@ -615,6 +631,15 @@ onMounted(load)
                 @click="sync(row)"
               >
                 重试连接
+              </button>
+              <button
+                v-if="row.seller_id == null"
+                type="button"
+                class="y-link"
+                :disabled="busy"
+                @click="toggleSharing(row)"
+              >
+                {{ row.is_shared ? '设为独占' : '设为共享' }}
               </button>
               <button
                 type="button"
@@ -702,6 +727,7 @@ onMounted(load)
             <input v-model="form.password" class="input w-full" type="password" autocomplete="new-password" />
           </label>
         </div>
+        <label class="y-check"><input v-model="form.isShared" type="checkbox" /> 作为平台共享代理参与自动分配</label>
       </div>
       <template #footer>
         <button type="button" class="btn btn-secondary" @click="closeModal">取消</button>

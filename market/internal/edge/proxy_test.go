@@ -3,6 +3,7 @@ package edge
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -220,6 +221,92 @@ func TestKeyChecks(t *testing.T) {
 	}
 	if len(e.gateway.seenKeys) != 0 {
 		t.Fatalf("rejected requests must not reach sub2api: %v", e.gateway.seenKeys)
+	}
+}
+
+func TestIsBuyerGatewayRequestMatchesGatewaySurfaceOnlyForTMKeys(t *testing.T) {
+	tests := []struct {
+		method string
+		path   string
+		header string
+		query  string
+		want   bool
+	}{
+		{method: http.MethodPost, path: "/v1/messages", header: "Bearer tm-buyer", want: true},
+		{method: http.MethodPost, path: "/v1/chat/completions", header: "Bearer tm-buyer", want: true},
+		{method: http.MethodPost, path: "/v1beta/models/gemini:generateContent", query: "?key=tm-buyer", want: true},
+		{method: http.MethodPost, path: "/v1/messages", header: "Bearer sk-sub2api", want: false},
+		{method: http.MethodGet, path: "/api/v1/admin/market/pools", header: "Bearer tm-buyer", want: false},
+		{method: http.MethodGet, path: "/v1/usage", header: "Bearer tm-buyer", want: true},
+		{method: http.MethodPost, path: "/v1beta/models-evil", header: "Bearer tm-buyer", want: false},
+		{method: http.MethodPost, path: "/api/v3/contents/generations/tasks-evil", header: "Bearer tm-buyer", want: false},
+		{method: http.MethodGet, path: "/v1/sub2api/billing", header: "Bearer tm-buyer", want: false},
+		{method: http.MethodDelete, path: "/v1/messages", header: "Bearer tm-buyer", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			r := httptest.NewRequest(tc.method, tc.path+tc.query, nil)
+			if tc.header != "" {
+				r.Header.Set("Authorization", tc.header)
+			}
+			if got := IsBuyerGatewayRequest(r); got != tc.want {
+				t.Fatalf("IsBuyerGatewayRequest = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	for _, header := range []string{"x-api-key", "x-goog-api-key"} {
+		r := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+		r.Header.Set(header, "tm-buyer")
+		if !IsBuyerGatewayRequest(r) {
+			t.Errorf("buyer key in %s must reach Edge", header)
+		}
+	}
+}
+
+func TestBillablePathPreservesWebSocketAndCountTokensSemantics(t *testing.T) {
+	tests := []struct {
+		method string
+		path   string
+		want   bool
+	}{
+		{http.MethodGet, "/v1/responses", true},
+		{http.MethodGet, "/v1/realtime", true},
+		{http.MethodGet, "/v1/models", false},
+		{http.MethodGet, "/v1/models/gpt-5", false},
+		{http.MethodGet, "/v1beta/models/gemini", false},
+		{http.MethodPost, "/v1/messages/count_tokens", false},
+		{http.MethodPost, "/v1beta/models/gemini:countTokens", false},
+		{http.MethodPost, "/v1/messages", true},
+		{http.MethodPost, "/v1/responses/input_tokens", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			if got := billablePath(tc.method, tc.path); got != tc.want {
+				t.Fatalf("billablePath = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEdgeBodyLimitsReturn413(t *testing.T) {
+	e := newEnv(t)
+	e.put(t, "tm-buyer", edgecfg.KeyConfig{BuyerKeyID: 1, Status: "active"})
+	for _, hostLimit := range []bool{false, true} {
+		t.Run(fmt.Sprint("host-limit-", hostLimit), func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(strings.Repeat("a", 17)))
+			req.Header.Set("x-api-key", "tm-buyer")
+			rec := httptest.NewRecorder()
+			if hostLimit {
+				e.srv.cfg.MaxBodyBytes = 32
+				req.Body = http.MaxBytesReader(rec, req.Body, 16)
+			} else {
+				e.srv.cfg.MaxBodyBytes = 16
+			}
+			e.srv.ServeHTTP(rec, req)
+			if rec.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 

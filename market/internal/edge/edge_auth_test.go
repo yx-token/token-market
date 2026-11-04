@@ -48,3 +48,21 @@ func serve(e *testEnv, req *http.Request) *httptest.ResponseRecorder {
 	e.srv.ServeHTTP(rec, req)
 	return rec
 }
+
+func TestEmbeddedDockerProxyClientIP(t *testing.T) {
+	e := newEnv(t)
+	e.gateway.byKey["tmik_a"] = ok(`{}`)
+	e.put(t, "tm-good", edgecfg.KeyConfig{BuyerKeyID: 1, Status: "active", IPWhitelist: []string{"203.0.113.10"}, Hops: []edgecfg.Hop{e.hop(t, 1, 1, "tmik_a")}})
+	e.srv.ips = clientip.New([]string{"172.31.250.1/32"})
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{}`))
+	req.RemoteAddr = "172.31.250.1:49152"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	req.Header.Set("x-api-key", "tm-good")
+	if rec := serve(e, req); rec.Code != http.StatusOK {
+		t.Fatalf("nginx forwarded IP through docker proxy must pass buyer whitelist: %d %s", rec.Code, rec.Body.String())
+	}
+	req.RemoteAddr = "203.0.113.99:49152"
+	if rec := serve(e, req); rec.Code != http.StatusForbidden {
+		t.Fatalf("untrusted peer must not use forwarded buyer IP: %d", rec.Code)
+	}
+}

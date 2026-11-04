@@ -15,6 +15,7 @@ scripts/dev.sh up
 浏览器只开：`http://127.0.0.1:8080`
 
 如果默认端口被占用，可通过 `DEV_PG_PORT`、`DEV_REDIS_PORT`、`DEV_ENGINE_PORT` 和对应 `DEV_*_CONTAINER` 环境变量隔离。
+站点、Edge 与第三方替身端口分别可通过 `DEV_SITE_PORT`、`DEV_EDGE_PORT`、`DEV_THIRDPARTY_PORT` 覆盖，默认仍为 8080、8090、18082；多套环境同时运行时也要指定独立的 `DEV_DATA_DIR`。
 
 ## 账号
 

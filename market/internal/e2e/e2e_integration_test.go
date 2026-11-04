@@ -129,8 +129,11 @@ func setupWithDatabaseMode(t *testing.T, fromScratch bool, opts ...func(cfg *con
 		t.Fatal(err)
 	}
 	t.Cleanup(a.Close)
-	// 原有端到端场景验证平台代理分配；卖家代理专项测试会恢复默认的必填策略。
-	if _, err := settings.Update(ctx, a.DB, json.RawMessage(`{"require_seller_proxy":false}`)); err != nil {
+	// 通用端到端场景允许直连；卖家代理专项测试单独启用厂商的必选策略。
+	if _, err := a.DB.Exec(ctx, `UPDATE vendor_configs SET require_seller_proxy = false`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := settings.Update(ctx, a.DB, json.RawMessage(`{"allow_no_proxy":true}`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.Accounts.EnsureBootstrapAdmin(ctx, cfg.Auth.BootstrapAdminEmail, cfg.Auth.BootstrapAdminPassword); err != nil {
@@ -242,10 +245,9 @@ func (e *env) passOnboarding(upstreamID int64) {
 	}
 }
 
-// ingestAll 把时钟拨到安全延迟之后，入账全部已有用量（例如上架检测产生的探测流量）。
+// ingestAll 入账全部已有用量（例如上架检测产生的探测流量）。
 func (e *env) ingestAll() {
 	e.t.Helper()
-	e.app.Ingester.Now = func() time.Time { return time.Now().Add(5 * time.Minute) }
 	for {
 		_, more, err := e.app.Ingester.RunOnce(e.ctx)
 		if err != nil {

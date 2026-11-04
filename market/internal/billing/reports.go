@@ -38,7 +38,7 @@ type UsageFilter struct {
 	From, To  time.Time
 }
 
-// BuyerUsage 返回买家的用量明细（来自已入账的 sub2api 用量，几分钟延迟）。
+// BuyerUsage 返回买家的用量明细（来自已入账的 sub2api 用量）。
 func BuyerUsage(ctx context.Context, db DB, userID int64, f UsageFilter, limit, offset int) ([]UsageItem, error) {
 	if f.To.IsZero() {
 		f.To = time.Now().Add(time.Hour)

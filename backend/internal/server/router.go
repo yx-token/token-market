@@ -12,6 +12,7 @@ import (
 	"github.com/yx-token/token-market/internal/server/routes"
 	"github.com/yx-token/token-market/internal/service"
 	"github.com/yx-token/token-market/internal/web"
+	"github.com/yx-token/token-market/market/enginehost"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -37,6 +38,8 @@ func SetupRouter(
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) *gin.Engine {
+	// MarketEdgeDispatch constructs the shared runtime while routes are built.
+	enginehost.SetHostGateway(cfg.Server.Host, cfg.Server.Port)
 	middleware2.SetIngressRejectRecorder(opsService)
 	// 缓存 iframe 页面的 origin 列表，用于动态注入 CSP frame-src
 	var cachedFrameOrigins atomic.Pointer[[]string]
@@ -69,6 +72,10 @@ func SetupRouter(
 		return nil
 	}))
 	r.Use(middleware2.ServerTiming(cfg.Server.EnableServerTiming))
+	if enginehost.EdgeEnabled() {
+		// Must run before gateway route auth so market tm- keys reach the shared Edge.
+		r.Use(routes.MarketEdgeDispatch())
+	}
 
 	// Serve embedded frontend with settings injection if available
 	if web.HasEmbeddedFrontend() {

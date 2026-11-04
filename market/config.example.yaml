@@ -47,7 +47,7 @@ worker:
   ops_poll_interval: 1s
   compat_guard_interval: 5m
   scheduler_interval: 30s
-  ingest_interval: 15s
+  ingest_interval: 1s
   quality_interval: 30s
   probe_concurrency: 4
   reconcile_interval: 10m               # Edge 尝试日志与 usage_logs 逐条对账

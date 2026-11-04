@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// 接入上游：选择接入方式 → 完成账号接入 → 选择挂售模型 → 可挂单，检测由卖家主动发起。
+// 接入上游：选择厂商与方式 → 选择代理 → 完成账号接入 → 选择挂售模型 → 可挂单。
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { market, seller } from '@/api'
+import { seller } from '@/api'
 import type { Proxy, Upstream, VendorView } from '@/api/types'
 import { useAction } from '@/composables/useAsync'
 import ModalDialog from '@/components/ModalDialog.vue'
@@ -21,7 +21,7 @@ const router = useRouter()
 const { busy, run } = useAction()
 const toast = useToast()
 
-const step = ref<'choose' | 'authorize' | 'models' | 'done'>('choose')
+const step = ref<'vendor' | 'proxy' | 'authorize' | 'models' | 'done'>('vendor')
 const selectedModels = ref<string[]>([])
 const modelsValid = ref(false)
 const platform = ref('')
@@ -73,7 +73,8 @@ const team = ref({ organization: '', project: '' })
 const proxies = ref<Proxy[]>([])
 // 'import' 表示暂不绑定代理，导入账号时使用导出文件中的代理。
 const proxyID = ref<number | '' | 'import'>('')
-const requireSellerProxy = ref(true)
+const requireSellerProxy = computed(() => vendor.value?.require_seller_proxy ?? true)
+const sharedProxy = ref<{ available: boolean; count: number }>({ available: false, count: 0 })
 const loadingProxies = ref(false)
 const proxyLoadError = ref(false)
 const selectableProxies = computed(() => proxies.value.filter(canSelectSellerProxy))
@@ -85,9 +86,9 @@ async function loadProxyChoices() {
   loadingProxies.value = true
   proxyLoadError.value = false
   try {
-    const [list, config] = await Promise.all([seller.proxies(), market.config()])
+    const [list, shared] = await Promise.all([seller.proxies(), seller.sharedProxy()])
     proxies.value = list ?? []
-    requireSellerProxy.value = config.require_seller_proxy
+    sharedProxy.value = shared ?? { available: false, count: 0 }
     if (proxyID.value !== 'import' && !availableProxies.value.some((p) => p.id === proxyID.value)) proxyID.value = ''
   } catch (e) {
     proxyLoadError.value = true
@@ -125,19 +126,32 @@ watch(open, (v) => {
     upstream.value = null
     platform.value = props.vendors[0]?.platform ?? ''
     authType.value = props.vendors[0]?.auth_types[0] ?? ''
-    step.value = 'choose'
+    step.value = 'vendor'
   }
 })
 
 // 换厂商时选中它的第一种接入方式
 function pick(v: VendorView) {
+  if (platform.value !== v.platform) proxyID.value = ''
   platform.value = v.platform
   authType.value = v.auth_types[0] ?? ''
+}
+
+function continueToProxy() {
+  if (!vendor.value || !authType.value) {
+    toast.error('请选择模型厂商与授权方式')
+    return
+  }
+  step.value = 'proxy'
 }
 
 async function create() {
   const fromImport = proxyID.value === 'import'
   const selected = typeof proxyID.value === 'number' ? proxyID.value : undefined
+  if (requireSellerProxy.value && selected == null && !fromImport) {
+    toast.error('此厂商必须使用你自己的连通代理')
+    return
+  }
   const u = await run(() => fromImport
     ? seller.createUpstream(platform.value, authType.value, undefined, true)
     : seller.createUpstream(platform.value, authType.value, selected))
@@ -206,8 +220,8 @@ async function startVerification() {
 
 <template>
   <ModalDialog v-model:open="open" title="接入上游" wide>
-    <template v-if="step === 'choose'">
-      <p class="text-sm text-ink-500">只接受官方订阅账号（OAuth 授权）与国产 Coding Plan 订阅 key。卖家自有代理可绑定多个账号，平台代理按账号独占，账号凭证由底层网关保管。</p>
+    <template v-if="step === 'vendor'">
+      <p class="text-sm text-ink-500">选择要接入的模型厂商与授权方式。</p>
       <div v-if="vendors.length === 0" class="callout callout-warn">平台暂未开放任何厂商接入。</div>
       <div>
         <div class="label">厂商</div>
@@ -234,18 +248,25 @@ async function startVerification() {
           </label>
         </div>
       </div>
+      <p v-if="vendor" class="hint">{{ requireSellerProxy ? '此厂商必须使用你自己的连通代理。' : '此厂商优先使用平台共享代理；没有可用共享代理时会直连。' }}</p>
+    </template>
+
+    <template v-else-if="step === 'proxy'">
+      <p class="text-sm text-ink-500">{{ label('platform', platform).text }} · {{ authTypeText(platform, authType) }}</p>
       <div>
-        <label class="label" for="onboarding-proxy">代理 IP{{ requireSellerProxy ? '（必选）' : '（可由平台关联）' }}</label>
+        <label class="label" for="onboarding-proxy">代理 IP{{ requireSellerProxy ? '（必选）' : '（可选）' }}</label>
         <select id="onboarding-proxy" v-model="proxyID" class="input" :disabled="loadingProxies || proxyLoadError">
-          <option value="">{{ requireSellerProxy ? '请选择连通性检测通过的代理' : '由平台自动关联专用代理' }}</option>
+          <option value="" :disabled="requireSellerProxy">{{ requireSellerProxy ? '请选择连通性检测通过的代理' : sharedProxy.available ? '平台共享代理（自动分配）' : '不使用代理（服务器直连）' }}</option>
           <option value="import">使用 sub2api 导入文件中的代理（导入时检测连通性）</option>
           <option v-for="p in availableProxies" :key="p.id" :value="p.id">{{ p.name }} · {{ proxyAddress(p) }}{{ p.region ? ` · ${p.region}` : '' }} · 已绑定 {{ assignedUpstreamCount(p) }} 个账号</option>
         </select>
         <p v-if="loadingProxies" class="hint" role="status">正在加载代理列表…</p>
         <p v-else-if="proxyLoadError" class="hint text-red-600" role="alert">代理列表加载失败，请重试。</p>
         <p v-else-if="proxyID === 'import'" class="hint">接入时只能导入 sub2api 账号：导入前会登记并检测文件中该账号的代理，连通性检测通过才会导入。</p>
-        <p v-else-if="availableProxies.length === 0" class="hint">暂无连通性检测通过的代理，请先添加代理并在列表中检测连接，或使用导入文件中的代理。</p>
-        <p v-else class="hint">仅显示你自己配置、已同步且连通性检测通过的代理，同一代理可绑定多个账号。</p>
+        <p v-else-if="requireSellerProxy && availableProxies.length === 0" class="hint">此厂商必须使用自己的代理。暂无连通性检测通过的代理，请先添加代理并检测连接，或使用导入文件中的代理。</p>
+        <p v-else-if="requireSellerProxy" class="hint">此厂商必须选择自己的连通代理，同一代理可绑定多个账号。</p>
+        <p v-else-if="sharedProxy.available" class="hint">{{ sharedProxy.count }} 个平台共享代理可供自动轮询；也可以改选自己的已测通代理。</p>
+        <p v-else class="hint">暂无可用的平台共享代理，将使用服务器出口直连；也可以改选自己的已测通代理。</p>
         <p v-if="!loadingProxies && !proxyLoadError && untestedCount > 0" class="hint">另有 {{ untestedCount }} 个代理尚未检测或检测未通过，在代理列表检测连接成功后才能选择。</p>
         <div class="mt-2 flex items-center gap-3 text-sm">
           <RouterLink to="/seller/proxies" class="link" @click="open = false">配置代理 IP 列表</RouterLink>
@@ -357,7 +378,11 @@ async function startVerification() {
 
     <template #footer>
       <button type="button" class="xm-btn xm-btn-ghost" @click="open = false">关闭</button>
-      <button v-if="step === 'choose'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || loadingProxies || proxyLoadError || !platform || !authType || (requireSellerProxy && !proxyID)" @click="create">下一步</button>
+      <button v-if="step === 'vendor'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || !platform || !authType" @click="continueToProxy">下一步</button>
+      <template v-else-if="step === 'proxy'">
+        <button type="button" class="xm-btn xm-btn-ghost" :disabled="busy" @click="step = 'vendor'">上一步</button>
+        <button type="button" class="xm-btn xm-btn-primary" :disabled="busy || loadingProxies || proxyLoadError || (requireSellerProxy && proxyID === '')" @click="create">开始接入</button>
+      </template>
       <button v-else-if="step === 'authorize' && (mode === 'import' || !isOAuth)" type="button" class="xm-btn xm-btn-primary" :disabled="busy || (mode === 'import' ? !canImport : !apiKey.trim())" @click="submit">{{ mode === 'import' ? '导入账号' : '提交' }}</button>
       <button v-else-if="step === 'models'" type="button" class="xm-btn xm-btn-primary" :disabled="busy || !modelsValid" @click="submitModels">保存挂售模型</button>
       <template v-else>

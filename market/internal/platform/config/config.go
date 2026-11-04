@@ -260,7 +260,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Worker.SchedulerInterval = 30 * time.Second
 	}
 	if cfg.Worker.IngestInterval <= 0 {
-		cfg.Worker.IngestInterval = 15 * time.Second
+		cfg.Worker.IngestInterval = time.Second
 	}
 	if cfg.Worker.QualityInterval <= 0 {
 		cfg.Worker.QualityInterval = 30 * time.Second

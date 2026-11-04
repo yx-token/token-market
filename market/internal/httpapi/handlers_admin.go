@@ -160,6 +160,40 @@ func (s *Server) createProxy(w http.ResponseWriter, r *http.Request) error {
 	return created(w, p)
 }
 
+func (s *Server) setProxyShared(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	var in struct {
+		IsShared *bool `json:"is_shared"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	if in.IsShared == nil {
+		return httpx.BadRequest("INVALID_PROXY_SHARING", "is_shared is required")
+	}
+	p, err := s.Proxies.SetShared(r.Context(), id, *in.IsShared)
+	if err != nil {
+		return err
+	}
+	s.audit(r, "proxy.set_shared", fmt.Sprintf("proxy:%d", id), map[string]bool{"is_shared": *in.IsShared})
+	return ok(w, p)
+}
+
+func (s *Server) deleteProxy(w http.ResponseWriter, r *http.Request) error {
+	id, err := httpx.PathID(r, "id")
+	if err != nil {
+		return err
+	}
+	if err := s.Proxies.Delete(r.Context(), id); err != nil {
+		return err
+	}
+	s.audit(r, "proxy.delete", fmt.Sprintf("proxy:%d", id), nil)
+	return ok(w, map[string]bool{"ok": true})
+}
+
 func (s *Server) syncProxy(w http.ResponseWriter, r *http.Request) error {
 	id, err := httpx.PathID(r, "id")
 	if err != nil {

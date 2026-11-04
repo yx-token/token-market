@@ -141,7 +141,9 @@ func TestAccountImportWithExportedProxy(t *testing.T) {
 	for _, p := range []string{"anthropic", "kimi"} {
 		admin.must("PUT", "/api/admin/vendors/"+p, map[string]bool{"enabled": true}, nil)
 	}
-	admin.must("PUT", "/api/admin/settings", map[string]any{"require_seller_proxy": true}, nil)
+	if _, err := e.app.DB.Exec(e.ctx, `UPDATE vendor_configs SET require_seller_proxy = true`); err != nil {
+		t.Fatal(err)
+	}
 	seller := e.newUser("import-proxy@market.test")
 	other := e.newUser("import-proxy-other@market.test")
 	create := func(platform, authType string) listing.Upstream {

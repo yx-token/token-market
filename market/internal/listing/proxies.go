@@ -29,6 +29,7 @@ type Proxy struct {
 	Region                *string                         `json:"region,omitempty"`
 	Sub2APIProxyID        *int64                          `json:"sub2api_proxy_id,omitempty"`
 	Status                string                          `json:"status"`
+	IsShared              bool                            `json:"is_shared"`
 	AssignedUpstreamID    *int64                          `json:"assigned_upstream_id,omitempty"`
 	AssignedUpstreamIDs   []int64                         `json:"assigned_upstream_ids"`
 	AssignedUpstreamCount int                             `json:"assigned_upstream_count"`
@@ -47,16 +48,17 @@ type CreateProxyInput struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Region   string `json:"region"`
+	IsShared bool   `json:"is_shared"`
 }
 
-const proxyColumns = `id, seller_id, name, protocol, host, port, username, region, sub2api_proxy_id, status,
+const proxyColumns = `id, seller_id, name, protocol, host, port, username, region, sub2api_proxy_id, status, is_shared,
 	ARRAY(SELECT up.id FROM upstreams up WHERE up.proxy_id = proxies.id AND up.status <> 'removed' ORDER BY up.id),
 	created_at, connection_report, quality_report, connection_checked_at, quality_checked_at`
 
 func scanProxy(row pgx.Row) (*Proxy, error) {
 	var p Proxy
 	var connection, quality []byte
-	err := row.Scan(&p.ID, &p.SellerID, &p.Name, &p.Protocol, &p.Host, &p.Port, &p.Username, &p.Region, &p.Sub2APIProxyID, &p.Status, &p.AssignedUpstreamIDs, &p.CreatedAt, &connection, &quality, &p.ConnectionCheckedAt, &p.QualityCheckedAt)
+	err := row.Scan(&p.ID, &p.SellerID, &p.Name, &p.Protocol, &p.Host, &p.Port, &p.Username, &p.Region, &p.Sub2APIProxyID, &p.Status, &p.IsShared, &p.AssignedUpstreamIDs, &p.CreatedAt, &connection, &quality, &p.ConnectionCheckedAt, &p.QualityCheckedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -152,6 +154,9 @@ func (s *ProxyService) create(ctx context.Context, sellerID *int64, in CreatePro
 	if err != nil {
 		return nil, err
 	}
+	if in.IsShared && sellerID != nil {
+		return nil, httpx.BadRequest("SELLER_PROXY_CANNOT_BE_SHARED", "seller proxies cannot be shared platform proxies")
+	}
 	var passEnc []byte
 	var id int64
 	if err := s.DB.QueryRow(ctx, `SELECT nextval('proxies_id_seq')`).Scan(&id); err != nil {
@@ -162,9 +167,9 @@ func (s *ProxyService) create(ctx context.Context, sellerID *int64, in CreatePro
 			return nil, err
 		}
 	}
-	if _, err := s.DB.Exec(ctx, `INSERT INTO proxies (id, seller_id, name, protocol, host, port, username, region, password_enc)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9)`,
-		id, sellerID, in.Name, in.Protocol, in.Host, in.Port, in.Username, in.Region, passEnc); err != nil {
+	if _, err := s.DB.Exec(ctx, `INSERT INTO proxies (id, seller_id, name, protocol, host, port, username, region, password_enc, is_shared)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9, $10)`,
+		id, sellerID, in.Name, in.Protocol, in.Host, in.Port, in.Username, in.Region, passEnc, in.IsShared); err != nil {
 		if isUnique(err) {
 			return nil, httpx.Conflict("PROXY_ALREADY_EXISTS", "this proxy address is already registered")
 		}
@@ -174,6 +179,50 @@ func (s *ProxyService) create(ctx context.Context, sellerID *int64, in CreatePro
 		return nil, httpx.Unavailable("PROXY_SYNC_FAILED", "proxy saved but sync failed; retry synchronization from the proxy list")
 	}
 	return s.Get(ctx, id)
+}
+
+// SetShared changes whether an unowned platform proxy can serve multiple active upstreams.
+func (s *ProxyService) SetShared(ctx context.Context, id int64, shared bool) (*Proxy, error) {
+	tx, p, err := s.lock(ctx, nil, id)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if p.SellerID != nil {
+		return nil, httpx.BadRequest("SELLER_PROXY_CANNOT_BE_SHARED", "seller proxies cannot be shared platform proxies")
+	}
+	if !shared && p.AssignedUpstreamCount > 1 {
+		return nil, httpx.Conflict("PROXY_SHARED_IN_USE", "remove all but one active upstream before disabling proxy sharing")
+	}
+	if _, err := tx.Exec(ctx, `UPDATE proxies SET is_shared = $2 WHERE id = $1`, id, shared); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, id)
+}
+
+func (s *ProxyService) Delete(ctx context.Context, id int64) error {
+	tx, p, err := s.lock(ctx, nil, id)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if p.AssignedUpstreamCount > 0 {
+		return httpx.Conflict("PROXY_IN_USE", "remove all active upstream bindings before deleting this proxy")
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM proxies WHERE id = $1 AND NOT EXISTS
+		(SELECT 1 FROM upstreams WHERE proxy_id = proxies.id AND status <> 'removed')`, id); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if p.Sub2APIProxyID != nil {
+		_ = s.Admin.DeleteProxy(ctx, *p.Sub2APIProxyID)
+	}
+	return nil
 }
 
 func (s *ProxyService) GetSeller(ctx context.Context, sellerID, id int64) (*Proxy, error) {
@@ -327,6 +376,9 @@ func (s *ProxyService) setDisabled(ctx context.Context, sellerID *int64, id int6
 
 // UpdateSeller 更新卖家未绑定账号的代理（名称/地区/账号密码；改主机端口会清掉 sub2api 同步以便重试）。
 func (s *ProxyService) UpdateSeller(ctx context.Context, sellerID, id int64, in CreateProxyInput) (*Proxy, error) {
+	if in.IsShared {
+		return nil, httpx.BadRequest("SELLER_PROXY_CANNOT_BE_SHARED", "seller proxies cannot be shared platform proxies")
+	}
 	tx, p, err := s.lock(ctx, &sellerID, id)
 	if err != nil {
 		return nil, err

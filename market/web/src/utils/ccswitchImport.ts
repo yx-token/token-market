@@ -20,19 +20,22 @@ export interface CcSwitchImportConfig {
 
 /**
  * CC Switch 导入后的余额查询脚本。`{{baseUrl}}` 由 CCS 填入；
- * 脚本会剥掉末尾 `/v1`，避免拼出 `/v1/v1/usage`。
+ * 余额入口固定在站点 `/v1/usage`，不使用模型入口的协议前缀。
  */
 export const CC_SWITCH_USAGE_SCRIPT = `({
     request: {
-      url: "{{baseUrl}}".replace(/\\/+$/, "").replace(/\\/v1$/, "") + "/v1/usage",
+      url: "{{baseUrl}}".replace(/\\/+$/, "").replace(/\\/(?:antigravity(?:\\/v1)?|v1)$/, "") + "/v1/usage",
       method: "GET",
       headers: { "Authorization": "Bearer {{apiKey}}" }
     },
     extractor: function(response) {
       const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-      const unit = response?.unit ?? response?.quota?.unit ?? "USD";
+      const unit = response?.unit ?? response?.currency ?? response?.quota?.unit ?? "CNY";
+      if (response?.error || typeof remaining !== "number" || !Number.isFinite(remaining)) {
+        return { isValid: false };
+      }
       return {
-        isValid: response?.is_active ?? response?.isValid ?? true,
+        isValid: response?.is_active ?? response?.isValid ?? remaining > 0,
         remaining,
         unit
       };

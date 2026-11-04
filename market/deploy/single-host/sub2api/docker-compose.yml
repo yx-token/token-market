@@ -12,10 +12,11 @@ services:
     image: ${ENGINE_IMAGE:?ENGINE_IMAGE is required}
     container_name: sub2api
     restart: unless-stopped
+    stop_grace_period: 45s
     security_opt: ["no-new-privileges:true"]
     ulimits:
       nofile: { soft: 100000, hard: 100000 }
-    # 单进程公网入口：控制面 8080 + 买家 Edge 8090（MARKET_EMBED=1）
+    # 主站与 tm- 买家请求共用 8080；8090 继续监听并映射以兼容旧客户端。
     ports:
       - "${PUBLIC_PORT:-8080}:8080"
       - "${EDGE_PORT:-8090}:8090"
@@ -69,6 +70,9 @@ services:
       TM_HTTP_WEB_DIR: /app/market-web
       TM_EDGE_ADDR: ":8090"
       TM_EDGE_SPOOL_DIR: /app/data/edge-spool
+      # nginx 经 docker-proxy 进入容器时的直连地址；按实际网络覆盖，不信任任意客户端。
+      TM_EDGE_TRUSTED_PROXIES: ${EDGE_TRUSTED_PROXIES:-}
+      # 使用公网站点 origin（例如 https://idlicat.com），不要附加 :8090。
       TM_EDGE_PUBLIC_URL: ${EDGE_PUBLIC_URL:-}
       TM_SUB2API_GATEWAY_URL: http://127.0.0.1:8080
       # 站内更新拉取本仓 Release（勿指向上游社区仓库）

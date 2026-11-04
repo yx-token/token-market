@@ -106,6 +106,7 @@ export const seller = {
   refreshUpstreamModels: (id: number) => http.post<T.UpstreamModels>(`/api/seller/upstreams/${id}/models/refresh`, {}, 30000),
   setUpstreamModels: (id: number, models: string[]) => http.put<T.Upstream>(`/api/seller/upstreams/${id}/models`, { models }),
   proxies: () => http.get<T.Proxy[] | null>('/api/seller/proxies'),
+  sharedProxy: () => http.get<T.SharedProxyAvailability>('/api/seller/shared-proxy'),
   createProxy: (body: T.CreateProxyInput) => http.post<T.Proxy>('/api/seller/proxies', body),
   updateProxy: (id: number, body: T.CreateProxyInput) => http.put<T.Proxy>(`/api/seller/proxies/${id}`, body),
   deleteProxy: (id: number) => http.del<Ok>(`/api/seller/proxies/${id}`),

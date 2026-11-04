@@ -67,6 +67,13 @@ describe('卖家手动复测：只在检测结果异常时可用', () => {
   })
   afterEach(() => vi.useRealTimers())
 
+  it('平台共享代理只展示名称，即使已脱敏不含地址字段也能正常渲染', async () => {
+    const wrapper = await mountView({ ...base, proxy: { id: 9, seller_id: null, is_shared: true } as UpstreamDetail['proxy'] })
+    expect(wrapper.text()).toContain('平台共享代理')
+    expect(wrapper.text()).not.toContain('undefined://')
+    wrapper.unmount()
+  })
+
   it('最近一次检测正常时按钮置灰，并说明原因', async () => {
     const wrapper = await mountView({ ...base, manual_retest: { allowed: false, code: 'RETEST_NOT_NEEDED' } })
     const button = wrapper.get('[data-testid="manual-retest"]')

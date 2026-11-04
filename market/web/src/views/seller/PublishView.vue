@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
  * 发布闲置TOKEN：对齐 docs/prototypes/seller-publish.html
- * 代理 → 接入 → 选择模型 → 检测 → 商品形态 → 定价上架 → 完成（全部走真实 API）
+ * 厂商 → 代理 → 接入 → 选择模型 → 检测 → 商品形态 → 定价上架 → 完成（全部走真实 API）
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { market, seller } from '@/api'
+import { seller } from '@/api'
 import type { Listing, ListingCategoryOption, Proxy, Quote, Upstream, VendorView } from '@/api/types'
 import { useAction } from '@/composables/useAsync'
 import { useProductGuide } from '@/composables/useProductGuide'
@@ -33,42 +33,48 @@ const productGuide = useProductGuide()
 const step = ref(0)
 const selectedModels = ref<string[]>([])
 const modelsValid = ref(false)
-const steps = ['代理', '接入', '模型', '检测', '商品', '定价', '完成'] as const
+const steps = ['厂商', '代理', '接入', '模型', '检测', '商品', '定价', '完成'] as const
 
 const PUBLISH_COACH = [
   {
-    title: '第 1 步 · 选好出口代理',
-    body: '高亮区里选一个「连通性检测通过」的代理。没有可用代理时，先去「代理 IP」添加并测通，再回到这里继续。',
+    title: '第 1 步 · 选择厂商与授权方式',
+    body: '先选择要接入的模型厂商与授权方式。部分厂商要求使用自己的代理，下一步会显示对应规则。',
+    spotlight: '[data-guide="publish-panel"]',
+    primary: '知道了，去选择',
+  },
+  {
+    title: '第 2 步 · 选好出口代理',
+    body: '按厂商规则选择自己的连通代理，或使用平台共享代理自动分配。没有共享代理时，非必选厂商可直连。',
     spotlight: '[data-guide="publish-panel"]',
     primary: '知道了，我来选',
     secondary: '去添加代理',
   },
   {
-    title: '第 2 步 · 接入上游账号',
-    body: '选择平台与授权方式。OAuth 会打开官方登录页；Coding Key 则粘贴订阅 Key。完成授权后点页面上的下一步。',
+    title: '第 3 步 · 接入上游账号',
+    body: 'OAuth 会打开官方登录页；Coding Key 则粘贴订阅 Key。完成授权后点页面上的下一步。',
     spotlight: '[data-guide="publish-panel"]',
     primary: '知道了，去接入',
   },
   {
-    title: '第 3 步 · 勾选挂售模型',
+    title: '第 4 步 · 勾选挂售模型',
     body: '只勾选你愿意卖给买家的模型。白名单越干净，后续检测与挂单越稳。',
     spotlight: '[data-guide="publish-panel"]',
     primary: '知道了，去勾选',
   },
   {
-    title: '第 4 步 · 质量检测（可选）',
+    title: '第 5 步 · 质量检测（可选）',
     body: '按量/套餐可以先上架（买家会看到未检测）。要进保障池或做平台回收，需要通过质量检测。隐私检查不能跳过。',
     spotlight: '[data-guide="publish-panel"]',
     primary: '知道了，继续',
   },
   {
-    title: '第 5 步 · 选商品形态',
+    title: '第 6 步 · 选商品形态',
     body: '按量通道按倍率计费；订阅套餐按面额售卖；回收则卖给平台保障池。按你的目标选一种。',
     spotlight: '[data-guide="publish-panel"]',
     primary: '知道了，去选择',
   },
   {
-    title: '第 6 步 · 定价并上架',
+    title: '第 7 步 · 定价并上架',
     body: '填分类、标题与价格，确认买家看到的价格后提交。提交成功会出现在市场。',
     spotlight: '[data-guide="publish-panel"]',
     primary: '知道了，去填写',
@@ -99,7 +105,7 @@ function coachPrimary() {
 }
 
 function coachSecondary() {
-  if (step.value === 0) {
+  if (step.value === 1) {
     router.push('/seller/proxies')
     return
   }
@@ -111,7 +117,7 @@ function coachSecondary() {
 
 const vendors = ref<VendorView[]>([])
 const proxies = ref<Proxy[]>([])
-const requireSellerProxy = ref(true)
+const sharedProxy = ref<{ available: boolean; count: number }>({ available: false, count: 0 })
 const proxyID = ref<number | ''>('')
 const readyUpstreams = ref<Upstream[]>([])
 const resumeUpstreamID = ref<number | ''>('')
@@ -140,6 +146,7 @@ const availableProxies = computed(() =>
   proxies.value.filter((p) => canSelectSellerProxy(p) && p.connection_report?.success),
 )
 const vendor = computed(() => vendors.value.find((v) => v.platform === platform.value))
+const requireSellerProxy = computed(() => vendor.value?.require_seller_proxy ?? true)
 const isOAuth = computed(() => !isKeyAuthType(authType.value))
 const withTeam = computed(() => takesTeam(platform.value, authType.value))
 const guide = computed(() => authGuides[`${platform.value}:${authType.value}`])
@@ -159,17 +166,17 @@ onMounted(async () => {
     router.replace({ path: route.path, query: q, hash: route.hash })
   }
   await cfg.ensure()
-  const [vs, ps, conf, us, ls, cats] = await Promise.all([
+  const [vs, ps, shared, us, ls, cats] = await Promise.all([
     seller.vendors().catch(() => null),
     seller.proxies().catch(() => null),
-    market.config().catch(() => null),
+    seller.sharedProxy().catch(() => null),
     seller.upstreams().catch(() => null),
     seller.listings().catch(() => null),
     seller.listingCategories().catch(() => null),
   ])
   vendors.value = vs ?? []
   proxies.value = ps ?? []
-  requireSellerProxy.value = conf?.require_seller_proxy ?? true
+  sharedProxy.value = shared ?? { available: false, count: 0 }
   categoryOpts.value = cats ?? []
   categories.value = []
   const busyUpstream = new Set(
@@ -185,7 +192,7 @@ onMounted(async () => {
       upstream.value = u
       platform.value = u.platform
       authType.value = u.auth_type
-      step.value = u.status === 'ready' ? 4 : u.status === 'selecting_models' ? 2 : 3
+      step.value = u.status === 'ready' ? 5 : u.status === 'selecting_models' ? 3 : 4
     }
   }
 })
@@ -194,23 +201,33 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
 
-watch(platform, () => {
-  const v = vendors.value.find((x) => x.platform === platform.value)
-  if (v) authType.value = v.auth_types[0] ?? ''
-})
-
 watch(step, (n) => {
-  if (n === 3) startProbePoll()
+  if (n === 4) startProbePoll()
   else if (pollTimer) {
     clearInterval(pollTimer)
     pollTimer = null
   }
-  if (n === 5 && sku.value === 'buyback') loadQuote()
+  if (n === 6 && sku.value === 'buyback') loadQuote()
 })
 
 function pickVendor(v: VendorView) {
+  if (platform.value !== v.platform) proxyID.value = ''
   platform.value = v.platform
   authType.value = v.auth_types[0] ?? ''
+}
+
+function nextFromVendor() {
+  if (upstream.value) {
+    platform.value = upstream.value.platform
+    authType.value = upstream.value.auth_type
+    step.value = 1
+    return
+  }
+  if (!vendor.value || !authType.value) {
+    toast.error('请选择模型厂商与授权方式')
+    return
+  }
+  step.value = 1
 }
 
 async function nextFromProxy() {
@@ -224,14 +241,14 @@ async function nextFromProxy() {
     upstream.value = u
     platform.value = u.platform
     authType.value = u.auth_type
-    step.value = 4
+    step.value = 5
     return
   }
   if (requireSellerProxy.value && !proxyID.value) {
     toast.error('请选择连接成功的卖家自有代理，或先去「代理 IP」登记并检测连接')
     return
   }
-  step.value = 1
+  step.value = 2
 }
 
 async function createAndAuthorize() {
@@ -273,7 +290,7 @@ async function authorized(u: Upstream) {
     await seller.setSelfReserve(u.id, Number(reserve.value)).catch(() => null)
   }
   toast.success(`接入成功，当前状态：${label('upstreamStatus', u.status).text}`)
-  step.value = u.status === 'selecting_models' ? 2 : 3
+  step.value = u.status === 'selecting_models' ? 3 : 4
 }
 
 async function submitModels(detect = false) {
@@ -290,14 +307,14 @@ async function submitModels(detect = false) {
       const started = await run(() => seller.retryVerification(updated.id), '已开始质量检测')
       if (started) upstream.value = started
     }
-    step.value = 3
-    return
-  }
-  if (updated.status === 'ready' || updated.status === 'listed') {
     step.value = 4
     return
   }
-  step.value = updated.status === 'selecting_models' ? 2 : 3
+  if (updated.status === 'ready' || updated.status === 'listed') {
+    step.value = 5
+    return
+  }
+  step.value = updated.status === 'selecting_models' ? 3 : 4
 }
 
 async function startDetection() {
@@ -305,7 +322,7 @@ async function startDetection() {
   const started = await run(() => seller.retryVerification(upstream.value!.id), '已开始质量检测')
   if (!started) return
   upstream.value = started
-  step.value = 3
+  step.value = 4
 }
 
 function startProbePoll() {
@@ -324,7 +341,7 @@ async function retryProbe() {
   const u = await run(() => seller.retryVerification(upstream.value!.id))
   if (u) {
     upstream.value = u
-    if (u.status === 'selecting_models') step.value = 2
+    if (u.status === 'selecting_models') step.value = 3
     else if (u.status === 'verifying') toast.success('已重新开始检测')
   }
 }
@@ -407,7 +424,7 @@ async function publish() {
   if (sku.value === 'buyback' && res.listing.status === 'pending_confirm') {
     // 停留在完成页，提示去确认报价
   }
-  step.value = 6
+  step.value = 7
 }
 
 async function acceptBuyback() {
@@ -418,6 +435,9 @@ async function acceptBuyback() {
 
 function resetWizard() {
   step.value = 0
+  platform.value = vendors.value[0]?.platform ?? ''
+  authType.value = vendors.value[0]?.auth_types[0] ?? ''
+  proxyID.value = ''
   upstream.value = null
   listing.value = null
   quote.value = null
@@ -471,48 +491,10 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       </li>
     </ol>
 
-    <!-- 0 代理 -->
+    <!-- 0 厂商 -->
     <section v-if="step === 0" class="xm-pub-panel" data-guide="publish-panel">
-      <h2>配置出口代理</h2>
-      <p class="sub">授权与调用走同一固定代理；卖家自有代理可同时绑定多个账号。</p>
-
-      <div v-if="readyUpstreams.length" class="mb-4">
-        <label class="xm-field-label">或从已就绪的上游继续挂单</label>
-        <select v-model="resumeUpstreamID" class="xm-input">
-          <option value="">— 新接入账号 —</option>
-          <option v-for="u in readyUpstreams" :key="u.id" :value="u.id">
-            #{{ u.id }} {{ label('platform', u.platform).text }}{{ u.account_email ? ` · ${u.account_email}` : '' }} · {{ u.tier || u.grade || u.status }}
-          </option>
-        </select>
-      </div>
-
-      <template v-if="!resumeUpstreamID">
-        <label class="xm-field-label">选择代理{{ requireSellerProxy ? '（必选）' : '（可由平台关联）' }}</label>
-        <select v-model="proxyID" class="xm-input" :disabled="!!upstream">
-          <option value="">{{ requireSellerProxy ? '请选择连通性检测通过的代理' : '由平台自动关联' }}</option>
-          <option v-for="p in availableProxies" :key="p.id" :value="p.id">
-            {{ p.name }} · {{ p.protocol }}://{{ p.host.includes(':') ? `[${p.host}]` : p.host }}:{{ p.port }}{{ p.region ? ` · ${p.region}` : '' }} · 已绑定 {{ assignedUpstreamCount(p) }} 个账号
-          </option>
-        </select>
-        <p v-if="availableProxies.length" class="xm-hint">
-          仅显示你自己配置、已同步且连通性检测通过的代理，同一代理可绑定多个账号。平台代理由平台按账号独占关联。
-        </p>
-        <p v-else class="xm-hint">
-          暂无可用代理，请先
-          <RouterLink to="/seller/proxies" class="font-bold underline underline-offset-2">登记代理 IP 并检测连接</RouterLink>
-        </p>
-      </template>
-
-      <div class="xm-pub-actions">
-        <RouterLink to="/seller/upstreams" class="xm-btn xm-btn-ghost">取消</RouterLink>
-        <button type="button" class="xm-btn xm-btn-primary" :disabled="busy" @click="nextFromProxy">下一步</button>
-      </div>
-    </section>
-
-    <!-- 1 接入 -->
-    <section v-else-if="step === 1" class="xm-pub-panel" data-guide="publish-panel">
-      <h2>接入上游账号</h2>
-      <p class="sub">只做授权，不交密码。选择 OAuth 可在官方页面登录订阅账号，无需 API Key；也可使用已有订阅 Key。</p>
+      <h2>选择模型厂商</h2>
+      <p class="sub">先选择平台与授权方式，再按厂商要求选择代理。</p>
 
       <label class="xm-field-label">厂商</label>
       <div class="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3">
@@ -545,6 +527,62 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
           </div>
         </label>
       </div>
+      <p v-if="vendor" class="xm-hint">
+        {{ requireSellerProxy ? '此厂商必须使用你自己的连通代理。' : '此厂商优先使用平台共享代理；没有可用共享代理时会直连。' }}
+      </p>
+
+      <div class="xm-pub-actions">
+        <RouterLink to="/seller/upstreams" class="xm-btn xm-btn-ghost">取消</RouterLink>
+        <button type="button" class="xm-btn xm-btn-primary" :disabled="busy || !vendor || !authType" @click="nextFromVendor">下一步</button>
+      </div>
+    </section>
+
+    <!-- 1 代理 -->
+    <section v-else-if="step === 1" class="xm-pub-panel" data-guide="publish-panel">
+      <h2>配置出口代理</h2>
+      <p class="sub">授权与调用走同一固定代理；卖家自有代理可同时绑定多个账号。</p>
+
+      <div v-if="readyUpstreams.length" class="mb-4">
+        <label class="xm-field-label">或从已就绪的上游继续挂单</label>
+        <select v-model="resumeUpstreamID" class="xm-input">
+          <option value="">— 新接入账号 —</option>
+          <option v-for="u in readyUpstreams" :key="u.id" :value="u.id">
+            #{{ u.id }} {{ label('platform', u.platform).text }}{{ u.account_email ? ` · ${u.account_email}` : '' }} · {{ u.tier || u.grade || u.status }}
+          </option>
+        </select>
+      </div>
+
+      <template v-if="!resumeUpstreamID">
+        <label class="xm-field-label">选择代理{{ requireSellerProxy ? '（必选）' : '（可选）' }}</label>
+        <select v-model="proxyID" class="xm-input" :disabled="!!upstream">
+          <option value="" :disabled="requireSellerProxy">
+            {{ requireSellerProxy ? '请选择连通性检测通过的代理' : sharedProxy.available ? '平台共享代理（自动分配）' : '不使用代理（服务器直连）' }}
+          </option>
+          <option v-for="p in availableProxies" :key="p.id" :value="p.id">
+            {{ p.name }} · {{ p.protocol }}://{{ p.host.includes(':') ? `[${p.host}]` : p.host }}:{{ p.port }}{{ p.region ? ` · ${p.region}` : '' }} · 已绑定 {{ assignedUpstreamCount(p) }} 个账号
+          </option>
+        </select>
+        <p v-if="availableProxies.length" class="xm-hint">
+          仅显示你自己配置、已同步且连通性检测通过的代理，同一代理可绑定多个账号。
+        </p>
+        <p v-else-if="requireSellerProxy" class="xm-hint">
+          暂无可用代理，请先
+          <RouterLink to="/seller/proxies" class="font-bold underline underline-offset-2">登记代理 IP 并检测连接</RouterLink>
+        </p>
+        <p v-else-if="sharedProxy.available" class="xm-hint">平台共享代理可用，默认自动轮询分配；也可以改选自己的已测通代理。</p>
+        <p v-else class="xm-hint">暂无可用的平台共享代理，将使用服务器出口直连；也可以改选自己的已测通代理。</p>
+      </template>
+
+      <div class="xm-pub-actions">
+        <button type="button" class="xm-btn xm-btn-ghost" @click="step = 0">上一步</button>
+        <button type="button" class="xm-btn xm-btn-primary" :disabled="busy" @click="nextFromProxy">下一步</button>
+      </div>
+    </section>
+
+    <!-- 2 接入 -->
+    <section v-else-if="step === 2" class="xm-pub-panel" data-guide="publish-panel">
+      <h2>接入上游账号</h2>
+      <p class="sub">只做授权，不交密码。选择 OAuth 可在官方页面登录订阅账号，无需 API Key；也可使用已有订阅 Key。</p>
 
       <template v-if="isOAuth">
         <SellerOAuthPanel v-if="upstream" :upstream-id="upstream.id" :platform="platform" :auth-type="authType" :disabled="busy" @ready="authorized" />
@@ -579,13 +617,13 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       <p class="xm-hint">窗口用量达到阈值即暂停调度。部分厂商可能不支持。</p>
 
       <div class="xm-pub-actions">
-        <button type="button" class="xm-btn xm-btn-ghost" @click="step = 0">上一步</button>
+        <button type="button" class="xm-btn xm-btn-ghost" @click="step = 1">上一步</button>
         <button v-if="!isOAuth || !upstream" type="button" class="xm-btn xm-btn-primary" :disabled="busy" @click="createAndAuthorize">{{ isOAuth ? '开始授权' : '完成接入，选择模型' }}</button>
       </div>
     </section>
 
-    <!-- 2 选择挂售模型 -->
-    <section v-else-if="step === 2" class="xm-pub-panel" data-guide="publish-panel">
+    <!-- 3 选择挂售模型 -->
+    <section v-else-if="step === 3" class="xm-pub-panel" data-guide="publish-panel">
       <h2>选择挂售模型</h2>
       <p class="sub">账号接入已完成。选择可供买家调用的模型，可直接挂单，也可先做质量检测。</p>
       <ModelWhitelistSelector v-if="upstream" v-model="selectedModels" :upstream-id="upstream.id" :disabled="busy" @valid="modelsValid = $event" />
@@ -596,8 +634,8 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       </div>
     </section>
 
-    <!-- 3 检测 -->
-    <section v-else-if="step === 3" class="xm-pub-panel" data-guide="publish-panel">
+    <!-- 4 检测 -->
+    <section v-else-if="step === 4" class="xm-pub-panel" data-guide="publish-panel">
       <h2>上架检测</h2>
       <p class="sub">质量检测可选。未检测也可以挂寄售或额度包，买家会看到「未检测」。平台回收仍须有效检测。上游 #{{ upstream?.id }}{{ upstream?.account_email ? ` · ${upstream.account_email}` : '' }}</p>
 
@@ -626,14 +664,14 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       </div>
 
       <div class="xm-pub-actions">
-        <button type="button" class="xm-btn xm-btn-ghost" @click="step = 2">上一步</button>
+        <button type="button" class="xm-btn xm-btn-ghost" @click="step = 3">上一步</button>
         <button v-if="probeFail" type="button" class="xm-btn xm-btn-ghost" :disabled="busy" @click="retryProbe">重试检测</button>
-        <button type="button" class="xm-btn xm-btn-primary" :disabled="!probeOk || privacyBlocked" @click="step = 4">{{ untested ? '未检测，继续挂单' : '检测完成，继续挂单' }}</button>
+        <button type="button" class="xm-btn xm-btn-primary" :disabled="!probeOk || privacyBlocked" @click="step = 5">{{ untested ? '未检测，继续挂单' : '检测完成，继续挂单' }}</button>
       </div>
     </section>
 
-    <!-- 4 商品形态 -->
-    <section v-else-if="step === 4" class="xm-pub-panel" data-guide="publish-panel">
+    <!-- 5 商品形态 -->
+    <section v-else-if="step === 5" class="xm-pub-panel" data-guide="publish-panel">
       <h2>选择商品形态</h2>
       <p class="sub">同一上游同时只能有一条有效挂单；形态决定买家怎么下单。</p>
       <div v-if="privacyBlocked" class="seller-callout seller-callout-bad mb-3">隐私检查未通过，不能挂单。</div>
@@ -664,13 +702,13 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       </div>
       <div class="xm-pub-actions">
         <button v-if="untested && upstream" type="button" class="xm-btn xm-btn-ghost" :disabled="busy" @click="startDetection">先做质量检测</button>
-        <button type="button" class="xm-btn xm-btn-ghost" @click="step = upstream?.status === 'ready' && resumeUpstreamID ? 0 : 3">上一步</button>
-        <button type="button" class="xm-btn xm-btn-primary" :disabled="privacyBlocked" @click="step = 5">下一步</button>
+        <button type="button" class="xm-btn xm-btn-ghost" @click="step = upstream?.status === 'ready' && resumeUpstreamID ? 1 : 4">上一步</button>
+        <button type="button" class="xm-btn xm-btn-primary" :disabled="privacyBlocked" @click="step = 6">下一步</button>
       </div>
     </section>
 
-    <!-- 5 定价 -->
-    <section v-else-if="step === 5" class="xm-pub-panel" data-guide="publish-panel">
+    <!-- 6 定价 -->
+    <section v-else-if="step === 6" class="xm-pub-panel" data-guide="publish-panel">
       <h2>定价与上架内容</h2>
       <p class="sub">设置买家看到的价格与标题。</p>
       <InspectionAppraisal v-if="upstream && !untested" class="mb-4" :appraisal="upstream.appraisal" :grade="upstream.grade" :quality-factor="upstream.quality_factor" :inspection-mode="upstream.inspection_mode" :price="sku === 'buyback' ? undefined : Number(mult)" />
@@ -761,7 +799,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       </div>
 
       <div class="xm-pub-actions">
-        <button type="button" class="xm-btn xm-btn-ghost" @click="step = 4">上一步</button>
+        <button type="button" class="xm-btn xm-btn-ghost" @click="step = 5">上一步</button>
         <button
           type="button"
           class="xm-btn xm-btn-primary"
@@ -773,7 +811,7 @@ const privacyBlocked = computed(() => privacyBlocksListing(upstream.value))
       </div>
     </section>
 
-    <!-- 6 完成 -->
+    <!-- 7 完成 -->
     <section v-else class="xm-pub-panel text-center" data-guide="publish-panel">
       <h2 class="!mb-2">已发布</h2>
       <p class="sub !mb-4">

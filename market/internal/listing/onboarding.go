@@ -73,6 +73,8 @@ var (
 	ErrBadState      = httpx.Conflict("INVALID_STATE", "operation not allowed in current state")
 )
 
+const sharedProxyRotationLock int64 = 0x544d505258
+
 // CreateUpstream 创建上游草稿并分配专用代理。reference 为 true 时创建平台基线账号（仅管理员）。
 // proxyFromImport 为 true 时暂不绑定代理，等导入账号时使用导出文件中的代理（检测连通后绑定）。
 func (s *Service) CreateUpstream(ctx context.Context, sellerID int64, platform, authType string, reference bool, selectedProxyID *int64, proxyFromImport bool) (*Upstream, error) {
@@ -103,7 +105,7 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 	if proxyFromImport && (reference || selectedProxyID != nil) {
 		return nil, httpx.BadRequest("INVALID_PROXY", "proxy_from_import cannot be combined with proxy_id")
 	}
-	if !reference && !proxyFromImport && !bypassSellerProxy && st.RequireSellerProxy && selectedProxyID == nil {
+	if !reference && !proxyFromImport && !bypassSellerProxy && v.RequireSellerProxy && selectedProxyID == nil {
 		return nil, httpx.BadRequest("SELLER_PROXY_REQUIRED", "please configure and select your own proxy before adding an account")
 	}
 
@@ -132,7 +134,7 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 	}
 	var proxyID int64
 	if selectedProxyID != nil {
-		p, err := scanProxy(tx.QueryRow(ctx, "SELECT "+proxyColumns+" FROM proxies WHERE id = $1 AND seller_id = $2 FOR UPDATE", *selectedProxyID, sellerID))
+		p, err := scanProxy(tx.QueryRow(ctx, "SELECT "+proxyColumns+" FROM proxies WHERE id = $1 AND seller_id = $2 AND is_shared = false FOR UPDATE", *selectedProxyID, sellerID))
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, httpx.NotFound("PROXY_NOT_FOUND", "proxy not found")
 		}
@@ -150,10 +152,33 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 		}
 		proxyID = p.ID
 	} else if !proxyFromImport {
-		err = tx.QueryRow(ctx, `SELECT id FROM proxies WHERE seller_id IS NULL AND status = 'available'
-			AND NOT EXISTS (SELECT 1 FROM upstreams WHERE proxy_id = proxies.id AND status <> 'removed')
-			AND sub2api_proxy_id IS NOT NULL
-			ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&proxyID)
+		switch {
+		case reference || bypassSellerProxy:
+			err = tx.QueryRow(ctx, `SELECT id FROM proxies WHERE seller_id IS NULL AND status = 'available'
+				AND is_shared = false
+				AND NOT EXISTS (SELECT 1 FROM upstreams WHERE proxy_id = proxies.id AND status <> 'removed')
+				AND sub2api_proxy_id IS NOT NULL
+				ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`).Scan(&proxyID)
+		case !v.RequireSellerProxy:
+			// Serialize cursor advancement across all app instances; holding the
+			// transaction lock also covers creation of the binding below.
+			if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, sharedProxyRotationLock); err != nil {
+				return nil, err
+			}
+			var lastProxyID *int64
+			if err = tx.QueryRow(ctx, `SELECT last_proxy_id FROM shared_proxy_rotation WHERE id = 1 FOR UPDATE`).Scan(&lastProxyID); err == nil {
+				err = tx.QueryRow(ctx, `SELECT id FROM proxies
+					WHERE seller_id IS NULL AND is_shared AND status <> 'disabled' AND sub2api_proxy_id IS NOT NULL
+					AND connection_report->>'success' = 'true' AND connection_checked_at IS NOT NULL
+					ORDER BY CASE WHEN id > COALESCE($1, 0) THEN 0 ELSE 1 END, id
+					LIMIT 1 FOR UPDATE`, lastProxyID).Scan(&proxyID)
+				if err == nil {
+					_, err = tx.Exec(ctx, `UPDATE shared_proxy_rotation SET last_proxy_id = $1, updated_at = now() WHERE id = 1`, proxyID)
+				}
+			}
+		default:
+			err = pgx.ErrNoRows
+		}
 	}
 	switch {
 	case proxyFromImport:
@@ -163,10 +188,14 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 			return nil, err
 		}
 	case errors.Is(err, pgx.ErrNoRows):
-		if !st.AllowNoProxy {
-			return nil, ErrNoProxy
+		if reference || bypassSellerProxy {
+			if !st.AllowNoProxy {
+				return nil, ErrNoProxy
+			}
 		}
-	default:
+		// For an optional-proxy vendor, no eligible shared platform proxy is
+		// a supported direct-egress mode, independent of the dev-only flag.
+	case err != nil:
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -177,11 +206,19 @@ func (s *Service) createUpstream(ctx context.Context, sellerID int64, platform, 
 	if err != nil {
 		return nil, err
 	}
-	// 探测分组失败不影响创建，开始授权时会重试
 	if err := s.ensureProbeGroup(ctx, u); err != nil {
 		s.Log.Warn("ensure probe group", "upstream_id", id, "err", err)
 	}
 	return GetUpstream(ctx, s.DB, id)
+}
+
+// SharedProxyAvailability exposes only a count and readiness bit to sellers.
+func (s *ProxyService) SharedProxyAvailability(ctx context.Context) (bool, int, error) {
+	var count int
+	err := s.DB.QueryRow(ctx, `SELECT count(*) FROM proxies
+		WHERE seller_id IS NULL AND is_shared AND status <> 'disabled' AND sub2api_proxy_id IS NOT NULL
+		AND connection_report->>'success' = 'true' AND connection_checked_at IS NOT NULL`).Scan(&count)
+	return count > 0, count, err
 }
 
 // ensureProbeGroup 确保上游的探测分组（只含该账号的独占分组）存在。
@@ -211,22 +248,28 @@ func ProbeGroupName(upstreamID int64) string  { return fmt.Sprintf("tm-probe-%d"
 func AccountName(upstreamID int64) string     { return fmt.Sprintf("tm-u-%d", upstreamID) }
 func ListingGroupName(listingID int64) string { return fmt.Sprintf("tm-l-%d", listingID) }
 
-// proxySub2APIID 返回上游绑定代理在 sub2api 中的 ID。尚未创建账号的上游没有绑定代理时（例如等待导入文件带入代理），
-// 必须符合当前代理策略，不能借此绕过卖家代理必填直接授权或提交 key。
+// proxySub2APIID 返回上游绑定代理在 sub2api 中的 ID。无代理仅允许给非必选厂商直连。
 func (s *Service) proxySub2APIID(ctx context.Context, u *Upstream) (*int64, error) {
 	if u.ProxyID == nil {
 		if u.Sub2APIAccountID != nil {
 			return nil, nil
 		}
-		st, err := s.Settings(ctx)
+		if u.IsReference {
+			st, err := s.Settings(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if !st.AllowNoProxy {
+				return nil, ErrNoProxy
+			}
+			return nil, nil
+		}
+		v, err := GetVendor(ctx, s.DB, u.Platform)
 		if err != nil {
 			return nil, err
 		}
-		if !u.IsReference && st.RequireSellerProxy {
-			return nil, httpx.BadRequest("SELLER_PROXY_REQUIRED", "this upstream has no proxy; import an account that carries a reachable proxy")
-		}
-		if !st.AllowNoProxy {
-			return nil, ErrNoProxy
+		if v.RequireSellerProxy {
+			return nil, httpx.BadRequest("SELLER_PROXY_REQUIRED", "this upstream has no proxy; select a reachable seller proxy")
 		}
 		return nil, nil
 	}

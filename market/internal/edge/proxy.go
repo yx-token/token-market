@@ -59,6 +59,7 @@ type Server struct {
 	authFail *ratelimit.Failures
 	client   *http.Client
 	credits  CreditSelector
+	usage    UsageReader
 	log      *slog.Logger
 	now      func() time.Time
 }
@@ -89,9 +90,11 @@ func NewServer(cfg Config, cache *Cache, kr *crypto.Keyring, attempts *AttemptLo
 	}
 }
 
-// allowedPath 只放行对话相关的网关路径。
+// allowedPath 放行对话相关网关路径与本地余额查询。
 func allowedPath(method, p string) bool {
 	switch {
+	case usagePath(p):
+		return method == http.MethodGet
 	case p == "/v1/messages" || p == "/v1/messages/count_tokens" || p == "/v1/chat/completions":
 		return method == http.MethodPost
 	case p == "/v1/responses":
@@ -114,6 +117,8 @@ func allowedPath(method, p string) bool {
 // billablePath 判断接口是否会产生费用（用于对账：模型列表、count_tokens 成功但不计费）。
 func billablePath(method, p string) bool {
 	switch {
+	case usagePath(p):
+		return false
 	case method == http.MethodGet && (p == "/v1/models" || strings.HasPrefix(p, "/v1/models/") || strings.HasPrefix(p, "/v1beta/models")):
 		return false
 	case p == "/v1/messages/count_tokens" || strings.HasSuffix(p, ":countTokens"):
@@ -212,6 +217,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	reqID := newRequestID()
 	w.Header().Set("X-TM-Request-ID", reqID)
+	if usagePath(r.URL.Path) {
+		s.serveUsage(w, r, cfg)
+		return
+	}
 	plan := BuildSchedulePlan(SelectSchedulePolicy(cfg.Hops), cfg.Hops, s.cache.Skipped, s.breaker.Allow)
 	w.Header().Set("X-TM-Schedule-Policy", string(plan.Policy))
 	if isWebSocket(r) {
@@ -221,7 +230,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, s.cfg.MaxBodyBytes+1))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request_error", "cannot read request body")
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body too large")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid_request_error", "cannot read request body")
+		}
 		return
 	}
 	if int64(len(body)) > s.cfg.MaxBodyBytes {

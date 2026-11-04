@@ -64,11 +64,23 @@ func (r *Reconciler) runStoreCreditBalances(ctx context.Context, tolerance float
  AND idempotency_key NOT LIKE 'tm-credit-refund-debit-%'`, fmt.Sprintf("user:%d", it.sub)).Scan(&inflight); err != nil {
 			return found, err
 		}
-		diff := actual[it.sub] + inflight - (it.expected - pending[it.sub])
+		verified := verifiedBalance{actual: actual[it.sub], expected: it.expected,
+			inflight: inflight, pending: pending[it.sub]}
+		diff := verified.diff()
 		if abs(diff) <= tolerance {
 			continue
 		}
-		detail, _ := json.Marshal(map[string]any{"credit_pack_id": it.id, "sub2api_balance": actual[it.sub], "remaining_balance_units": it.expected, "uningested_usage": pending[it.sub], "inflight_ops": inflight, "diff": diff})
+		verified, err = r.verifyBalance(ctx, it.sub, it.id, true)
+		if err != nil {
+			return found, err
+		}
+		diff = verified.diff()
+		if abs(diff) <= tolerance {
+			continue
+		}
+		detail, _ := json.Marshal(map[string]any{"credit_pack_id": it.id, "sub2api_balance": verified.actual,
+			"remaining_balance_units": verified.expected, "uningested_usage": verified.pending,
+			"inflight_ops": verified.inflight, "diff": diff})
 		tag, err := r.DB.Exec(ctx, `INSERT INTO billing_anomalies(rule,dedupe_key,buyer_user_id,amount,detail)
  VALUES('balance_mismatch',$1,$2,$3,$4) ON CONFLICT(dedupe_key) DO NOTHING`, fmt.Sprintf("credit-balance:%d:%s", it.id, r.now().Format("2006-01-02")), it.buyer, diff, detail)
 		if err != nil {

@@ -142,7 +142,6 @@ func TestAPISurface(t *testing.T) {
 		}
 	}
 	ed.flushAttempts()
-	e.app.Ingester.Now = func() time.Time { return time.Now().Add(5 * time.Minute) }
 	if res, _, err := e.app.Ingester.RunOnce(ctx); err != nil || res.Posted != 3 {
 		t.Fatalf("ingest: %+v %v", res, err)
 	}

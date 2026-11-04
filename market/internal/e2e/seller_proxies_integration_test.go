@@ -20,19 +20,8 @@ import (
 func TestSellerProxyOnboarding(t *testing.T) {
 	e := setup(t)
 	admin := e.login("admin@market.test", "admin-password-1")
-	// 删除测试夹具的旧分配策略，验证未配置和旧设置中缺失字段时均默认要求卖家代理。
-	if _, err := e.app.DB.Exec(e.ctx, `UPDATE settings SET value = '{"allow_no_proxy":true}' WHERE key = 'platform'`); err != nil {
-		t.Fatal(err)
-	}
-	var policy struct {
-		RequireSellerProxy bool `json:"require_seller_proxy"`
-	}
-	e.anon().must("GET", "/api/market/config", nil, &policy)
-	if !policy.RequireSellerProxy {
-		t.Fatal("missing proxy policy must default to requiring a seller proxy")
-	}
 	for _, platform := range []string{"anthropic", "kimi"} {
-		admin.must("PUT", "/api/admin/vendors/"+platform, map[string]any{"enabled": true}, nil)
+		admin.must("PUT", "/api/admin/vendors/"+platform, map[string]any{"enabled": true, "require_seller_proxy": true}, nil)
 	}
 	seller := e.newUser("proxy-owner@market.test")
 	other := e.newUser("proxy-other@market.test")
@@ -147,7 +136,7 @@ func TestSellerProxyConcurrencyAndPlatformFallback(t *testing.T) {
 	e := setup(t)
 	admin := e.login("admin@market.test", "admin-password-1")
 	admin.must("PUT", "/api/admin/vendors/anthropic", map[string]any{"enabled": true}, nil)
-	admin.must("PUT", "/api/admin/settings", map[string]any{"require_seller_proxy": true}, nil)
+	admin.must("PUT", "/api/admin/vendors/anthropic", map[string]any{"require_seller_proxy": true}, nil)
 	seller := e.newUser("proxy-race@market.test")
 	var proxy listing.Proxy
 	seller.must("POST", "/api/seller/proxies", listing.CreateProxyInput{Name: "race", Protocol: "http", Host: "10.1.2.1", Port: 1080}, &proxy)
@@ -180,15 +169,53 @@ func TestSellerProxyConcurrencyAndPlatformFallback(t *testing.T) {
 	for _, account := range accounts {
 		seller.must("DELETE", fmt.Sprintf("/api/seller/upstreams/%d", account.ID), nil, nil)
 	}
-	admin.must("PUT", "/api/admin/settings", map[string]any{"require_seller_proxy": false}, nil)
-	// 平台没有库存时不能借用卖家自己的空闲代理。
-	seller.expect(503, "POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"})
+	admin.must("PUT", "/api/admin/vendors/anthropic", map[string]any{"require_seller_proxy": false}, nil)
+	// 没有可用共享库存时直连，不能借用卖家自己的空闲代理。
+	var direct listing.Upstream
+	seller.must("POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"}, &direct)
+	if direct.ProxyID != nil {
+		t.Fatalf("direct egress borrowed seller inventory: %+v", direct)
+	}
+	// Direct egress must remain valid through authorization, detection and listing
+	// even when the development-only no-proxy escape hatch is disabled.
+	admin.must("PUT", "/api/admin/settings", map[string]any{"allow_no_proxy": false}, nil)
+	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/start", direct.ID), nil, nil)
+	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/oauth/complete", direct.ID), map[string]string{"code": "direct-egress-account"}, &direct)
+	e.passOnboarding(direct.ID)
+	var listingResult struct {
+		Listing listing.Listing `json:"listing"`
+	}
+	seller.must("POST", fmt.Sprintf("/api/seller/upstreams/%d/listing", direct.ID), map[string]any{"mode": "consignment", "multiplier": 0.2, "categories": []string{"coding"}}, &listingResult)
+	if listingResult.Listing.ID == 0 {
+		t.Fatal("direct upstream did not reach listing")
+	}
 	var platformProxy listing.Proxy
-	admin.must("POST", "/api/admin/proxies", listing.CreateProxyInput{Name: "platform", Protocol: "http", Host: "10.1.2.2", Port: 1080}, &platformProxy)
+	admin.must("POST", "/api/admin/proxies", listing.CreateProxyInput{Name: "platform", Protocol: "http", Host: "10.1.2.2", Port: 1080, IsShared: true}, &platformProxy)
+	admin.must("POST", fmt.Sprintf("/api/admin/proxies/%d/test", platformProxy.ID), nil, &platformProxy)
 	var upstream listing.Upstream
 	seller.must("POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"}, &upstream)
 	if upstream.ProxyID == nil || *upstream.ProxyID != platformProxy.ID {
 		t.Fatalf("platform fallback must use platform inventory: %+v", upstream)
+	}
+	raw := seller.expect(200, "GET", fmt.Sprintf("/api/seller/upstreams/%d", upstream.ID), nil)
+	for _, secret := range []string{platformProxy.Host, `"host"`, `"port"`, `"sub2api_proxy_id"`} {
+		if strings.Contains(raw, secret) {
+			t.Fatalf("seller details leak platform proxy data %q: %s", secret, raw)
+		}
+	}
+	if raw := seller.expect(200, "GET", "/api/seller/shared-proxy", nil); !strings.Contains(raw, `"available":true`) || strings.Contains(raw, platformProxy.Host) {
+		t.Fatalf("invalid shared availability response: %s", raw)
+	}
+	var secondPlatform listing.Proxy
+	admin.must("POST", "/api/admin/proxies", listing.CreateProxyInput{Name: "platform second", Protocol: "http", Host: "10.1.2.3", Port: 1080, IsShared: true}, &secondPlatform)
+	admin.must("POST", fmt.Sprintf("/api/admin/proxies/%d/test", secondPlatform.ID), nil, &secondPlatform)
+	want := []int64{secondPlatform.ID, platformProxy.ID, secondPlatform.ID, platformProxy.ID, secondPlatform.ID, platformProxy.ID}
+	for index, expectedProxyID := range want {
+		var rotated listing.Upstream
+		seller.must("POST", "/api/seller/upstreams", map[string]string{"platform": "anthropic", "auth_type": "oauth"}, &rotated)
+		if rotated.ProxyID == nil || *rotated.ProxyID != expectedProxyID {
+			t.Fatalf("shared proxy round %d selected %+v, want proxy %d", index, rotated, expectedProxyID)
+		}
 	}
 	// 平台分配模式仍允许卖家选自己的代理。
 	seller.must("POST", "/api/seller/upstreams", map[string]any{"platform": "anthropic", "auth_type": "oauth", "proxy_id": proxy.ID}, &upstream)
@@ -201,7 +228,7 @@ func TestSellerProxySyncRecovery(t *testing.T) {
 	e := setup(t)
 	admin := e.login("admin@market.test", "admin-password-1")
 	admin.must("PUT", "/api/admin/vendors/anthropic", map[string]any{"enabled": true}, nil)
-	admin.must("PUT", "/api/admin/settings", map[string]any{"require_seller_proxy": true}, nil)
+	admin.must("PUT", "/api/admin/vendors/anthropic", map[string]any{"require_seller_proxy": true}, nil)
 	seller := e.newUser("proxy-recovery@market.test")
 	original := e.app.Proxies.Admin
 	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

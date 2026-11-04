@@ -47,6 +47,51 @@ func TestPoolsRelayCoversReadAndWrite(t *testing.T) {
 	}
 }
 
+// 厂商与代理后台读取必须使用 market 完整响应，native 简表没有 require_seller_proxy / is_shared。
+func TestVendorAndProxyReadsUseRelayNotThinStore(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerNativeIdleCat(router.Group("/api/v1/admin"), &idlecat.Store{})
+
+	for _, path := range []string{
+		"/api/v1/admin/market/vendors",
+		"/api/v1/admin/market/proxies",
+	} {
+		t.Run(path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			require.NotPanics(t, func() { router.ServeHTTP(recorder, request) }, "读取不应落到简表 Store")
+			// 503 表示已进入 relay；本测试进程没有初始化 market host。
+			require.Equal(t, http.StatusServiceUnavailable, recorder.Code, recorder.Body.String())
+		})
+	}
+}
+
+func TestVendorAndProxyRelayCoversReadAndWrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerNativeIdleCat(router.Group("/api/v1/admin"), &idlecat.Store{})
+
+	have := map[string]bool{}
+	for _, r := range router.Routes() {
+		have[r.Method+" "+r.Path] = true
+	}
+	for _, want := range []string{
+		"GET /api/v1/admin/market/vendors",
+		"PUT /api/v1/admin/market/vendors/:platform",
+		"GET /api/v1/admin/market/proxies",
+		"POST /api/v1/admin/market/proxies",
+		"PUT /api/v1/admin/market/proxies/:id/sharing",
+		"DELETE /api/v1/admin/market/proxies/:id",
+		"POST /api/v1/admin/market/proxies/:id/sync",
+		"POST /api/v1/admin/market/proxies/:id/test",
+		"POST /api/v1/admin/market/proxies/:id/disable",
+		"POST /api/v1/admin/market/proxies/:id/enable",
+	} {
+		require.True(t, have[want], "缺少路由 %s", want)
+	}
+}
+
 func TestMarketPaymentConfigRelayEndpointsAreRemoved(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

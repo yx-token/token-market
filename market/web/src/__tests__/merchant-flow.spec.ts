@@ -53,7 +53,7 @@ describe('买家商家清单与 Key 调用顺序', () => {
     vi.mocked(market.listing).mockResolvedValue(first)
     vi.mocked(market.listings).mockResolvedValue([first])
     vi.mocked(market.pools).mockResolvedValue([{ id: 1, name: 'tm-pool-all', platform: 'composite', price: 1 }])
-    vi.mocked(market.config).mockResolvedValue({ require_seller_proxy: true, commission_rate: 0.2, freeze_days: 7, withdraw_min: 10, payment_channels: [], recharge_min: 1, recharge_max: 50000, max_hops: 5, edge_url: '', price_models: [] })
+    vi.mocked(market.config).mockResolvedValue({ commission_rate: 0.2, freeze_days: 7, withdraw_min: 10, payment_channels: [], recharge_min: 1, recharge_max: 50000, max_hops: 5, edge_url: '', price_models: [] })
   })
 
   it('市场详情等待商家持久化成功，再去 Key 配置，直接加入不签发 Key', async () => {

@@ -363,9 +363,12 @@ function runStatusText(status: string) {
     <div v-if="u.proxy" class="card mt-5">
       <h2 class="card-title">绑定的代理 IP</h2>
       <div class="flex flex-wrap items-center gap-3 text-sm">
-        <span>{{ u.proxy.name }}</span>
-        <span class="break-all font-mono text-xs">{{ u.proxy.protocol }}://{{ u.proxy.host.includes(':') ? `[${u.proxy.host}]` : u.proxy.host }}:{{ u.proxy.port }}</span>
-        <span class="text-ink-500">{{ u.proxy.seller_id ? '由你提供' : '由平台关联' }}{{ u.proxy.region ? ` · ${u.proxy.region}` : '' }}</span>
+        <template v-if="u.proxy.seller_id != null">
+          <span>{{ u.proxy.name }}</span>
+          <span class="break-all font-mono text-xs">{{ u.proxy.protocol }}://{{ u.proxy.host.includes(':') ? `[${u.proxy.host}]` : u.proxy.host }}:{{ u.proxy.port }}</span>
+          <span class="text-ink-500">由你提供{{ u.proxy.region ? ` · ${u.proxy.region}` : '' }}</span>
+        </template>
+        <span v-else>{{ u.proxy.is_shared ? '平台共享代理' : '平台代理' }}</span>
         <RouterLink v-if="u.proxy.seller_id" to="/seller/proxies" class="xm-btn xm-btn-ghost xm-btn-sm ml-auto">代理列表 →</RouterLink>
       </div>
     </div>

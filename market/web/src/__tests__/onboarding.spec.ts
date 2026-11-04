@@ -3,10 +3,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { defineComponent } from 'vue'
 import OnboardingWizard from '@/components/OnboardingWizard.vue'
-import { market, seller } from '@/api'
-import type { MarketConfig, Proxy, Upstream } from '@/api/types'
+import { seller } from '@/api'
+import type { Proxy, Upstream } from '@/api/types'
 
-vi.mock('@/api', () => ({ market: { config: vi.fn() }, seller: { proxies: vi.fn(), createUpstream: vi.fn(), importAccount: vi.fn(), upstream: vi.fn(), startOAuth: vi.fn(), oauthPoll: vi.fn(), completeOAuth: vi.fn(), submitCodingKey: vi.fn(), upstreamModels: vi.fn(), refreshUpstreamModels: vi.fn(), setUpstreamModels: vi.fn(), retryVerification: vi.fn() } }))
+vi.mock('@/api', () => ({ seller: { proxies: vi.fn(), sharedProxy: vi.fn(), createUpstream: vi.fn(), importAccount: vi.fn(), upstream: vi.fn(), startOAuth: vi.fn(), oauthPoll: vi.fn(), completeOAuth: vi.fn(), submitCodingKey: vi.fn(), upstreamModels: vi.fn(), refreshUpstreamModels: vi.fn(), setUpstreamModels: vi.fn(), retryVerification: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 const connected = { success: true, message: 'ok', latency_ms: 120 }
@@ -14,14 +14,19 @@ const proxy = (id: number, extra: Partial<Proxy> = {}): Proxy => ({ id, seller_i
 const dialog = defineComponent({ template: '<div><slot /><slot name="footer" /></div>' })
 
 async function openWizard(required = true) {
-  vi.mocked(market.config).mockResolvedValue({ require_seller_proxy: required } as MarketConfig)
+  vi.mocked(seller.sharedProxy).mockResolvedValue({ available: false, count: 0 })
   const wrapper = mount(OnboardingWizard, {
-    props: { open: false, vendors: [{ platform: 'anthropic', auth_types: ['oauth'], consignment_min: 0.1, consignment_max: 2, self_reserve_supported: true }] },
+    props: { open: false, vendors: [{ platform: 'anthropic', auth_types: ['oauth'], consignment_min: 0.1, consignment_max: 2, self_reserve_supported: true, require_seller_proxy: required }] },
     global: { plugins: [createPinia()], stubs: { ModalDialog: dialog, RouterLink: { template: '<a><slot /></a>' } } },
   })
   await wrapper.setProps({ open: true })
   await flushPromises()
   return wrapper
+}
+
+async function toProxy(wrapper: Awaited<ReturnType<typeof openWizard>>) {
+  await wrapper.findAll('button').find((button) => button.text() === '下一步')!.trigger('click')
+  await flushPromises()
 }
 
 describe('onboarding proxy selection', () => {
@@ -65,10 +70,11 @@ describe('onboarding proxy selection', () => {
 
   it('requires explicit selection and allows assigned seller proxies but excludes platform, disabled and pending proxies', async () => {
     const wrapper = await openWizard()
+    await toProxy(wrapper)
     const select = wrapper.get('#onboarding-proxy')
     expect(select.findAll('option').map((o) => o.attributes('value'))).toEqual(['', 'import', '1', '2'])
     expect(select.get('option[value="2"]').text()).toContain('已绑定 2 个账号')
-    const next = wrapper.findAll('button').find((b) => b.text() === '下一步')!
+    const next = wrapper.findAll('button').find((b) => b.text() === '开始接入')!
     expect(next.attributes('disabled')).toBeDefined()
     await select.setValue('2')
     expect(next.attributes('disabled')).toBeUndefined()
@@ -86,6 +92,7 @@ describe('onboarding proxy selection', () => {
       proxy(3, { host: '203.0.113.11' }),
     ])
     const wrapper = await openWizard()
+    await toProxy(wrapper)
     expect(wrapper.get('#onboarding-proxy').findAll('option').map((o) => o.attributes('value'))).toEqual(['', 'import', '3'])
     expect(wrapper.text()).toContain('另有 2 个代理尚未检测或检测未通过')
     wrapper.unmount()
@@ -94,10 +101,43 @@ describe('onboarding proxy selection', () => {
   it('offers platform allocation when seller proxies are optional', async () => {
     vi.mocked(seller.proxies).mockResolvedValue([])
     const wrapper = await openWizard(false)
-    expect(wrapper.get('#onboarding-proxy').text()).toContain('由平台自动关联专用代理')
-    const next = wrapper.findAll('button').find((b) => b.text() === '下一步')!
+    await toProxy(wrapper)
+    expect(wrapper.get('#onboarding-proxy').text()).toContain('不使用代理（服务器直连）')
+    const next = wrapper.findAll('button').find((b) => b.text() === '开始接入')!
     expect(next.attributes('disabled')).toBeUndefined()
     await next.trigger('click')
+    await flushPromises()
+    expect(seller.createUpstream).toHaveBeenCalledWith('anthropic', 'oauth', undefined)
+    wrapper.unmount()
+  })
+
+  it('厂商选择独立于代理步骤，换到必选厂商后必须重新选择自有代理', async () => {
+    const wrapper = await openWizard(false)
+    await wrapper.setProps({ vendors: [
+      { platform: 'anthropic', auth_types: ['oauth'], consignment_min: 0.1, consignment_max: 2, self_reserve_supported: true, require_seller_proxy: false },
+      { platform: 'openai', auth_types: ['oauth'], consignment_min: 0.1, consignment_max: 2, self_reserve_supported: true, require_seller_proxy: true },
+    ] })
+    expect(wrapper.find('#onboarding-proxy').exists()).toBe(false)
+    await toProxy(wrapper)
+    await wrapper.get('#onboarding-proxy').setValue('1')
+    await wrapper.findAll('button').find((button) => button.text() === '上一步')!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('ChatGPT'))!.trigger('click')
+    await toProxy(wrapper)
+    expect((wrapper.get('#onboarding-proxy').element as HTMLSelectElement).value).toBe('')
+    expect(wrapper.findAll('button').find((button) => button.text() === '开始接入')!.attributes('disabled')).toBeDefined()
+    expect(seller.createUpstream).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('非必须厂商可以使用自动共享且不会显示平台代理地址', async () => {
+    const wrapper = await openWizard(false)
+    vi.mocked(seller.sharedProxy).mockResolvedValue({ available: true, count: 2 })
+    await toProxy(wrapper)
+    await wrapper.findAll('button').find((button) => button.text() === '刷新列表')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('#onboarding-proxy').text()).toContain('平台共享代理（自动分配）')
+    expect(wrapper.text()).toContain('2 个平台共享代理可供自动轮询')
+    await wrapper.findAll('button').find((button) => button.text() === '开始接入')!.trigger('click')
     await flushPromises()
     expect(seller.createUpstream).toHaveBeenCalledWith('anthropic', 'oauth', undefined)
     wrapper.unmount()
@@ -106,8 +146,9 @@ describe('onboarding proxy selection', () => {
   it('blocks creation until a failed proxy list request is successfully retried', async () => {
     vi.mocked(seller.proxies).mockRejectedValueOnce(new Error('offline'))
     const wrapper = await openWizard()
+    await toProxy(wrapper)
     expect(wrapper.text()).toContain('代理列表加载失败')
-    const next = wrapper.findAll('button').find((b) => b.text() === '下一步')!
+    const next = wrapper.findAll('button').find((b) => b.text() === '开始接入')!
     expect(next.attributes('disabled')).toBeDefined()
     await wrapper.findAll('button').find((b) => b.text() === '刷新列表')!.trigger('click')
     await flushPromises()
@@ -118,8 +159,9 @@ describe('onboarding proxy selection', () => {
 
   it('imports one selected account from a sub2api export without an OAuth login', async () => {
     const wrapper = await openWizard()
+    await toProxy(wrapper)
     await wrapper.get('#onboarding-proxy').setValue('1')
-    await wrapper.findAll('button').find((b) => b.text() === '下一步')!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text() === '开始接入')!.trigger('click')
     await flushPromises()
     await wrapper.findAll('button').find((b) => b.text() === '导入 sub2api 账号')!.trigger('click')
     const submit = () => wrapper.findAll('button').find((b) => b.text() === '导入账号')!
@@ -152,9 +194,10 @@ describe('onboarding proxy selection', () => {
   it('defers the proxy to the import file and blocks accounts without one', async () => {
     vi.mocked(seller.createUpstream).mockResolvedValue({ id: 11, platform: 'anthropic', auth_type: 'oauth' } as Awaited<ReturnType<typeof seller.createUpstream>>)
     const wrapper = await openWizard()
+    await toProxy(wrapper)
     await wrapper.get('#onboarding-proxy').setValue('import')
     expect(wrapper.text()).toContain('连通性检测通过才会导入')
-    await wrapper.findAll('button').find((b) => b.text() === '下一步')!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text() === '开始接入')!.trigger('click')
     await flushPromises()
     expect(seller.createUpstream).toHaveBeenCalledWith('anthropic', 'oauth', undefined, true)
     expect(wrapper.findAll('button').find((b) => b.text() === '官方授权')!.attributes('disabled')).toBeDefined()
@@ -193,8 +236,9 @@ describe('onboarding proxy selection', () => {
   it('OAuth 授权后先选择模型，提交白名单后即可挂单且明确未检测', async () => {
     vi.mocked(seller.completeOAuth).mockResolvedValue({ id: 10, status: 'selecting_models', platform: 'anthropic', auth_type: 'oauth' } as Upstream)
     const wrapper = await openWizard()
+    await toProxy(wrapper)
     await wrapper.get('#onboarding-proxy').setValue('1')
-    await wrapper.findAll('button').find((b) => b.text() === '下一步')!.trigger('click')
+    await wrapper.findAll('button').find((b) => b.text() === '开始接入')!.trigger('click')
     await flushPromises()
     await wrapper.get('#code').setValue('授权码')
     await wrapper.findAll('button').find((b) => b.text() === '提交')!.trigger('click')

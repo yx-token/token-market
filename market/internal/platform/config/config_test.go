@@ -37,6 +37,9 @@ func TestLoadAppliesFileEnvAndDefaults(t *testing.T) {
 	if cfg.Sub2API.Timeout != 30*time.Second || cfg.Worker.OpsBatchSize != 20 || cfg.HTTP.Addr != ":8080" {
 		t.Errorf("defaults not applied: %+v", cfg)
 	}
+	if cfg.Worker.IngestInterval != time.Second {
+		t.Fatalf("usage ingest should default to one second, got %s", cfg.Worker.IngestInterval)
+	}
 	if _, ok := cfg.Crypto.Keys["k1"]; !ok {
 		t.Errorf("crypto keys from env not applied")
 	}

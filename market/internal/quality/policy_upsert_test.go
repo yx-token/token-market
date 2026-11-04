@@ -63,7 +63,7 @@ func (db *policyTestDB) Query(context.Context, string, ...any) (pgx.Rows, error)
 func (db *policyTestDB) QueryRow(_ context.Context, query string, args ...any) pgx.Row {
 	switch {
 	case strings.Contains(query, "FROM vendor_configs"):
-		return policyTestRow{values: []any{"openai", true, []string{"apikey"}, 0.0, 10.0, []byte(`{}`), []byte(`{}`), 1, []byte(`{}`), time.Unix(0, 0)}}
+		return policyTestRow{values: []any{"openai", true, true, []string{"apikey"}, 0.0, 10.0, []byte(`{}`), []byte(`{}`), 1, []byte(`{}`), time.Unix(0, 0)}}
 	case strings.Contains(query, "FROM detection_policies WHERE"):
 		return policyTestRow{values: db.policy}
 	case strings.Contains(query, "SELECT EXISTS(SELECT 1 FROM detection_providers"):

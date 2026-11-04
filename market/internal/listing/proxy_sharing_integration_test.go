@@ -112,10 +112,8 @@ func newProxySharingFixture(t *testing.T) *proxySharingFixture {
 	admin := adminclient.New(engine.URL, "test", 5*time.Second)
 	fixture.service = &Service{
 		DB: pool, Admin: admin, Prov: &provision.Provisioner{Admin: admin, Replica: reader}, Keyring: keyring,
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Settings: func(context.Context) (settings.Settings, error) {
-			return settings.Settings{RequireSellerProxy: true}, nil
-		},
+		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Settings: func(context.Context) (settings.Settings, error) { return settings.Settings{}, nil },
 	}
 	fixture.proxies = &ProxyService{DB: pool, Admin: admin, Keyring: keyring}
 	return fixture
@@ -371,39 +369,17 @@ func TestProxySharingSellerIsolationAndDisabled(t *testing.T) {
 
 func TestProxySharingPlatformRemainsExclusive(t *testing.T) {
 	fixture := newProxySharingFixture(t)
-	sellerProxy := fixture.proxy(t, &fixture.sellerID)
-	fixture.service.Settings = func(context.Context) (settings.Settings, error) { return settings.Settings{}, nil }
-	_, err := fixture.service.CreateUpstream(fixture.ctx, fixture.sellerID, "anthropic", "oauth", false, nil, false)
-	if !errors.Is(err, ErrNoProxy) {
-		t.Fatalf("platform fallback must not borrow seller inventory: %v", err)
-	}
 	platformProxy := fixture.proxy(t, nil)
-	first := fixture.create(t, nil, false)
-	if first.ProxyID == nil || *first.ProxyID != platformProxy.ID {
-		t.Fatalf("platform fallback selected the wrong inventory: %+v", first)
+	var firstID int64
+	if err := fixture.service.DB.QueryRow(fixture.ctx, `INSERT INTO upstreams(seller_id,platform,auth_type,proxy_id) VALUES($1,'anthropic','oauth',$2) RETURNING id`, fixture.sellerID, platformProxy.ID).Scan(&firstID); err != nil {
+		t.Fatal(err)
 	}
-	_, err = fixture.service.CreateUpstream(fixture.ctx, fixture.otherID, "anthropic", "oauth", false, nil, false)
-	if !errors.Is(err, ErrNoProxy) {
-		t.Fatalf("second platform binding must fail: %v", err)
-	}
-	_, err = fixture.service.CreateUpstream(fixture.ctx, fixture.sellerID, "anthropic", "oauth", false, &platformProxy.ID, false)
-	assertProxySharingHTTPError(t, err, http.StatusNotFound, "PROXY_NOT_FOUND")
-	_, err = fixture.service.DB.Exec(fixture.ctx, `INSERT INTO upstreams(seller_id,platform,auth_type,proxy_id) VALUES($1,'anthropic','oauth',$2)`, fixture.otherID, platformProxy.ID)
+	_, err := fixture.service.DB.Exec(fixture.ctx, `INSERT INTO upstreams(seller_id,platform,auth_type,proxy_id) VALUES($1,'anthropic','oauth',$2)`, fixture.otherID, platformProxy.ID)
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
 		t.Fatalf("database must enforce platform exclusivity: %v", err)
 	}
-	fixture.assertBindings(t, platformProxy.ID, "assigned", first.ID)
-	fixture.assertBindings(t, sellerProxy.ID, "available")
-	if err := fixture.service.Remove(fixture.ctx, fixture.sellerID, first.ID); err != nil {
-		t.Fatal(err)
-	}
-	fixture.assertBindings(t, platformProxy.ID, "available")
-	next, err := fixture.service.CreateUpstream(fixture.ctx, fixture.otherID, "anthropic", "oauth", false, nil, false)
-	if err != nil || next.ProxyID == nil || *next.ProxyID != platformProxy.ID {
-		t.Fatalf("released platform proxy must be reusable: %+v, %v", next, err)
-	}
-	fixture.assertBindings(t, platformProxy.ID, "assigned", next.ID)
+	fixture.assertBindings(t, platformProxy.ID, "assigned", firstID)
 }
 
 func TestProxySharingConcurrentBindings(t *testing.T) {
@@ -413,9 +389,16 @@ func TestProxySharingConcurrentBindings(t *testing.T) {
 			owner := &fixture.sellerID
 			if mode == "platform" {
 				owner = nil
-				fixture.service.Settings = func(context.Context) (settings.Settings, error) { return settings.Settings{}, nil }
+				if _, err := fixture.service.DB.Exec(fixture.ctx, `UPDATE vendor_configs SET require_seller_proxy = false`); err != nil {
+					t.Fatal(err)
+				}
 			}
 			proxy := fixture.proxy(t, owner)
+			if mode == "platform" {
+				if _, err := fixture.proxies.SetShared(fixture.ctx, proxy.ID, true); err != nil {
+					t.Fatal(err)
+				}
+			}
 			attempts := 4
 			if mode == "import" {
 				attempts = min(attempts, int(fixture.service.DB.Config().MaxConns)-1)
@@ -455,10 +438,7 @@ func TestProxySharingConcurrentBindings(t *testing.T) {
 			var upstreamIDs []int64
 			for result := range results {
 				if result.err != nil {
-					if mode != "platform" || !errors.Is(result.err, ErrNoProxy) {
-						t.Fatalf("concurrent %s binding: %v", mode, result.err)
-					}
-					continue
+					t.Fatalf("concurrent %s binding: %v", mode, result.err)
 				}
 				if result.upstream.ProxyID == nil || *result.upstream.ProxyID != proxy.ID {
 					t.Fatalf("concurrent binding used wrong proxy: %+v", result.upstream)
@@ -466,9 +446,7 @@ func TestProxySharingConcurrentBindings(t *testing.T) {
 				upstreamIDs = append(upstreamIDs, result.upstream.ID)
 			}
 			wantCount := attempts
-			if mode == "platform" {
-				wantCount = 1
-			}
+
 			if len(upstreamIDs) != wantCount {
 				t.Fatalf("concurrent %s: got %d successful bindings, want %d", mode, len(upstreamIDs), wantCount)
 			}

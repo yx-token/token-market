@@ -6,7 +6,6 @@ import (
 	"context"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/contract"
@@ -91,7 +90,7 @@ func TestContractQueriesAgainstRealSub2APISchema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	logs, err := r.UsageLogsAfter(ctx, 0, time.Now().Add(time.Minute), 10)
+	logs, err := r.UsageLogsAfter(ctx, 0, 10)
 	if err != nil || len(logs) != 1 {
 		t.Fatalf("UsageLogsAfter: %v %d", err, len(logs))
 	}

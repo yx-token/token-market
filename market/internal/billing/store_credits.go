@@ -16,6 +16,9 @@ import (
 
 const KindBuyerStoreCredit = "buyer_store_credit"
 
+// Keep the existing refund grace period for in-flight billing.
+const creditRefundUsageGrace = 3 * time.Minute
+
 // CreditPack 是人民币预付资金与美元面额的购买快照，不是全平台可消费余额。
 type CreditPack struct {
 	ID                    int64     `json:"id"`
@@ -270,7 +273,7 @@ func (f *Funds) advanceCreditRefund(ctx context.Context, packID int64) error {
 	if status != "refunding" {
 		return nil
 	}
-	if requested == nil || f.now().Before(requested.Add(ingestSafetyLag+time.Minute)) {
+	if requested == nil || f.now().Before(requested.Add(creditRefundUsageGrace)) {
 		return nil
 	}
 	if creditOp != nil {

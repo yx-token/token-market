@@ -27,6 +27,9 @@ PG_PORT="${DEV_PG_PORT:-55432}"
 REDIS_PORT="${DEV_REDIS_PORT:-56379}"
 PG_CONTAINER="${DEV_PG_CONTAINER:-tm-test-pg}"
 REDIS_CONTAINER="${DEV_REDIS_CONTAINER:-tm-test-redis}"
+SITE_PORT="${DEV_SITE_PORT:-8080}"
+EDGE_PORT="${DEV_EDGE_PORT:-8090}"
+THIRDPARTY_PORT="${DEV_THIRDPARTY_PORT:-18082}"
 PG_DSN_BASE="postgres://tm:tm@127.0.0.1:$PG_PORT"
 MARKET_DB=tm_dev
 FAKE_DB=tm_dev_sub2api
@@ -38,10 +41,10 @@ SELLER_EMAIL=seller@dev.local
 SELLER_PASSWORD=seller-password-1
 BUYER_EMAIL=buyer@dev.local
 BUYER_PASSWORD=buyer-password-1
-API=http://127.0.0.1:8080
+API=http://127.0.0.1:$SITE_PORT
 ENGINE_PORT="${DEV_ENGINE_PORT:-18080}"
 ENGINE=http://127.0.0.1:$ENGINE_PORT
-THIRDPARTY=http://127.0.0.1:18082
+THIRDPARTY=http://127.0.0.1:$THIRDPARTY_PORT
 KEYS="$DATA/pay-keys"
 mkdir -p "$DATA"
 
@@ -145,7 +148,7 @@ start_real_engine() {
     export TM_PAYMENT_ALIPAY_GATEWAY="$THIRDPARTY/gateway.do"
     export TM_PAYMENT_WECHAT_BASE_URL="$THIRDPARTY"
     export TM_HTTP_TRUSTED_PROXIES=127.0.0.1/32
-    export TM_EDGE_ADDR=127.0.0.1:8090 TM_EDGE_PUBLIC_URL=http://127.0.0.1:8090
+    export TM_EDGE_ADDR=127.0.0.1:$EDGE_PORT TM_EDGE_PUBLIC_URL="$API"
     export TM_EDGE_SPOOL_DIR="$DATA/edge-spool"
     export TM_HTTP_WEB_DIR="$ROOT/web/dist" TM_HTTP_ADMIN_WEB_DIR="$ROOT/engine-dist"
     export TM_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
@@ -174,7 +177,7 @@ start_real_engine() {
       export TM_PAYMENT_ALIPAY_GATEWAY="$THIRDPARTY/gateway.do"
       export TM_PAYMENT_WECHAT_BASE_URL="$THIRDPARTY"
       export TM_HTTP_TRUSTED_PROXIES=127.0.0.1/32
-      export TM_EDGE_ADDR=127.0.0.1:8090 TM_EDGE_PUBLIC_URL=http://127.0.0.1:8090
+      export TM_EDGE_ADDR=127.0.0.1:$EDGE_PORT TM_EDGE_PUBLIC_URL="$API"
       export TM_EDGE_SPOOL_DIR="$DATA/edge-spool"
       export TM_HTTP_WEB_DIR="$ROOT/web/dist" TM_HTTP_ADMIN_WEB_DIR="$ROOT/engine-dist"
       export TM_DATABASE_DSN="$PG_DSN_BASE/$MARKET_DB?sslmode=disable"
@@ -209,7 +212,10 @@ market_env() {
   export TM_CRYPTO_HASH_PEPPER=dev-pepper
   export TM_AUTH_JWT_SECRET=dev-jwt-secret-dev-jwt-secret-dev-jwt-secret
   export TM_BOOTSTRAP_ADMIN_EMAIL=$ADMIN_EMAIL TM_BOOTSTRAP_ADMIN_PASSWORD=$ADMIN_PASSWORD
-  export TM_HTTP_ADDR=127.0.0.1:8080 TM_EDGE_ADDR=127.0.0.1:8090 TM_EDGE_PUBLIC_URL=http://127.0.0.1:8090
+  export TM_HTTP_ADDR=127.0.0.1:$SITE_PORT TM_EDGE_ADDR=127.0.0.1:$EDGE_PORT TM_EDGE_PUBLIC_URL=http://127.0.0.1:$EDGE_PORT
+  if [[ "$USE_REAL_ENGINE" == "1" ]]; then
+    export TM_EDGE_PUBLIC_URL="$API"
+  fi
   export TM_EDGE_SPOOL_DIR="$DATA/edge-spool"
   if [[ -f web/dist/index.html ]]; then export TM_HTTP_WEB_DIR="$ROOT/web/dist"; fi
   # 管理端 SPA 挂 /admin（静态资源 /admin-assets）
@@ -464,10 +470,10 @@ up() {
     start fake-sub2api bin/fake-sub2api --dsn "$PG_DSN_BASE/$FAKE_DB?sslmode=disable" --sub2api-repo "$SUB2API_REPO" --listen 127.0.0.1:18081
     wait_http "http://127.0.0.1:18081/api/v1/admin/system/version"
   fi
-  start fake-thirdparty bin/fake-thirdparty --keys-dir "$KEYS" --listen 127.0.0.1:18082 --notify-origin "$API"
+  start fake-thirdparty bin/fake-thirdparty --keys-dir "$KEYS" --listen 127.0.0.1:$THIRDPARTY_PORT --notify-origin "$API"
   wait_http "$THIRDPARTY/api/probe/run/none"
   if [[ "$USE_REAL_ENGINE" == "1" ]]; then
-    start dev-proxy bin/dev-proxy --listen 127.0.0.1:8080 --target "$ENGINE" --admin-dir "$ROOT/engine-dist" --admin-key-file "$DATA/engine-admin-key"
+    start dev-proxy bin/dev-proxy --listen 127.0.0.1:$SITE_PORT --target "$ENGINE" --admin-dir "$ROOT/engine-dist" --admin-key-file "$DATA/engine-admin-key"
     wait_http "$API/healthz"
   else
     market_env
@@ -480,13 +486,15 @@ up() {
   seed_payments
   seed_thirdparty
   seed_accounts
+  local buyer_gateway=http://127.0.0.1:$EDGE_PORT
+  [[ "$USE_REAL_ENGINE" == "1" ]] && buyer_gateway="$API"
   cat <<INFO
 
 开发环境已就绪（单端口）：
   站点            $API
   C 端市场        $API/
   管理端          $API/admin/dashboard   （sub2api 底座 + 侧栏「闲猫」）
-  买家调用 Edge   http://127.0.0.1:8090
+  买家调用入口    $buyer_gateway
 
   管理员（市场+引擎）  $ADMIN_EMAIL / $ADMIN_PASSWORD
   卖家                 $SELLER_EMAIL / $SELLER_PASSWORD

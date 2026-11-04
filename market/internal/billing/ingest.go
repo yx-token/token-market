@@ -12,27 +12,16 @@ import (
 )
 
 const (
-	// ingestSafetyLag：只读取早于当前时间这么久的 usage_logs，因为自增 id 的提交顺序不一定与 id 顺序一致
-	ingestSafetyLag = 2 * time.Minute
-	// ingestOverlap：每次从游标往前回退的 id 数量，配合主键去重补上晚提交的记录
-	ingestOverlap = 2000
-	ingestBatch   = 2000
+	ingestBatch = 2000
+	ingestTail  = 2000
 )
 
 type Ingester struct {
 	DB      *pgxpool.Pool
 	Replica *replica.Reader
 	Log     *slog.Logger
-	Now     func() time.Time
 	// Gate 为 false 时暂停入账（sub2api 兼容自检未通过时，用量的含义可能已经变化）
 	Gate func(ctx context.Context) (bool, string)
-}
-
-func (in *Ingester) now() time.Time {
-	if in.Now != nil {
-		return in.Now()
-	}
-	return time.Now()
 }
 
 // IngestResult 汇总一轮入账。
@@ -44,38 +33,87 @@ type IngestResult struct {
 
 // RunOnce 拉取一批用量、解析归属、记账、汇总结算行。返回是否可能还有更多数据。
 func (in *Ingester) RunOnce(ctx context.Context) (*IngestResult, bool, error) {
-	var cursor int64
-	if err := in.DB.QueryRow(ctx, "SELECT last_id FROM ingest_cursors WHERE source = 'usage_logs'").Scan(&cursor); err != nil {
-		return nil, false, err
-	}
-	from := cursor - ingestOverlap
-	if from < 0 {
-		from = 0
-	}
-	logs, err := in.Replica.UsageLogsAfter(ctx, from, in.now().Add(-ingestSafetyLag), ingestOverlap+ingestBatch)
-	if err != nil {
-		return nil, false, err
-	}
-	res := &IngestResult{Fetched: len(logs)}
-	if len(logs) == 0 {
-		return res, false, nil
-	}
-
 	tx, err := in.DB.Begin(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	// 防止多个入账器用旧游标覆盖新游标；锁覆盖导入、归属与资金入账。
+	// Serialize the cursor read, recovery scan, claims and money movement.
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(1953325673)"); err != nil {
 		return nil, false, err
 	}
+	var cursor, replay, replayEnd int64
+	if err := tx.QueryRow(ctx, `SELECT
+		(SELECT last_id FROM ingest_cursors WHERE source='usage_logs'),
+		(SELECT last_id FROM ingest_cursors WHERE source='usage_logs_replay'),
+		(SELECT last_id FROM ingest_cursors WHERE source='usage_logs_replay_end')`).Scan(&cursor, &replay, &replayEnd); err != nil {
+		return nil, false, err
+	}
 
+	// Read committed rows immediately. Sequence IDs are NOT commit watermarks;
+	// the durable cyclic replay below repairs arbitrarily late low-ID commits.
+	logs, err := in.Replica.UsageLogsAfter(ctx, cursor, ingestBatch)
+	if err != nil {
+		return nil, false, err
+	}
+	more := len(logs) == ingestBatch
 	maxID := cursor
 	for _, u := range logs {
 		if u.ID > maxID {
 			maxID = u.ID
 		}
+	}
+	// Repair ordinary commit reordering every round without waiting for a full
+	// history replay. The cyclic scan also covers delays beyond this tail.
+	tailFrom := cursor - ingestTail
+	if tailFrom < 0 {
+		tailFrom = 0
+	}
+	if cursor > 0 {
+		tail, err := in.Replica.UsageLogsRange(ctx, tailFrom, cursor, ingestTail)
+		if err != nil {
+			return nil, false, err
+		}
+		logs = append(logs, tail...)
+	}
+	if replayEnd == 0 {
+		replayEnd = cursor
+	}
+	if replayEnd > 0 {
+		older, err := in.Replica.UsageLogsRange(ctx, replay, replayEnd, ingestBatch)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, u := range older {
+			replay = u.ID
+		}
+		logs = append(logs, older...)
+		if len(older) < ingestBatch || replay >= replayEnd {
+			replay, replayEnd = 0, 0
+		}
+	}
+	res := &IngestResult{Fetched: len(logs)}
+	ids := make([]int64, len(logs))
+	for i, u := range logs {
+		ids[i] = u.ID
+	}
+	rows, err := tx.Query(ctx, `SELECT sub2api_usage_id FROM usage_records WHERE sub2api_usage_id=ANY($1)`, ids)
+	if err != nil {
+		return nil, false, err
+	}
+	existing, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return nil, false, err
+	}
+	seen := make(map[int64]bool, len(existing))
+	for _, id := range existing {
+		seen[id] = true
+	}
+	for _, u := range logs {
+		if seen[u.ID] {
+			continue
+		}
+		seen[u.ID] = true
 		tag, err := tx.Exec(ctx, `INSERT INTO usage_records (sub2api_usage_id, sub2api_request_id, created_at, sub2api_account_id, sub2api_group_id,
 				sub2api_user_id, sub2api_api_key_id, model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
 				total_cost, actual_cost, account_rate_multiplier, first_token_ms, duration_ms, upstream_response_model, upstream_model_mismatch, channel)
@@ -89,25 +127,28 @@ func (in *Ingester) RunOnce(ctx context.Context) (*IngestResult, bool, error) {
 		}
 		res.Inserted += int(tag.RowsAffected())
 	}
-	if err := attribute(ctx, tx, from); err != nil {
+	// Include recovered IDs below the forward cursor in attribution and claims.
+	if err := attribute(ctx, tx, ids); err != nil {
 		return nil, false, err
 	}
-	posted, err := postUsage(ctx, tx, from)
+	posted, err := postUsage(ctx, tx, 0, ids)
 	if err != nil {
 		return nil, false, err
 	}
 	res.Posted = posted
-	if _, err := tx.Exec(ctx, "UPDATE ingest_cursors SET last_id = GREATEST(last_id, $1), updated_at = now() WHERE source = 'usage_logs'", maxID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE ingest_cursors SET last_id=CASE source
+		WHEN 'usage_logs' THEN $1::bigint WHEN 'usage_logs_replay' THEN $2::bigint ELSE $3::bigint END, updated_at=now()
+		WHERE source IN ('usage_logs','usage_logs_replay','usage_logs_replay_end')`, maxID, replay, replayEnd); err != nil {
 		return nil, false, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, false, err
 	}
-	return res, len(logs) == ingestOverlap+ingestBatch, nil
+	return res, more, nil
 }
 
 // attribute 为新入库（channel = unknown 且尚未记账）的用量解析业务归属。
-func attribute(ctx context.Context, tx pgx.Tx, fromID int64) error {
+func attribute(ctx context.Context, tx pgx.Tx, ids []int64) error {
 	// 上游、卖家与挂单
 	if _, err := tx.Exec(ctx, `UPDATE usage_records ur SET upstream_id = u.id, seller_id = u.seller_id,
 			payout = ur.total_cost * COALESCE(ur.account_rate_multiplier, 1),
@@ -115,7 +156,7 @@ func attribute(ctx context.Context, tx pgx.Tx, fromID int64) error {
 				AND (l.closed_at IS NULL OR l.closed_at > ur.created_at) ORDER BY l.id DESC LIMIT 1)
 		FROM upstreams u
 		WHERE u.sub2api_account_id = ur.sub2api_account_id AND ur.upstream_id IS NULL AND ur.ledger_txn_id IS NULL
-			AND ur.sub2api_usage_id > $1`, fromID); err != nil {
+			AND ur.sub2api_usage_id=ANY($1::bigint[])`, ids); err != nil {
 		return err
 	}
 	// 买家与渠道：内部 key → 买家 Key；分组决定是默认分组还是指定卖家。
@@ -127,7 +168,7 @@ func attribute(ctx context.Context, tx pgx.Tx, fromID int64) error {
 				ELSE 'unknown' END
 		FROM internal_keys ik
 		WHERE ik.sub2api_key_id = ur.sub2api_api_key_id AND ur.channel = 'unknown' AND ur.ledger_txn_id IS NULL
-			AND ur.sub2api_usage_id > $1`, fromID); err != nil {
+			AND ur.sub2api_usage_id=ANY($1::bigint[])`, ids); err != nil {
 		return err
 	}
 	// 活动钱包内部 key 仍归属原买家 Key，仅限本店；归属时再次由真实上游/模型校验作用域。
@@ -135,14 +176,14 @@ func attribute(ctx context.Context, tx pgx.Tx, fromID int64) error {
 		buyer_user_id=cp.buyer_id, credit_pack_id=cp.id, channel='direct'
 		FROM store_credit_keys ck JOIN store_credit_packs cp ON cp.id=ck.pack_id
 		WHERE ck.sub2api_key_id=ur.sub2api_api_key_id AND ur.channel='unknown'
-		AND ur.ledger_txn_id IS NULL AND ur.sub2api_usage_id>$1`, fromID); err != nil {
+		AND ur.ledger_txn_id IS NULL AND ur.sub2api_usage_id=ANY($1::bigint[])`, ids); err != nil {
 		return err
 	}
 	// 探测流量
 	if _, err := tx.Exec(ctx, `UPDATE usage_records ur SET channel = 'probe'
 		FROM system_keys sk
 		WHERE sk.sub2api_key_id = ur.sub2api_api_key_id AND ur.channel = 'unknown' AND ur.ledger_txn_id IS NULL
-			AND ur.sub2api_usage_id > $1`, fromID); err != nil {
+			AND ur.sub2api_usage_id=ANY($1::bigint[])`, ids); err != nil {
 		return err
 	}
 	// 上架检测（含上架失败后重新检测）与卖家手动复测由卖家自己承担：不结算收益，也不计平台探测成本，
@@ -151,23 +192,34 @@ func attribute(ctx context.Context, tx pgx.Tx, fromID int64) error {
 	// 尾差会把随后平台发起的检测也算到卖家头上。卖家复测排队时不能有其他检测在跑，
 	// 只有管理员或申诉检测可能与之重叠，重叠部分同样由卖家承担。
 	_, err := tx.Exec(ctx, `UPDATE usage_records ur SET payout = 0, seller_borne = true
-		WHERE ur.channel = 'probe' AND ur.upstream_id IS NOT NULL AND ur.ledger_txn_id IS NULL AND ur.sub2api_usage_id > $1
+		WHERE ur.channel = 'probe' AND ur.upstream_id IS NOT NULL AND ur.ledger_txn_id IS NULL AND ur.sub2api_usage_id=ANY($1::bigint[])
 			AND EXISTS (SELECT 1 FROM probe_runs r WHERE r.upstream_id = ur.upstream_id AND r.trigger IN ('onboarding', 'seller_manual')
-				AND ur.created_at >= r.queued_at AND ur.created_at <= COALESCE(r.finished_at, 'infinity'::timestamptz))`, fromID)
+				AND ur.created_at >= r.queued_at AND ur.created_at <= COALESCE(r.finished_at, 'infinity'::timestamptz))`, ids)
 	return err
 }
 
 // postUsage 把尚未记账、已归属的用量记成一笔 usage 交易，并汇总到结算行。
 // 买家：买家余额减少 actual_cost；卖家：待结算增加 payout；差额记平台收入；探测流量记平台探测成本（卖家承担的探测 payout 为 0，不入账）。
-func postUsage(ctx context.Context, tx pgx.Tx, fromID int64) (int64, error) {
+func postUsage(ctx context.Context, tx pgx.Tx, fromID int64, scope ...[]int64) (int64, error) {
+	var ids []int64
+	if len(scope) > 0 {
+		ids = scope[0]
+	}
 	// 同事务串行认领，所有入口（包括重放/测试/补偿）遵守同一锁。不能先查待记账行再上锁。
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock(1953325673)"); err != nil {
 		return 0, err
 	}
+	claimFilter := "sub2api_usage_id > $1"
+	claimArgs := []any{fromID}
+	updateFilter := "sub2api_usage_id > $2"
+	if len(scope) > 0 {
+		claimFilter, claimArgs = "sub2api_usage_id=ANY($1::bigint[])", []any{ids}
+		updateFilter = "sub2api_usage_id=ANY($2::bigint[])"
+	}
 	var minID, maxID *int64
 	var n int64
 	if err := tx.QueryRow(ctx, `SELECT min(sub2api_usage_id), max(sub2api_usage_id), count(*) FROM usage_records
-		WHERE ledger_txn_id IS NULL AND channel <> 'unknown' AND sub2api_usage_id > $1`, fromID).Scan(&minID, &maxID, &n); err != nil {
+		WHERE ledger_txn_id IS NULL AND channel <> 'unknown' AND `+claimFilter, claimArgs...).Scan(&minID, &maxID, &n); err != nil {
 		return 0, err
 	}
 	if n == 0 {
@@ -179,7 +231,7 @@ func postUsage(ctx context.Context, tx pgx.Tx, fromID int64) (int64, error) {
 		return 0, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE usage_records SET ledger_txn_id = $1
-		WHERE ledger_txn_id IS NULL AND channel <> 'unknown' AND sub2api_usage_id > $2`, txnID, fromID); err != nil {
+		WHERE ledger_txn_id IS NULL AND channel <> 'unknown' AND `+updateFilter, txnID, claimArgs[0]); err != nil {
 		return 0, err
 	}
 	if err := allocateStoreCredits(ctx, tx, txnID); err != nil {

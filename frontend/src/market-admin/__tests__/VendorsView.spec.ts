@@ -21,6 +21,7 @@ const vendor = {
   appraisal_base: { default: 0.2 },
   default_concurrency: 2,
   extra_limits: { burst: 3 },
+  require_seller_proxy: true,
 }
 
 async function page() {
@@ -79,5 +80,21 @@ describe('厂商编辑弹窗', () => {
     expect(dialog().querySelector('[role="alert"]')?.textContent).toContain('厂商保存失败')
     expect(dialog().querySelector<HTMLInputElement>('input[inputmode="decimal"]')?.value).toBe('0.17')
     expect(api.get).toHaveBeenCalledOnce()
+  })
+
+  it('按厂商回显代理要求并保存，重开时继续显示新值', async () => {
+    api.send.mockResolvedValue({})
+    const wrapper = await page()
+    await click(wrapper, '编辑')
+    const required = Array.from(dialog().querySelectorAll<HTMLLabelElement>('label')).find((label) => label.textContent?.includes('必须使用卖家自己的代理'))!.querySelector<HTMLInputElement>('input')!
+    expect(required.checked).toBe(true)
+    required.checked = false
+    required.dispatchEvent(new Event('change', { bubbles: true }))
+    api.get.mockResolvedValue([{ ...vendor, require_seller_proxy: false }])
+    await clickDialog('保存')
+    expect(api.send).toHaveBeenCalledWith('PUT', '/api/v1/admin/market/vendors/openai', expect.objectContaining({ require_seller_proxy: false, auth_types: ['api_key'], extra_limits: { burst: 3 } }))
+    await click(wrapper, '编辑')
+    const reloaded = Array.from(dialog().querySelectorAll<HTMLLabelElement>('label')).find((label) => label.textContent?.includes('必须使用卖家自己的代理'))!.querySelector<HTMLInputElement>('input')!
+    expect(reloaded.checked).toBe(false)
   })
 })

@@ -63,7 +63,7 @@ async function openDetail(requestID?: string) {
 
 <template>
   <div>
-    <PageHeader title="用量明细" description="已入账的实际消费，通常有几分钟延迟。使用活动包时，费用为消耗的人民币预付款与平台余额扣款之和。" />
+    <PageHeader title="用量明细" description="已入账的实际消费，调用结束后通常几秒内可查，刷新即可查看。使用活动包时，费用为消耗的人民币预付款与平台余额扣款之和。" />
     <div class="card mb-4 flex flex-wrap items-end gap-3">
       <div>
         <label class="label" for="key">Key</label>

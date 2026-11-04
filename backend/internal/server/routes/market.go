@@ -66,12 +66,10 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 		})
 	}
 	bind("status", func(c *gin.Context) (any, error) { return store.Status(c.Request.Context()) })
-	bind("vendors", func(c *gin.Context) (any, error) { return store.ListVendors(c.Request.Context()) })
 	bind("supply/accounts", func(c *gin.Context) (any, error) { return store.ListSupplyAccounts(c.Request.Context()) })
 	bind("supply/groups", func(c *gin.Context) (any, error) { return store.ListSupplyGroups(c.Request.Context()) })
 	// pools 的读取走 relay（见 registerIdleCatRelay）：编辑弹窗和启停/上架按钮要回传 min_margin、safety_buffer、
 	// market_description，简表没有这几列，弹窗会显示 undefined，上架/启停还会把市场描述当空串写回去。
-	bind("proxies", func(c *gin.Context) (any, error) { return store.ListProxies(c.Request.Context()) })
 	bind("upstreams", func(c *gin.Context) (any, error) { return store.ListUpstreams(c.Request.Context()) })
 	bind("recharges", func(c *gin.Context) (any, error) { return store.ListRecharges(c.Request.Context()) })
 	bind("refunds", func(c *gin.Context) (any, error) { return store.ListRefunds(c.Request.Context()) })
@@ -87,9 +85,7 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 	// payments/*、settings、market-discovery 读/写均走 relay（market 已扁平 Defaults）。
 	bind("identities", func(c *gin.Context) (any, error) { return store.ListIdentities(c.Request.Context()) })
 
-	// PUT vendors/:platform、PUT pools/:id、PUT detection-policies/:platform 走 relay；见 registerIdleCatRelay。
-	admin.POST("/market/proxies/:id/disable", func(c *gin.Context) { idleCatProxy(c, store, true) })
-	admin.POST("/market/proxies/:id/enable", func(c *gin.Context) { idleCatProxy(c, store, false) })
+	// vendors / proxies / pools / detection 配置的读取和修改都走 relay；native 简表字段不完整。
 	admin.POST("/market/probe-items/:id/retire", func(c *gin.Context) {
 		id, ok := idleCatID(c)
 		if !ok {
@@ -132,6 +128,7 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 // 系统升级不在此列，仍由 market-api 本进程处理。
 func registerIdleCatRelay(admin *gin.RouterGroup) {
 	paths := []string{
+		"GET vendors",
 		"POST identities/bind",
 		"GET inspection/settings",
 		"PUT inspection/settings",
@@ -141,10 +138,15 @@ func registerIdleCatRelay(admin *gin.RouterGroup) {
 		"PUT market-categories/:id",
 		"DELETE market-categories/:id",
 		"PUT vendors/:platform",
+		"GET proxies",
 		"POST proxies",
+		"PUT proxies/:id/sharing",
+		"DELETE proxies/:id",
 		"POST proxies/:id/sync",
 		"POST proxies/:id/test",
 		"POST proxies/:id/quality-check",
+		"POST proxies/:id/disable",
+		"POST proxies/:id/enable",
 		"GET pools",
 		"POST pools",
 		"PUT pools/:id",

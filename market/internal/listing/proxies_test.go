@@ -27,7 +27,7 @@ func (row proxyRow) Scan(dest ...any) error {
 	}
 	values := []any{int64(1), (*int64)(nil), "proxy", "http", "proxy.test", 8080,
 		(*string)(nil), (*string)(nil), func() *int64 { id := int64(91); return &id }(),
-		"available", row.ids, time.Now(), []byte(nil), []byte(nil), (*time.Time)(nil), (*time.Time)(nil)}
+		"available", false, row.ids, time.Now(), []byte(nil), []byte(nil), (*time.Time)(nil), (*time.Time)(nil)}
 	for index, value := range values {
 		reflect.ValueOf(dest[index]).Elem().Set(reflect.ValueOf(value))
 	}

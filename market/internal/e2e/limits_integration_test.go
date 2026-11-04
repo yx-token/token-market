@@ -54,7 +54,6 @@ func TestSpendingLimitAndRiskControls(t *testing.T) {
 			t.Fatalf("call %d: %d", i, status)
 		}
 	}
-	e.app.Ingester.Now = func() time.Time { return time.Now().Add(5 * time.Minute) }
 	if _, _, err := e.app.Ingester.RunOnce(ctx); err != nil {
 		t.Fatal(err)
 	}

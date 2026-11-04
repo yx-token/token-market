@@ -57,6 +57,7 @@ const (
 type VendorConfig struct {
 	Platform           string             `json:"platform"`
 	Enabled            bool               `json:"enabled"`
+	RequireSellerProxy bool               `json:"require_seller_proxy"`
 	AuthTypes          []string           `json:"auth_types"`           // 开放给卖家的接入方式
 	SupportedAuthTypes []string           `json:"supported_auth_types"` // 本系统实现了的全部接入方式（不存库）
 	ConsignmentMin     float64            `json:"consignment_min"`
@@ -218,9 +219,9 @@ var (
 func GetVendor(ctx context.Context, db DB, platform string) (*VendorConfig, error) {
 	var v VendorConfig
 	var base, appraisal, extra []byte
-	err := db.QueryRow(ctx, `SELECT platform, enabled, auth_types, consignment_min, consignment_max, buyback_base,
+	err := db.QueryRow(ctx, `SELECT platform, enabled, require_seller_proxy, auth_types, consignment_min, consignment_max, buyback_base,
 		appraisal_base, default_concurrency, extra_limits, updated_at FROM vendor_configs WHERE platform = $1`, platform).
-		Scan(&v.Platform, &v.Enabled, &v.AuthTypes, &v.ConsignmentMin, &v.ConsignmentMax, &base, &appraisal, &v.DefaultConcurrency, &extra, &v.UpdatedAt)
+		Scan(&v.Platform, &v.Enabled, &v.RequireSellerProxy, &v.AuthTypes, &v.ConsignmentMin, &v.ConsignmentMax, &base, &appraisal, &v.DefaultConcurrency, &extra, &v.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, httpx.NotFound("VENDOR_NOT_FOUND", "unknown vendor "+platform)
 	}
@@ -266,6 +267,7 @@ func ListVendors(ctx context.Context, db DB) ([]VendorConfig, error) {
 // UpdateVendorInput 是管理员修改厂商配置的可选字段。
 type UpdateVendorInput struct {
 	Enabled            *bool               `json:"enabled"`
+	RequireSellerProxy *bool               `json:"require_seller_proxy"`
 	AuthTypes          *[]string           `json:"auth_types"`
 	ConsignmentMin     *float64            `json:"consignment_min"`
 	ConsignmentMax     *float64            `json:"consignment_max"`
@@ -282,6 +284,9 @@ func UpdateVendor(ctx context.Context, db DB, platform string, in UpdateVendorIn
 	}
 	if in.Enabled != nil {
 		v.Enabled = *in.Enabled
+	}
+	if in.RequireSellerProxy != nil {
+		v.RequireSellerProxy = *in.RequireSellerProxy
 	}
 	if in.AuthTypes != nil {
 		// 只能在已实现的接入方式中选择，并按固定顺序保存
@@ -335,9 +340,9 @@ func UpdateVendor(ctx context.Context, db DB, platform string, in UpdateVendorIn
 	base, _ := json.Marshal(v.BuybackBase)
 	appraisal, _ := json.Marshal(v.AppraisalBase)
 	extra, _ := json.Marshal(v.ExtraLimits)
-	_, err = db.Exec(ctx, `UPDATE vendor_configs SET enabled = $2, consignment_min = $3, consignment_max = $4,
-		buyback_base = $5, default_concurrency = $6, extra_limits = $7, auth_types = $8, appraisal_base = $9, updated_at = now() WHERE platform = $1`,
-		platform, v.Enabled, v.ConsignmentMin, v.ConsignmentMax, base, v.DefaultConcurrency, extra, v.AuthTypes, appraisal)
+	_, err = db.Exec(ctx, `UPDATE vendor_configs SET enabled = $2, require_seller_proxy = $3, consignment_min = $4, consignment_max = $5,
+		buyback_base = $6, default_concurrency = $7, extra_limits = $8, auth_types = $9, appraisal_base = $10, updated_at = now() WHERE platform = $1`,
+		platform, v.Enabled, v.RequireSellerProxy, v.ConsignmentMin, v.ConsignmentMax, base, v.DefaultConcurrency, extra, v.AuthTypes, appraisal)
 	if err != nil {
 		return nil, err
 	}

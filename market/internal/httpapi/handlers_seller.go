@@ -39,13 +39,29 @@ type upstreamDetail struct {
 	*listing.Upstream
 	Listing  *listing.Listing `json:"listing,omitempty"`
 	Quote    *listing.Quote   `json:"quote,omitempty"`
-	Proxy    *listing.Proxy   `json:"proxy,omitempty"`
+	Proxy    any              `json:"proxy,omitempty"`
 	Stats24h upstreamStats    `json:"stats_24h"`
 	// 能否使用重置卡、能否授权平台自动用卡
 	ResetCredits bool `json:"reset_credits_supported"`
 	AutoReset    bool `json:"auto_reset_supported"`
 	// 能否手动复测；检测正常时不允许，按钮置灰并说明原因
 	ManualRetest *quality.RetestEligibility `json:"manual_retest,omitempty"`
+}
+
+// Platform proxies expose only the selected service and health, never the endpoint or credentials.
+func sellerProxyView(proxy *listing.Proxy) any {
+	if proxy.SellerID != nil {
+		return proxy
+	}
+	name := "平台代理"
+	if proxy.IsShared {
+		name = "平台共享代理（自动分配）"
+	}
+	return struct {
+		IsShared bool   `json:"is_shared"`
+		Name     string `json:"name"`
+		Status   string `json:"status"`
+	}{proxy.IsShared, name, proxy.Status}
 }
 
 // upstreamStats 是上游近 24 小时的服务情况（只含已入账的用量，有几分钟延迟）。
@@ -69,9 +85,11 @@ func (s *Server) getUpstream(w http.ResponseWriter, r *http.Request) error {
 	d := upstreamDetail{Upstream: u, ResetCredits: listing.SupportsResetCredits(u.Platform, u.AuthType),
 		AutoReset: listing.SupportsAutoReset(u.Platform, u.AuthType)}
 	if u.ProxyID != nil {
-		if d.Proxy, err = s.Proxies.Get(r.Context(), *u.ProxyID); err != nil {
-			return err
+		proxy, proxyErr := s.Proxies.Get(r.Context(), *u.ProxyID)
+		if proxyErr != nil {
+			return proxyErr
 		}
+		d.Proxy = sellerProxyView(proxy)
 	}
 	if d.Listing, err = listing.OpenListing(r.Context(), s.DB, id); err != nil {
 		return err

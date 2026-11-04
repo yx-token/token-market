@@ -142,6 +142,7 @@ func runMainServer() {
 	if cfg.RunMode == config.RunModeSimple {
 		log.Println("⚠️  WARNING: Running in SIMPLE mode - billing and quota checks are DISABLED")
 	}
+	enginehost.SetHostGateway(cfg.Server.Host, cfg.Server.Port)
 
 	buildInfo := handler.BuildInfo{
 		Version:   Version,
@@ -172,7 +173,7 @@ func runMainServer() {
 	runCtx, stopRun := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stopRun()
 	enginehost.StartWorker(runCtx)
-	enginehost.StartEdge(runCtx)
+	edgeDone := enginehost.StartEdge(runCtx)
 
 	// 启动服务器
 	go func() {
@@ -192,6 +193,8 @@ func runMainServer() {
 	if err := app.Server.Shutdown(ctx); err != nil {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
+	// Edge also owns requests mounted on the main port; let it drain and flush attempts before cleanup.
+	<-edgeDone
 
 	log.Println("Server exited")
 }

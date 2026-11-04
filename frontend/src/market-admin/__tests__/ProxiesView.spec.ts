@@ -108,6 +108,19 @@ describe('market admin proxy bindings', () => {
     expect(row.get('.disable-reason').text()).toContain('需全部解绑后才能停用')
   })
 
+  it('仅平台代理可切换共享，发送专用字段并按返回列表回显', async () => {
+    api.send.mockResolvedValue({})
+    const wrapper = await page()
+    const sellerRow = wrapper.findAll('tbody tr')[0]!
+    expect(sellerRow.findAll('button').some((button) => button.text().includes('设为共享'))).toBe(false)
+    const platformRow = wrapper.findAll('tbody tr')[3]!
+    api.get.mockResolvedValue([{ ...proxy, id: 4, name: 'platform-proxy', seller_id: null, is_shared: true, assigned_upstream_ids: [81], assigned_upstream_count: 1 }])
+    await platformRow.findAll('button').find((button) => button.text() === '设为共享')!.trigger('click')
+    await flushPromises()
+    expect(api.send).toHaveBeenCalledWith('PUT', '/api/v1/admin/market/proxies/4/sharing', { is_shared: true })
+    expect(wrapper.get('tbody').text()).toContain('设为独占')
+  })
+
   it('保存失败时在活动弹窗内播报错误并保留表单', async () => {
     api.send.mockRejectedValue(new Error('代理保存失败'))
     const wrapper = await page()

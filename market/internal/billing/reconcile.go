@@ -232,13 +232,22 @@ func (r *Reconciler) RunBalances(ctx context.Context) (int64, error) {
 				AND idempotency_key NOT LIKE 'tm-refund-%'`, fmt.Sprintf("user:%d", it.subUserID)).Scan(&inflight); err != nil {
 			return found, err
 		}
-		expected := it.expected - uningested[it.subUserID]
-		diff := actual[it.subUserID] + inflight - expected
+		verified := verifiedBalance{actual: actual[it.subUserID], expected: it.expected,
+			inflight: inflight, pending: uningested[it.subUserID]}
+		diff := verified.diff()
 		if abs(diff) <= st.BalanceMismatchTolerance {
 			continue
 		}
-		detail, _ := json.Marshal(map[string]any{"sub2api_balance": actual[it.subUserID], "ledger_balance": it.expected,
-			"uningested_usage": uningested[it.subUserID], "inflight_ops": inflight, "diff": diff})
+		verified, err = r.verifyBalance(ctx, it.subUserID, it.userID, false)
+		if err != nil {
+			return found, err
+		}
+		diff = verified.diff()
+		if abs(diff) <= st.BalanceMismatchTolerance {
+			continue
+		}
+		detail, _ := json.Marshal(map[string]any{"sub2api_balance": verified.actual, "ledger_balance": verified.expected,
+			"uningested_usage": verified.pending, "inflight_ops": verified.inflight, "diff": diff})
 		tag, err := r.DB.Exec(ctx, `INSERT INTO billing_anomalies (rule, dedupe_key, buyer_user_id, amount, detail)
 			VALUES ('balance_mismatch', $1, $2, $3, $4) ON CONFLICT (dedupe_key) DO NOTHING`,
 			fmt.Sprintf("balance:%d:%s", it.userID, day), it.userID, diff, detail)

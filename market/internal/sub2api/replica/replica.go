@@ -23,6 +23,7 @@ type Querier interface {
 const (
 	qAppliedMigrations = "applied_migrations"
 	qUsageLogsAfter    = "usage_logs_after"
+	qUsageLogsRange    = "usage_logs_range"
 	qTMAccounts        = "tm_accounts"
 	qTMAccountGroups   = "tm_account_groups"
 	qTMGroups          = "tm_groups"
@@ -45,7 +46,7 @@ func New(db Querier) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, name := range []string{qAppliedMigrations, qUsageLogsAfter, qTMAccounts, qTMAccountGroups, qTMGroups, qUserBalances,
+	for _, name := range []string{qAppliedMigrations, qUsageLogsAfter, qUsageLogsRange, qTMAccounts, qTMAccountGroups, qTMGroups, qUserBalances,
 		qUserByEmail, qAPIKeyByKey, qGroupByName, qAccountByName, qUsageSumAfter, qAutoResetAudits} {
 		if _, ok := qs[name]; !ok {
 			return nil, fmt.Errorf("replica: contract query %s missing", name)
@@ -107,20 +108,31 @@ type UsageLog struct {
 	UpstreamModelMismatch *bool
 }
 
-// UsageLogsAfter 按 id 增量读取 created_at 早于 before 的用量记录。
-func (r *Reader) UsageLogsAfter(ctx context.Context, afterID int64, before time.Time, limit int) ([]UsageLog, error) {
-	rows, err := r.db.Query(ctx, r.queries[qUsageLogsAfter], afterID, before, limit)
+// UsageLogsAfter 按 id 增量读取当前可见的已提交用量。
+func (r *Reader) UsageLogsAfter(ctx context.Context, afterID int64, limit int) ([]UsageLog, error) {
+	rows, err := r.db.Query(ctx, r.queries[qUsageLogsAfter], afterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("replica %s: %w", qUsageLogsAfter, err)
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (UsageLog, error) {
-		var u UsageLog
-		err := row.Scan(&u.ID, &u.RequestID, &u.CreatedAt, &u.UserID, &u.APIKeyID, &u.AccountID, &u.GroupID, &u.Model,
-			&u.InputTokens, &u.OutputTokens, &u.CacheCreationTokens, &u.CacheReadTokens,
-			&u.TotalCost, &u.ActualCost, &u.AccountRateMultiplier, &u.FirstTokenMs, &u.DurationMs,
-			&u.UpstreamResponseModel, &u.UpstreamModelMismatch)
-		return u, err
-	})
+	return pgx.CollectRows(rows, scanUsageLog)
+}
+
+// UsageLogsRange replays a bounded ID range, including late commits behind the forward cursor.
+func (r *Reader) UsageLogsRange(ctx context.Context, afterID, throughID int64, limit int) ([]UsageLog, error) {
+	rows, err := r.db.Query(ctx, r.queries[qUsageLogsRange], afterID, throughID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("replica %s: %w", qUsageLogsRange, err)
+	}
+	return pgx.CollectRows(rows, scanUsageLog)
+}
+
+func scanUsageLog(row pgx.CollectableRow) (UsageLog, error) {
+	var u UsageLog
+	err := row.Scan(&u.ID, &u.RequestID, &u.CreatedAt, &u.UserID, &u.APIKeyID, &u.AccountID, &u.GroupID, &u.Model,
+		&u.InputTokens, &u.OutputTokens, &u.CacheCreationTokens, &u.CacheReadTokens,
+		&u.TotalCost, &u.ActualCost, &u.AccountRateMultiplier, &u.FirstTokenMs, &u.DurationMs,
+		&u.UpstreamResponseModel, &u.UpstreamModelMismatch)
+	return u, err
 }
 
 type Account struct {

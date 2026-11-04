@@ -111,7 +111,6 @@ func TestQualityDetectionLifecycle(t *testing.T) {
 	if len(suspected) != 0 {
 		t.Fatalf("已通过的测智流程应清除疑似：%v", suspected)
 	}
-	f.e.app.Ingester.Now = func() time.Time { return time.Now().Add(5 * time.Minute) }
 	if _, _, err := f.e.app.Ingester.RunOnce(f.e.ctx); err != nil {
 		t.Fatal(err)
 	}

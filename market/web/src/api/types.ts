@@ -18,7 +18,6 @@ export interface LoginResult {
 }
 
 export interface MarketConfig {
-  require_seller_proxy: boolean
   edge_url: string
   commission_rate: number
   freeze_days: number
@@ -126,6 +125,12 @@ export interface VendorView {
   consignment_min: number
   consignment_max: number
   self_reserve_supported: boolean
+  require_seller_proxy?: boolean
+}
+
+export interface SharedProxyAvailability {
+  available: boolean
+  count: number
 }
 
 export interface PaymentInfo {
@@ -641,7 +646,8 @@ export interface Withdrawal {
 // ---- 管理后台 ----
 
 export interface Settings {
-  require_seller_proxy: boolean
+  /** @deprecated moved to per-vendor configuration. */
+  require_seller_proxy?: boolean
   commission_rate: number
   freeze_days: number
   freeze_hours: number
@@ -682,12 +688,14 @@ export interface VendorConfig {
   appraisal_base?: Record<string, number>
   default_concurrency: number
   extra_limits: Record<string, unknown>
+  require_seller_proxy?: boolean
   updated_at: string
 }
 
 export interface Proxy {
   id: number
   seller_id?: number | null
+  is_shared?: boolean
   name: string
   protocol: string
   host: string
