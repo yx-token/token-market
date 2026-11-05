@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -26,7 +27,12 @@ type credentials struct {
 var errTooManyAttempts = httpx.TooMany("TOO_MANY_ATTEMPTS", "too many attempts, please retry later")
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
-	var in credentials
+	var in struct {
+		credentials
+		ChannelCode      string `json:"channel_code"`
+		VisitorID        string `json:"visitor_id"`
+		ChannelTouchedAt string `json:"channel_touched_at"`
+	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
@@ -38,6 +44,15 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 	u, err := s.Accounts.Register(r.Context(), in.Email, in.Password, ip)
 	if err != nil {
 		return err
+	}
+	if s.Promo != nil && in.ChannelCode != "" {
+		// Attribution is optional; a locked analytics table must not stall signup indefinitely.
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		err := s.Promo.Attribute(ctx, u.ID, in.ChannelCode, in.VisitorID, in.ChannelTouchedAt)
+		cancel()
+		if err != nil {
+			s.promoLog().Warn("promotion attribution failed", "user_id", u.ID, "err", err)
+		}
 	}
 	out := map[string]any{
 		"id": u.ID, "email": u.Email, "is_admin": u.IsAdmin, "status": u.Status,

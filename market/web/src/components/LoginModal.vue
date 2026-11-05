@@ -5,6 +5,7 @@ import { auth as authApi } from '@/api'
 import { useAction } from '@/composables/useAsync'
 import { useAuth } from '@/stores/auth'
 import { useLoginModal } from '@/stores/loginModal'
+import { clearPromo, promoSignupFields } from '@/utils/promo'
 
 const modal = useLoginModal()
 const auth = useAuth()
@@ -35,7 +36,9 @@ watch(
 async function submit() {
   const ok = await run(async () => {
     if (modal.mode === 'register') {
-      await authApi.register(email.value, password.value)
+      await authApi.register(email.value, password.value, promoSignupFields())
+      // 归因只在注册时发生一次：注册成功后丢掉本地记录，保留 tm_visitor_id
+      clearPromo()
     }
     await auth.login(email.value, password.value)
     return true

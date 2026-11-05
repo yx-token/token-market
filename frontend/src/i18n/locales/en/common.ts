@@ -250,6 +250,7 @@ export default {
     marketProviders: 'Third-party Providers',
     marketAppeals: 'Appeals',
     marketHotSearches: 'Hot Searches',
+    marketPromoChannels: 'Promo Channels',
     marketCategories: 'Categories',
     marketExtras: 'Shelf Switches',
     marketSupport: 'Support Desk',

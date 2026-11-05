@@ -70,7 +70,7 @@ func run(configPath string, log *slog.Logger) error {
 	}
 	api := &httpapi.Server{
 		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, IAM: a.IAM, Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools,
-		Keys: a.Keys, Funds: a.Funds, Payments: a.Payments, Market: a.Market, Quality: a.Quality, Replica: a.Replica, Risk: a.Risk, Kicker: a.Kicker, Log: log,
+		Keys: a.Keys, Funds: a.Funds, Payments: a.Payments, Market: a.Market, Promo: a.Promo, Quality: a.Quality, Replica: a.Replica, Risk: a.Risk, Kicker: a.Kicker, Log: log,
 		TrustedProxies: cfg.HTTP.TrustedProxies, WebDir: cfg.HTTP.WebDir, AdminWebDir: adminWebDir(cfg.HTTP.WebDir, cfg.HTTP.AdminWebDir),
 		EngineProxyURL: cfg.Sub2API.BaseURL, EngineAdminKey: cfg.Sub2API.AdminAPIKey,
 		EngineLoginPassword: cfg.Auth.BootstrapAdminPassword, EdgeURL: cfg.Edge.PublicURL,

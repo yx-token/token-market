@@ -1050,6 +1050,7 @@ const adminNavItems = computed((): NavItem[] => {
           icon: CogIcon,
           children: [
             { path: '/admin/market/hot-searches', label: t('nav.marketHotSearches'), icon: ChartIcon },
+            { path: '/admin/market/promo-channels', label: t('nav.marketPromoChannels'), icon: ChartIcon },
             { path: '/admin/market/categories', label: t('nav.marketCategories'), icon: FolderIcon },
             { path: '/admin/market/extras', label: t('nav.marketExtras'), icon: CogIcon },
             { path: '/admin/market/support', label: t('nav.marketSupport'), icon: ChartIcon },

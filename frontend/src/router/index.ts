@@ -566,6 +566,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '热搜', titleKey: 'nav.marketHotSearches' }
       },
       {
+        path: 'promo-channels',
+        name: 'MarketAdminPromoChannels',
+        component: () => import('@/market-admin/PromoChannelsView.vue'),
+        meta: { title: '推广渠道', titleKey: 'nav.marketPromoChannels' }
+      },
+      {
         path: 'recharges',
         name: 'MarketAdminRecharges',
         component: () => import('@/market-admin/ResourceView.vue'),

@@ -36,6 +36,11 @@ func RegisterMarketEmbed(r *gin.Engine) {
 		}
 		return
 	}
+	registerMarketEmbed(r, h)
+	log.Printf("market embed: public handler mounted (TM_HTTP_WEB_DIR=%s)", strings.TrimSpace(os.Getenv("TM_HTTP_WEB_DIR")))
+}
+
+func registerMarketEmbed(r *gin.Engine, h http.Handler) {
 	wrap := gin.WrapH(h)
 	// 控制面 API（含 /open-admin 换宿主会话的 /api/admin/engine/*）
 	for _, p := range []string{
@@ -67,5 +72,4 @@ func RegisterMarketEmbed(r *gin.Engine) {
 		}
 		h.ServeHTTP(c.Writer, c.Request)
 	})
-	log.Printf("market embed: public handler mounted (TM_HTTP_WEB_DIR=%s)", strings.TrimSpace(os.Getenv("TM_HTTP_WEB_DIR")))
 }

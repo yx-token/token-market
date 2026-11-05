@@ -4,8 +4,16 @@ import type * as T from './types'
 
 type Ok = { status: string }
 
+/** 注册请求可选带的推广渠道归因字段（值来自 utils/promo.ts 的 promoSignupFields） */
+export type RegisterExtra = {
+  channel_code?: string
+  visitor_id?: string
+  channel_touched_at?: string
+}
+
 export const auth = {
-  register: (email: string, password: string) => http.post<T.User>('/api/auth/register', { email, password }),
+  register: (email: string, password: string, extra?: RegisterExtra) =>
+    http.post<T.User>('/api/auth/register', { email, password, ...extra }),
   login: (email: string, password: string) => http.post<T.LoginResult>('/api/auth/login', { email, password }),
   refresh: () => http.post<T.LoginResult>('/api/auth/refresh'),
   me: () => http.get<T.User>('/api/me'),

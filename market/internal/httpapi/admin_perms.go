@@ -50,6 +50,7 @@ func adminRouteResources(pattern string) []string {
 		{"/api/admin/support", []string{"console.ops.extras", "console.govern.users", "console.duty.overview"}},
 
 		{"/api/admin/market-categories", []string{"console.ops.categories"}},
+		{"/api/admin/promo-channels", []string{"console.ops.promo"}},
 		{"/api/admin/market-discovery", []string{"console.ops.extras", "console.ops.hot"}},
 
 		{"/api/admin/kyc", []string{"console.govern.users"}},

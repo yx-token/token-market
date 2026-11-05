@@ -46,7 +46,7 @@ func PublicHandler() http.Handler {
 		api := &httpapi.Server{
 			DB: m.DB, Issuer: m.Issuer, Accounts: m.Accounts, IAM: m.IAM, Listings: m.Listings,
 			Proxies: m.Proxies, Pools: m.Pools, Keys: m.Keys, Funds: m.Funds, Payments: m.Payments,
-			Market: m.Market, Quality: m.Quality, Replica: m.Replica, Risk: m.Risk, Kicker: m.Kicker,
+			Market: m.Market, Promo: m.Promo, Quality: m.Quality, Replica: m.Replica, Risk: m.Risk, Kicker: m.Kicker,
 			Log: slog.Default(), TrustedProxies: cfg.HTTP.TrustedProxies, WebDir: cfg.HTTP.WebDir,
 			EdgeURL: cfg.Edge.PublicURL,
 			// 供 /open-admin → POST /api/admin/engine/session 向本进程换宿主 JWT

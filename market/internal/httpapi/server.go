@@ -28,6 +28,7 @@ import (
 	"github.com/yx-token/token-market/market/internal/platform/clientip"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/platform/ratelimit"
+	"github.com/yx-token/token-market/market/internal/promo"
 	"github.com/yx-token/token-market/market/internal/quality"
 	"github.com/yx-token/token-market/market/internal/review"
 	"github.com/yx-token/token-market/market/internal/risk"
@@ -50,6 +51,7 @@ type Server struct {
 	Funds    *billing.Funds
 	Payments *registry.Store
 	Market   *market.Service
+	Promo    *promo.Service
 	Quality  *quality.Engine
 	Reviews  *review.Service
 	Support  *support.Service
@@ -77,6 +79,7 @@ type Server struct {
 	loginFailsByIP    *ratelimit.Failures
 	loginFailsByEmail *ratelimit.Failures
 	registersByIP     *ratelimit.Failures
+	promoVisitsByIP   *ratelimit.Failures
 }
 
 func (s *Server) settings(ctx context.Context) (settings.Settings, error) {
@@ -90,6 +93,13 @@ type route struct {
 
 func (s *Server) adminRoutes() []route {
 	return []route{
+		{"GET /api/admin/promo-channels", s.promoChannels},
+		{"POST /api/admin/promo-channels", s.createPromoChannel},
+		{"PUT /api/admin/promo-channels/{id}", s.updatePromoChannel},
+		{"POST /api/admin/promo-channels/{id}/status", s.promoChannelStatus},
+		{"DELETE /api/admin/promo-channels/{id}", s.deletePromoChannel},
+		{"GET /api/admin/promo-channels/{id}/daily", s.promoChannelDaily},
+		{"GET /api/admin/promo-channels/{id}/users", s.promoChannelUsers},
 		{"POST /api/admin/engine/session", s.engineSession},
 		{"POST /api/admin/identities/bind", s.bindIdentityShadow},
 		{"GET /api/admin/system/version", s.systemVersion},
@@ -250,8 +260,10 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 	s.loginFailsByIP = ratelimit.NewFailures(30, 15*time.Minute)
 	s.loginFailsByEmail = ratelimit.NewFailures(10, 15*time.Minute)
 	s.registersByIP = ratelimit.NewFailures(20, time.Hour)
+	s.promoVisitsByIP = ratelimit.NewFailures(120, time.Minute)
 	mux := http.NewServeMux()
 	public := []route{
+		{"POST /api/market/promo/visit", s.promoVisit},
 		{"GET /healthz", s.healthz},
 		{"POST /api/auth/register", s.register},
 		{"POST /api/auth/login", s.login},
