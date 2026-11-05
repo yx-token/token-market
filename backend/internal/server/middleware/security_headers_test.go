@@ -254,6 +254,30 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Equal(t, 2, count, "both placeholders should be replaced with same nonce")
 	})
 
+	t.Run("dynamic_script_src_origins", func(t *testing.T) {
+		cfg := config.CSPConfig{Enabled: true, Policy: "default-src 'self'; script-src 'self' __CSP_NONCE__; connect-src 'self'"}
+		origins := []string{"https://loxo.cc", "", "https://loxo.cc"}
+		middleware := SecurityHeaders(cfg, nil, nil, func() []string { return origins })
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		middleware(c)
+
+		csp := w.Header().Get("Content-Security-Policy")
+		assert.True(t, directiveHasValue(csp, "script-src", "https://loxo.cc"), csp)
+		assert.True(t, directiveHasValue(csp, "connect-src", "https://loxo.cc"), csp)
+		assert.Equal(t, 2, strings.Count(csp, "https://loxo.cc"), "each directive gets the origin once")
+
+		// Turning the SDK off must drop the origin on the next request.
+		origins = nil
+		w = httptest.NewRecorder()
+		c, _ = gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		middleware(c)
+		assert.NotContains(t, w.Header().Get("Content-Security-Policy"), "loxo.cc")
+	})
+
 	t.Run("calls_next_handler", func(t *testing.T) {
 		cfg := config.CSPConfig{Enabled: true, Policy: "default-src 'self'"}
 		middleware := SecurityHeaders(cfg, nil)

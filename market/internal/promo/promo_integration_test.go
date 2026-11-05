@@ -284,7 +284,8 @@ func TestPromoMigrationPreservesExistingUsersAndMenuIntegration(t *testing.T) {
 	// An existing resource must not be overwritten when this migration adds its grants.
 	promoExec(t, pool, `INSERT INTO iam_resources(id,parent_id,name,kind,path) VALUES('console.ops.promo','console.ops','custom title','menu','/custom')`)
 	applied, err := db.Migrate(ctx, pool, migrations.FS)
-	if err != nil || len(applied) != 1 || applied[0] != "0050_promo_channels.sql" {
+	// Later migrations may follow; only 0050 itself is under test here.
+	if err != nil || len(applied) == 0 || applied[0] != "0050_promo_channels.sql" {
 		t.Fatalf("new migration = %v: %v", applied, err)
 	}
 	applied, err = db.Migrate(ctx, pool, migrations.FS)

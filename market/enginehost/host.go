@@ -7,12 +7,14 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/yx-token/token-market/market/hostpay"
 	"github.com/yx-token/token-market/market/internal/app"
 	"github.com/yx-token/token-market/market/internal/httpapi"
 	"github.com/yx-token/token-market/market/internal/platform/config"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/rewardtask"
 )
 
 // APIError 是可直接返回给管理端的业务错误。
@@ -28,6 +30,8 @@ var (
 	once sync.Once
 	a    *app.App
 	open error
+	// reward 供 CSP 中间件无锁读取；market() 构建完成前为空。
+	reward atomic.Pointer[rewardtask.Service]
 )
 
 func market(ctx context.Context) (*app.App, error) {
@@ -43,8 +47,18 @@ func market(ctx context.Context) (*app.App, error) {
 			return
 		}
 		hostpay.SetInFlightCounter(a.Funds.InFlightPaymentOrders)
+		reward.Store(a.Reward)
 	})
 	return a, open
+}
+
+// RewardScriptOrigins 返回 loxo 浏览任务 SDK 需要加入 CSP script-src 的来源。
+// 市场未内嵌、尚未初始化或未开启 SDK 时为空；只读缓存，不阻塞请求。
+func RewardScriptOrigins() []string {
+	if s := reward.Load(); s != nil {
+		return s.ScriptOrigins()
+	}
+	return nil
 }
 
 func wrap(err error) error {

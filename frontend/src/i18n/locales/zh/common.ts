@@ -251,6 +251,7 @@ export default {
     marketAppeals: '申诉',
     marketHotSearches: '热搜',
     marketPromoChannels: '推广渠道',
+    marketRewardTasks: '任务对接',
     marketCategories: '分类',
     marketExtras: '货架开关',
     marketSupport: '官方客服',

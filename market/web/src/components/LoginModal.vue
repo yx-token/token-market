@@ -6,6 +6,7 @@ import { useAction } from '@/composables/useAsync'
 import { useAuth } from '@/stores/auth'
 import { useLoginModal } from '@/stores/loginModal'
 import { clearPromo, promoSignupFields } from '@/utils/promo'
+import { clearRewardTicket, rewardSignupFields } from '@/utils/rewardTicket'
 
 const modal = useLoginModal()
 const auth = useAuth()
@@ -36,9 +37,11 @@ watch(
 async function submit() {
   const ok = await run(async () => {
     if (modal.mode === 'register') {
-      await authApi.register(email.value, password.value, promoSignupFields())
+      await authApi.register(email.value, password.value, { ...promoSignupFields(), ...rewardSignupFields() })
       // 归因只在注册时发生一次：注册成功后丢掉本地记录，保留 tm_visitor_id
       clearPromo()
+      // 票据已随注册绑定（算新用户），不要再让登录后的绑定按老用户处理
+      clearRewardTicket()
     }
     await auth.login(email.value, password.value)
     return true

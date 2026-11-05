@@ -9,6 +9,8 @@ export type RegisterExtra = {
   channel_code?: string
   visitor_id?: string
   channel_touched_at?: string
+  /** loxo 任务票据（utils/rewardTicket.ts 的 rewardSignupFields） */
+  reward_ticket?: string
 }
 
 export const auth = {

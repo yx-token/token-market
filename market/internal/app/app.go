@@ -24,6 +24,7 @@ import (
 	"github.com/yx-token/token-market/market/internal/platform/db"
 	"github.com/yx-token/token-market/market/internal/promo"
 	"github.com/yx-token/token-market/market/internal/quality"
+	"github.com/yx-token/token-market/market/internal/rewardtask"
 	"github.com/yx-token/token-market/market/internal/risk"
 	"github.com/yx-token/token-market/market/internal/scheduling"
 	"github.com/yx-token/token-market/market/internal/settings"
@@ -60,6 +61,7 @@ type App struct {
 	Funds      *billing.Funds
 	Market     *market.Service
 	Promo      *promo.Service
+	Reward     *rewardtask.Service
 	Quality    *quality.Engine
 	Risk       *risk.Service
 	Ingester   *billing.Ingester
@@ -142,6 +144,7 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 
 	a.Accounts = account.NewService(a.DB, a.Keyring, a.Issuer)
 	a.Promo = &promo.Service{DB: a.DB}
+	a.Reward = &rewardtask.Service{DB: a.DB, Keyring: a.Keyring, Log: log}
 	a.IAM = iam.New(a.DB)
 	a.Risk = &risk.Service{DB: a.DB, Settings: a.Settings}
 	a.Proxies = &listing.ProxyService{DB: a.DB, Admin: a.Admin, Keyring: a.Keyring, EngineProxyState: a.ReplicaPool}

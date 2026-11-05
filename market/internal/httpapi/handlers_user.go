@@ -32,6 +32,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 		ChannelCode      string `json:"channel_code"`
 		VisitorID        string `json:"visitor_id"`
 		ChannelTouchedAt string `json:"channel_touched_at"`
+		RewardTicket     string `json:"reward_ticket"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -52,6 +53,15 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 		cancel()
 		if err != nil {
 			s.promoLog().Warn("promotion attribution failed", "user_id", u.ID, "err", err)
+		}
+	}
+	if s.Reward != nil && in.RewardTicket != "" {
+		// 任务票据只影响 loxo 奖励，绑定失败不能让注册失败。
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		_, err := s.Reward.Capture(ctx, u.ID, in.RewardTicket, true)
+		cancel()
+		if err != nil {
+			s.promoLog().Warn("reward ticket capture failed", "user_id", u.ID, "err", err)
 		}
 	}
 	out := map[string]any{

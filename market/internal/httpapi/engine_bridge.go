@@ -21,7 +21,7 @@ func ServeAdmin(a *app.App, ctx context.Context, method, rest, rawQuery string, 
 	s := &Server{
 		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, IAM: a.IAM,
 		Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools, Keys: a.Keys,
-		Funds: a.Funds, Payments: a.Payments, Market: a.Market, Promo: a.Promo, Quality: a.Quality,
+		Funds: a.Funds, Payments: a.Payments, Market: a.Market, Promo: a.Promo, Reward: a.Reward, Quality: a.Quality,
 		Replica: a.Replica, Risk: a.Risk, Kicker: a.Kicker, Log: a.Log,
 	}
 	mux := http.NewServeMux()

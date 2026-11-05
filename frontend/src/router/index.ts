@@ -572,6 +572,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '推广渠道', titleKey: 'nav.marketPromoChannels' }
       },
       {
+        path: 'reward-tasks',
+        name: 'MarketAdminRewardTasks',
+        component: () => import('@/market-admin/RewardTasksView.vue'),
+        meta: { title: '任务对接', titleKey: 'nav.marketRewardTasks' }
+      },
+      {
         path: 'recharges',
         name: 'MarketAdminRecharges',
         component: () => import('@/market-admin/ResourceView.vue'),

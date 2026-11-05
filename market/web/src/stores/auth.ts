@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { auth as authApi } from '@/api'
 import { getToken, setToken } from '@/api/client'
 import type { ConsoleAccess, User } from '@/api/types'
+import { bindPendingRewardTicket } from '@/utils/rewardTicket'
 
 export const useAuth = defineStore('auth', () => {
   const user = ref<User | null>(null)
@@ -56,6 +57,8 @@ export const useAuth = defineStore('auth', () => {
     }
     try {
       user.value = await authApi.me()
+      // 已登录时带着 loxo 票据到达：绑定到当前账号（不阻塞页面）
+      void bindPendingRewardTicket()
       await loadConsoleAccess()
       const exp = jwtExpiry(token)
       if (exp) scheduleRefresh(exp)
@@ -72,6 +75,7 @@ export const useAuth = defineStore('auth', () => {
     const res = await authApi.login(email, password)
     setToken(res.token)
     user.value = res.user
+    void bindPendingRewardTicket()
     await loadConsoleAccess()
     scheduleRefresh(res.expires_at)
   }

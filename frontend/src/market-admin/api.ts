@@ -330,3 +330,135 @@ export async function getPromoChannelUsers(
     total: result?.total ?? 0,
   }
 }
+
+// ---- loxo 任务中心对接（market/docs/2026-11-06-loxo-reward-tasks.md） ----
+
+export type RewardTicketState = 'pending' | 'active' | 'completed' | 'skipped' | 'invalid'
+export type RewardEventState = 'pending' | 'accepted' | 'completed' | 'ignored' | 'rejected' | 'failed'
+
+export const REWARD_TICKET_STATES: RewardTicketState[] = ['pending', 'active', 'completed', 'skipped', 'invalid']
+export const REWARD_EVENT_STATES: RewardEventState[] = ['pending', 'accepted', 'completed', 'ignored', 'rejected', 'failed']
+
+export interface RewardTaskConfig {
+  enabled: boolean
+  base_url: string
+  app_key: string
+  secret_set: boolean
+  sdk_enabled: boolean
+  updated_at: string | null
+  summary: {
+    tickets: Record<RewardTicketState, number>
+    events: Record<RewardEventState, number>
+  }
+}
+
+export interface SaveRewardTaskConfigInput {
+  enabled: boolean
+  base_url: string
+  app_key: string
+  /** 空串表示不修改已保存的 secret */
+  app_secret: string
+  sdk_enabled: boolean
+}
+
+export interface RewardPingResult {
+  partner_name: string
+  app_key: string
+  server_time: number
+  clock_skew_seconds: number
+}
+
+export interface RewardTicket {
+  id: number
+  ticket: string
+  user_id: number
+  user_email: string
+  new_user: boolean
+  state: RewardTicketState
+  reason: string
+  task_id: number | null
+  task_title: string
+  task_type: string
+  period_key: string
+  expires_at: string | null
+  attempts: number
+  created_at: string
+  updated_at: string
+}
+
+export interface RewardEvent {
+  id: number
+  ticket_id: number
+  ticket: string
+  user_id: number
+  user_email: string
+  task_title: string
+  event_id: string
+  event_type: 'register' | 'recharge'
+  recharge_order_id: number | null
+  amount: string | null
+  state: RewardEventState
+  reason: string
+  rewarded: boolean
+  attempts: number
+  next_attempt_at: string
+  sent_at: string | null
+  created_at: string
+}
+
+function countMap<K extends string>(keys: K[], raw: unknown): Record<K, number> {
+  const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const out = {} as Record<K, number>
+  for (const k of keys) {
+    const n = Number(src[k])
+    out[k] = Number.isFinite(n) ? n : 0
+  }
+  return out
+}
+
+function normalizeRewardConfig(raw: Partial<RewardTaskConfig> | null | undefined): RewardTaskConfig {
+  return {
+    enabled: raw?.enabled === true,
+    base_url: raw?.base_url || 'https://loxo.cc',
+    app_key: raw?.app_key || '',
+    secret_set: raw?.secret_set === true,
+    sdk_enabled: raw?.sdk_enabled !== false,
+    updated_at: raw?.updated_at ?? null,
+    summary: {
+      tickets: countMap(REWARD_TICKET_STATES, raw?.summary?.tickets),
+      events: countMap(REWARD_EVENT_STATES, raw?.summary?.events),
+    },
+  }
+}
+
+export async function getRewardTaskConfig(opts?: MarketRequestOptions): Promise<RewardTaskConfig> {
+  return normalizeRewardConfig(await marketGet<Partial<RewardTaskConfig> | null>('reward-tasks/config', opts))
+}
+
+export async function saveRewardTaskConfig(input: SaveRewardTaskConfigInput): Promise<RewardTaskConfig> {
+  return normalizeRewardConfig(await marketSend<Partial<RewardTaskConfig> | null>('PUT', 'reward-tasks/config', input))
+}
+
+export function pingRewardTasks(): Promise<RewardPingResult> {
+  return marketSend<RewardPingResult>('POST', 'reward-tasks/ping', {}, { timeoutMs: 20_000 })
+}
+
+function rewardListQuery(state: string, page: number, pageSize: number): string {
+  const q = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  if (state) q.set('state', state)
+  return q.toString()
+}
+
+export async function getRewardTickets(state = '', page = 1, pageSize = 20, opts?: MarketRequestOptions): Promise<{ items: RewardTicket[]; total: number }> {
+  const r = await marketGet<{ items?: RewardTicket[] | null; total?: number } | null>(`reward-tasks/tickets?${rewardListQuery(state, page, pageSize)}`, opts)
+  return { items: r?.items ?? [], total: Number(r?.total) || 0 }
+}
+
+export async function getRewardEvents(state = '', page = 1, pageSize = 20, opts?: MarketRequestOptions): Promise<{ items: RewardEvent[]; total: number }> {
+  const r = await marketGet<{ items?: RewardEvent[] | null; total?: number } | null>(`reward-tasks/events?${rewardListQuery(state, page, pageSize)}`, opts)
+  return { items: r?.items ?? [], total: Number(r?.total) || 0 }
+}
+
+export function retryRewardEvent(id: number): Promise<RewardEvent> {
+  return marketSend<RewardEvent>('POST', `reward-tasks/events/${id}/retry`)
+}
