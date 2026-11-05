@@ -6,6 +6,7 @@ import { useAuth } from '@/stores/auth'
 import { useAction } from '@/composables/useAsync'
 import { useToast } from '@/stores/toast'
 import { clearPromo, promoSignupFields } from '@/utils/promo'
+import { clearRewardTicket, rewardSignupFields } from '@/utils/rewardTicket'
 import AuthShell from '@/components/AuthShell.vue'
 
 const auth = useAuth()
@@ -22,9 +23,10 @@ async function submit() {
     return
   }
   const ok = await run(async () => {
-    await authApi.register(email.value, password.value, promoSignupFields())
+    await authApi.register(email.value, password.value, { ...promoSignupFields(), ...rewardSignupFields() })
     // 归因只在注册时发生一次：成功后丢掉本地记录
     clearPromo()
+    clearRewardTicket()
     await auth.login(email.value, password.value)
     return true
   }, '注册成功')

@@ -31,6 +31,7 @@ import (
 	"github.com/yx-token/token-market/market/internal/promo"
 	"github.com/yx-token/token-market/market/internal/quality"
 	"github.com/yx-token/token-market/market/internal/review"
+	"github.com/yx-token/token-market/market/internal/rewardtask"
 	"github.com/yx-token/token-market/market/internal/risk"
 	"github.com/yx-token/token-market/market/internal/scheduling"
 	"github.com/yx-token/token-market/market/internal/settings"
@@ -52,6 +53,7 @@ type Server struct {
 	Payments *registry.Store
 	Market   *market.Service
 	Promo    *promo.Service
+	Reward   *rewardtask.Service
 	Quality  *quality.Engine
 	Reviews  *review.Service
 	Support  *support.Service
@@ -80,6 +82,8 @@ type Server struct {
 	loginFailsByEmail *ratelimit.Failures
 	registersByIP     *ratelimit.Failures
 	promoVisitsByIP   *ratelimit.Failures
+	rewardLandingByIP *ratelimit.Failures
+	rewardLandingAll  *ratelimit.Failures
 }
 
 func (s *Server) settings(ctx context.Context) (settings.Settings, error) {
@@ -100,6 +104,12 @@ func (s *Server) adminRoutes() []route {
 		{"DELETE /api/admin/promo-channels/{id}", s.deletePromoChannel},
 		{"GET /api/admin/promo-channels/{id}/daily", s.promoChannelDaily},
 		{"GET /api/admin/promo-channels/{id}/users", s.promoChannelUsers},
+		{"GET /api/admin/reward-tasks/config", s.rewardConfig},
+		{"PUT /api/admin/reward-tasks/config", s.saveRewardConfig},
+		{"POST /api/admin/reward-tasks/ping", s.rewardPing},
+		{"GET /api/admin/reward-tasks/tickets", s.rewardTickets},
+		{"GET /api/admin/reward-tasks/events", s.rewardEvents},
+		{"POST /api/admin/reward-tasks/events/{id}/retry", s.retryRewardEvent},
 		{"POST /api/admin/engine/session", s.engineSession},
 		{"POST /api/admin/identities/bind", s.bindIdentityShadow},
 		{"GET /api/admin/system/version", s.systemVersion},
@@ -261,9 +271,13 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 	s.loginFailsByEmail = ratelimit.NewFailures(10, 15*time.Minute)
 	s.registersByIP = ratelimit.NewFailures(20, time.Hour)
 	s.promoVisitsByIP = ratelimit.NewFailures(120, time.Minute)
+	s.rewardLandingByIP = ratelimit.NewFailures(30, time.Minute)
+	// 全站上限：每次落地都会向 loxo 发签名请求，loxo 按出口 IP 限 600 次/分钟，要给 worker 的回调留出余量。
+	s.rewardLandingAll = ratelimit.NewFailures(300, time.Minute)
 	mux := http.NewServeMux()
 	public := []route{
 		{"POST /api/market/promo/visit", s.promoVisit},
+		{"POST /api/market/reward/landing", s.rewardLanding},
 		{"GET /healthz", s.healthz},
 		{"POST /api/auth/register", s.register},
 		{"POST /api/auth/login", s.login},
@@ -286,6 +300,7 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 		{"GET /api/me", s.me},
 		{"GET /api/me/console-access", s.myConsoleAccess},
 		{"POST /api/me/kyc", s.submitKYC},
+		{"POST /api/me/reward-ticket", s.bindRewardTicket},
 
 		{"GET /api/buyer/wallet", s.wallet},
 		{"POST /api/buyer/recharge", s.createRecharge},

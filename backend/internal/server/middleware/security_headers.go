@@ -108,7 +108,9 @@ func GetNonceFromContext(c *gin.Context) string {
 // SecurityHeaders sets baseline security headers for all responses.
 // getFrameSrcOrigins is an optional function that returns extra origins to inject into frame-src;
 // pass nil to disable dynamic frame-src injection.
-func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) gin.HandlerFunc {
+// getScriptSrcOrigins（可选）返回需要放行的外部脚本来源，例如内嵌市场开启的 loxo 浏览任务 SDK；
+// 同一来源同时加入 script-src（加载脚本）与 connect-src（脚本回连心跳），不依赖策略里是否放行了 https:。
+func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string, getScriptSrcOrigins ...func() []string) gin.HandlerFunc {
 	policy := strings.TrimSpace(cfg.Policy)
 	if policy == "" {
 		policy = config.DefaultCSPPolicy
@@ -123,6 +125,21 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 			for _, origin := range getFrameSrcOrigins() {
 				if origin != "" {
 					finalPolicy = addToDirective(finalPolicy, "frame-src", origin)
+				}
+			}
+		}
+		for _, get := range getScriptSrcOrigins {
+			if get == nil {
+				continue
+			}
+			for _, origin := range get() {
+				if origin == "" {
+					continue
+				}
+				for _, directive := range []string{"script-src", "connect-src"} {
+					if !directiveHasValue(finalPolicy, directive, origin) {
+						finalPolicy = addToDirective(finalPolicy, directive, origin)
+					}
 				}
 			}
 		}

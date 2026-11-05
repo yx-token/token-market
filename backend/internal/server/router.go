@@ -70,7 +70,7 @@ func SetupRouter(
 			return *p
 		}
 		return nil
-	}))
+	}, enginehost.RewardScriptOrigins))
 	r.Use(middleware2.ServerTiming(cfg.Server.EnableServerTiming))
 	if enginehost.EdgeEnabled() {
 		// Must run before gateway route auth so market tm- keys reach the shared Edge.

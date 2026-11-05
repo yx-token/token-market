@@ -251,6 +251,7 @@ export default {
     marketAppeals: 'Appeals',
     marketHotSearches: 'Hot Searches',
     marketPromoChannels: 'Promo Channels',
+    marketRewardTasks: 'Reward Tasks',
     marketCategories: 'Categories',
     marketExtras: 'Shelf Switches',
     marketSupport: 'Support Desk',

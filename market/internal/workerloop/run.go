@@ -78,6 +78,7 @@ func Run(ctx context.Context, a *app.App, cfg *config.Config, log *slog.Logger) 
 	jobs := []job{
 		{"proxies.refresh_shared", 5 * time.Minute, writes(a.Proxies.RefreshEngineSharedProxies)},
 		{"funds.track_crediting", 10 * time.Second, a.Funds.TrackCrediting},
+		{"reward.sync", 10 * time.Second, a.Reward.Sync},
 		{"funds.advance_refunds", 10 * time.Second, a.Funds.AdvanceRefunds},
 		{"funds.sync_payments", 15 * time.Second, a.Funds.SyncPayments},
 		{"funds.refund_payouts", 15 * time.Second, a.Funds.AdvanceRefundPayouts},
