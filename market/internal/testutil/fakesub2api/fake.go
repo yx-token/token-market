@@ -283,7 +283,7 @@ func (s *Server) stubEmptyList(http.ResponseWriter, *http.Request) (any, error) 
 
 func (s *Server) stubSettings(http.ResponseWriter, *http.Request) (any, error) {
 	return map[string]any{
-		"site_name": "闲猫", "site_subtitle": "订阅额度集市", "version": s.Version,
+		"site_name": "闲猫", "site_subtitle": "闲置Token交易市场", "version": s.Version,
 		"registration_enabled": false, "backend_mode_enabled": false,
 	}, nil
 }

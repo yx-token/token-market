@@ -144,7 +144,7 @@ function logout() {
 
     <footer v-if="!isMarketBrowse" class="shrink-0 border-t border-black/5 bg-white">
       <div class="flex w-full flex-wrap items-center gap-x-6 gap-y-2 px-4 py-4 text-[11px] text-[#888] md:px-6 lg:px-7">
-        <span class="font-extrabold text-[#303030]">闲猫 · 订阅额度集市</span>
+        <span class="font-extrabold text-[#303030]">闲猫·闲置Token交易市场</span>
         <span>按官方价 × 倍率计费 · 1 元 = 1 个余额单位</span>
         <span class="ml-auto">质量检测 · 降智即停</span>
       </div>
