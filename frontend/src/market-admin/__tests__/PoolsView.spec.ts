@@ -18,6 +18,7 @@ const pool = {
   sell_multiplier: 1.2,
   min_margin: 0.1,
   safety_buffer: 0.02,
+  profit_control_enabled: true,
   enabled: true,
   market_published: true,
   market_title: 'OpenAI 保障',
@@ -44,6 +45,12 @@ function dialog() {
   const element = document.querySelector<HTMLElement>('[role="dialog"]')
   expect(element).not.toBeNull()
   return element!
+}
+
+function profitControlBox() {
+  const label = Array.from(dialog().querySelectorAll('label')).find((item) => item.textContent?.includes('开启利润控制'))
+  expect(label, '找不到利润控制开关').toBeDefined()
+  return label!.querySelector<HTMLInputElement>('input[type="checkbox"]')!
 }
 
 async function clickDialog(text: string) {
@@ -95,13 +102,64 @@ describe('保障池编辑弹窗', () => {
     expect(api.send).toHaveBeenCalledWith(
       'PUT',
       '/api/v1/admin/market/pools/1',
-      expect.objectContaining({ sell_multiplier: 1.2, min_margin: 0.1, safety_buffer: 0.02, market_description: '原始介绍' }),
+      expect.objectContaining({
+        sell_multiplier: 1.2,
+        min_margin: 0.1,
+        safety_buffer: 0.02,
+        profit_control_enabled: true,
+        market_description: '原始介绍',
+      }),
+    )
+  })
+
+  it('关闭利润控制时保留最低毛利与安全缓冲一起提交', async () => {
+    api.send.mockResolvedValue({})
+    const wrapper = await page()
+    await click(wrapper, '编辑')
+
+    const box = profitControlBox()
+    expect(box.checked).toBe(true)
+    box.click()
+    await flushPromises()
+    await clickDialog('保存')
+
+    expect(api.send).toHaveBeenCalledWith(
+      'PUT',
+      '/api/v1/admin/market/pools/1',
+      expect.objectContaining({ profit_control_enabled: false, min_margin: 0.1, safety_buffer: 0.02 }),
+    )
+  })
+
+  it('新建分组默认不开启利润控制', async () => {
+    api.get.mockResolvedValue([])
+    api.send.mockResolvedValue({})
+    const wrapper = await page()
+    await click(wrapper, '新建分组')
+
+    expect(profitControlBox().checked).toBe(false)
+    const [name, sell] = Array.from(dialog().querySelectorAll<HTMLInputElement>('input.input'))
+    name.value = 'tm-pool-new'
+    name.dispatchEvent(new Event('input', { bubbles: true }))
+    sell.value = '0.8'
+    sell.dispatchEvent(new Event('input', { bubbles: true }))
+    await clickDialog('保存')
+
+    expect(api.send).toHaveBeenCalledWith(
+      'POST',
+      '/api/v1/admin/market/pools',
+      expect.objectContaining({ name: 'tm-pool-new', sell_multiplier: 0.8, profit_control_enabled: false }),
     )
   })
 
   it('列表缺少毛利/缓冲字段时不回显 undefined，也不静默提交', async () => {
     // 引擎侧曾用简表返回保障池，只有 id/name/platform/enabled/sell_multiplier 等几列。
-    const { min_margin: _m, safety_buffer: _b, market_description: _d, ...thin } = structuredClone(pool)
+    const {
+      min_margin: _m,
+      safety_buffer: _b,
+      market_description: _d,
+      profit_control_enabled: _p,
+      ...thin
+    } = structuredClone(pool)
     api.get.mockResolvedValue([thin])
     const wrapper = await page()
     await click(wrapper, '编辑')
@@ -112,6 +170,40 @@ describe('保障池编辑弹窗', () => {
 
     expect(api.send).not.toHaveBeenCalled()
     expect(dialog().querySelector('[role="alert"]')?.textContent).toContain('最低毛利')
+  })
+})
+
+describe('保障池列表的利润控制', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('开启时显示毛利/缓冲与寄售上限，关闭时显示「关闭」与「不限」', async () => {
+    api.get.mockResolvedValue([
+      structuredClone(pool),
+      { ...structuredClone(pool), id: 2, name: 'tm-pool-free', profit_control_enabled: false },
+    ])
+    const wrapper = await page()
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].text()).toContain('10% / 2%')
+    expect(rows[0].text()).toContain('1.056')
+    expect(rows[1].text()).toContain('关闭')
+    expect(rows[1].text()).toContain('不限')
+    expect(rows[1].text()).not.toContain('1.056')
+  })
+
+  it('启停分组时原样带回利润控制开关', async () => {
+    api.get.mockResolvedValue([{ ...structuredClone(pool), profit_control_enabled: false }])
+    api.send.mockResolvedValue({})
+    const wrapper = await page()
+    await click(wrapper, '关闭')
+
+    expect(api.send).toHaveBeenCalledWith(
+      'PUT',
+      '/api/v1/admin/market/pools/1',
+      expect.objectContaining({ enabled: false, profit_control_enabled: false, min_margin: 0.1, safety_buffer: 0.02 }),
+    )
   })
 })
 

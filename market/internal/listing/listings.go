@@ -20,12 +20,12 @@ func BuyerPrice(multiplier, commission float64) float64 {
 func round4(f float64) float64 { return math.Round(f*10000) / 10000 }
 func round2(f float64) float64 { return math.Round(f*100) / 100 }
 
-// PoolCap 返回某平台全部启用默认分组中最严格的倍率上限 D × (1 − 最低毛利 − 安全缓冲)。
-// 没有默认分组时返回 0, false。
+// PoolCap 返回某平台开启利润控制的启用默认分组中最严格的倍率上限 D × (1 − 最低毛利 − 安全缓冲)。
+// 没有这样的默认分组时返回 0, false。
 func PoolCap(ctx context.Context, db DB, platform string) (float64, bool, error) {
 	var cap *float64
 	err := db.QueryRow(ctx, `SELECT min(sell_multiplier * (1 - min_margin - safety_buffer)) FROM pools
-		WHERE enabled AND deleted_at IS NULL AND (platform = $1 OR platform = 'composite')`, platform).Scan(&cap)
+		WHERE enabled AND profit_control_enabled AND deleted_at IS NULL AND (platform = $1 OR platform = 'composite')`, platform).Scan(&cap)
 	if err != nil || cap == nil {
 		return 0, false, err
 	}
