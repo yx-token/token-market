@@ -33,6 +33,13 @@ auth:
   bootstrap_admin_email: ""
   bootstrap_admin_password: ""
 
+# 注册邮箱验证启动缺省（https://resend.com）。管理端「市场设置 → 注册邮箱验证」可在线改，
+# 写入 settings 表后立即生效，无需重启；仅当库里尚未保存过时才用这里的环境变量 / yaml。
+# TM_RESEND_API_KEY=dev 仅打日志；re_xxx 走 Resend；空或 off 关闭。
+email:
+  resend_api_key: ""
+  from: "闲猫 <noreply@idlicat.com>"
+
 sub2api:
   base_url: "http://127.0.0.1:8081"     # sub2api 内网地址（Admin API、用户 API）
   gateway_url: ""                       # 网关地址，默认与 base_url 相同（Edge 与质量检测使用）

@@ -167,7 +167,18 @@ export default {
         },
       },
       emailTabDisabledTitle: 'Email Verification Not Enabled',
-      emailTabDisabledHint: 'Enable email verification in the Security tab to configure SMTP settings.',
+      emailTabDisabledHint:
+        'Enable email verification under Security, then configure SMTP. Engine signup and IdleCat C-end codes share this SMTP.',
+      marketEmail: {
+        title: 'IdleCat Registration Email',
+        description: 'C-end signup codes use the SMTP above—no separate Resend setup.',
+        howto: 'Two steps to send IdleCat signup codes (takes effect immediately, no restart):',
+        stepSecurity: 'Turn on “Email verification” under Security',
+        stepSmtp: 'Fill in SMTP on this tab and save system settings',
+        statusOn: 'Connected: IdleCat signup requires a code (from {from})',
+        statusOff: 'Not connected yet—finish the two steps above, then refresh',
+        loadFailed: 'Failed to read IdleCat email status',
+      },
       registration: {
         title: 'Registration Settings',
         description: 'Control user registration and verification',

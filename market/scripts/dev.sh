@@ -157,6 +157,9 @@ start_real_engine() {
     export TM_CRYPTO_HASH_PEPPER=dev-pepper
     export TM_AUTH_JWT_SECRET=dev-jwt-secret-dev-jwt-secret-dev-jwt-secret
     export TM_BOOTSTRAP_ADMIN_EMAIL=$ADMIN_EMAIL TM_BOOTSTRAP_ADMIN_PASSWORD=$ADMIN_PASSWORD
+    # 本地注册邮箱验证启动缺省（管理端可在线改，写入后立即生效）：dev=打日志；re_xxx=真发信
+    export TM_RESEND_API_KEY="${TM_RESEND_API_KEY:-dev}"
+    export TM_RESEND_FROM="${TM_RESEND_FROM:-闲猫 <noreply@idlicat.com>}"
     export TM_SUB2API_BASE_URL="$ENGINE"
     export TM_SUB2API_REPLICA_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
     [[ -n "$admin_key" ]] && export TM_SUB2API_ADMIN_API_KEY="$admin_key"
@@ -186,6 +189,8 @@ start_real_engine() {
       export TM_CRYPTO_HASH_PEPPER=dev-pepper
       export TM_AUTH_JWT_SECRET=dev-jwt-secret-dev-jwt-secret-dev-jwt-secret
       export TM_BOOTSTRAP_ADMIN_EMAIL=$ADMIN_EMAIL TM_BOOTSTRAP_ADMIN_PASSWORD=$ADMIN_PASSWORD
+      export TM_RESEND_API_KEY="${TM_RESEND_API_KEY:-dev}"
+      export TM_RESEND_FROM="${TM_RESEND_FROM:-闲猫 <noreply@idlicat.com>}"
       export TM_SUB2API_BASE_URL="$ENGINE"
       export TM_SUB2API_ADMIN_API_KEY="$admin_key"
       export TM_SUB2API_REPLICA_DSN="$PG_DSN_BASE/$ENGINE_DB?sslmode=disable"
@@ -212,6 +217,8 @@ market_env() {
   export TM_CRYPTO_HASH_PEPPER=dev-pepper
   export TM_AUTH_JWT_SECRET=dev-jwt-secret-dev-jwt-secret-dev-jwt-secret
   export TM_BOOTSTRAP_ADMIN_EMAIL=$ADMIN_EMAIL TM_BOOTSTRAP_ADMIN_PASSWORD=$ADMIN_PASSWORD
+  export TM_RESEND_API_KEY="${TM_RESEND_API_KEY:-dev}"
+  export TM_RESEND_FROM="${TM_RESEND_FROM:-闲猫 <noreply@idlicat.com>}"
   export TM_HTTP_ADDR=127.0.0.1:$SITE_PORT TM_EDGE_ADDR=127.0.0.1:$EDGE_PORT TM_EDGE_PUBLIC_URL=http://127.0.0.1:$EDGE_PORT
   if [[ "$USE_REAL_ENGINE" == "1" ]]; then
     export TM_EDGE_PUBLIC_URL="$API"

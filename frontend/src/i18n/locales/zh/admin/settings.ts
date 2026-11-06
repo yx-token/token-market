@@ -167,7 +167,18 @@ export default {
         },
       },
       emailTabDisabledTitle: '邮箱验证未启用',
-      emailTabDisabledHint: '请在「安全与认证」选项卡中启用邮箱验证后，再配置 SMTP 设置。',
+      emailTabDisabledHint:
+        '请在「安全与认证」启用邮箱验证后，再配置 SMTP。开启后引擎注册与闲猫 C 端注册验证码共用此 SMTP。',
+      marketEmail: {
+        title: '闲猫注册邮箱验证',
+        description: 'C 端注册验证码直接使用上方 SMTP，无需另配 Resend。',
+        howto: '按下面两步即可让闲猫注册发验证码（改完立即生效，不用重启）：',
+        stepSecurity: '「安全与认证」打开「邮箱验证」',
+        stepSmtp: '本页填好 SMTP 并保存系统设置',
+        statusOn: '当前已对接：闲猫注册需要验证码（发件人 {from}）',
+        statusOff: '当前未对接：请完成上方两步后刷新本页',
+        loadFailed: '闲猫邮箱状态读取失败',
+      },
       registration: {
         title: '注册设置',
         description: '控制用户注册和验证',

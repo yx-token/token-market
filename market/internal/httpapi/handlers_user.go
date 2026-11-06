@@ -22,9 +22,29 @@ import (
 type credentials struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	Code     string `json:"code"`
+}
+
+type sendRegisterCodeIn struct {
+	Email string `json:"email"`
 }
 
 var errTooManyAttempts = httpx.TooMany("TOO_MANY_ATTEMPTS", "too many attempts, please retry later")
+
+func (s *Server) sendRegisterCode(w http.ResponseWriter, r *http.Request) error {
+	var in sendRegisterCodeIn
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	ip := httpx.ClientIP(r)
+	if s.registersByIP.Blocked(ip) {
+		return errTooManyAttempts
+	}
+	if err := s.Accounts.SendRegisterCode(r.Context(), in.Email); err != nil {
+		return err
+	}
+	return ok(w, map[string]any{"status": "sent", "cooldown_seconds": 60})
+}
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
@@ -42,7 +62,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
 		return errTooManyAttempts
 	}
 	s.registersByIP.Fail(ip)
-	u, err := s.Accounts.Register(r.Context(), in.Email, in.Password, ip)
+	u, err := s.Accounts.Register(r.Context(), in.Email, in.Password, in.Code, ip)
 	if err != nil {
 		return err
 	}
@@ -225,6 +245,7 @@ func (s *Server) marketConfig(w http.ResponseWriter, r *http.Request) error {
 		"withdraw_min": st.WithdrawMin, "max_hops": 5,
 		"payment_channels": channels, "recharge_min": paymentConfig.MinAmount, "recharge_max": paymentConfig.MaxAmount,
 		"price_models": st.PriceModels,
+		"email_verify_enabled": s.Accounts != nil && s.Accounts.EmailVerifyEnabled(r.Context()),
 	})
 }
 

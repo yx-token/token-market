@@ -535,6 +535,27 @@
   border-color: var(--ink);
   background: #fff;
 }
+.xm-login-code-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.xm-login-code-row input { flex: 1; min-width: 0; }
+.xm-login-code-btn {
+  flex-shrink: 0;
+  border: 1.5px solid #e8e8e8;
+  border-radius: 12px;
+  padding: 0 12px;
+  background: #fafafa;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.xm-login-code-btn:hover:not(:disabled) { background: #fff; border-color: var(--ink); }
+.xm-login-code-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .xm-login-submit {
   width: 100%;
   margin-top: 20px;

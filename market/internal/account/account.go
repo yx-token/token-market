@@ -6,13 +6,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/mail"
+	"log/slog"
+	netmail "net/mail"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+	"github.com/yx-token/token-market/market/internal/mail"
 	"github.com/yx-token/token-market/market/internal/platform/auth"
 	"github.com/yx-token/token-market/market/internal/platform/crypto"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
@@ -32,6 +35,14 @@ type Service struct {
 	db  *pgxpool.Pool
 	kr  *crypto.Keyring
 	iss *auth.Issuer
+
+	rdb       *redis.Client
+	emailBoot mail.Boot
+	log       *slog.Logger
+
+	// 单测注入：非 nil 时跳过 settings 查询。
+	fixedMailer  mail.Sender
+	fixedEnabled bool
 }
 
 func NewService(db *pgxpool.Pool, kr *crypto.Keyring, iss *auth.Issuer) *Service {
@@ -46,7 +57,7 @@ var (
 
 func normalizeEmail(email string) (string, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
-	addr, err := mail.ParseAddress(email)
+	addr, err := netmail.ParseAddress(email)
 	if err != nil || addr.Address != email {
 		return "", httpx.BadRequest("INVALID_EMAIL", "invalid email address")
 	}
@@ -54,9 +65,16 @@ func normalizeEmail(email string) (string, error) {
 }
 
 // Register 前台自助注册：只创建 C 端普通用户（is_admin 恒为 false，不挂任何组织角色）。
-// 控制台员工须由超管在后台创建或授权，不能走本接口。
-func (s *Service) Register(ctx context.Context, email, password, ip string) (*User, error) {
-	u, err := s.createUser(ctx, email, password)
+// 开启邮箱验证时须携带邮件验证码。控制台员工须由超管开户，不能走本接口。
+func (s *Service) Register(ctx context.Context, email, password, code, ip string) (*User, error) {
+	emailNorm, err := normalizeEmail(email)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.consumeRegisterCode(ctx, emailNorm, code); err != nil {
+		return nil, err
+	}
+	u, err := s.createUser(ctx, emailNorm, password)
 	if err != nil {
 		return nil, err
 	}

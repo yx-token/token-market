@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/yx-token/token-market/market/internal/billing"
 	"github.com/yx-token/token-market/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/mail"
 	"github.com/yx-token/token-market/market/internal/market"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/quality"
@@ -25,6 +26,48 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return ok(w, st)
+}
+
+func (s *Server) getEmailSettings(w http.ResponseWriter, r *http.Request) error {
+	if s.Accounts == nil {
+		return httpx.Unavailable("EMAIL_NOT_CONFIGURED", "email settings unavailable")
+	}
+	v, err := s.Accounts.GetEmailSettings(r.Context())
+	if err != nil {
+		return err
+	}
+	return ok(w, v)
+}
+
+func (s *Server) updateEmailSettings(w http.ResponseWriter, r *http.Request) error {
+	if s.Accounts == nil {
+		return httpx.Unavailable("EMAIL_NOT_CONFIGURED", "email settings unavailable")
+	}
+	var patch mail.Patch
+	if err := httpx.Decode(r, &patch); err != nil {
+		return err
+	}
+	v, err := s.Accounts.UpdateEmailSettings(r.Context(), patch)
+	if err != nil {
+		return httpx.BadRequest("INVALID_EMAIL_SETTINGS", err.Error())
+	}
+	// 审计不落明文 api_key
+	auditPatch := map[string]any{}
+	if patch.Enabled != nil {
+		auditPatch["enabled"] = *patch.Enabled
+	}
+	if patch.Mode != nil {
+		auditPatch["mode"] = *patch.Mode
+	}
+	if patch.From != nil {
+		auditPatch["from"] = *patch.From
+	}
+	if patch.APIKey != nil {
+		auditPatch["api_key"] = "[redacted]"
+	}
+	raw, _ := json.Marshal(auditPatch)
+	s.audit(r, "email_settings.update", "email_settings", raw)
+	return ok(w, v)
 }
 
 func (s *Server) getMarketDiscovery(w http.ResponseWriter, r *http.Request) error {

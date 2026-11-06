@@ -4,8 +4,9 @@ import type * as T from './types'
 
 type Ok = { status: string }
 
-/** 注册请求可选带的推广渠道归因字段（值来自 utils/promo.ts 的 promoSignupFields） */
+/** 注册请求可选字段：邮箱验证码、推广归因、loxo 任务票据 */
 export type RegisterExtra = {
+  code?: string
   channel_code?: string
   visitor_id?: string
   channel_touched_at?: string
@@ -16,6 +17,8 @@ export type RegisterExtra = {
 export const auth = {
   register: (email: string, password: string, extra?: RegisterExtra) =>
     http.post<T.User>('/api/auth/register', { email, password, ...extra }),
+  sendRegisterCode: (email: string) =>
+    http.post<{ status: string; cooldown_seconds: number }>('/api/auth/register/send-code', { email }),
   login: (email: string, password: string) => http.post<T.LoginResult>('/api/auth/login', { email, password }),
   refresh: () => http.post<T.LoginResult>('/api/auth/refresh'),
   me: () => http.get<T.User>('/api/me'),

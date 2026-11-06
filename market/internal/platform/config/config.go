@@ -23,6 +23,7 @@ type Config struct {
 	Redis    RedisConfig    `yaml:"redis"`
 	Crypto   CryptoConfig   `yaml:"crypto"`
 	Auth     AuthConfig     `yaml:"auth"`
+	Email    EmailConfig    `yaml:"email"`
 	Sub2API  Sub2APIConfig  `yaml:"sub2api"`
 	Payment  PaymentConfig  `yaml:"payment"`
 	Worker   WorkerConfig   `yaml:"worker"`
@@ -43,6 +44,13 @@ type AuthConfig struct {
 	// 首次启动时若没有任何管理员，用这组账号创建一个
 	BootstrapAdminEmail    string `yaml:"bootstrap_admin_email"`
 	BootstrapAdminPassword string `yaml:"bootstrap_admin_password"`
+}
+
+// EmailConfig 注册邮箱验证（Resend）。域名在 Resend 控制台验证后，From 用该域名发件地址。
+type EmailConfig struct {
+	ResendAPIKey string `yaml:"resend_api_key"`
+	// From 形如 `闲猫 <noreply@idlicat.com>`；空则回退 noreply@resend.dev（仅测试）
+	From string `yaml:"from"`
 }
 
 // EdgeConfig 是 market-edge 的配置。
@@ -169,6 +177,8 @@ func applyEnv(cfg *Config, lookup func(string) (string, bool)) error {
 		"TM_AUTH_JWT_SECRET":          &cfg.Auth.JWTSecret,
 		"TM_BOOTSTRAP_ADMIN_EMAIL":    &cfg.Auth.BootstrapAdminEmail,
 		"TM_BOOTSTRAP_ADMIN_PASSWORD": &cfg.Auth.BootstrapAdminPassword,
+		"TM_RESEND_API_KEY":           &cfg.Email.ResendAPIKey,
+		"TM_RESEND_FROM":              &cfg.Email.From,
 		"TM_SUB2API_GATEWAY_URL":      &cfg.Sub2API.GatewayURL,
 		"TM_PAYMENT_ALIPAY_GATEWAY":   &cfg.Payment.AlipayGateway,
 		"TM_PAYMENT_WECHAT_BASE_URL":  &cfg.Payment.WechatBaseURL,

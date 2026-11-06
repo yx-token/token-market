@@ -66,7 +66,11 @@ onMounted(load)
     <header class="y-header">
       <div class="page-heading">
         <h2 class="y-title">市场设置</h2>
-        <p class="y-page-desc">抽佣、冻结与提现等平台参数</p>
+        <p class="y-page-desc">
+          抽佣、冻结与提现等平台参数。注册邮箱验证请到
+          <a class="y-link" href="/admin/settings">系统设置 → 邮件</a>
+          。
+        </p>
       </div>
       <div class="y-header-actions">
         <button type="button" class="btn btn-secondary page-action-btn" :disabled="loading" @click="load">
@@ -106,6 +110,7 @@ onMounted(load)
   gap: 12px;
 }
 .page-heading { min-width: 0; }
+.y-page-desc { margin: 4px 0 0; font-size: 13px; color: var(--color-text-secondary, #868686); }
 .y-header-actions {
   display: flex;
   align-items: center;

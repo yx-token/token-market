@@ -32,6 +32,8 @@ export interface MarketConfig {
   recharge_max: number
   /** 市场展示官方价格的模型，用于按平台挑调用示例里的模型名 */
   price_models: string[]
+  /** 注册是否要求邮箱验证码（Resend） */
+  email_verify_enabled?: boolean
 }
 
 export interface MarketItem {

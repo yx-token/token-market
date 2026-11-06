@@ -13,6 +13,7 @@ import (
 	"github.com/yx-token/token-market/internal/pkg/websearch"
 	middleware2 "github.com/yx-token/token-market/internal/server/middleware"
 	"github.com/yx-token/token-market/internal/service"
+	"github.com/yx-token/token-market/market/hostmail"
 	"github.com/yx-token/token-market/market/hostpay"
 
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,7 @@ func ProvideRouter(
 	cfg *config.Config,
 	handlers *handler.Handlers,
 	paymentConfigService *service.PaymentConfigService,
+	emailService *service.EmailService,
 	jwtAuth middleware2.JWTAuthMiddleware,
 	optionalJWTAuth middleware2.OptionalJWTAuthMiddleware,
 	adminAuth middleware2.AdminAuthMiddleware,
@@ -46,9 +48,15 @@ func ProvideRouter(
 	redisClient *redis.Client,
 ) *gin.Engine {
 	// PublicHandler builds the embedded market app while routes are mounted.
-	// Register its host-owned payment source before SetupRouter reaches it.
+	// Register its host-owned payment / mail sources before SetupRouter reaches it.
 	if paymentConfigService != nil {
 		hostpay.SetSource(paymentConfigService.LoadHostPaymentConfig)
+	}
+	if emailService != nil {
+		hostmail.SetBridge(hostmail.Bridge{
+			Status: emailService.MarketHostStatus,
+			Send:   emailService.SendEmail,
+		})
 	}
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)

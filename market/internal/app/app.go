@@ -16,6 +16,7 @@ import (
 	"github.com/yx-token/token-market/market/internal/edgecfg"
 	"github.com/yx-token/token-market/market/internal/iam"
 	"github.com/yx-token/token-market/market/internal/listing"
+	"github.com/yx-token/token-market/market/internal/mail"
 	"github.com/yx-token/token-market/market/internal/market"
 	"github.com/yx-token/token-market/market/internal/payment/registry"
 	"github.com/yx-token/token-market/market/internal/platform/auth"
@@ -143,6 +144,11 @@ func Build(ctx context.Context, cfg *config.Config, log *slog.Logger) (*App, err
 	edgeStore := edgecfg.Store{Redis: a.Redis}
 
 	a.Accounts = account.NewService(a.DB, a.Keyring, a.Issuer)
+	emailBoot := mail.BootFromEnv(cfg.Email.ResendAPIKey, cfg.Email.From)
+	a.Accounts.ConfigureEmail(a.Redis, emailBoot, log)
+	if v, err := mail.LoadView(ctx, a.DB, emailBoot); err == nil && v.Enabled {
+		log.Info("register email verification ready", "mode", v.Mode, "source", v.Source)
+	}
 	a.Promo = &promo.Service{DB: a.DB}
 	a.Reward = &rewardtask.Service{DB: a.DB, Keyring: a.Keyring, Log: log}
 	a.IAM = iam.New(a.DB)

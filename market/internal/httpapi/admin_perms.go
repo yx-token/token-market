@@ -57,6 +57,7 @@ func adminRouteResources(pattern string) []string {
 		{"/api/admin/kyc", []string{"console.govern.users"}},
 		{"/api/admin/users", []string{"console.govern.users"}},
 		{"/api/admin/settings", []string{"console.govern.settings"}},
+		{"/api/admin/email-settings", []string{"console.govern.settings"}},
 		{"/api/admin/system", []string{"console.govern.system_update"}},
 		{"/api/admin/audit-logs", []string{"console.govern.audit"}},
 		{"/api/admin/sub2api", []string{"console.duty.overview", "console.govern.settings"}},

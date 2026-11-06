@@ -215,6 +215,8 @@ func registerIdleCatRelay(admin *gin.RouterGroup) {
 		"POST recharges/:id/sync",
 		"GET settings",
 		"PUT settings",
+		"GET email-settings",
+		"PUT email-settings",
 		"GET market-discovery",
 		"PUT market-discovery",
 		"POST refund-payouts/:id/retry",

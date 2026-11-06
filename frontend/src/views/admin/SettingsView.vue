@@ -8727,6 +8727,41 @@
             </div>
           </div>
 
+          <!-- 闲猫 C 端：对接上方 SMTP，与引擎共用 -->
+          <div class="card">
+            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t("admin.settings.marketEmail.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.marketEmail.description") }}
+              </p>
+            </div>
+            <div class="space-y-3 p-6 text-sm text-gray-600 dark:text-gray-300">
+              <p>{{ t("admin.settings.marketEmail.howto") }}</p>
+              <ul class="list-disc space-y-1 pl-5">
+                <li>{{ t("admin.settings.marketEmail.stepSecurity") }}</li>
+                <li>{{ t("admin.settings.marketEmail.stepSmtp") }}</li>
+              </ul>
+              <p v-if="marketEmailLoading" class="text-gray-500 dark:text-gray-400">
+                {{ t("common.loading") }}
+              </p>
+              <p
+                v-else-if="marketEmailError"
+                class="text-amber-600 dark:text-amber-400"
+              >
+                {{ marketEmailError }}
+              </p>
+              <p v-else-if="marketEmailLoaded" class="font-medium text-gray-900 dark:text-white">
+                {{
+                  marketEmail.enabled
+                    ? t("admin.settings.marketEmail.statusOn", { from: marketEmail.from || "—" })
+                    : t("admin.settings.marketEmail.statusOff")
+                }}
+              </p>
+            </div>
+          </div>
+
           <!-- 订阅到期提醒 -->
           <div class="card">
             <div
@@ -9057,6 +9092,7 @@ import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";
 import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSimpleUser } from "@/api/admin/affiliates";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
 import { useAppStore } from "@/stores";
+import { marketGet, MARKET_API_PREFIX } from "@/market-admin/api";
 import { useAdminSettingsStore } from "@/stores/adminSettings";
 import { normalizeVisibleMethod } from "@/components/payment/paymentFlow";
 import {
@@ -12919,6 +12955,37 @@ async function handleDeleteProvider() {
   }
 }
 
+const marketEmail = reactive({
+  enabled: false,
+  from: "",
+});
+const marketEmailLoading = ref(false);
+const marketEmailLoaded = ref(false);
+const marketEmailError = ref("");
+
+async function loadMarketEmail() {
+  marketEmailLoading.value = true;
+  marketEmailError.value = "";
+  try {
+    const data = await marketGet<{
+      enabled: boolean;
+      from: string;
+      source: string;
+    }>(`${MARKET_API_PREFIX}/email-settings`);
+    marketEmail.enabled = !!data.enabled;
+    marketEmail.from = data.from || "";
+    marketEmailLoaded.value = true;
+  } catch (err: unknown) {
+    marketEmailLoaded.value = false;
+    marketEmailError.value = extractApiErrorMessage(
+      err,
+      t("admin.settings.marketEmail.loadFailed"),
+    );
+  } finally {
+    marketEmailLoading.value = false;
+  }
+}
+
 onMounted(() => {
   loadSettings();
   loadSubscriptionGroups();
@@ -12933,6 +13000,7 @@ onMounted(() => {
   loadRectifierSettings();
   loadBetaPolicySettings();
   loadProviders();
+  loadMarketEmail();
 });
 
 // =========================
