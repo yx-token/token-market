@@ -24,7 +24,7 @@ const (
 var (
 	ErrCodeRequired   = httpx.BadRequest("CODE_REQUIRED", "email verification code is required")
 	ErrInvalidCode    = httpx.BadRequest("INVALID_CODE", "invalid or expired verification code")
-	ErrCodeCooldown  = httpx.TooMany("CODE_COOLDOWN", "please wait before requesting another code")
+	ErrCodeCooldown   = httpx.TooMany("CODE_COOLDOWN", "please wait before requesting another code")
 	ErrEmailNotReady  = httpx.Unavailable("EMAIL_NOT_CONFIGURED", "email verification is not configured")
 	ErrSendCodeFailed = httpx.Unavailable("SEND_CODE_FAILED", "failed to send verification email")
 )
