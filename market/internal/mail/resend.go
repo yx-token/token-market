@@ -64,8 +64,11 @@ func (r *Resend) Send(ctx context.Context, to, subject, html string) error {
 	if err != nil {
 		return fmt.Errorf("resend: %w", err)
 	}
-	defer res.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	defer func() { _ = res.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, 4096))
+	if err != nil {
+		return fmt.Errorf("resend: read body: %w", err)
+	}
 	if res.StatusCode >= 300 {
 		return fmt.Errorf("resend: HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(raw)))
 	}
