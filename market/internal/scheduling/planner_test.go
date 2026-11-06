@@ -13,9 +13,9 @@ func f64(v float64) *float64 { return &v }
 func planCtx() PlanContext {
 	return PlanContext{
 		Pools: []Pool{
-			{ID: 1, Name: "tm-pool-claude", Platform: "anthropic", Sub2APIGroupID: i64(100), SellMultiplier: 0.5, MinMargin: 0.1, SafetyBuffer: 0.02, Enabled: true},
-			{ID: 2, Name: "tm-pool-all", Platform: "composite", Sub2APIGroupID: i64(200), SellMultiplier: 0.6, MinMargin: 0.1, SafetyBuffer: 0.02, Enabled: true},
-			{ID: 3, Name: "tm-pool-gpt", Platform: "openai", Sub2APIGroupID: i64(300), SellMultiplier: 0.5, MinMargin: 0.1, SafetyBuffer: 0.02, Enabled: true},
+			{ID: 1, Name: "tm-pool-claude", Platform: "anthropic", Sub2APIGroupID: i64(100), SellMultiplier: 0.5, MinMargin: 0.1, SafetyBuffer: 0.02, ProfitControlEnabled: true, Enabled: true},
+			{ID: 2, Name: "tm-pool-all", Platform: "composite", Sub2APIGroupID: i64(200), SellMultiplier: 0.6, MinMargin: 0.1, SafetyBuffer: 0.02, ProfitControlEnabled: true, Enabled: true},
+			{ID: 3, Name: "tm-pool-gpt", Platform: "openai", Sub2APIGroupID: i64(300), SellMultiplier: 0.5, MinMargin: 0.1, SafetyBuffer: 0.02, ProfitControlEnabled: true, Enabled: true},
 		},
 		Vendors:    map[string]VendorInput{"anthropic": {DefaultConcurrency: 4, ExtraLimits: map[string]any{"max_sessions": 3}}},
 		Commission: 0.2,
@@ -66,6 +66,28 @@ func TestPlanBuybackFirstThenCheapConsignment(t *testing.T) {
 	}
 	if byID[1].Priority >= byID[2].Priority {
 		t.Fatal("buyback band must be strictly ahead of consignment band")
+	}
+}
+
+func TestPlanPoolWithoutProfitControlAdmitsAnyMultiplier(t *testing.T) {
+	pc := planCtx()
+	pc.Pools[0].ProfitControlEnabled = false // tm-pool-claude 关闭利润控制
+	ups := []UpstreamInput{
+		// 倍率 0.45 超过 tm-pool-claude 的上限 0.44，但该池没开利润控制；0.60 还超过 tm-pool-all 的上限 0.528
+		{ID: 3, Platform: "anthropic", Status: "listed", Health: "healthy", AccountID: 13, ProbeGroupID: i64(1003),
+			Listing: &ListingInput{ID: 3, Mode: "consignment", Status: "active", Multiplier: f64(0.45), JoinDefaultPool: true}},
+		{ID: 5, Platform: "anthropic", Status: "listed", Health: "healthy", AccountID: 15, ProbeGroupID: i64(1005),
+			Listing: &ListingInput{ID: 5, Mode: "consignment", Status: "active", Multiplier: f64(0.60), JoinDefaultPool: true}},
+	}
+	byID := map[int64]Desired{}
+	for _, d := range Plan(pc, ups) {
+		byID[d.UpstreamID] = d
+	}
+	if d := byID[3]; !equalIDs(d.GroupIDs, []int64{100, 200, 1003}) {
+		t.Fatalf("pool without profit control should admit 0.45: %+v", d)
+	}
+	if d := byID[5]; !equalIDs(d.GroupIDs, []int64{100, 1005}) {
+		t.Fatalf("0.60 should join only the pool without profit control: %+v", d)
 	}
 }
 

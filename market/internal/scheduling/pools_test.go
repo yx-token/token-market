@@ -53,6 +53,7 @@ func (db *poolDBStub) Exec(_ context.Context, query string, args ...any) (pgconn
 		db.pool.MarketPublished = args[6].(bool)
 		db.pool.MarketTitle = args[7].(string)
 		db.pool.MarketDescription = args[8].(string)
+		db.pool.ProfitControlEnabled = args[9].(bool)
 	case strings.Contains(query, "UPDATE pools SET deleted_at"):
 		if db.deleted || db.pool.Enabled {
 			return pgconn.NewCommandTag("UPDATE 0"), nil
@@ -75,6 +76,8 @@ func (db *poolDBStub) QueryRow(_ context.Context, query string, args ...any) pgx
 			return nil
 		}}
 	case strings.Contains(query, "INSERT INTO pools"):
+		db.pool.MinMargin, db.pool.SafetyBuffer = args[3].(float64), args[4].(float64)
+		db.pool.ProfitControlEnabled = args[5].(bool)
 		return poolRowStub{scan: func(dest ...any) error {
 			*dest[0].(*int64) = db.pool.ID
 			return nil
@@ -109,12 +112,13 @@ func (db *poolDBStub) scanPool(dest ...any) error {
 	*dest[4].(*float64) = p.SellMultiplier
 	*dest[5].(*float64) = p.MinMargin
 	*dest[6].(*float64) = p.SafetyBuffer
-	*dest[7].(*bool) = p.Enabled
-	*dest[8].(*bool) = p.MarketPublished
-	*dest[9].(*string) = p.MarketTitle
-	*dest[10].(*string) = p.MarketDescription
-	*dest[11].(*time.Time) = p.CreatedAt
-	*dest[12].(*time.Time) = p.UpdatedAt
+	*dest[7].(*bool) = p.ProfitControlEnabled
+	*dest[8].(*bool) = p.Enabled
+	*dest[9].(*bool) = p.MarketPublished
+	*dest[10].(*string) = p.MarketTitle
+	*dest[11].(*string) = p.MarketDescription
+	*dest[12].(*time.Time) = p.CreatedAt
+	*dest[13].(*time.Time) = p.UpdatedAt
 	return nil
 }
 
@@ -127,8 +131,10 @@ func TestPoolCreateUsesEngineSupportedProfitControl(t *testing.T) {
 			db := &poolDBStub{pool: Pool{ID: 1, Name: "tm-pool-test", Platform: platform, SellMultiplier: 0.6, MinMargin: 0.1, SafetyBuffer: 0.02, Enabled: true}}
 			prov := &poolGroupProvisionerStub{}
 			svc := &PoolService{DB: db, Prov: prov}
+			on := true
 			_, err := svc.Create(context.Background(), PoolInput{
 				Name: "tm-pool-test", Platform: platform, SellMultiplier: f64(0.6), MinMargin: f64(0.1), SafetyBuffer: f64(0.02),
+				ProfitControlEnabled: &on,
 			})
 			if err != nil {
 				t.Fatalf("Create() error = %v", err)
@@ -143,13 +149,66 @@ func TestPoolCreateUsesEngineSupportedProfitControl(t *testing.T) {
 	}
 }
 
+func TestPoolCreateDefaultsProfitControlOff(t *testing.T) {
+	db := &poolDBStub{pool: Pool{ID: 1, Name: "tm-pool-test", Platform: "anthropic", SellMultiplier: 0.6, Enabled: true}}
+	prov := &poolGroupProvisionerStub{}
+	svc := &PoolService{DB: db, Prov: prov}
+	p, err := svc.Create(context.Background(), PoolInput{Name: "tm-pool-test", Platform: "anthropic", SellMultiplier: f64(0.6)})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if p.ProfitControlEnabled {
+		t.Errorf("new pool profit_control_enabled = true, want false by default")
+	}
+	if p.MinMargin != 0.10 || p.SafetyBuffer != 0.02 {
+		t.Errorf("margin/buffer = %v/%v, want defaults 0.10/0.02 kept for later enabling", p.MinMargin, p.SafetyBuffer)
+	}
+	if len(prov.specs) != 1 || prov.specs[0].ProfitControl {
+		t.Fatalf("engine group must be created without profit control: %+v", prov.specs)
+	}
+}
+
+func TestPoolUpdateTogglesProfitControl(t *testing.T) {
+	groupID := int64(200)
+	db := &poolDBStub{pool: Pool{ID: 1, Name: "tm-pool-test", Platform: "anthropic", Sub2APIGroupID: &groupID, SellMultiplier: 0.6, MinMargin: 0.1, SafetyBuffer: 0.02, ProfitControlEnabled: true, Enabled: true}}
+	svc := &PoolService{DB: db, Prov: &poolGroupProvisionerStub{}}
+
+	off := false
+	if _, err := svc.Update(context.Background(), 1, PoolInput{ProfitControlEnabled: &off}); err != nil {
+		t.Fatalf("Update(off) error = %v", err)
+	}
+	if db.pool.ProfitControlEnabled || db.pool.MinMargin != 0.1 || db.pool.SafetyBuffer != 0.02 {
+		t.Fatalf("after turning off: %+v, want off with margin/buffer kept", db.pool)
+	}
+	in := db.updatePayload[0].Input
+	if *in.ProfitControlEnabled || *in.ProfitMinMargin != 0.1 || *in.ProfitSafetyBuffer != 0.02 {
+		t.Fatalf("engine payload = enabled %v margin %v buffer %v, want off with values kept", *in.ProfitControlEnabled, *in.ProfitMinMargin, *in.ProfitSafetyBuffer)
+	}
+
+	// 省略开关的修改（如只改售价）不能把关闭的利润控制改回去
+	if _, err := svc.Update(context.Background(), 1, PoolInput{SellMultiplier: f64(0.7)}); err != nil {
+		t.Fatalf("Update(sell) error = %v", err)
+	}
+	if db.pool.ProfitControlEnabled || *db.updatePayload[1].Input.ProfitControlEnabled {
+		t.Fatalf("omitted profit_control_enabled must keep it off: pool=%v payload=%v", db.pool.ProfitControlEnabled, *db.updatePayload[1].Input.ProfitControlEnabled)
+	}
+
+	on := true
+	if _, err := svc.Update(context.Background(), 1, PoolInput{ProfitControlEnabled: &on}); err != nil {
+		t.Fatalf("Update(on) error = %v", err)
+	}
+	if !db.pool.ProfitControlEnabled || !*db.updatePayload[2].Input.ProfitControlEnabled {
+		t.Fatalf("turning on: pool=%v payload=%v, want both on", db.pool.ProfitControlEnabled, *db.updatePayload[2].Input.ProfitControlEnabled)
+	}
+}
+
 func TestPoolUpdateUsesEngineSupportedProfitControl(t *testing.T) {
 	for platform, want := range map[string]bool{
 		"anthropic": true, "composite": false, "kimi": false,
 	} {
 		t.Run(platform, func(t *testing.T) {
 			groupID := int64(200)
-			db := &poolDBStub{pool: Pool{ID: 1, Name: "tm-pool-test", Platform: platform, Sub2APIGroupID: &groupID, SellMultiplier: 0.6, MinMargin: 0.1, SafetyBuffer: 0.02, Enabled: true}}
+			db := &poolDBStub{pool: Pool{ID: 1, Name: "tm-pool-test", Platform: platform, Sub2APIGroupID: &groupID, SellMultiplier: 0.6, MinMargin: 0.1, SafetyBuffer: 0.02, ProfitControlEnabled: true, Enabled: true}}
 			svc := &PoolService{DB: db, Prov: &poolGroupProvisionerStub{}}
 			_, err := svc.Update(context.Background(), 1, PoolInput{SellMultiplier: f64(0.7)})
 			if err != nil {

@@ -25,24 +25,36 @@ type DB interface {
 }
 
 type Pool struct {
-	ID                int64     `json:"id"`
-	Name              string    `json:"name"`
-	Platform          string    `json:"platform"`
-	Sub2APIGroupID    *int64    `json:"sub2api_group_id,omitempty"`
-	SellMultiplier    float64   `json:"sell_multiplier"`
-	MinMargin         float64   `json:"min_margin"`
-	SafetyBuffer      float64   `json:"safety_buffer"`
-	Enabled           bool      `json:"enabled"`
-	MarketPublished   bool      `json:"market_published"`
-	MarketTitle       string    `json:"market_title"`
-	MarketDescription string    `json:"market_description"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                   int64     `json:"id"`
+	Name                 string    `json:"name"`
+	Platform             string    `json:"platform"`
+	Sub2APIGroupID       *int64    `json:"sub2api_group_id,omitempty"`
+	SellMultiplier       float64   `json:"sell_multiplier"`
+	MinMargin            float64   `json:"min_margin"`
+	SafetyBuffer         float64   `json:"safety_buffer"`
+	ProfitControlEnabled bool      `json:"profit_control_enabled"` // 关闭时不限制入池倍率、不封顶回收报价，引擎分组利润控制也关闭；毛利与缓冲保留，供再次开启
+	Enabled              bool      `json:"enabled"`
+	MarketPublished      bool      `json:"market_published"`
+	MarketTitle          string    `json:"market_title"`
+	MarketDescription    string    `json:"market_description"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 // Cap 返回进入该默认分组的倍率上限 D × (1 − 最低毛利 − 安全缓冲)，与 sub2api 利润控制同一公式。
+// 只在开启利润控制时生效，见 AdmitsMultiplier。
 func (p Pool) Cap() float64 {
 	return p.SellMultiplier * (1 - p.MinMargin - p.SafetyBuffer)
+}
+
+// AdmitsMultiplier 判断倍率为 m 的上游是否满足该默认分组的利润控制；关闭利润控制时不限制。
+func (p Pool) AdmitsMultiplier(m float64) bool {
+	return !p.ProfitControlEnabled || m <= p.Cap()+1e-9
+}
+
+// engineProfitControl 返回下发给引擎分组的利润控制开关：池开启且引擎支持该平台时才开。
+func (p Pool) engineProfitControl() bool {
+	return p.ProfitControlEnabled && engineProfitControlSupported(p.Platform)
 }
 
 // Accepts 判断某平台的上游能否进入该默认分组。
@@ -50,11 +62,11 @@ func (p Pool) Accepts(platform string) bool {
 	return p.Enabled && (p.Platform == platform || p.Platform == "composite")
 }
 
-const poolColumns = `id, name, platform, sub2api_group_id, sell_multiplier, min_margin, safety_buffer, enabled, market_published, market_title, market_description, created_at, updated_at`
+const poolColumns = `id, name, platform, sub2api_group_id, sell_multiplier, min_margin, safety_buffer, profit_control_enabled, enabled, market_published, market_title, market_description, created_at, updated_at`
 
 func scanPool(row pgx.Row) (*Pool, error) {
 	var p Pool
-	err := row.Scan(&p.ID, &p.Name, &p.Platform, &p.Sub2APIGroupID, &p.SellMultiplier, &p.MinMargin, &p.SafetyBuffer, &p.Enabled, &p.MarketPublished, &p.MarketTitle, &p.MarketDescription, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Platform, &p.Sub2APIGroupID, &p.SellMultiplier, &p.MinMargin, &p.SafetyBuffer, &p.ProfitControlEnabled, &p.Enabled, &p.MarketPublished, &p.MarketTitle, &p.MarketDescription, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -124,15 +136,16 @@ func defaultMarketTitle(name, platform string) string {
 }
 
 type PoolInput struct {
-	Name              string   `json:"name"`
-	Platform          string   `json:"platform"`
-	SellMultiplier    *float64 `json:"sell_multiplier"`
-	MinMargin         *float64 `json:"min_margin"`
-	SafetyBuffer      *float64 `json:"safety_buffer"`
-	Enabled           *bool    `json:"enabled"`
-	MarketPublished   *bool    `json:"market_published"`
-	MarketTitle       *string  `json:"market_title"`
-	MarketDescription *string  `json:"market_description"`
+	Name                 string   `json:"name"`
+	Platform             string   `json:"platform"`
+	SellMultiplier       *float64 `json:"sell_multiplier"`
+	MinMargin            *float64 `json:"min_margin"`
+	SafetyBuffer         *float64 `json:"safety_buffer"`
+	ProfitControlEnabled *bool    `json:"profit_control_enabled"` // 新建时省略视为关闭，修改时省略视为不变
+	Enabled              *bool    `json:"enabled"`
+	MarketPublished      *bool    `json:"market_published"`
+	MarketTitle          *string  `json:"market_title"`
+	MarketDescription    *string  `json:"market_description"`
 }
 
 type groupProvisioner interface {
@@ -144,7 +157,7 @@ type PoolService struct {
 	Prov groupProvisioner
 }
 
-// Create 创建默认分组，并按平台支持情况同步 sub2api 利润控制配置。
+// Create 创建默认分组（利润控制默认关闭），并按开关与平台支持情况同步 sub2api 利润控制配置。
 func (s *PoolService) Create(ctx context.Context, in PoolInput) (*Pool, error) {
 	if !strings.HasPrefix(in.Name, "tm-pool-") {
 		return nil, httpx.BadRequest("INVALID_NAME", "pool name must start with tm-pool-")
@@ -165,6 +178,7 @@ func (s *PoolService) Create(ctx context.Context, in PoolInput) (*Pool, error) {
 	if margin < 0 || buffer < 0 || margin+buffer >= 1 {
 		return nil, httpx.BadRequest("INVALID_MARGIN", "min_margin and safety_buffer must be >= 0 and sum to less than 1")
 	}
+	profitControl := in.ProfitControlEnabled != nil && *in.ProfitControlEnabled
 	// 同名分组刚删除时，sub2api 里的旧分组要等出站表执行完才消失；这期间按名称会找回旧分组。
 	var deleting bool
 	if err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pools p WHERE p.name = $1 AND p.deleted_at IS NOT NULL AND p.sub2api_group_id IS NOT NULL
@@ -175,8 +189,8 @@ func (s *PoolService) Create(ctx context.Context, in PoolInput) (*Pool, error) {
 		return nil, httpx.Conflict("POOL_GROUP_DELETING", "a deleted pool with this name is still being removed from sub2api, retry shortly")
 	}
 	var id int64
-	err := s.DB.QueryRow(ctx, `INSERT INTO pools (name, platform, sell_multiplier, min_margin, safety_buffer) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-		in.Name, in.Platform, *in.SellMultiplier, margin, buffer).Scan(&id)
+	err := s.DB.QueryRow(ctx, `INSERT INTO pools (name, platform, sell_multiplier, min_margin, safety_buffer, profit_control_enabled) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		in.Name, in.Platform, *in.SellMultiplier, margin, buffer, profitControl).Scan(&id)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return nil, httpx.Conflict("POOL_EXISTS", "pool name already exists")
@@ -211,7 +225,7 @@ func (s *PoolService) ensureGroup(ctx context.Context, id int64) (int64, error) 
 		Platform:           p.Platform,
 		RateMultiplier:     p.SellMultiplier,
 		Exclusive:          true, // 只有被授权的影子用户才能绑定
-		ProfitControl:      engineProfitControlSupported(p.Platform),
+		ProfitControl:      p.engineProfitControl(),
 		ProfitMinMargin:    p.MinMargin,
 		ProfitSafetyBuffer: p.SafetyBuffer,
 		Description:        "token-market default pool",
@@ -223,7 +237,7 @@ func (s *PoolService) ensureGroup(ctx context.Context, id int64) (int64, error) 
 	return gid, err
 }
 
-// Update 修改默认分组名称、售价、毛利、启用状态，同步到 sub2api 分组。
+// Update 修改默认分组名称、售价、毛利、利润控制开关、启用状态，同步到 sub2api 分组。
 func (s *PoolService) Update(ctx context.Context, id int64, in PoolInput) (*Pool, error) {
 	p, err := GetPool(ctx, s.DB, id)
 	if err != nil {
@@ -258,6 +272,9 @@ func (s *PoolService) Update(ctx context.Context, id int64, in PoolInput) (*Pool
 	if in.SafetyBuffer != nil {
 		p.SafetyBuffer = *in.SafetyBuffer
 	}
+	if in.ProfitControlEnabled != nil {
+		p.ProfitControlEnabled = *in.ProfitControlEnabled
+	}
 	if in.Enabled != nil {
 		p.Enabled = *in.Enabled
 	}
@@ -284,8 +301,8 @@ func (s *PoolService) Update(ctx context.Context, id int64, in PoolInput) (*Pool
 	if p.MinMargin < 0 || p.SafetyBuffer < 0 || p.MinMargin+p.SafetyBuffer >= 1 {
 		return nil, httpx.BadRequest("INVALID_MARGIN", "min_margin and safety_buffer must be >= 0 and sum to less than 1")
 	}
-	_, err = s.DB.Exec(ctx, `UPDATE pools SET name = $2, sell_multiplier = $3, min_margin = $4, safety_buffer = $5, enabled = $6, market_published = $7, market_title = $8, market_description = $9, updated_at = now() WHERE id = $1`,
-		p.ID, p.Name, p.SellMultiplier, p.MinMargin, p.SafetyBuffer, p.Enabled, p.MarketPublished, p.MarketTitle, p.MarketDescription)
+	_, err = s.DB.Exec(ctx, `UPDATE pools SET name = $2, sell_multiplier = $3, min_margin = $4, safety_buffer = $5, enabled = $6, market_published = $7, market_title = $8, market_description = $9, profit_control_enabled = $10, updated_at = now() WHERE id = $1`,
+		p.ID, p.Name, p.SellMultiplier, p.MinMargin, p.SafetyBuffer, p.Enabled, p.MarketPublished, p.MarketTitle, p.MarketDescription, p.ProfitControlEnabled)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return nil, httpx.Conflict("POOL_EXISTS", "pool name already exists")
@@ -294,7 +311,7 @@ func (s *PoolService) Update(ctx context.Context, id int64, in PoolInput) (*Pool
 		return nil, err
 	}
 	if p.Sub2APIGroupID != nil {
-		rate, margin, buffer, on := p.SellMultiplier, p.MinMargin, p.SafetyBuffer, engineProfitControlSupported(p.Platform)
+		rate, margin, buffer, on := p.SellMultiplier, p.MinMargin, p.SafetyBuffer, p.engineProfitControl()
 		inGroup := adminclient.UpdateGroupInput{
 			RateMultiplier: &rate, ProfitControlEnabled: &on, ProfitMinMargin: &margin, ProfitSafetyBuffer: &buffer,
 		}

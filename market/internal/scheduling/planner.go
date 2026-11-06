@@ -237,7 +237,7 @@ func Plan(pc PlanContext, ups []UpstreamInput) []Desired {
 						continue
 					}
 				}
-				if m > p.Cap()+1e-9 {
+				if !p.AdmitsMultiplier(m) {
 					reasons = append(reasons, fmt.Sprintf("multiplier above %s cap", p.Name))
 					continue
 				}

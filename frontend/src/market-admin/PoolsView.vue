@@ -24,6 +24,7 @@ interface Pool {
   sell_multiplier: number
   min_margin: number
   safety_buffer: number
+  profit_control_enabled?: boolean
   enabled: boolean
   market_published: boolean
   market_title?: string
@@ -86,6 +87,7 @@ const form = reactive({
   sell: '',
   margin: '0.10',
   buffer: '0.02',
+  profit_control: false,
   enabled: true,
   market_published: false,
   market_title: '',
@@ -98,7 +100,7 @@ const columns: Column[] = [
   { key: 'market_title', label: '市场标题', class: 'col-title' },
   { key: 'platform', label: '平台', class: 'col-platform' },
   { key: 'sell', label: '售价 D', class: 'col-num' },
-  { key: 'margin', label: '毛利 / 缓冲', class: 'col-num' },
+  { key: 'margin', label: '利润控制', class: 'col-num' },
   { key: 'cap', label: '寄售上限', class: 'col-num' },
   { key: 'enabled', label: '状态', class: 'col-status' },
   { key: 'market', label: '市场', class: 'col-status' },
@@ -167,6 +169,10 @@ function cap(p: Pool) {
   return p.sell_multiplier * (1 - p.min_margin - p.safety_buffer)
 }
 
+function capText(p: Pool) {
+  return p.profit_control_enabled ? fmtMul(cap(p)) : '不限'
+}
+
 function fmtMul(n: number) {
   return Number.isFinite(n) ? n.toFixed(3) : '—'
 }
@@ -209,6 +215,7 @@ function openNew() {
     sell: '',
     margin: '0.10',
     buffer: '0.02',
+    profit_control: false,
     enabled: true,
     market_published: false,
     market_title: '',
@@ -226,6 +233,7 @@ function openEdit(p: Pool) {
     sell: String(p.sell_multiplier ?? ''),
     margin: String(p.min_margin ?? ''),
     buffer: String(p.safety_buffer ?? ''),
+    profit_control: !!p.profit_control_enabled,
     enabled: p.enabled,
     market_published: p.market_published,
     market_title: p.market_title || defaultTitle(p),
@@ -266,6 +274,7 @@ async function save() {
     sell_multiplier: Number(form.sell),
     min_margin: Number(form.margin),
     safety_buffer: Number(form.buffer),
+    profit_control_enabled: form.profit_control,
     enabled: form.enabled,
     market_published: form.market_published,
     market_title: form.market_title.trim(),
@@ -329,6 +338,7 @@ async function toggleEnabled(p: Pool) {
         sell_multiplier: p.sell_multiplier,
         min_margin: p.min_margin,
         safety_buffer: p.safety_buffer,
+        profit_control_enabled: p.profit_control_enabled,
         market_published: p.market_published,
         market_title: p.market_title || '',
         market_description: p.market_description || '',
@@ -494,9 +504,12 @@ onMounted(load)
           <template #cell-platform="{ row }">{{ platformLabel(row.platform) }}</template>
           <template #cell-sell="{ row }">{{ fmtMul(row.sell_multiplier) }}</template>
           <template #cell-margin="{ row }">
-            {{ fmtPct(row.min_margin) }} / {{ fmtPct(row.safety_buffer) }}
+            <span v-if="row.profit_control_enabled" title="最低毛利 / 安全缓冲">
+              {{ fmtPct(row.min_margin) }} / {{ fmtPct(row.safety_buffer) }}
+            </span>
+            <span v-else class="text-muted">关闭</span>
           </template>
-          <template #cell-cap="{ row }">{{ fmtMul(cap(row)) }}</template>
+          <template #cell-cap="{ row }">{{ capText(row) }}</template>
           <template #cell-enabled="{ row }">
             <span class="status-cell">
               <i class="status-dot" :data-tone="row.enabled ? 'ok' : 'idle'" />
@@ -583,21 +596,30 @@ onMounted(load)
             <option v-for="o in PLATFORM_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
           </select>
         </label>
-        <div class="y-field-row y-field-row--3">
-          <label class="y-field">
-            <span>售价 D</span>
-            <input v-model="form.sell" class="input w-full" inputmode="decimal" />
-          </label>
-          <label class="y-field">
-            <span>最低毛利</span>
-            <input v-model="form.margin" class="input w-full" inputmode="decimal" />
-          </label>
-          <label class="y-field">
-            <span>安全缓冲</span>
-            <input v-model="form.buffer" class="input w-full" inputmode="decimal" />
-          </label>
-        </div>
+        <label class="y-field">
+          <span>售价 D</span>
+          <input v-model="form.sell" class="input w-full" inputmode="decimal" />
+        </label>
         <label class="y-check"><input v-model="form.enabled" type="checkbox" /> 启用</label>
+        <div class="y-sep">
+          <label class="y-check">
+            <input v-model="form.profit_control" type="checkbox" />
+            开启利润控制
+          </label>
+          <p class="y-hint">
+            开启后，只有倍率不超过「售价 D ×（1 − 最低毛利 − 安全缓冲）」的账号会进入本分组，回收报价也按这个上限封顶。关闭则不限制倍率，下面两项会保留，再次开启时生效。
+          </p>
+          <div class="y-field-row">
+            <label class="y-field">
+              <span>最低毛利</span>
+              <input v-model="form.margin" class="input w-full" inputmode="decimal" />
+            </label>
+            <label class="y-field">
+              <span>安全缓冲</span>
+              <input v-model="form.buffer" class="input w-full" inputmode="decimal" />
+            </label>
+          </div>
+        </div>
         <div class="y-sep">
           <label class="y-check">
             <input v-model="form.market_published" type="checkbox" :disabled="!editing" />
@@ -827,9 +849,6 @@ onMounted(load)
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.y-field-row--3 {
-  grid-template-columns: 1fr 1fr 1fr;
-}
 .y-check {
   display: flex;
   align-items: center;
@@ -854,9 +873,12 @@ onMounted(load)
   resize: vertical;
 }
 
+.text-muted {
+  color: var(--color-text-secondary, #868686);
+}
+
 @media (max-width: 900px) {
-  .stats-row,
-  .y-field-row--3 {
+  .stats-row {
     grid-template-columns: 1fr;
   }
 }
