@@ -15,6 +15,7 @@ import (
 	"github.com/yx-token/token-market/internal/service"
 	"github.com/yx-token/token-market/market/hostmail"
 	"github.com/yx-token/token-market/market/hostpay"
+	"github.com/yx-token/token-market/market/hostreg"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/wire"
@@ -57,6 +58,9 @@ func ProvideRouter(
 			Status: emailService.MarketHostStatus,
 			Send:   emailService.SendEmail,
 		})
+	}
+	if settingService != nil {
+		hostreg.SetSource(settingService.LoadHostRegistrationPolicy)
 	}
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)

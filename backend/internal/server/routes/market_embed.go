@@ -51,7 +51,7 @@ func registerMarketEmbed(r *gin.Engine, h http.Handler) {
 		r.Any(p+"/*filepath", wrap)
 	}
 	// C 端页面与静态（管理端 /admin* 不走这里）
-	for _, p := range []string{"/buyer", "/seller", "/login", "/register", "/shop", "/open-admin", "/assets"} {
+	for _, p := range []string{"/buyer", "/seller", "/login", "/register", "/shop", "/open-admin", "/assets", "/plaza", "/docs"} {
 		r.Any(p, wrap)
 		r.Any(p+"/*filepath", wrap)
 	}

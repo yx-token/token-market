@@ -168,6 +168,7 @@ func (s *Server) routes() http.Handler {
 	admin("POST /api/v1/admin/accounts/{id}/set-privacy", s.setPrivacy)
 	admin("POST /api/v1/admin/accounts/{id}/clear-error", s.clearError)
 	admin("GET /api/v1/admin/channels/model-pricing", s.modelPricing)
+	admin("GET /api/v1/admin/channels/pricing/catalog", s.pricingCatalog)
 	admin("GET /api/v1/admin/cn-providers/accounts/{id}/quota", s.cnQuota)
 	admin("GET /api/v1/admin/accounts/{id}/usage", s.accountUsage)
 	admin("POST /api/v1/admin/accounts/{id}/models/sync-upstream", s.syncAccountModels)
@@ -864,6 +865,16 @@ func (s *Server) modelPricing(_ http.ResponseWriter, r *http.Request) (any, erro
 		return map[string]any{"found": false}, nil
 	}
 	return map[string]any{"found": true, "input_price": 3e-6, "output_price": 15e-6, "cache_write_price": 3.75e-6, "cache_read_price": 0.3e-6}, nil
+}
+
+// pricingCatalog 返回与 modelPricing 一致的短名单，供市场模型广场走全量接口。
+func (s *Server) pricingCatalog(_ http.ResponseWriter, _ *http.Request) (any, error) {
+	return map[string]any{
+		"models": []map[string]any{{
+			"model": "claude-sonnet-4-5", "provider": "anthropic", "mode": "chat",
+			"input_price": 3e-6, "output_price": 15e-6, "cache_write_price": 3.75e-6, "cache_read_price": 0.3e-6,
+		}},
+	}, nil
 }
 
 func (s *Server) cnQuota(_ http.ResponseWriter, r *http.Request) (any, error) {

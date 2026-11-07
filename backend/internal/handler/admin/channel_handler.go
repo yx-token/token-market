@@ -668,3 +668,13 @@ func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 	models := h.pricingService.ListModelNamesByProvider(provider)
 	response.Success(c, gin.H{"models": models})
 }
+
+// ListPricingCatalog 返回内置价目表全量模型（市场模型广场一次拉全，避免按模型 N+1）。
+// GET /api/v1/admin/channels/pricing/catalog
+func (h *ChannelHandler) ListPricingCatalog(c *gin.Context) {
+	if h.pricingService == nil {
+		response.Success(c, gin.H{"models": []service.PricingCatalogEntry{}})
+		return
+	}
+	response.Success(c, gin.H{"models": h.pricingService.ListPricingCatalog()})
+}

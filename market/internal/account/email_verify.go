@@ -81,6 +81,9 @@ func (s *Service) SendRegisterCode(ctx context.Context, email string) error {
 	if err != nil {
 		return err
 	}
+	if err := s.enforceRegistrationEmail(ctx, email); err != nil {
+		return err
+	}
 	taken, err := s.emailTaken(ctx, email)
 	if err != nil {
 		return err

@@ -32,6 +32,7 @@ const navItems: NavItem[] = [
   { id: 'publish', label: '发布', to: '/seller/publish', auth: true },
   { id: 'orders', label: '使用', to: '/buyer/keys', auth: true },
   { id: 'docs', label: 'API 文档', to: '/docs' },
+  { id: 'plaza', label: '模型价格', to: '/plaza' },
   { id: 'help', label: '帮助中心', to: '/#guide' },
 ]
 
@@ -40,6 +41,7 @@ function navOn(item: NavItem) {
   if (item.id === 'publish') return route.path.startsWith('/seller/publish')
   if (item.id === 'orders') return route.path.startsWith('/buyer/keys') || route.path.startsWith('/buyer/client-import')
   if (item.id === 'docs') return route.path === '/docs'
+  if (item.id === 'plaza') return route.path === '/plaza'
   return false
 }
 

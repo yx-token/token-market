@@ -99,6 +99,7 @@ admin_api:
   - {method: PUT,    path: "/api/v1/admin/accounts/:id",           request: [credentials, extra, concurrency, priority, rate_multiplier, load_factor, status, group_ids]}
   - {method: POST,   path: "/api/v1/admin/accounts/:id/clear-error"}
   - {method: GET,    path: /api/v1/admin/channels/model-pricing}
+  - {method: GET,    path: /api/v1/admin/channels/pricing/catalog}
   - {method: POST,   path: /api/v1/admin/accounts/bulk-update,   request: [account_ids, concurrency, priority, rate_multiplier, load_factor, schedulable, group_ids, credentials, extra]}
   - {method: POST,   path: "/api/v1/admin/accounts/:id/schedulable", request: [schedulable]}
   - {method: DELETE, path: "/api/v1/admin/accounts/:id"}

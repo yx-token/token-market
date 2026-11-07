@@ -115,6 +115,8 @@ export interface PoolItem {
 
 export interface Price {
   model: string
+  provider?: string
+  mode?: string
   input_per_1m: number
   output_per_1m: number
   cache_write_per_1m: number

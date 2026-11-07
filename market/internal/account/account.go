@@ -50,9 +50,12 @@ func NewService(db *pgxpool.Pool, kr *crypto.Keyring, iss *auth.Issuer) *Service
 }
 
 var (
-	ErrEmailTaken         = httpx.Conflict("EMAIL_TAKEN", "email already registered")
-	ErrInvalidCredentials = httpx.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
-	ErrUserFrozen         = httpx.Forbidden("USER_FROZEN", "account is frozen")
+	ErrEmailTaken                    = httpx.Conflict("EMAIL_TAKEN", "email already registered")
+	ErrInvalidCredentials            = httpx.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
+	ErrUserFrozen                    = httpx.Forbidden("USER_FROZEN", "account is frozen")
+	ErrEmailSuffixNotAllowed         = httpx.BadRequest("EMAIL_SUFFIX_NOT_ALLOWED", "email suffix is not allowed")
+	ErrEmailDomainRegistrationLimit  = httpx.BadRequest("EMAIL_DOMAIN_REGISTRATION_LIMIT", "this email domain cannot register more accounts")
+	ErrRegistrationPolicyUnavailable = httpx.Unavailable("REGISTRATION_POLICY_UNAVAILABLE", "registration policy unavailable")
 )
 
 func normalizeEmail(email string) (string, error) {
@@ -69,6 +72,9 @@ func normalizeEmail(email string) (string, error) {
 func (s *Service) Register(ctx context.Context, email, password, code, ip string) (*User, error) {
 	emailNorm, err := normalizeEmail(email)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.enforceRegistrationEmail(ctx, emailNorm); err != nil {
 		return nil, err
 	}
 	if err := s.consumeRegisterCode(ctx, emailNorm, code); err != nil {

@@ -413,6 +413,17 @@ type ModelPricing struct {
 	CacheReadPrice  float64 `json:"cache_read_price"`
 }
 
+// PricingCatalogEntry 是全量价目表中的一条（含厂商与能力类型）。
+type PricingCatalogEntry struct {
+	Model           string  `json:"model"`
+	Provider        string  `json:"provider"`
+	Mode            string  `json:"mode"`
+	InputPrice      float64 `json:"input_price"`
+	OutputPrice     float64 `json:"output_price"`
+	CacheWritePrice float64 `json:"cache_write_price"`
+	CacheReadPrice  float64 `json:"cache_read_price"`
+}
+
 // GetModelPricing 查询模型的官方价格，倍率以它为基准。
 func (c *Client) GetModelPricing(ctx context.Context, model string) (*ModelPricing, error) {
 	var out ModelPricing
@@ -420,4 +431,18 @@ func (c *Client) GetModelPricing(ctx context.Context, model string) (*ModelPrici
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ListPricingCatalog 一次拉取内置价目表全部模型。
+func (c *Client) ListPricingCatalog(ctx context.Context) ([]PricingCatalogEntry, error) {
+	var out struct {
+		Models []PricingCatalogEntry `json:"models"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/v1/admin/channels/pricing/catalog", nil, "", &out); err != nil {
+		return nil, err
+	}
+	if out.Models == nil {
+		return []PricingCatalogEntry{}, nil
+	}
+	return out.Models, nil
 }

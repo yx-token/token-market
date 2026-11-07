@@ -51,7 +51,9 @@ const top = computed(() => route.path.split('/')[1] || 'market')
 const section = computed(() => (isConsole.value ? undefined : sections[top.value]))
 const isActive = (to: string) => route.path === to || route.path.startsWith(`${to}/`)
 /** 市场首页、API 文档：全宽布局，无侧栏 */
-const isMarketBrowse = computed(() => route.path === '/' || route.path.startsWith('/market') || route.path === '/docs')
+const isMarketBrowse = computed(
+  () => route.path === '/' || route.path.startsWith('/market') || route.path === '/docs' || route.path === '/plaza',
+)
 
 watch(
   isConsole,

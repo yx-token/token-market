@@ -227,6 +227,11 @@
       padding: 8px 16px;
       border-radius: 999px;
       cursor: pointer;
+      flex-shrink: 0;
+      white-space: nowrap;
+      line-height: 1.2;
+      /* 避免 H5 被搜索框挤窄后「登录」折成竖排 */
+      min-width: max-content;
     }
     .user-menu { position: relative; z-index: 40; font-family: var(--font); }
     .mh-user {
@@ -375,12 +380,22 @@
         gap: 8px 10px;
         padding: 10px 12px 10px;
       }
-      .mh-right { margin-left: auto; }
+      .mh-right {
+        margin-left: auto;
+        flex: 1 1 auto;
+        min-width: 0;
+        gap: 8px;
+      }
+      /* 搜索在 mh-right 内，不能 100% 挤掉登录；单独占满下一行 */
       .mh-search {
-        flex: 1 1 100%;
-        order: 3;
+        flex: 1 1 auto;
+        order: 0;
         width: auto;
         min-width: 0;
+      }
+      .mh-login {
+        order: 1;
+        padding: 7px 14px;
       }
       .mh-nav-m {
         order: 4;

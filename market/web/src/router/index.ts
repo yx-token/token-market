@@ -8,6 +8,8 @@ const adminMeta = { auth: true, admin: true } as const
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'market', component: () => import('@/views/market/MarketView.vue') },
   { path: '/market/listings/:id', name: 'market-listing', component: () => import('@/views/market/ListingView.vue'), props: true },
+  // 不用 /models：宿主网关已占用 GET /models（OpenAI/Codex 列模型）
+  { path: '/plaza', name: 'model-square', component: () => import('@/views/market/ModelSquareView.vue') },
   // API 文档：公开页面，不需要登录
   { path: '/docs', name: 'api-docs', component: () => import('@/views/docs/ApiDocsView.vue') },
   { path: '/api-docs', redirect: (to) => ({ path: '/docs', query: to.query, hash: to.hash }) },

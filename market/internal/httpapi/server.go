@@ -513,7 +513,7 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 	if s.WebDir != "" {
 		if opts.EmbedInHost {
 			// 宿主已有 /admin SPA；此处只挂 C 端常见前缀，避免吞掉管理端。
-			for _, p := range []string{"/buyer", "/seller", "/login", "/register", "/shop", "/open-admin"} {
+			for _, p := range []string{"/buyer", "/seller", "/login", "/register", "/shop", "/open-admin", "/plaza", "/docs"} {
 				mux.Handle(p, spaHandler(s.WebDir))
 				mux.Handle(p+"/", spaHandler(s.WebDir))
 			}
