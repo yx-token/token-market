@@ -193,10 +193,10 @@ func sendToAdmins(ctx context.Context, sender MailSender, admins []string, subje
 func buildOverdueAlertHTML(items []overdueAlertRow, timeoutMin int, workbenchURL string) string {
 	var b strings.Builder
 	b.WriteString(`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.6;color:#1f2937">`)
-	b.WriteString(fmt.Sprintf(`<p>有 <strong>%d</strong> 条客服会话已超过 <strong>%d</strong> 分钟未回复，请尽快处理。</p>`,
-		len(items), timeoutMin))
+	fmt.Fprintf(&b, `<p>有 <strong>%d</strong> 条客服会话已超过 <strong>%d</strong> 分钟未回复，请尽快处理。</p>`,
+		len(items), timeoutMin)
 	if workbenchURL != "" {
-		b.WriteString(fmt.Sprintf(`<p><a href="%s">打开官方客服工作台</a></p>`, html.EscapeString(workbenchURL)))
+		fmt.Fprintf(&b, `<p><a href="%s">打开官方客服工作台</a></p>`, html.EscapeString(workbenchURL))
 	}
 	b.WriteString(`<ul>`)
 	for _, it := range items {
@@ -212,10 +212,10 @@ func buildOverdueAlertHTML(items []overdueAlertRow, timeoutMin int, workbenchURL
 		if utf8Len(preview) > 80 {
 			preview = string([]rune(preview)[:80]) + "…"
 		}
-		b.WriteString(fmt.Sprintf(`<li><strong>%s</strong>（#%d）已等待 %d 分钟`,
-			html.EscapeString(who), it.ID, mins))
+		fmt.Fprintf(&b, `<li><strong>%s</strong>（#%d）已等待 %d 分钟`,
+			html.EscapeString(who), it.ID, mins)
 		if preview != "" {
-			b.WriteString(fmt.Sprintf(`：%s`, html.EscapeString(preview)))
+			fmt.Fprintf(&b, `：%s`, html.EscapeString(preview))
 		}
 		b.WriteString(`</li>`)
 	}
@@ -226,10 +226,10 @@ func buildOverdueAlertHTML(items []overdueAlertRow, timeoutMin int, workbenchURL
 func buildBacklogAlertHTML(pending, threshold int, workbenchURL string) string {
 	var b strings.Builder
 	b.WriteString(`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.6;color:#1f2937">`)
-	b.WriteString(fmt.Sprintf(`<p>待回复会话已达 <strong>%d</strong> 条（积压阈值 <strong>%d</strong>）。</p>`,
-		pending, threshold))
+	fmt.Fprintf(&b, `<p>待回复会话已达 <strong>%d</strong> 条（积压阈值 <strong>%d</strong>）。</p>`,
+		pending, threshold)
 	if workbenchURL != "" {
-		b.WriteString(fmt.Sprintf(`<p><a href="%s">打开官方客服工作台</a></p>`, html.EscapeString(workbenchURL)))
+		fmt.Fprintf(&b, `<p><a href="%s">打开官方客服工作台</a></p>`, html.EscapeString(workbenchURL))
 	}
 	b.WriteString(`<p style="color:#6b7280;font-size:12px">待回复回落到阈值以下后，再次积压会重新提醒。</p></div>`)
 	return b.String()
