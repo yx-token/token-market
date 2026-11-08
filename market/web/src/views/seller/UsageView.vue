@@ -14,7 +14,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import UsageChart from '@/components/UsageChart.vue'
 import QuotaPanel from '@/components/QuotaPanel.vue'
 import { label, upstreamName } from '@/utils/labels'
-import { dateTime, money, ms, tokens, usd } from '@/utils/format'
+import { dateTime, money, ms, tokens } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -121,7 +121,7 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
       </div>
       <div class="xm-stat">
         <b>官方价费用</b>
-        <strong>{{ usd(t?.total_cost) }}</strong>
+        <strong>{{ money(t?.total_cost) }}</strong>
         <em>按官方价计</em>
       </div>
       <div class="xm-stat">
@@ -154,7 +154,7 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
           row-key="model"
         >
           <template #cell-tokens="{ row }">{{ tokens(allTokens(row)) }}</template>
-          <template #cell-total_cost="{ row }">{{ usd(row.total_cost) }}</template>
+          <template #cell-total_cost="{ row }">{{ money(row.total_cost) }}</template>
           <template #cell-payout="{ row }">{{ money(row.payout) }}</template>
         </DataTable>
       </div>
@@ -223,7 +223,7 @@ const allTokens = (x?: { input_tokens: number; output_tokens: number; cache_crea
           {{ tokens(row.input_tokens) }} / {{ tokens(row.output_tokens) }} / {{ tokens(row.cache_creation_tokens + row.cache_read_tokens) }}
         </template>
         <template #cell-latency="{ row }">{{ ms(row.first_token_ms) }} / {{ ms(row.duration_ms) }}</template>
-        <template #cell-total_cost="{ row }">{{ usd(row.total_cost) }}</template>
+        <template #cell-total_cost="{ row }">{{ money(row.total_cost) }}</template>
         <template #cell-payout="{ row }">{{ money(row.payout) }}</template>
       </DataTable>
       <div v-if="more" class="mt-3 text-center">

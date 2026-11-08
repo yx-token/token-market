@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 const hotReloadCatalogJSON = `{
@@ -67,7 +69,7 @@ func TestPricingCustomFilesFingerprint(t *testing.T) {
 
 func TestPricingHotReload_FallbackChangeRebuildsWithoutTouchingSyncAnchor(t *testing.T) {
 	svc := newHotReloadPricingService(t, `{`+hotReloadModelJSON("custom-a", 4e-6, 8e-6)+`}`, "")
-	require.InDelta(t, 4e-6, svc.pricingData["custom-a"].InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(4e-6), svc.pricingData["custom-a"].InputCostPerToken, 1e-12)
 	require.Nil(t, svc.pricingData["custom-b"])
 	require.NotEmpty(t, svc.customFilesHash)
 	anchor, updated := svc.localHash, svc.lastUpdated
@@ -77,9 +79,9 @@ func TestPricingHotReload_FallbackChangeRebuildsWithoutTouchingSyncAnchor(t *tes
 		hotReloadModelJSON("custom-b", 1e-6, 3e-6)+`}`), 0644))
 	svc.reloadIfCustomFilesChanged()
 
-	require.InDelta(t, 5e-6, svc.pricingData["custom-a"].InputCostPerToken, 1e-12, "改价即时生效")
+	require.InDelta(t, currency.USDToCNY*(5e-6), svc.pricingData["custom-a"].InputCostPerToken, 1e-12, "改价即时生效")
 	require.NotNil(t, svc.pricingData["custom-b"], "新模型即时并入")
-	require.InDelta(t, 1e-6, svc.pricingData["remote-model"].InputCostPerToken, 1e-12, "目录条目不受影响")
+	require.InDelta(t, currency.USDToCNY*(1e-6), svc.pricingData["remote-model"].InputCostPerToken, 1e-12, "目录条目不受影响")
 	require.Equal(t, anchor, svc.localHash, "热重载不得改动远程同步锚点")
 	require.Equal(t, updated, svc.lastUpdated)
 	require.Equal(t, svc.customPricingFilesFingerprint(), svc.customFilesHash)
@@ -98,22 +100,22 @@ func TestPricingHotReload_UnchangedFilesSkipRebuild(t *testing.T) {
 
 func TestPricingHotReload_OverrideChangePatchesCatalogAndAddsModels(t *testing.T) {
 	svc := newHotReloadPricingService(t, "", `{"remote-model": {"input_cost_per_token": 7e-06}}`)
-	require.InDelta(t, 7e-6, svc.pricingData["remote-model"].InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(7e-6), svc.pricingData["remote-model"].InputCostPerToken, 1e-12)
 
 	require.NoError(t, os.WriteFile(svc.cfg.Pricing.OverrideFile, []byte(`{
 		"remote-model": {"input_cost_per_token": 9e-06},
 		`+hotReloadModelJSON("override-new-model", 5e-6, 1e-5)+`}`), 0644))
 	svc.reloadIfCustomFilesChanged()
 
-	require.InDelta(t, 9e-6, svc.pricingData["remote-model"].InputCostPerToken, 1e-12)
-	require.InDelta(t, 2e-6, svc.pricingData["remote-model"].OutputCostPerToken, 1e-12, "未覆盖字段保持目录值")
+	require.InDelta(t, currency.USDToCNY*(9e-6), svc.pricingData["remote-model"].InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(2e-6), svc.pricingData["remote-model"].OutputCostPerToken, 1e-12, "未覆盖字段保持目录值")
 	require.NotNil(t, svc.pricingData["override-new-model"])
 
 	// 清空补丁：目录条目回到原价，补丁新增的模型随之消失。
 	require.NoError(t, os.WriteFile(svc.cfg.Pricing.OverrideFile, []byte(`{}`), 0644))
 	svc.reloadIfCustomFilesChanged()
 
-	require.InDelta(t, 1e-6, svc.pricingData["remote-model"].InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(1e-6), svc.pricingData["remote-model"].InputCostPerToken, 1e-12)
 	require.Nil(t, svc.pricingData["override-new-model"])
 }
 
@@ -123,12 +125,12 @@ func TestPricingHotReload_InvalidFileKeepsCurrentDataUntilFixed(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(svc.cfg.Pricing.FallbackFile, []byte(`{"custom-a": {"input_cost_per_token": `), 0644))
 	svc.reloadIfCustomFilesChanged()
-	require.InDelta(t, 4e-6, svc.pricingData["custom-a"].InputCostPerToken, 1e-12, "半写文件不得替换数据")
+	require.InDelta(t, currency.USDToCNY*(4e-6), svc.pricingData["custom-a"].InputCostPerToken, 1e-12, "半写文件不得替换数据")
 	require.Equal(t, before, svc.customFilesHash, "指纹不更新，下一轮继续尝试")
 
 	require.NoError(t, os.WriteFile(svc.cfg.Pricing.FallbackFile, []byte(`{`+hotReloadModelJSON("custom-a", 6e-6, 8e-6)+`}`), 0644))
 	svc.reloadIfCustomFilesChanged()
-	require.InDelta(t, 6e-6, svc.pricingData["custom-a"].InputCostPerToken, 1e-12, "文件修好后正常重建")
+	require.InDelta(t, currency.USDToCNY*(6e-6), svc.pricingData["custom-a"].InputCostPerToken, 1e-12, "文件修好后正常重建")
 	require.NotEqual(t, before, svc.customFilesHash)
 }
 
@@ -139,17 +141,17 @@ func TestPricingHotReload_DeletedFileDropsItsLayer(t *testing.T) {
 		`{`+hotReloadModelJSON("custom-a", 4e-6, 8e-6)+`}`,
 		`{"remote-model": {"input_cost_per_token": 7e-06}}`)
 	require.NotNil(t, svc.pricingData["custom-a"])
-	require.InDelta(t, 7e-6, svc.pricingData["remote-model"].InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(7e-6), svc.pricingData["remote-model"].InputCostPerToken, 1e-12)
 
 	require.NoError(t, os.Remove(svc.cfg.Pricing.OverrideFile))
 	svc.reloadIfCustomFilesChanged()
-	require.InDelta(t, 1e-6, svc.pricingData["remote-model"].InputCostPerToken, 1e-12, "删除 override 后目录条目回到原价")
+	require.InDelta(t, currency.USDToCNY*(1e-6), svc.pricingData["remote-model"].InputCostPerToken, 1e-12, "删除 override 后目录条目回到原价")
 	require.NotNil(t, svc.pricingData["custom-a"], "fallback 层不受影响")
 
 	require.NoError(t, os.Remove(svc.cfg.Pricing.FallbackFile))
 	svc.reloadIfCustomFilesChanged()
 	require.Nil(t, svc.pricingData["custom-a"], "删除 fallback 后其独有模型消失")
-	require.InDelta(t, 1e-6, svc.pricingData["remote-model"].InputCostPerToken, 1e-12, "目录条目不受影响")
+	require.InDelta(t, currency.USDToCNY*(1e-6), svc.pricingData["remote-model"].InputCostPerToken, 1e-12, "目录条目不受影响")
 
 	svc.pricingData["sentinel"] = &LiteLLMModelPricing{}
 	svc.reloadIfCustomFilesChanged()

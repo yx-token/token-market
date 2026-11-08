@@ -88,15 +88,15 @@ type Group struct {
 	VideoPrice1080p *float64 `json:"video_price_1080p,omitempty"`
 	// 按模型族和分辨率覆盖视频每秒价格
 	VideoModelPrices map[string]map[string]float64 `json:"video_model_prices,omitempty"`
-	// Codex alpha/search 网页搜索单次价格（USD/次）；nil 表示使用默认价 0.01（官方 $10/1000 次）
+	// Codex alpha/search 网页搜索单次价格（CNY/次）；nil 表示使用默认价 0.07（官方 $10/1000 次）
 	WebSearchPricePerCall *float64 `json:"web_search_price_per_call,omitempty"`
 	// 搜索工具价格 per 1000 calls（web_search 等）
 	SearchPricePer1k *float64 `json:"search_price_per_1k,omitempty"`
-	// Voice realtime 每分钟价格（USD）
+	// Voice realtime 每分钟价格（CNY）
 	AudioRealtimePricePerMin *float64 `json:"audio_realtime_price_per_min,omitempty"`
-	// TTS 每百万字符价格（USD）
+	// TTS 每百万字符价格（CNY）
 	AudioTtsPricePerMillionChars *float64 `json:"audio_tts_price_per_million_chars,omitempty"`
-	// STT 每小时价格（USD）
+	// STT 每小时价格（CNY）
 	AudioSttPricePerHour *float64 `json:"audio_stt_price_per_hour,omitempty"`
 	// 是否按上下文长度应用模型阶梯价格；默认开启以保持官方/渠道长上下文价
 	LongContextPricingEnabled bool `json:"long_context_pricing_enabled,omitempty"`

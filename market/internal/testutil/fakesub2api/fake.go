@@ -25,11 +25,13 @@ import (
 )
 
 const (
-	// 账单测试固定的用量，价格按 Claude Sonnet 的官方价（输入 $3 / 输出 $15 每百万 token）。
+	// 账单测试固定的用量与单次官方成本。TotalCost 是固定的 0.6 元（人民币），沿用改币种前的数值，
+	// 让各测试的余额、额度与窗口用量夹具保持不变；它不再由价目接口推算（价目接口已与引擎一致返回
+	// ×7 后的人民币单价，按这些 token 数折算应为 4.2 元）。
 	// 网关响应另按实际请求估算用量，不改变既有账单断言。
 	InputTokens  = 100000
 	OutputTokens = 20000
-	TotalCost    = (InputTokens*3.0 + OutputTokens*15.0) / 1e6
+	TotalCost    = 0.6
 )
 
 type Server struct {
@@ -859,12 +861,12 @@ func (s *Server) clearError(_ http.ResponseWriter, r *http.Request) (any, error)
 	return nil, err
 }
 
-// modelPricing 只认识 Claude Sonnet（输入 $3、输出 $15 每百万 token）。
+// modelPricing 只认识 Claude Sonnet。与引擎一致返回人民币单价：官方美元价（输入 $3、输出 $15 每百万 token）×7。
 func (s *Server) modelPricing(_ http.ResponseWriter, r *http.Request) (any, error) {
 	if r.URL.Query().Get("model") != "claude-sonnet-4-5" {
 		return map[string]any{"found": false}, nil
 	}
-	return map[string]any{"found": true, "input_price": 3e-6, "output_price": 15e-6, "cache_write_price": 3.75e-6, "cache_read_price": 0.3e-6}, nil
+	return map[string]any{"found": true, "input_price": 21e-6, "output_price": 105e-6, "cache_write_price": 26.25e-6, "cache_read_price": 2.1e-6}, nil
 }
 
 // pricingCatalog 返回与 modelPricing 一致的短名单，供市场模型广场走全量接口。
@@ -872,7 +874,7 @@ func (s *Server) pricingCatalog(_ http.ResponseWriter, _ *http.Request) (any, er
 	return map[string]any{
 		"models": []map[string]any{{
 			"model": "claude-sonnet-4-5", "provider": "anthropic", "mode": "chat",
-			"input_price": 3e-6, "output_price": 15e-6, "cache_write_price": 3.75e-6, "cache_read_price": 0.3e-6,
+			"input_price": 21e-6, "output_price": 105e-6, "cache_write_price": 26.25e-6, "cache_read_price": 2.1e-6,
 		}},
 	}, nil
 }
@@ -897,7 +899,8 @@ func (s *Server) cnQuota(_ http.ResponseWriter, r *http.Request) (any, error) {
 		"tiers": []map[string]any{{"window": "5h", "used_percent": 10.0, "reset_at": time.Now().Add(time.Hour).Format(time.RFC3339)}}}, nil
 }
 
-// accountUsage 模拟官方订阅窗口用量：按该账号在窗口内的实际用量折算利用率（5 小时窗口按 10 美元、7 天窗口按 100 美元计）。
+// accountUsage 模拟官方订阅窗口用量：按该账号在窗口内的实际 usage 成本（人民币）折算利用率
+// （5 小时窗口 10 元、7 天窗口 100 元、Gemini 日窗口 20 元；与固定的 TotalCost 同一套测试刻度）。
 // 与 sub2api 一致，被动快照（source=passive）只支持 Claude 账号。
 func (s *Server) accountUsage(_ http.ResponseWriter, r *http.Request) (any, error) {
 	id, err := pathID(r)

@@ -3,7 +3,6 @@ package settings
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -124,40 +123,22 @@ func TestFreezeSettingsRejectInvalidUpdates(t *testing.T) {
 	}
 }
 
-func TestCreditUSDToBalanceRateValidation(t *testing.T) {
-	if Defaults().CreditUSDToBalanceRate != 1 {
-		t.Fatal("activity credit exchange rate should default to 1")
+// 店铺活动包改按人民币面额后兑换率恒为 1，旧库里残留的设置项读写时都被忽略。
+func TestLegacyCreditRateSettingIsIgnored(t *testing.T) {
+	db := &settingsDB{raw: json.RawMessage(`{"credit_usd_to_balance_rate":7.2,"withdraw_min":12}`)}
+	s, err := Load(context.Background(), db)
+	if err != nil || s.WithdrawMin != 12 {
+		t.Fatalf("load legacy settings: %+v %v", s, err)
 	}
-	for _, rate := range []float64{0, -1, 0.000000001, 1000001, 1.123456789, math.NaN(), math.Inf(1), math.Inf(-1)} {
-		s := Defaults()
-		s.CreditUSDToBalanceRate = rate
-		if err := s.Validate(); err == nil {
-			t.Errorf("invalid exchange rate accepted: %v", rate)
-		}
+	if _, err := Update(context.Background(), db, json.RawMessage(`{"credit_usd_to_balance_rate":0}`)); err != nil {
+		t.Fatalf("legacy exchange rate must not be validated any more: %v", err)
 	}
-	for _, rate := range []float64{0.00000001, 0.12345678, 7.2, 1000000} {
-		s := Defaults()
-		s.CreditUSDToBalanceRate = rate
-		if err := s.Validate(); err != nil {
-			t.Errorf("valid exchange rate rejected: %v: %v", rate, err)
-		}
-	}
-	db := &settingsDB{}
-	if _, err := Update(context.Background(), db, json.RawMessage(`{"credit_usd_to_balance_rate":7.2}`)); err != nil {
+	var saved map[string]json.RawMessage
+	if err := json.Unmarshal(db.raw, &saved); err != nil {
 		t.Fatal(err)
 	}
-	s, err := Load(context.Background(), db)
-	if err != nil || s.CreditUSDToBalanceRate != 7.2 {
-		t.Fatalf("exchange rate not saved: %v %v", s.CreditUSDToBalanceRate, err)
-	}
-	for _, patch := range []string{
-		`{"credit_usd_to_balance_rate":0}`, `{"credit_usd_to_balance_rate":-1}`,
-		`{"credit_usd_to_balance_rate":0.000000001}`, `{"credit_usd_to_balance_rate":1000001}`,
-		`{"credit_usd_to_balance_rate":1.123456789}`,
-	} {
-		if _, err := Update(context.Background(), db, json.RawMessage(patch)); err == nil {
-			t.Errorf("invalid exchange rate update accepted: %s", patch)
-		}
+	if _, ok := saved["credit_usd_to_balance_rate"]; ok {
+		t.Fatal("removed credit_usd_to_balance_rate setting was saved")
 	}
 }
 

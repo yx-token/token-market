@@ -12,6 +12,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet } from './api'
+import { money } from './money'
 
 defineOptions({ name: 'MarketAdminAudit' })
 
@@ -190,13 +191,13 @@ onMounted(load)
             <p v-if="loading" class="y-msg">加载中…</p>
             <p v-else-if="!ledger" class="y-msg">暂无账本数据</p>
             <div v-else class="ledger-grid">
-              <div class="ledger-card"><span>现金</span><strong>{{ ledger.cash }}</strong></div>
-              <div class="ledger-card"><span>收入</span><strong>{{ ledger.revenue }}</strong></div>
-              <div class="ledger-card"><span>检测成本</span><strong>{{ ledger.probe_cost }}</strong></div>
-              <div class="ledger-card"><span>调整</span><strong>{{ ledger.adjustment }}</strong></div>
-              <div class="ledger-card"><span>买家余额</span><strong>{{ ledger.buyer_balances }}</strong></div>
-              <div class="ledger-card"><span>店铺抵扣</span><strong>{{ ledger.buyer_store_credit ?? 0 }}</strong></div>
-              <div class="ledger-card"><span>卖家应付</span><strong>{{ ledger.seller_payable }}</strong></div>
+              <div class="ledger-card"><span>现金</span><strong>{{ money(ledger.cash) }}</strong></div>
+              <div class="ledger-card"><span>收入</span><strong>{{ money(ledger.revenue) }}</strong></div>
+              <div class="ledger-card"><span>检测成本</span><strong>{{ money(ledger.probe_cost) }}</strong></div>
+              <div class="ledger-card"><span>调整</span><strong>{{ money(ledger.adjustment) }}</strong></div>
+              <div class="ledger-card"><span>买家余额</span><strong>{{ money(ledger.buyer_balances) }}</strong></div>
+              <div class="ledger-card"><span>店铺抵扣</span><strong>{{ money(ledger.buyer_store_credit ?? 0) }}</strong></div>
+              <div class="ledger-card"><span>卖家应付</span><strong>{{ money(ledger.seller_payable) }}</strong></div>
             </div>
           </div>
         </template>

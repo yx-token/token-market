@@ -728,7 +728,7 @@ const (
 
 	// 余额不足提醒
 	SettingKeyBalanceLowNotifyEnabled     = "balance_low_notify_enabled"      // 全局开关
-	SettingKeyBalanceLowNotifyThreshold   = "balance_low_notify_threshold"    // 默认阈值（USD）
+	SettingKeyBalanceLowNotifyThreshold   = "balance_low_notify_threshold"    // 默认阈值（CNY）
 	SettingKeyBalanceLowNotifyRechargeURL = "balance_low_notify_recharge_url" // 充值页面 URL
 
 	// 订阅到期提醒
@@ -742,8 +742,8 @@ const (
 	SettingKeyWebSearchEmulationConfig = "web_search_emulation_config" // JSON 配置
 )
 
-// SettingKeyDefaultPlatformQuotas —— 系统全局：每用户 × 平台日/周/月 USD 上限（JSON）。
-// 值为 map[platform]{daily,weekly,monthly}，null/缺省 = 不限制；0 = 禁用；>0 = USD 上限。
+// SettingKeyDefaultPlatformQuotas —— 系统全局：每用户 × 平台日/周/月 CNY 上限（JSON）。
+// 值为 map[platform]{daily,weekly,monthly}，null/缺省 = 不限制；0 = 禁用；>0 = CNY 上限。
 const SettingKeyDefaultPlatformQuotas = "default_platform_quotas"
 
 // SettingKeyAccountSchedulingThresholds —— 系统全局：按平台自动停调阈值（JSON map）。

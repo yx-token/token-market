@@ -455,6 +455,9 @@ onMounted(load)
         <label class="y-field">
           <span>限流参数 extra_limits（JSON）</span>
           <textarea v-model="form.extra" class="input w-full y-textarea font-mono" rows="3" />
+          <span class="hint">
+            成本类键 window_cost_limit、window_cost_sticky_reserve、quota_limit、quota_daily_limit、quota_weekly_limit 均按人民币（¥）计，直接填人民币金额，不要按美元折算。
+          </span>
         </label>
       </div>
       <template #footer>

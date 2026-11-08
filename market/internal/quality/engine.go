@@ -808,7 +808,7 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, tim
 	if frozen.Policy != nil {
 		p = frozen.Policy
 	}
-	// 已开始的批次沿用策略快照；硬预算独立于美元预算，上架、管理员与申诉仍强制执行。
+	// 已开始的批次沿用策略快照；硬预算独立于每日人民币预算，上架、管理员与申诉仍强制执行。
 	override := frozen.SchemaVersion == 1 || run.trigger == "onboarding" || run.trigger == "admin" || run.trigger == "appeal"
 	if !p.Enabled && !override {
 		_, err := e.DB.Exec(ctx, `UPDATE probe_runs SET status = 'skipped_disabled', finished_at = now() WHERE id = $1`, run.id)
@@ -820,7 +820,8 @@ func (e *Engine) executeTarget(ctx context.Context, run runRow, ref *runRow, tim
 			WHERE upstream_id = $1 AND channel = 'probe' AND created_at >= date_trunc('day', now())`, u.id).Scan(&spent); err != nil {
 			return err
 		}
-		if spent >= p.DailyBudgetUSD {
+		// usage_records.total_cost 是引擎按人民币官方价算出的成本，与 daily_budget_cny 同一口径。
+		if spent >= p.DailyBudgetCNY {
 			_, err := e.DB.Exec(ctx, `UPDATE probe_runs SET status = 'skipped_budget', finished_at = now() WHERE id = $1`, run.id)
 			return err
 		}

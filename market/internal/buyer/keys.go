@@ -37,17 +37,43 @@ type RouteInput struct {
 }
 
 // Limits 是买家 Key 级别的限制。花费类限制由控制面按用量统计后执行，有几分钟延迟。
+// 花费类限制与按人民币扣费的 usage_records.actual_cost 比较，单位为 CNY。
 type Limits struct {
-	QuotaUSD    *float64   `json:"quota_usd,omitempty"`
-	RateLimit5h *float64   `json:"rate_limit_5h_usd,omitempty"`
-	RateLimit1d *float64   `json:"rate_limit_1d_usd,omitempty"`
-	RateLimit7d *float64   `json:"rate_limit_7d_usd,omitempty"`
+	QuotaCNY    *float64   `json:"quota_cny,omitempty"`
+	RateLimit5h *float64   `json:"rate_limit_5h_cny,omitempty"`
+	RateLimit1d *float64   `json:"rate_limit_1d_cny,omitempty"`
+	RateLimit7d *float64   `json:"rate_limit_7d_cny,omitempty"`
 	IPWhitelist []string   `json:"ip_whitelist,omitempty"`
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 }
 
+// UnmarshalJSON 兼容 0054 迁移前的键名（quota_usd、rate_limit_*_usd，数值本来就按人民币计）：
+// 页面没刷新的旧前端仍按旧键名提交，忽略它们会在保存时把买家的限额清空。新旧键同时出现时以新键为准。
+func (l *Limits) UnmarshalJSON(raw []byte) error {
+	type plain Limits
+	var in struct {
+		plain
+		LegacyQuota *float64 `json:"quota_usd"`
+		Legacy5h    *float64 `json:"rate_limit_5h_usd"`
+		Legacy1d    *float64 `json:"rate_limit_1d_usd"`
+		Legacy7d    *float64 `json:"rate_limit_7d_usd"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return err
+	}
+	*l = Limits(in.plain)
+	for _, f := range []struct{ dst, legacy **float64 }{
+		{&l.QuotaCNY, &in.LegacyQuota}, {&l.RateLimit5h, &in.Legacy5h}, {&l.RateLimit1d, &in.Legacy1d}, {&l.RateLimit7d, &in.Legacy7d},
+	} {
+		if *f.dst == nil {
+			*f.dst = *f.legacy
+		}
+	}
+	return nil
+}
+
 func (l Limits) validate() error {
-	for _, v := range []*float64{l.QuotaUSD, l.RateLimit5h, l.RateLimit1d, l.RateLimit7d} {
+	for _, v := range []*float64{l.QuotaCNY, l.RateLimit5h, l.RateLimit1d, l.RateLimit7d} {
 		if v != nil && *v <= 0 {
 			return httpx.BadRequest("INVALID_LIMIT", "spending limits must be > 0")
 		}

@@ -17,6 +17,7 @@ var ErrUserPlatformQuotaFKViolation = errors.New("user platform quota snapshot F
 
 // UserPlatformQuotaSnapshot 是 service 层 flusher 向 DB 写入快照时使用的传输结构。
 // 字段语义与 repository.UserPlatformQuotaSnapshot 完全对应，由 adapter 负责转换。
+// All legacy USD-named amount fields are CNY.
 type UserPlatformQuotaSnapshot struct {
 	UserID             int64
 	Platform           string
@@ -29,6 +30,7 @@ type UserPlatformQuotaSnapshot struct {
 }
 
 // UserPlatformQuotaRecord service 层传输结构体（与 repository 层解耦）。
+// All legacy USD-named limits and usage amounts are CNY.
 type UserPlatformQuotaRecord struct {
 	UserID          int64
 	Platform        string

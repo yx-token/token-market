@@ -91,21 +91,27 @@ func (UsageLog) Fields() []ent.Field {
 
 		// 成本字段
 		field.Float("input_cost").
+			Comment("CNY amount").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Float("output_cost").
+			Comment("CNY amount").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Float("cache_creation_cost").
+			Comment("CNY amount").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Float("cache_read_cost").
+			Comment("CNY amount").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Float("total_cost").
+			Comment("CNY amount").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Float("actual_cost").
+			Comment("CNY amount").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Float("rate_multiplier").

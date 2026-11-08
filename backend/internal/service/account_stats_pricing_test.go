@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 // ---------------------------------------------------------------------------
@@ -694,7 +695,7 @@ func TestTryModelFilePricing_DeepSeekPeakPricing(t *testing.T) {
 					t.Run(slot.name, func(t *testing.T) {
 						cost := tryModelFilePricing(bs, model.name, tokens, "", slot.at, true)
 						require.NotNil(t, cost)
-						require.InDelta(t, baseCost*slot.multiplier, *cost, 1e-12)
+						require.InDelta(t, baseCost*slot.multiplier*currency.USDToCNY, *cost, 1e-12)
 					})
 				}
 			})
@@ -711,7 +712,7 @@ func TestResolveAccountStatsCost_DeepSeekPricingPriority(t *testing.T) {
 		noChannel    bool
 		want         float64
 	}{
-		{name: "catalog", want: 1000 * 1.5e-7 * 2},
+		{name: "catalog", want: 1000 * 1.5e-7 * 2 * currency.USDToCNY},
 		{name: "custom_rule", customRule: true, want: 1},
 		{name: "custom_rule_before_customer_price", customRule: true, applyPricing: true, want: 1},
 		{name: "customer_price", applyPricing: true, want: 0.75},
@@ -933,7 +934,7 @@ func TestResolveAccountStatsCost_Gemini36FlashTierUsesFallbackPricing(t *testing
 		UsageTokens{InputTokens: 1_000_000, OutputTokens: 1_000_000, CacheReadTokens: 1_000_000}, 1, 0, "", time.Time{}, true,
 	)
 	require.NotNil(t, result)
-	require.InDelta(t, 9.15, *result, 1e-12)
+	require.InDelta(t, 9.15*currency.USDToCNY, *result, 1e-12)
 }
 
 func TestResolveAccountStatsCost_AllMiss_ReturnsNil(t *testing.T) {
@@ -1090,8 +1091,8 @@ func TestApplyAccountStatsCost_LongContextFollowsAccountGate(t *testing.T) {
 
 // 分组开关只决定客户售价；账号统计成本按账号开关判断上游是否收取长上下文费率。
 func TestOpenAIGatewayServiceRecordUsage_AccountStatsLongContextFollowsAccountGate(t *testing.T) {
-	baseCost := 300000*2.5e-6 + 2000*15e-6
-	longContextCost := 300000*2.5e-6*2 + 2000*15e-6*1.5
+	baseCost := (300000*2.5e-6 + 2000*15e-6) * currency.USDToCNY
+	longContextCost := (300000*2.5e-6*2 + 2000*15e-6*1.5) * currency.USDToCNY
 	for _, tt := range []struct {
 		name             string
 		groupLongContext bool

@@ -125,7 +125,6 @@ function checkoutInfoFixture(overrides: Partial<CheckoutInfoResponse> = {}) {
     plans: [],
     balance_disabled: false,
     balance_recharge_multiplier: 1,
-    subscription_usd_to_cny_rate: 0,
     recharge_fee_rate: 0,
     help_text: '',
     help_image_url: '',
@@ -406,17 +405,16 @@ describe('PaymentView recharge rate preview', () => {
       currency: 'USD',
       usd: '0.50',
     })
-    expect(en.payment.rechargeRatePreview).toBe('Current rate: 1 {currency} = {usd} USD')
-    expect(zh.payment.rechargeRatePreview).toBe('当前倍率：1 {currency} = {usd} USD')
+    expect(en.payment.rechargeRatePreview).toBe('Current rate: 1 {currency} = {usd} CNY balance')
+    expect(zh.payment.rechargeRatePreview).toBe('当前倍率：1 {currency} = {usd} 元余额')
   })
 })
 
 describe('PaymentView subscription confirmation amounts', () => {
-  it('shows converted CNY pay amount using the subscription rate, not the balance multiplier', async () => {
+  it('charges the plan price as CNY without any currency conversion, ignoring the balance multiplier', async () => {
     const wrapper = await mountSubscriptionConfirm({
       checkout: {
         balance_recharge_multiplier: 0.14,
-        subscription_usd_to_cny_rate: 7.15,
       },
       method: {
         currency: 'CNY',
@@ -428,23 +426,21 @@ describe('PaymentView subscription confirmation amounts', () => {
     })
 
     const text = wrapper.text()
-    const convertedPrice = formatPaymentAmount(71.43, 'CNY')
-    const convertedOriginalPrice = formatPaymentAmount(92.88, 'CNY')
+    const price = formatPaymentAmount(9.99, 'CNY')
+    const originalPrice = formatPaymentAmount(12.99, 'CNY')
 
-    expect(text).toContain(convertedPrice)
-    expect(text).toContain(convertedOriginalPrice)
-    expect(text).not.toContain(formatPaymentAmount(9.99, 'CNY'))
-    // 换算必须使用订阅汇率（×7.15），而不是余额倍率（÷0.14 = 71.36）
+    expect(text).toContain(price)
+    expect(text).toContain(originalPrice)
+    // 不再做 USD→CNY 换算，也不再乘余额倍率
+    expect(text).not.toContain(formatPaymentAmount(71.43, 'CNY'))
     expect(text).not.toContain(formatPaymentAmount(71.36, 'CNY'))
-    expect(wrapper.findAll('button').some(button => button.text().includes(convertedPrice))).toBe(true)
+    expect(wrapper.findAll('button').some(button => button.text().includes(price))).toBe(true)
   })
 
-  it('keeps plan price when the subscription rate is not configured or payment currency is not CNY', async () => {
-    // opt-in 回归锁：即使余额倍率已配置，未配置订阅汇率时 CNY 订阅仍按 price 直付
+  it('keeps the plan price unchanged for CNY plans and formats non-CNY methods in their own currency', async () => {
     const cnyWrapper = await mountSubscriptionConfirm({
       checkout: {
         balance_recharge_multiplier: 0.14,
-        subscription_usd_to_cny_rate: 0,
       },
       method: {
         currency: 'CNY',
@@ -459,9 +455,6 @@ describe('PaymentView subscription confirmation amounts', () => {
     expect(cnyWrapper.text()).not.toContain(formatPaymentAmount(57.13, 'CNY'))
 
     const usdWrapper = await mountSubscriptionConfirm({
-      checkout: {
-        subscription_usd_to_cny_rate: 7.15,
-      },
       method: {
         currency: 'USD',
       },
@@ -475,10 +468,9 @@ describe('PaymentView subscription confirmation amounts', () => {
     expect(usdWrapper.text()).toContain(formatPaymentAmount(9.99, 'USD'))
   })
 
-  it('adds fee rate after CNY rate conversion to match backend pay_amount', async () => {
+  it('adds the fee rate on top of the CNY plan price to match backend pay_amount', async () => {
     const wrapper = await mountSubscriptionConfirm({
       checkout: {
-        subscription_usd_to_cny_rate: 7.15,
         recharge_fee_rate: 2.5,
       },
       method: {
@@ -490,11 +482,11 @@ describe('PaymentView subscription confirmation amounts', () => {
     })
 
     const text = wrapper.text()
-    const convertedPrice = formatPaymentAmount(71.43, 'CNY')
-    const fee = formatPaymentAmount(1.79, 'CNY')
-    const total = formatPaymentAmount(73.22, 'CNY')
+    const price = formatPaymentAmount(9.99, 'CNY')
+    const fee = formatPaymentAmount(0.25, 'CNY')
+    const total = formatPaymentAmount(10.24, 'CNY')
 
-    expect(text).toContain(convertedPrice)
+    expect(text).toContain(price)
     expect(text).toContain(fee)
     expect(text).toContain(total)
     expect(wrapper.findAll('button').some(button => button.text().includes(total))).toBe(true)

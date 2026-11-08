@@ -295,9 +295,9 @@ type AdminSubscriptionPlanResult struct {
 	GroupPlatform   string    `json:"group_platform,omitempty"`
 	GroupName       string    `json:"group_name,omitempty"`
 	RateMultiplier  float64   `json:"rate_multiplier,omitempty"`
-	DailyLimitUSD   *float64  `json:"daily_limit_usd,omitempty"`
-	WeeklyLimitUSD  *float64  `json:"weekly_limit_usd,omitempty"`
-	MonthlyLimitUSD *float64  `json:"monthly_limit_usd,omitempty"`
+	DailyLimitUSD   *float64  `json:"daily_limit_usd,omitempty"`   // CNY amount; legacy JSON name retained for compatibility.
+	WeeklyLimitUSD  *float64  `json:"weekly_limit_usd,omitempty"`  // CNY amount; legacy JSON name retained for compatibility.
+	MonthlyLimitUSD *float64  `json:"monthly_limit_usd,omitempty"` // CNY amount; legacy JSON name retained for compatibility.
 	ModelScopes     []string  `json:"supported_model_scopes,omitempty"`
 	Name            string    `json:"name"`
 	Description     string    `json:"description"`

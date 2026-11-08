@@ -64,8 +64,8 @@ type APIKey struct {
 	IPBlacklist []string   `json:"ip_blacklist"`
 	LastUsedAt  *time.Time `json:"last_used_at"`
 	LastUsedIP  *string    `json:"last_used_ip"`
-	Quota       float64    `json:"quota"`      // Quota limit in USD (0 = unlimited)
-	QuotaUsed   float64    `json:"quota_used"` // Used quota amount in USD
+	Quota       float64    `json:"quota"`      // Quota limit in CNY (0 = unlimited)
+	QuotaUsed   float64    `json:"quota_used"` // Used quota amount in CNY
 	ExpiresAt   *time.Time `json:"expires_at"` // Expiration time (nil = never expires)
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
@@ -100,9 +100,9 @@ type Group struct {
 	Status         string  `json:"status"`
 
 	SubscriptionType          string   `json:"subscription_type"`
-	DailyLimitUSD             *float64 `json:"daily_limit_usd"`
-	WeeklyLimitUSD            *float64 `json:"weekly_limit_usd"`
-	MonthlyLimitUSD           *float64 `json:"monthly_limit_usd"`
+	DailyLimitUSD             *float64 `json:"daily_limit_usd"`   // CNY amount; legacy JSON name retained for compatibility.
+	WeeklyLimitUSD            *float64 `json:"weekly_limit_usd"`  // CNY amount; legacy JSON name retained for compatibility.
+	MonthlyLimitUSD           *float64 `json:"monthly_limit_usd"` // CNY amount; legacy JSON name retained for compatibility.
 	LongContextPricingEnabled bool     `json:"long_context_pricing_enabled"`
 
 	// 图片生成计费配置（仅 antigravity 平台使用）
@@ -125,9 +125,9 @@ type Group struct {
 	VideoPrice480P     *float64 `json:"video_price_480p"`
 	VideoPrice720P     *float64 `json:"video_price_720p"`
 	VideoPrice1080P    *float64 `json:"video_price_1080p"`
-	// VideoModelPrices 可选按模型族×分辨率覆盖视频每秒单价 (USD/s)。
+	// VideoModelPrices 可选按模型族×分辨率覆盖视频每秒单价 (CNY/s)。
 	VideoModelPrices map[string]map[string]float64 `json:"video_model_prices,omitempty"`
-	// Codex alpha/search 网页搜索单次价格（USD/次）；null 表示使用默认价 0.01
+	// Codex alpha/search 网页搜索单次价格（CNY/次）；null 表示使用默认价 0.07
 	WebSearchPricePerCall        *float64 `json:"web_search_price_per_call"`
 	SearchPricePer1k             *float64 `json:"search_price_per_1k"`
 	AudioRealtimePricePerMin     *float64 `json:"audio_realtime_price_per_min"`
@@ -760,9 +760,9 @@ type UserSubscription struct {
 	WeeklyWindowStart  *time.Time `json:"weekly_window_start"`
 	MonthlyWindowStart *time.Time `json:"monthly_window_start"`
 
-	DailyUsageUSD   float64 `json:"daily_usage_usd"`
-	WeeklyUsageUSD  float64 `json:"weekly_usage_usd"`
-	MonthlyUsageUSD float64 `json:"monthly_usage_usd"`
+	DailyUsageUSD   float64 `json:"daily_usage_usd"`   // CNY amount; legacy JSON name retained for compatibility.
+	WeeklyUsageUSD  float64 `json:"weekly_usage_usd"`  // CNY amount; legacy JSON name retained for compatibility.
+	MonthlyUsageUSD float64 `json:"monthly_usage_usd"` // CNY amount; legacy JSON name retained for compatibility.
 
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`

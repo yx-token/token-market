@@ -77,13 +77,14 @@ describe("SubscriptionPlanCard", () => {
     expect(mountPlanCard("openai", { validity_days: 30, validity_unit: "day" }).text()).toContain("/ 30days");
   });
 
-  it("uses the configured currency symbol while preserving USD for legacy plans", () => {
+  it("uses the configured currency symbol and defaults to CNY", () => {
     const cnyPlan = mountPlanCard("openai", { currency: "CNY", original_price: 20 }).text();
 
     expect(cnyPlan).toContain("¥10CNY");
     expect(cnyPlan).toContain("¥20CNY");
     expect(mountPlanCard("openai", { currency: "USD" }).text()).toContain("$10USD");
-    expect(mountPlanCard("openai", { currency: "" }).text()).toContain("$10");
+    // 币种标注缺失时按人民币展示
+    expect(mountPlanCard("openai", { currency: "" }).text()).toContain("¥10");
   });
 
   it.each([

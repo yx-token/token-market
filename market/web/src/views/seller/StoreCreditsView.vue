@@ -4,16 +4,14 @@ import { seller } from '@/api'
 import { sellerStoreCredits, type CreditOffer, type CreditOfferInput } from '@/api/sellerStoreCredits'
 import type { VendorView } from '@/api/types'
 import { useAction } from '@/composables/useAsync'
-import { useConfig } from '@/stores/config'
 import { useToast } from '@/stores/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import RefreshButton from '@/components/RefreshButton.vue'
-import { coverageUnits, creditFormError, emptyCreditDraft, type CreditDraft } from '@/components/seller/creditForm'
+import { creditFormError, emptyCreditDraft, type CreditDraft } from '@/components/seller/creditForm'
 import { label } from '@/utils/labels'
-import { money, parseAmount, usd } from '@/utils/format'
+import { money, parseAmount } from '@/utils/format'
 import '@/styles/seller-center.css'
 
-const cfg = useConfig()
 const toast = useToast()
 const { busy, run } = useAction()
 const offers = ref<CreditOffer[] | null>(null)
@@ -26,14 +24,11 @@ const modelInput = ref('')
 const formError = ref('')
 const showPaused = ref(true)
 
-const rate = computed(() => cfg.config.credit_usd_to_balance_rate ?? 1)
 const face = computed(() => parseAmount(draft.value.face))
 const price = computed(() => parseAmount(draft.value.price))
-const coverage = computed(() => (face.value ? coverageUnits(face.value, rate.value) : null))
 const visible = computed(() => (offers.value ?? []).filter((row) => showPaused.value || row.status === 'active'))
 
 onMounted(() => {
-  cfg.ensure()
   reload()
   seller.vendors().then((rows) => { vendors.value = rows ?? [] }).catch(() => { vendors.value = [] })
 })
@@ -65,7 +60,7 @@ function edit(row: CreditOffer) {
     title: row.title,
     description: row.description ?? '',
     price: String(row.price_cny),
-    face: String(row.face_value_usd),
+    face: String(row.face_value_cny),
     platforms: [...(row.allowed_platforms ?? [])],
     models: [...(row.allowed_models ?? [])],
   }
@@ -94,7 +89,7 @@ function payload(status?: 'active' | 'paused'): CreditOfferInput {
     title: draft.value.title.trim(),
     description: draft.value.description.trim() || undefined,
     price_cny: parseAmount(draft.value.price) ?? 0,
-    face_value_usd: parseAmount(draft.value.face) ?? 0,
+    face_value_cny: parseAmount(draft.value.face) ?? 0,
     allowed_platforms: [...draft.value.platforms],
     allowed_models: [...draft.value.models],
     ...(status ? { status } : {}),
@@ -118,7 +113,7 @@ async function setStatus(row: CreditOffer, status: 'active' | 'paused') {
     title: row.title,
     description: row.description || undefined,
     price_cny: row.price_cny,
-    face_value_usd: row.face_value_usd,
+    face_value_cny: row.face_value_cny,
     allowed_platforms: row.allowed_platforms ?? [],
     allowed_models: row.allowed_models ?? [],
     status,
@@ -135,7 +130,7 @@ function scopeText(platforms: string[], models: string[]) {
 
 <template>
   <div class="seller-page">
-    <PageHeader title="店铺活动额度" description="只在本店生效。买家付人民币，获得美元额度；本店消费优先扣这份额度，用完后继续用钱包余额。">
+    <PageHeader title="店铺活动额度" description="只在本店生效。买家付人民币，获得同等面值的店铺额度（1 元额度 = 1 个余额单位）；本店消费优先扣这份额度，用完后继续用钱包余额。">
       <RefreshButton :loading="loading" @click="reload" />
     </PageHeader>
 
@@ -143,21 +138,21 @@ function scopeText(platforms: string[], models: string[]) {
       <div class="seller-section">
         <div>
           <p class="seller-kicker">{{ editingId ? `编辑活动 #${editingId}` : '上架新活动' }}</p>
-          <h2 id="credit-form-title">实付价和美元额度要同时写清</h2>
+          <h2 id="credit-form-title">实付价和额度面值要同时写清</h2>
         </div>
         <button v-if="editingId" type="button" class="xm-btn xm-btn-ghost xm-btn-sm" @click="resetForm">取消编辑</button>
       </div>
       <div class="mt-4 grid gap-3 md:grid-cols-2">
         <div class="md:col-span-2">
           <label class="label" for="credit-title">活动标题</label>
-          <input id="credit-title" v-model="draft.title" class="input" maxlength="80" placeholder="例如：本店 Claude 10 美元额度" />
+          <input id="credit-title" v-model="draft.title" class="input" maxlength="80" placeholder="例如：本店 Claude 10 元额度" />
         </div>
         <div>
           <label class="label" for="credit-price">买家实付（人民币）</label>
           <input id="credit-price" v-model="draft.price" class="input" inputmode="decimal" placeholder="30.00" />
         </div>
         <div>
-          <label class="label" for="credit-face">美元额度</label>
+          <label class="label" for="credit-face">额度面值（人民币）</label>
           <input id="credit-face" v-model="draft.face" class="input" inputmode="decimal" placeholder="10.00" />
         </div>
         <div class="md:col-span-2">
@@ -196,9 +191,8 @@ function scopeText(platforms: string[], models: string[]) {
 
       <aside class="seller-callout mt-4" data-testid="credit-preview">
         <p class="seller-kicker">买家会看到</p>
-        <p>实付 <strong>{{ price ? money(price) : '—' }}</strong>，获得 <strong>{{ face ? usd(face) : '—' }}</strong> 本店额度。</p>
-        <p>按当前兑换率，$1 额度可抵 ¥{{ rate }} 店铺消费；购买后按购买时兑换率使用，后续调整不影响已购包。</p>
-        <p v-if="coverage !== null">这份额度大约可抵 {{ money(coverage) }} 本店消费。额度用完，或这一笔不够时，继续用钱包余额。</p>
+        <p>实付 <strong>{{ price ? money(price) : '—' }}</strong>，获得 <strong>{{ face ? money(face) : '—' }}</strong> 本店额度。</p>
+        <p>额度面值即本店可抵扣的人民币金额（1 元额度 = 1 个余额单位）。额度用完，或这一笔不够时，继续用钱包余额。</p>
         <p>范围：{{ scopeText(draft.platforms, draft.models) }}。不能用于其他店。</p>
       </aside>
       <p v-if="formError" class="seller-form-error mt-3" role="alert">{{ formError }}</p>
@@ -237,7 +231,7 @@ function scopeText(platforms: string[], models: string[]) {
             </div>
           </div>
           <p v-if="row.description" class="mt-2 text-[13px] text-[#555]">{{ row.description }}</p>
-          <p class="mt-2 text-[14px]">实付 <b>{{ money(row.price_cny) }}</b> · 额度 <b>{{ usd(row.face_value_usd) }}</b></p>
+          <p class="mt-2 text-[14px]">实付 <b>{{ money(row.price_cny) }}</b> · 额度 <b>{{ money(row.face_value_cny) }}</b></p>
           <p class="mt-1 text-[12px] text-[#666]">{{ scopeText(row.allowed_platforms ?? [], row.allowed_models ?? []) }}。用完后继续用钱包余额。</p>
         </article>
       </div>

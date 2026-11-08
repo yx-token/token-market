@@ -112,7 +112,7 @@ describe('API_DOC_ENDPOINTS', () => {
       'wallet_remaining',
       'quota_pack_remaining',
       'store_credit_remaining_balance_units',
-      'store_credit_remaining_usd',
+      'store_credit_remaining_cny',
       'store_credit_prepaid_remaining_cny',
       'used',
       'limit',

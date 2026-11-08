@@ -24,7 +24,7 @@ type UsageItem struct {
 	Cost               float64   `json:"cost"`
 	CashCost           float64   `json:"cash_cost"`
 	CreditPrepaidCNY   float64   `json:"credit_prepaid_cny"`
-	CreditCoveredUSD   float64   `json:"credit_covered_usd"`
+	CreditCoveredCNY   float64   `json:"credit_covered_cny"` // 店铺活动额度抵扣的金额（平台余额单位，人民币），与 credit_covered_units 相同
 	CreditCoveredUnits float64   `json:"credit_covered_units"`
 	CreditPackID       *int64    `json:"credit_pack_id,omitempty"`
 	FirstTokenMs       *int      `json:"first_token_ms,omitempty"`
@@ -46,7 +46,6 @@ func BuyerUsage(ctx context.Context, db DB, userID int64, f UsageFilter, limit, 
 	rows, err := db.Query(ctx, `SELECT sub2api_usage_id, sub2api_request_id, created_at, buyer_key_id, listing_id, channel, model,
 			input_tokens, output_tokens, cache_creation_tokens + cache_read_tokens, (COALESCE(cash_cost,actual_cost)+credit_prepaid_cny)::float8, first_token_ms, duration_ms,
 			COALESCE(cash_cost,actual_cost)::float8,credit_prepaid_cny::float8,
-			COALESCE((SELECT covered_usd FROM store_credit_allocations WHERE usage_id=sub2api_usage_id),0)::float8,
 			credit_covered_units::float8,credit_pack_id
 		FROM usage_records
 		WHERE buyer_user_id = $1 AND created_at >= $2 AND created_at < $3
@@ -59,7 +58,8 @@ func BuyerUsage(ctx context.Context, db DB, userID int64, f UsageFilter, limit, 
 		var u UsageItem
 		err := row.Scan(&u.SubAPIUsageID, &u.RequestID, &u.CreatedAt, &u.BuyerKeyID, &u.ListingID, &u.Channel, &u.Model,
 			&u.InputTokens, &u.OutputTokens, &u.CacheTokens, &u.Cost, &u.FirstTokenMs, &u.DurationMs,
-			&u.CashCost, &u.CreditPrepaidCNY, &u.CreditCoveredUSD, &u.CreditCoveredUnits, &u.CreditPackID)
+			&u.CashCost, &u.CreditPrepaidCNY, &u.CreditCoveredUnits, &u.CreditPackID)
+		u.CreditCoveredCNY = u.CreditCoveredUnits
 		return u, err
 	})
 }
@@ -76,7 +76,7 @@ type AttemptView struct {
 	Cost               float64   `json:"cost"`
 	CashCost           float64   `json:"cash_cost"`
 	CreditPrepaidCNY   float64   `json:"credit_prepaid_cny"`
-	CreditCoveredUSD   float64   `json:"credit_covered_usd"`
+	CreditCoveredCNY   float64   `json:"credit_covered_cny"` // 店铺活动额度抵扣的金额（平台余额单位，人民币），与 credit_covered_units 相同
 	CreditCoveredUnits float64   `json:"credit_covered_units"`
 	CreditPackID       *int64    `json:"credit_pack_id,omitempty"`
 	Note               string    `json:"note"`
@@ -100,7 +100,6 @@ func RequestDetail(ctx context.Context, db DB, userID int64, requestID string) (
 	rows, err := db.Query(ctx, `SELECT a.hop, a.listing_id, a.pool_id, a.http_status, a.end_reason, a.committed, a.sub2api_request_id,
 			ur.sub2api_usage_id IS NOT NULL, COALESCE(COALESCE(ur.cash_cost,ur.actual_cost)+ur.credit_prepaid_cny,0)::float8, a.started_at,
 			COALESCE(ur.cash_cost,ur.actual_cost,0)::float8,COALESCE(ur.credit_prepaid_cny,0)::float8,
-			COALESCE((SELECT covered_usd FROM store_credit_allocations WHERE usage_id=ur.sub2api_usage_id),0)::float8,
 			COALESCE(ur.credit_covered_units,0)::float8,ur.credit_pack_id
 		FROM edge_attempts a
 		JOIN buyer_keys bk ON bk.id = a.buyer_key_id AND bk.user_id = $1
@@ -112,7 +111,8 @@ func RequestDetail(ctx context.Context, db DB, userID int64, requestID string) (
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (AttemptView, error) {
 		var a AttemptView
 		err := row.Scan(&a.Hop, &a.ListingID, &a.PoolID, &a.HTTPStatus, &a.EndReason, &a.Committed, &a.Sub2APIRequestID, &a.Charged, &a.Cost, &a.StartedAt,
-			&a.CashCost, &a.CreditPrepaidCNY, &a.CreditCoveredUSD, &a.CreditCoveredUnits, &a.CreditPackID)
+			&a.CashCost, &a.CreditPrepaidCNY, &a.CreditCoveredUnits, &a.CreditPackID)
+		a.CreditCoveredCNY = a.CreditCoveredUnits
 		switch {
 		case a.EndReason == "skipped":
 			a.Note = "skipped (seller unavailable)"
@@ -140,7 +140,7 @@ type BillDay struct {
 	Cost               float64 `json:"cost"`
 	CashCost           float64 `json:"cash_cost"`
 	CreditPrepaidCNY   float64 `json:"credit_prepaid_cny"`
-	CreditCoveredUSD   float64 `json:"credit_covered_usd"`
+	CreditCoveredCNY   float64 `json:"credit_covered_cny"` // 与 credit_covered_units 相同，按人民币计
 	CreditCoveredUnits float64 `json:"credit_covered_units"`
 }
 
@@ -148,7 +148,6 @@ type BillDay struct {
 func BuyerBills(ctx context.Context, db DB, userID int64, days int) ([]BillDay, error) {
 	rows, err := db.Query(ctx, `SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD'), count(*), sum(COALESCE(cash_cost,actual_cost)+credit_prepaid_cny)::float8,
 			sum(COALESCE(cash_cost,actual_cost))::float8,sum(credit_prepaid_cny)::float8,
-			sum(COALESCE((SELECT covered_usd FROM store_credit_allocations WHERE usage_id=sub2api_usage_id),0))::float8,
 			sum(credit_covered_units)::float8
 		FROM usage_records WHERE buyer_user_id = $1 AND created_at > now() - make_interval(days => $2)
 		GROUP BY 1 ORDER BY 1 DESC`, userID, days)
@@ -157,7 +156,8 @@ func BuyerBills(ctx context.Context, db DB, userID int64, days int) ([]BillDay, 
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (BillDay, error) {
 		var b BillDay
-		err := row.Scan(&b.Day, &b.Requests, &b.Cost, &b.CashCost, &b.CreditPrepaidCNY, &b.CreditCoveredUSD, &b.CreditCoveredUnits)
+		err := row.Scan(&b.Day, &b.Requests, &b.Cost, &b.CashCost, &b.CreditPrepaidCNY, &b.CreditCoveredUnits)
+		b.CreditCoveredCNY = b.CreditCoveredUnits
 		return b, err
 	})
 }

@@ -29,7 +29,7 @@ type Policy = {
   interval_minutes: number
   jitter_minutes: number
   models: string[]
-  daily_budget_usd: number
+  daily_budget_cny: number
   thresholds: { h0: number; h1: number; alpha: number; beta: number }
   auto_pause: boolean
   default_grade: string
@@ -49,7 +49,7 @@ const policy: Policy = {
   interval_minutes: 360,
   jitter_minutes: 30,
   models: ['旧模型'],
-  daily_budget_usd: 1,
+  daily_budget_cny: 7,
   thresholds: { h0: 0.9, h1: 0.7, alpha: 0.05, beta: 0.1 },
   auto_pause: true,
   default_grade: 'B',

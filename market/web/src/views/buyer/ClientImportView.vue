@@ -571,7 +571,7 @@ onMounted(async () => {
             <div><dt>导入方式</dt><dd>CC Switch 深度链接</dd></div>
             <div><dt>接口地址</dt><dd><code>{{ ccsEndpoint }}</code></dd></div>
             <div><dt>默认模型</dt><dd>{{ defaultModel || '由客户端决定' }}</dd></div>
-            <div><dt>余额查询</dt><dd>导入后 CC Switch 每 30 分钟读取一次 /v1/usage</dd></div>
+            <div><dt>余额查询</dt><dd>导入后 CC Switch 每 30 分钟读取一次 /v1/usage，余额按人民币（CNY）显示</dd></div>
           </dl>
 
           <template v-else>

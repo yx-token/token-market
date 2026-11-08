@@ -18,7 +18,7 @@ type ContextPricingBasis string
 // ContextPricingBasisWholeRequest 整单按所在档单价计价（目录阶梯、渠道区间）。
 const ContextPricingBasisWholeRequest ContextPricingBasis = "whole_request"
 
-// ContextPricingTier (MinTokens, MaxTokens] 区间内的有效 per-token 单价（USD）。
+// ContextPricingTier (MinTokens, MaxTokens] 区间内的有效 per-token 单价（CNY）。
 // nil 表示该项无价/不计费；MaxTokens 为 nil 表示无上限。
 type ContextPricingTier struct {
 	MinTokens    int

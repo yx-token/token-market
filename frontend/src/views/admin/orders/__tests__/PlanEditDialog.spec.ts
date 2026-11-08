@@ -139,34 +139,30 @@ function mountDialog({
 }
 
 describe('PlanEditDialog', () => {
-  it('shows CNY channel charge using the configured subscription rate and fee', async () => {
+  it('shows the CNY charge preview from the price and fee, without currency conversion', async () => {
     const wrapper = mountDialog({
       paymentConfig: {
-        subscription_usd_to_cny_rate: 7.15,
         recharge_fee_rate: 2.5,
       },
     })
 
     await wrapper.find('input[type="number"]').setValue('9.99')
 
+    // 套餐价已是人民币：预览 = price 9.99 + 2.5% 手续费（向上取到分）
     expect(wrapper.text()).toContain('preview')
-    expect(wrapper.text()).toContain('¥71.43')
+    expect(wrapper.text()).toContain('¥9.99')
     expect(wrapper.text()).toContain('fee 2.5')
-    expect(wrapper.text()).toContain('¥73.22')
+    expect(wrapper.text()).toContain('¥10.24')
   })
 
-  it('hides the preview when the subscription rate is not configured', async () => {
+  it('hides the preview while the price is empty', async () => {
     const wrapper = mountDialog({
       paymentConfig: {
-        subscription_usd_to_cny_rate: 0,
         recharge_fee_rate: 2.5,
       },
     })
 
-    await wrapper.find('input[type="number"]').setValue('9.99')
-
     expect(wrapper.text()).not.toContain('preview')
-    expect(wrapper.text()).not.toContain('¥71.43')
   })
 
   it('allows composite subscription groups for payment plans', () => {

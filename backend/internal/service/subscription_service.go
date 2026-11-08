@@ -1107,9 +1107,9 @@ type SubscriptionProgress struct {
 
 // UsageWindowProgress 使用窗口进度
 type UsageWindowProgress struct {
-	LimitUSD        float64   `json:"limit_usd"`
-	UsedUSD         float64   `json:"used_usd"`
-	RemainingUSD    float64   `json:"remaining_usd"`
+	LimitUSD        float64   `json:"limit_usd"`     // CNY amount; legacy JSON name retained for compatibility.
+	UsedUSD         float64   `json:"used_usd"`      // CNY amount; legacy JSON name retained for compatibility.
+	RemainingUSD    float64   `json:"remaining_usd"` // CNY amount; legacy JSON name retained for compatibility.
 	Percentage      float64   `json:"percentage"`
 	WindowStart     time.Time `json:"window_start"`
 	ResetsAt        time.Time `json:"resets_at"`

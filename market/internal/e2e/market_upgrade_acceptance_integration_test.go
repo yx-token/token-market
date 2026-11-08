@@ -20,14 +20,13 @@ func TestCreditPackPurchaseIsolationAndSnapshot(t *testing.T) {
 	for _, platform := range []string{"openai", "anthropic"} {
 		admin.must("PUT", "/api/admin/vendors/"+platform, map[string]bool{"enabled": true}, nil)
 	}
-	admin.must("PUT", "/api/admin/settings", map[string]any{"credit_usd_to_balance_rate": 2}, nil)
 	seller := e.newUser("credit-accept-seller@market.test")
 	other := e.newUser("credit-accept-other@market.test")
 	buyer := e.newUser("credit-accept-buyer@market.test")
 
 	var offer listing.CreditOffer
 	seller.must("POST", "/api/seller/credit-offers", map[string]any{
-		"title": "八十元买一百美元", "price_cny": 80, "face_value_usd": 100,
+		"title": "八十元买二百元额度", "price_cny": 80, "face_value_cny": 200,
 		"allowed_platforms": []string{"openai"}, "allowed_models": []string{"gpt-6-astra"},
 	}, &offer)
 	recharge := historicalManual(t, e, buyer, 100)
@@ -37,7 +36,7 @@ func TestCreditPackPurchaseIsolationAndSnapshot(t *testing.T) {
 	request := map[string]any{"offer_id": offer.ID, "idempotency_key": "acceptance-purchase-1"}
 	buyer.must("POST", "/api/buyer/credit-packs", request, &pack)
 	buyer.must("POST", "/api/buyer/credit-packs", request, &replay)
-	if pack.ID != replay.ID || pack.SellerID != offer.SellerID || pack.FaceValueUSD != 100 || pack.PriceCNY != 80 || pack.USDToBalanceRate != 2 {
+	if pack.ID != replay.ID || pack.SellerID != offer.SellerID || pack.FaceValueCNY != 200 || pack.PriceCNY != 80 {
 		t.Fatalf("purchase snapshot or idempotency mismatch: first=%+v replay=%+v", pack, replay)
 	}
 	refundPath := fmt.Sprintf("/api/buyer/credit-packs/%d/refund", pack.ID)
@@ -48,16 +47,15 @@ func TestCreditPackPurchaseIsolationAndSnapshot(t *testing.T) {
 		t.Fatalf("owner credit-pack refund must be disabled: %s", raw)
 	}
 	other.expect(404, "PUT", fmt.Sprintf("/api/seller/credit-offers/%d", offer.ID), map[string]any{
-		"title": "不属于此卖家", "price_cny": 1, "face_value_usd": 999,
+		"title": "不属于此卖家", "price_cny": 1, "face_value_cny": 999,
 	})
 	e.anon().expect(401, "GET", "/api/buyer/credit-packs", nil)
 
-	// 之后编辑活动和兑换率均不能改变已购权益。
+	// 之后编辑活动不能改变已购权益。
 	seller.must("PUT", fmt.Sprintf("/api/seller/credit-offers/%d", offer.ID), map[string]any{
-		"title": "改价后的活动", "price_cny": 90, "face_value_usd": 50,
+		"title": "改价后的活动", "price_cny": 90, "face_value_cny": 50,
 		"allowed_platforms": []string{"anthropic"}, "allowed_models": []string{"claude-sonnet-4-5"}, "status": "paused",
 	}, nil)
-	admin.must("PUT", "/api/admin/settings", map[string]any{"credit_usd_to_balance_rate": 7}, nil)
 	for range 3 {
 		e.drain()
 		if err := e.app.Keys.ProvisionCreditPacks(e.ctx); err != nil {
@@ -70,7 +68,7 @@ func TestCreditPackPurchaseIsolationAndSnapshot(t *testing.T) {
 		t.Fatalf("idempotent purchase created %d packs", len(owned))
 	}
 	p := owned[0]
-	if p.Status != "active" || p.Title != "八十元买一百美元" || p.RemainingUSD != 100 || p.RemainingBalanceUnits != 200 || p.PrepaidRemainingCNY != 80 || p.USDToBalanceRate != 2 ||
+	if p.Status != "active" || p.Title != "八十元买二百元额度" || p.FaceValueCNY != 200 || p.RemainingCNY != 200 || p.RemainingBalanceUnits != 200 || p.PrepaidRemainingCNY != 80 ||
 		len(p.AllowedPlatforms) != 1 || p.AllowedPlatforms[0] != "openai" || len(p.AllowedModels) != 1 || p.AllowedModels[0] != "gpt-6-astra" {
 		t.Fatalf("purchased rights changed with offer/config edit: %+v", p)
 	}

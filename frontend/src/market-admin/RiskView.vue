@@ -13,6 +13,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { Column } from '@/components/common/types'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
+import { money } from './money'
 import { sellerAccount } from './sellerDisplay'
 
 defineOptions({ name: 'MarketAdminRisk' })
@@ -380,7 +381,7 @@ onMounted(async () => {
             </template>
             <template v-else>{{ userLabel(row.buyer_user_id) }}</template>
           </template>
-          <template #cell-amount="{ row }">{{ row.amount ?? '—' }}</template>
+          <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
           <template #cell-detail="{ row }">
             <button type="button" class="detail-cell detail-button" :aria-label="`查看 ${tab === 'risk' ? '风险事件' : '计费异常'} #${row.id} 详情`" @click="openDetail(row)">
               <span class="detail-cell__text">{{ detailText(row.detail) }}</span>

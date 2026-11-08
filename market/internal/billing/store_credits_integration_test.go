@@ -74,8 +74,8 @@ func newStoreCreditFixture(t *testing.T) storeCreditFixture {
 	}
 	var offerID int64
 	if err := f.db.QueryRow(ctx, `INSERT INTO store_credit_offers
-		(seller_id,title,price_cny,face_value_usd,allowed_platforms,allowed_models)
-		VALUES($1,'本店活动',30,10,ARRAY['openai'],ARRAY['gpt-6-astra']) RETURNING id`, f.sellerID).Scan(&offerID); err != nil {
+		(seller_id,title,price_cny,face_value_cny,allowed_platforms,allowed_models)
+		VALUES($1,'本店活动',30,70,ARRAY['openai'],ARRAY['gpt-6-astra']) RETURNING id`, f.sellerID).Scan(&offerID); err != nil {
 		t.Fatal(err)
 	}
 	r, err := replica.New(f.replicaDB)
@@ -83,17 +83,14 @@ func newStoreCreditFixture(t *testing.T) storeCreditFixture {
 		t.Fatal(err)
 	}
 	f.funds = &Funds{DB: f.db, Replica: r, Shadow: &buyer.ShadowService{DB: f.db},
-		Settings: func(context.Context) (settings.Settings, error) {
-			st := settings.Defaults()
-			st.CreditUSDToBalanceRate = 7
-			return st, nil
-		}, Now: func() time.Time { return time.Now().Add(time.Hour) }}
+		Settings: func(context.Context) (settings.Settings, error) { return settings.Defaults(), nil },
+		Now:      func() time.Time { return time.Now().Add(time.Hour) }}
 	p, err := f.funds.PurchaseCreditPack(ctx, f.buyerID, PurchaseCreditPackInput{OfferID: offerID, IdempotencyKey: "fixture-purchase"})
 	if err != nil {
 		t.Fatalf("purchase activity pack: %v", err)
 	}
 	f.packID = p.ID
-	if p.Status != "provisioning" || p.RemainingUSD != 10 || p.RemainingBalanceUnits != 70 || p.PrepaidRemainingCNY != 30 || p.USDToBalanceRate != 7 {
+	if p.Status != "provisioning" || p.FaceValueCNY != 70 || p.RemainingCNY != 70 || p.RemainingBalanceUnits != 70 || p.PrepaidRemainingCNY != 30 {
 		t.Fatalf("unexpected purchased pack: %+v", p)
 	}
 	f.assertBalances(t, 70, 30, 0, 0)
@@ -152,27 +149,31 @@ func (f storeCreditFixture) assertBalances(t *testing.T, cash, escrow, seller, r
 	}
 }
 
-func (f storeCreditFixture) assertPack(t *testing.T, usd, units, prepaid, status string) {
+// assertPack 断言活动包余额（平台余额单位，即人民币）、剩余预付本金与状态。
+func (f storeCreditFixture) assertPack(t *testing.T, units, prepaid, status string) {
 	t.Helper()
 	var matches bool
-	err := f.db.QueryRow(context.Background(), `SELECT remaining_usd=$2::numeric AND remaining_balance_units=$3::numeric
-		AND prepaid_remaining_cny=$4::numeric AND status=$5 FROM store_credit_packs WHERE id=$1`, f.packID, usd, units, prepaid, status).Scan(&matches)
+	err := f.db.QueryRow(context.Background(), `SELECT remaining_balance_units=$2::numeric
+		AND prepaid_remaining_cny=$3::numeric AND status=$4 FROM store_credit_packs WHERE id=$1`, f.packID, units, prepaid, status).Scan(&matches)
 	if err != nil || !matches {
 		p, _ := f.funds.GetCreditPack(context.Background(), f.buyerID, f.packID)
-		t.Fatalf("pack want USD=%s units=%s prepaid=%s status=%s, got %+v: %v", usd, units, prepaid, status, p, err)
+		t.Fatalf("pack want units=%s prepaid=%s status=%s, got %+v: %v", units, prepaid, status, p, err)
+	}
+	if p, err := f.funds.GetCreditPack(context.Background(), f.buyerID, f.packID); err != nil || p.RemainingCNY != p.RemainingBalanceUnits {
+		t.Fatalf("remaining_cny must equal remaining_balance_units: %+v %v", p, err)
 	}
 }
 
-func (f storeCreditFixture) assertAllocation(t *testing.T, usageID int64, usd, units, prepaid, cash, payout string) {
+func (f storeCreditFixture) assertAllocation(t *testing.T, usageID int64, units, prepaid, cash, payout string) {
 	t.Helper()
 	var matches bool
-	err := f.db.QueryRow(context.Background(), `SELECT a.covered_usd=$2::numeric AND a.covered_balance_units=$3::numeric
-		AND a.prepaid_cny=$4::numeric AND a.cash_cny=$5::numeric AND ur.payout=$6::numeric
-		AND ur.credit_covered_units=$3::numeric AND ur.credit_prepaid_cny=$4::numeric AND ur.cash_cost=$5::numeric
+	err := f.db.QueryRow(context.Background(), `SELECT a.covered_balance_units=$2::numeric
+		AND a.prepaid_cny=$3::numeric AND a.cash_cny=$4::numeric AND ur.payout=$5::numeric
+		AND ur.credit_covered_units=$2::numeric AND ur.credit_prepaid_cny=$3::numeric AND ur.cash_cost=$4::numeric
 		FROM store_credit_allocations a JOIN usage_records ur ON ur.sub2api_usage_id=a.usage_id
-		WHERE a.usage_id=$1`, usageID, usd, units, prepaid, cash, payout).Scan(&matches)
+		WHERE a.usage_id=$1`, usageID, units, prepaid, cash, payout).Scan(&matches)
 	if err != nil || !matches {
-		t.Fatalf("usage %d allocation differs from USD=%s units=%s prepaid=%s cash=%s payout=%s: %v", usageID, usd, units, prepaid, cash, payout, err)
+		t.Fatalf("usage %d allocation differs from units=%s prepaid=%s cash=%s payout=%s: %v", usageID, units, prepaid, cash, payout, err)
 	}
 }
 
@@ -190,8 +191,8 @@ func TestStoreCreditsConsumeAndCashRemainder(t *testing.T) {
 	f := newStoreCreditFixture(t)
 	f.addUsage(t, 1, "3.5", "2.8")
 	f.post(t, 1)
-	f.assertAllocation(t, 1, "0.5", "3.5", "1.5", "0", "1.2")
-	f.assertPack(t, "9.5", "66.5", "28.5", "active")
+	f.assertAllocation(t, 1, "3.5", "1.5", "0", "1.2")
+	f.assertPack(t, "66.5", "28.5", "active")
 	f.assertBalances(t, 70, 28.5, 1.2, 0.3)
 	summary, err := PlatformLedger(context.Background(), f.db)
 	if err != nil || summary.BuyerStoreCredit != 28.5 || summary.BuyerBalances != 98.5 {
@@ -199,8 +200,8 @@ func TestStoreCreditsConsumeAndCashRemainder(t *testing.T) {
 	}
 	f.addUsage(t, 2, "68", "54.4")
 	f.post(t, 1)
-	f.assertAllocation(t, 2, "9.5", "66.5", "28.5", "1.5", "24")
-	f.assertPack(t, "0", "0", "0", "depleted")
+	f.assertAllocation(t, 2, "66.5", "28.5", "1.5", "24")
+	f.assertPack(t, "0", "0", "depleted")
 	f.assertBalances(t, 68.5, 0, 25.2, 6.3)
 	f.assertOp(t, "tm-credit-cash-2", "user.balance_subtract", "user:101", "1.5")
 	f.assertOp(t, "tm-credit-restore-2", "user.balance_add", "user:201", "1.5")
@@ -219,11 +220,11 @@ func (f storeCreditFixture) assertReports(t *testing.T) {
 		t.Fatalf("buyer usage items=%+v err=%v", items, err)
 	}
 	for _, item := range items {
-		cost, cash, prepaid, usd, units := 1.5, 0.0, 1.5, 0.5, 3.5
+		cost, cash, prepaid, units := 1.5, 0.0, 1.5, 3.5
 		if item.SubAPIUsageID == 2 {
-			cost, cash, prepaid, usd, units = 30, 1.5, 28.5, 9.5, 66.5
+			cost, cash, prepaid, units = 30, 1.5, 28.5, 66.5
 		}
-		if item.Cost != cost || item.CashCost != cash || item.CreditPrepaidCNY != prepaid || item.CreditCoveredUSD != usd || item.CreditCoveredUnits != units || item.CreditPackID == nil || *item.CreditPackID != f.packID {
+		if item.Cost != cost || item.CashCost != cash || item.CreditPrepaidCNY != prepaid || item.CreditCoveredCNY != units || item.CreditCoveredUnits != units || item.CreditPackID == nil || *item.CreditPackID != f.packID {
 			t.Fatalf("buyer usage should display actual paid cost and allocation: %+v", item)
 		}
 		for _, requestID := range []string{fmt.Sprintf("credit-edge-%d", item.SubAPIUsageID), fmt.Sprintf("client:credit-usage-%d", item.SubAPIUsageID)} {
@@ -232,7 +233,7 @@ func (f storeCreditFixture) assertReports(t *testing.T) {
 				t.Fatalf("request details=%+v err=%v", details, err)
 			}
 			d := details[0]
-			if !d.Charged || d.Cost != cost || d.CashCost != cash || d.CreditPrepaidCNY != prepaid || d.CreditCoveredUSD != usd || d.CreditCoveredUnits != units || d.CreditPackID == nil || *d.CreditPackID != f.packID {
+			if !d.Charged || d.Cost != cost || d.CashCost != cash || d.CreditPrepaidCNY != prepaid || d.CreditCoveredCNY != units || d.CreditCoveredUnits != units || d.CreditPackID == nil || *d.CreditPackID != f.packID {
 				t.Fatalf("request details should display actual paid cost and allocation: %+v", d)
 			}
 		}
@@ -242,7 +243,7 @@ func (f storeCreditFixture) assertReports(t *testing.T) {
 		t.Fatalf("buyer bills=%+v err=%v", bills, err)
 	}
 	b := bills[0]
-	if b.Requests != 2 || b.Cost != 31.5 || b.CashCost != 1.5 || b.CreditPrepaidCNY != 30 || b.CreditCoveredUSD != 10 || b.CreditCoveredUnits != 70 {
+	if b.Requests != 2 || b.Cost != 31.5 || b.CashCost != 1.5 || b.CreditPrepaidCNY != 30 || b.CreditCoveredCNY != 70 || b.CreditCoveredUnits != 70 {
 		t.Fatalf("buyer bill should sum actual paid cost and allocations: %+v", b)
 	}
 }
@@ -262,8 +263,8 @@ func TestStoreCreditsScopeCannotCoverOtherSellerPlatformOrModel(t *testing.T) {
 				creditExec(t, f.db, `UPDATE usage_records SET model='gpt-other' WHERE sub2api_usage_id=1`)
 			}
 			f.post(t, 1)
-			f.assertAllocation(t, 1, "0", "0", "0", "3.5", "2.8")
-			f.assertPack(t, "10", "70", "30", "active")
+			f.assertAllocation(t, 1, "0", "0", "3.5", "2.8")
+			f.assertPack(t, "70", "30", "active")
 			if scope == "seller" {
 				f.assertBalances(t, 66.5, 30, 0, 0.7)
 				balance, err := Balances(context.Background(), f.db, "seller", f.otherSellerID)
@@ -291,7 +292,7 @@ func TestStoreCreditsRefundOnlyUnusedPaidAmountAndRetry(t *testing.T) {
 			t.Fatalf("buyer credit-pack refund must be disabled: %v", err)
 		}
 	}
-	f.assertPack(t, "9.5", "66.5", "28.5", "active")
+	f.assertPack(t, "66.5", "28.5", "active")
 	f.assertBalances(t, 70, 28.5, 1.2, 0.3)
 	var operations, refunds int
 	if err := f.db.QueryRow(ctx, `SELECT count(*) FROM sub2api_ops WHERE idempotency_key LIKE 'tm-credit-refund-%'`).Scan(&operations); err != nil || operations != 0 {
@@ -334,33 +335,27 @@ func TestStoreCreditsRefundReclaimsRemotePrecision(t *testing.T) {
 	}
 }
 
-func TestStoreCreditsRejectUnrepresentableFunding(t *testing.T) {
-	for _, rate := range []float64{0.00000001, 1.00000001} {
-		t.Run(fmt.Sprintf("rate_%g", rate), func(t *testing.T) {
-			f := newStoreCreditFixture(t)
-			ctx := context.Background()
-			var offerID int64
-			if err := f.db.QueryRow(ctx, `INSERT INTO store_credit_offers(seller_id,title,price_cny,face_value_usd)
- VALUES($1,'精度边界',1,0.01) RETURNING id`, f.sellerID).Scan(&offerID); err != nil {
-				t.Fatal(err)
-			}
-			f.funds.Settings = func(context.Context) (settings.Settings, error) {
-				st := settings.Defaults()
-				st.CreditUSDToBalanceRate = rate
-				return st, nil
-			}
-			_, err := f.funds.PurchaseCreditPack(ctx, f.buyerID, PurchaseCreditPackInput{OfferID: offerID, IdempotencyKey: "precision"})
-			var he *httpx.Error
-			if !errors.As(err, &he) || he.Code != "INVALID_CREDIT_CONVERSION" {
-				t.Fatalf("unrepresentable funding should return conversion error: %v", err)
-			}
-			var count int
-			if err := f.db.QueryRow(ctx, `SELECT count(*) FROM store_credit_packs WHERE buyer_id=$1`, f.buyerID).Scan(&count); err != nil || count != 1 {
-				t.Fatalf("invalid conversion created another pack: count=%d err=%v", count, err)
-			}
-			f.assertBalances(t, 70, 30, 0, 0)
-		})
+// 面额按平台余额单位（人民币）录入，购买时原样作为隔离钱包余额，不再乘兑换率；
+// 旧库残留的 credit_usd_to_balance_rate 设置不影响购买。
+func TestStoreCreditsFaceValueIsBalanceUnits(t *testing.T) {
+	f := newStoreCreditFixture(t)
+	ctx := context.Background()
+	creditExec(t, f.db, `INSERT INTO settings(key,value) VALUES('platform','{"credit_usd_to_balance_rate":7.2}')
+		ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`)
+	f.funds.Settings = func(ctx context.Context) (settings.Settings, error) { return settings.Load(ctx, f.db) }
+	var offerID int64
+	if err := f.db.QueryRow(ctx, `INSERT INTO store_credit_offers(seller_id,title,price_cny,face_value_cny)
+ VALUES($1,'最小面额',1,0.01) RETURNING id`, f.sellerID).Scan(&offerID); err != nil {
+		t.Fatal(err)
 	}
+	p, err := f.funds.PurchaseCreditPack(ctx, f.buyerID, PurchaseCreditPackInput{OfferID: offerID, IdempotencyKey: "smallest"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.FaceValueCNY != 0.01 || p.RemainingCNY != 0.01 || p.RemainingBalanceUnits != 0.01 || p.PrepaidRemainingCNY != 1 {
+		t.Fatalf("face value must become wallet units verbatim: %+v", p)
+	}
+	f.assertBalances(t, 69, 31, 0, 0)
 }
 
 func TestStoreCreditsLedgerFailureRollsBackAllocation(t *testing.T) {
@@ -381,7 +376,7 @@ func TestStoreCreditsLedgerFailureRollsBackAllocation(t *testing.T) {
 	if err := tx.Rollback(ctx); err != nil {
 		t.Fatal(err)
 	}
-	f.assertPack(t, "10", "70", "30", "active")
+	f.assertPack(t, "70", "30", "active")
 	f.assertBalances(t, 70, 30, 0, 0)
 	var matches bool
 	if err := f.db.QueryRow(ctx, `SELECT ledger_txn_id IS NULL AND cash_cost IS NULL AND payout=2.8 AND credit_prepaid_cny=0
@@ -391,8 +386,8 @@ func TestStoreCreditsLedgerFailureRollsBackAllocation(t *testing.T) {
 	}
 	creditExec(t, f.db, `DROP TRIGGER fail_credit_usage_fixture ON ledger_entries`)
 	f.post(t, 1)
-	f.assertAllocation(t, 1, "0.5", "3.5", "1.5", "0", "1.2")
-	f.assertPack(t, "9.5", "66.5", "28.5", "active")
+	f.assertAllocation(t, 1, "3.5", "1.5", "0", "1.2")
+	f.assertPack(t, "66.5", "28.5", "active")
 	f.assertBalances(t, 70, 28.5, 1.2, 0.3)
 }
 
@@ -462,12 +457,12 @@ func TestStoreCreditsConcurrentConsumptionNeverExceedsRemainder(t *testing.T) {
 	if posted != 2 {
 		t.Fatalf("two distinct usages must post exactly once each, got %d", posted)
 	}
-	f.assertPack(t, "0", "0", "0", "depleted")
+	f.assertPack(t, "0", "0", "depleted")
 	f.assertBalances(t, 40, 0, 48, 12)
 	var matches bool
-	if err := f.db.QueryRow(ctx, `SELECT count(*)=2 AND sum(covered_usd)=10 AND sum(covered_balance_units)=70
+	if err := f.db.QueryRow(ctx, `SELECT count(*)=2 AND sum(covered_balance_units)=70
 		AND sum(prepaid_cny)=30 AND sum(cash_cny)=30 FROM store_credit_allocations WHERE pack_id=$1`, f.packID).Scan(&matches); err != nil || !matches {
-		t.Fatalf("concurrent allocation must not overdraw USD, units, or actual paid funds: matches=%v err=%v", matches, err)
+		t.Fatalf("concurrent allocation must not overdraw credit units or actual paid funds: matches=%v err=%v", matches, err)
 	}
 	for _, outbox := range []struct{ prefix, target, typ string }{
 		{"tm-credit-cash-%", "user:101", "user.balance_subtract"},

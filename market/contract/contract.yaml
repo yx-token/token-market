@@ -19,6 +19,7 @@ sub2api:
   # 对未登记的版本按此判定；新增宿主迁移时同步更新（contract_test 会校验与 backend/migrations 一致）。
   host_migration_fingerprints:
     - "sha256:c0a0ae745bf4cffd3eddf893b621fa6c37ee0f470138cb38df85c624ede77358"
+    - "sha256:ead01d4a21f15bcf67fb72db5cad5ec912abe4436e552c7e417e9de2ba908ef8"   # 292 个迁移，含 242_cny_accounting.sql（人民币结算）
 
 # 只读库用到的表与列。large 表示大表，涉及它的锁表迁移会被提示。
 tables:

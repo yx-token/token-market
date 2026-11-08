@@ -5,11 +5,13 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 type openAIRecordUsageLogRepoStub struct {
@@ -631,7 +633,7 @@ func TestOpenAIGatewayServiceRecordUsage_DeepSeekAccountStatsUsesRequestPricingA
 				require.Equal(t, 1, userRepo.deductCalls)
 				require.InDelta(t, customerTotal*0.8, userRepo.lastAmount, 1e-12)
 				require.NotNil(t, log.AccountStatsCost)
-				require.InDelta(t, model.offPeakCost*slot.multiplier, *log.AccountStatsCost, 1e-12,
+				require.InDelta(t, currency.USDToCNY*(model.offPeakCost*slot.multiplier), *log.AccountStatsCost, 1e-12,
 					"account cost must use the upstream model and historical PricingAt")
 			})
 		}
@@ -1243,10 +1245,10 @@ func TestOpenAIGatewayServiceRecordUsage_Gpt54LongContextBillingDisabledWhenGrou
 
 	expectedInput := 300000 * 2.5e-6
 	expectedOutput := 2000 * 15e-6
-	require.InDelta(t, expectedInput, usageRepo.lastLog.InputCost, 1e-10)
-	require.InDelta(t, expectedOutput, usageRepo.lastLog.OutputCost, 1e-10)
-	require.InDelta(t, expectedInput+expectedOutput, usageRepo.lastLog.TotalCost, 1e-10)
-	require.InDelta(t, (expectedInput+expectedOutput)*1.1, usageRepo.lastLog.ActualCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*(expectedInput), usageRepo.lastLog.InputCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*(expectedOutput), usageRepo.lastLog.OutputCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*(expectedInput+expectedOutput), usageRepo.lastLog.TotalCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*((expectedInput+expectedOutput)*1.1), usageRepo.lastLog.ActualCost, 1e-10)
 	require.False(t, usageRepo.lastLog.LongContextBillingApplied)
 	require.Equal(t, 1, userRepo.deductCalls)
 }
@@ -1291,10 +1293,10 @@ func TestOpenAIGatewayServiceRecordUsage_Gpt54LongContextBillingEnabledPerAccoun
 
 	expectedInput := 300000 * 2.5e-6 * 2.0
 	expectedOutput := 2000 * 15e-6 * 1.5
-	require.InDelta(t, expectedInput, usageRepo.lastLog.InputCost, 1e-10)
-	require.InDelta(t, expectedOutput, usageRepo.lastLog.OutputCost, 1e-10)
-	require.InDelta(t, expectedInput+expectedOutput, usageRepo.lastLog.TotalCost, 1e-10)
-	require.InDelta(t, (expectedInput+expectedOutput)*1.1, usageRepo.lastLog.ActualCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*(expectedInput), usageRepo.lastLog.InputCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*(expectedOutput), usageRepo.lastLog.OutputCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*(expectedInput+expectedOutput), usageRepo.lastLog.TotalCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*((expectedInput+expectedOutput)*1.1), usageRepo.lastLog.ActualCost, 1e-10)
 	require.True(t, usageRepo.lastLog.LongContextBillingApplied)
 }
 
@@ -1315,8 +1317,8 @@ func TestOpenAIGatewayServiceRecordUsage_GroupOrAccountLongContextAllows(t *test
 		})
 		require.NoError(t, err)
 		require.True(t, usageRepo.lastLog.LongContextBillingApplied)
-		require.InDelta(t, baseInput*2, usageRepo.lastLog.InputCost, 1e-10)
-		require.InDelta(t, baseOutput*1.5, usageRepo.lastLog.OutputCost, 1e-10)
+		require.InDelta(t, currency.USDToCNY*(baseInput*2), usageRepo.lastLog.InputCost, 1e-10)
+		require.InDelta(t, currency.USDToCNY*(baseOutput*1.5), usageRepo.lastLog.OutputCost, 1e-10)
 	})
 
 	t.Run("group off account on", func(t *testing.T) {
@@ -1334,8 +1336,8 @@ func TestOpenAIGatewayServiceRecordUsage_GroupOrAccountLongContextAllows(t *test
 		})
 		require.NoError(t, err)
 		require.True(t, usageRepo.lastLog.LongContextBillingApplied)
-		require.InDelta(t, baseInput*2, usageRepo.lastLog.InputCost, 1e-10)
-		require.InDelta(t, baseOutput*1.5, usageRepo.lastLog.OutputCost, 1e-10)
+		require.InDelta(t, currency.USDToCNY*(baseInput*2), usageRepo.lastLog.InputCost, 1e-10)
+		require.InDelta(t, currency.USDToCNY*(baseOutput*1.5), usageRepo.lastLog.OutputCost, 1e-10)
 	})
 
 	t.Run("group on account on", func(t *testing.T) {
@@ -1353,8 +1355,8 @@ func TestOpenAIGatewayServiceRecordUsage_GroupOrAccountLongContextAllows(t *test
 		})
 		require.NoError(t, err)
 		require.True(t, usageRepo.lastLog.LongContextBillingApplied)
-		require.InDelta(t, baseInput*2, usageRepo.lastLog.InputCost, 1e-10)
-		require.InDelta(t, baseOutput*1.5, usageRepo.lastLog.OutputCost, 1e-10)
+		require.InDelta(t, currency.USDToCNY*(baseInput*2), usageRepo.lastLog.InputCost, 1e-10)
+		require.InDelta(t, currency.USDToCNY*(baseOutput*1.5), usageRepo.lastLog.OutputCost, 1e-10)
 	})
 }
 
@@ -1385,8 +1387,8 @@ func TestOpenAIGatewayServiceRecordUsage_GrokLongContextFollowsGroupToggleOnly(t
 		})
 		require.NoError(t, err)
 		require.True(t, usageRepo.lastLog.LongContextBillingApplied)
-		require.InDelta(t, baseInput*2, usageRepo.lastLog.InputCost, 1e-10)
-		require.InDelta(t, baseOutput*2, usageRepo.lastLog.OutputCost, 1e-10)
+		require.InDelta(t, currency.USDToCNY*(baseInput*2), usageRepo.lastLog.InputCost, 1e-10)
+		require.InDelta(t, currency.USDToCNY*(baseOutput*2), usageRepo.lastLog.OutputCost, 1e-10)
 	})
 
 	t.Run("group off keeps the base card", func(t *testing.T) {
@@ -1405,8 +1407,8 @@ func TestOpenAIGatewayServiceRecordUsage_GrokLongContextFollowsGroupToggleOnly(t
 		})
 		require.NoError(t, err)
 		require.False(t, usageRepo.lastLog.LongContextBillingApplied)
-		require.InDelta(t, baseInput, usageRepo.lastLog.InputCost, 1e-10)
-		require.InDelta(t, baseOutput, usageRepo.lastLog.OutputCost, 1e-10)
+		require.InDelta(t, currency.USDToCNY*(baseInput), usageRepo.lastLog.InputCost, 1e-10)
+		require.InDelta(t, currency.USDToCNY*(baseOutput), usageRepo.lastLog.OutputCost, 1e-10)
 	})
 }
 
@@ -2428,8 +2430,8 @@ func TestOpenAIGatewayServiceRecordUsage_GrokVideoUsesDefaultRateCard(t *testing
 	require.NotNil(t, usageRepo.lastLog)
 	require.Nil(t, usageRepo.lastLog.ImageSize)
 	// 结果未携带 duration 时按上游默认 8 秒计费：0.14 USD/s × 8s。
-	require.InDelta(t, 0.14*8, usageRepo.lastLog.TotalCost, 1e-12)
-	require.InDelta(t, 0.14*8, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(0.14*8), usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(0.14*8), usageRepo.lastLog.ActualCost, 1e-12)
 	require.Equal(t, 0, usageRepo.lastLog.ImageCount)
 	require.NotNil(t, usageRepo.lastLog.BillingMode)
 	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)

@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 func TestCodexDirectImagesMultipartEdit(t *testing.T) {
@@ -56,10 +57,10 @@ func TestCodexDirectImagesPricingAndUsage(t *testing.T) {
 	prices := &PricingService{pricingData: map[string]*LiteLLMModelPricing{"gpt-image-2": {InputCostPerToken: 1}}}
 	for _, model := range []string{"gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare-2026-09-08", "gpt-image-2.5-sunburst-2026-09-08"} {
 		price := prices.matchOpenAIModel(model)
-		require.Equal(t, 5e-6, price.InputCostPerToken)
-		require.Equal(t, 8e-6, price.InputCostPerImageToken)
-		require.Equal(t, 30e-6, price.OutputCostPerImageToken)
-		require.Equal(t, 2e-6, price.CacheReadInputImageTokenCost)
+		require.InDelta(t, currency.USDToCNY*5e-6, price.InputCostPerToken, 1e-12)
+		require.InDelta(t, currency.USDToCNY*8e-6, price.InputCostPerImageToken, 1e-12)
+		require.InDelta(t, currency.USDToCNY*30e-6, price.OutputCostPerImageToken, 1e-12)
+		require.InDelta(t, currency.USDToCNY*2e-6, price.CacheReadInputImageTokenCost, 1e-12)
 	}
 	body, err := os.ReadFile("../../resources/model-pricing/model_prices_and_context_window.json")
 	require.NoError(t, err)

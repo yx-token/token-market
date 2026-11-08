@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shopspring/decimal"
 	dbent "github.com/yx-token/token-market/ent"
 	"github.com/yx-token/token-market/ent/paymentorder"
 	"github.com/yx-token/token-market/internal/payment"
@@ -61,6 +60,9 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 			return nil, err
 		}
 	}
+	if plan != nil && methodCurrency != payment.DefaultPaymentCurrency {
+		return nil, infraerrors.BadRequest("PLAN_CURRENCY_INVALID", "subscriptions must be paid in CNY")
+	}
 	orderAmount := req.Amount
 	limitAmount := req.Amount
 	bonusAmount := 0.0
@@ -74,7 +76,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 		bonusAmount = quote.Bonus
 		orderAmount = quote.Credited
 	}
-	payAmountStr, payAmount, err := calculateCreateOrderPayAmountForOrderType(limitAmount, feeRate, methodCurrency, req.OrderType, cfg.SubscriptionUSDToCNYRate)
+	payAmountStr, payAmount, err := calculateCreateOrderPayAmount(limitAmount, feeRate, methodCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -89,8 +91,11 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if sel != nil {
 		selectedCurrency = paymentProviderConfigCurrency(sel.ProviderKey, sel.Config)
 	}
+	if plan != nil && selectedCurrency != payment.DefaultPaymentCurrency {
+		return nil, infraerrors.BadRequest("PLAN_CURRENCY_INVALID", "subscriptions must be paid in CNY")
+	}
 	if selectedCurrency != methodCurrency {
-		payAmountStr, payAmount, err = calculateCreateOrderPayAmountForOrderType(limitAmount, feeRate, selectedCurrency, req.OrderType, cfg.SubscriptionUSDToCNYRate)
+		payAmountStr, payAmount, err = calculateCreateOrderPayAmount(limitAmount, feeRate, selectedCurrency)
 		if err != nil {
 			return nil, err
 		}
@@ -648,28 +653,6 @@ func calculateCreateOrderPayAmount(limitAmount, feeRate float64, currency string
 			WithMetadata(map[string]string{"currency": currency})
 	}
 	return payAmountStr, payAmount, nil
-}
-
-func calculateCreateOrderPayAmountForOrderType(limitAmount, feeRate float64, currency, orderType string, usdToCnyRate float64) (string, float64, error) {
-	paymentAmount := limitAmount
-	if orderType == payment.OrderTypeSubscription {
-		paymentAmount = calculateSubscriptionGatewayBaseAmount(limitAmount, usdToCnyRate, currency)
-	}
-	return calculateCreateOrderPayAmount(paymentAmount, feeRate, currency)
-}
-
-// calculateSubscriptionGatewayBaseAmount 计算订阅订单的网关扣款基数。
-// 换算是显式 opt-in：仅当管理员配置了订阅汇率（rate > 0，1 USD = rate CNY）
-// 且网关币种为 CNY 时，按 price × rate 换算；未配置时保持 price 直付的存量行为。
-func calculateSubscriptionGatewayBaseAmount(amount, usdToCnyRate float64, currency string) float64 {
-	rate := normalizeSubscriptionUSDToCNYRate(usdToCnyRate)
-	if rate <= 0 || currency != payment.DefaultPaymentCurrency {
-		return amount
-	}
-	return decimal.NewFromFloat(amount).
-		Mul(decimal.NewFromFloat(rate)).
-		Round(int32(payment.CurrencyMaxFractionDigits(currency))).
-		InexactFloat64()
 }
 
 func validateCreateOrderAmountCurrency(amount float64, currency string) error {

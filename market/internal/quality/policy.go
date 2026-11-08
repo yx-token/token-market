@@ -55,7 +55,7 @@ type Policy struct {
 	JitterMinutes    int                    `json:"jitter_minutes"`
 	Suites           []string               `json:"suites"`
 	Models           []string               `json:"models"`
-	DailyBudgetUSD   float64                `json:"daily_budget_usd"`
+	DailyBudgetCNY   float64                `json:"daily_budget_cny"` // 非强制检测每个上游每天可花的 usage 官方成本（人民币）
 	Thresholds       Thresholds             `json:"thresholds"`
 	AutoPause        bool                   `json:"auto_pause"`
 	DefaultGrade     string                 `json:"default_grade"`
@@ -334,7 +334,7 @@ func (c ThirdPartyCheck) VerdictFor(outcome string) string {
 }
 
 const policyColumns = `id, platform, auth_type, enabled, scheduled_enabled, interval_minutes, jitter_minutes, suites, models,
-	daily_budget_usd::float8, thresholds, auto_pause, default_grade, third_party, version, updated_at, item_parallelism, full_triggers, token_budgets, flows`
+	daily_budget_cny::float8, thresholds, auto_pause, default_grade, third_party, version, updated_at, item_parallelism, full_triggers, token_budgets, flows`
 
 func scanPolicy(row pgx.Row) (*Policy, error) {
 	p, _, err := scanPolicyRow(row)
@@ -354,7 +354,7 @@ func scanPolicyRow(row pgx.Row) (*Policy, policyFlowPresence, error) {
 	var p Policy
 	var th, tp, budgets, flows []byte
 	if err := row.Scan(&p.ID, &p.Platform, &p.AuthType, &p.Enabled, &p.ScheduledEnabled, &p.IntervalMinutes, &p.JitterMinutes,
-		&p.Suites, &p.Models, &p.DailyBudgetUSD, &th, &p.AutoPause, &p.DefaultGrade, &tp,
+		&p.Suites, &p.Models, &p.DailyBudgetCNY, &th, &p.AutoPause, &p.DefaultGrade, &tp,
 		&p.Version, &p.UpdatedAt, &p.ItemParallelism, &p.FullTriggers, &budgets, &flows); err != nil {
 		return nil, policyFlowPresence{}, err
 	}
@@ -441,7 +441,7 @@ type PolicyInput struct {
 	JitterMinutes    *int                    `json:"jitter_minutes"`
 	Suites           *[]string               `json:"suites"`
 	Models           *[]string               `json:"models"`
-	DailyBudgetUSD   *float64                `json:"daily_budget_usd"`
+	DailyBudgetCNY   *float64                `json:"daily_budget_cny"`
 	Thresholds       *Thresholds             `json:"thresholds"`
 	AutoPause        *bool                   `json:"auto_pause"`
 	DefaultGrade     *string                 `json:"default_grade"`
@@ -478,7 +478,7 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 		ORDER BY array_position($2::text[], auth_type) LIMIT 1`, platform, listing.AuthTypeEquivalents(platform, authType)))
 	if errors.Is(err, pgx.ErrNoRows) {
 		p = &Policy{Platform: platform, IntervalMinutes: 360, JitterMinutes: 30, Suites: []string{"availability", "latency", "iq"},
-			DailyBudgetUSD: 1, Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1}, AutoPause: true, DefaultGrade: "B"}
+			DailyBudgetCNY: 7, Thresholds: Thresholds{H0: 0.9, H1: 0.7, Alpha: 0.05, Beta: 0.1}, AutoPause: true, DefaultGrade: "B"}
 		flowPresence = policyFlowPresence{}
 	} else if err != nil {
 		return nil, err
@@ -505,8 +505,8 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	if in.Models != nil {
 		p.Models = *in.Models
 	}
-	if in.DailyBudgetUSD != nil {
-		p.DailyBudgetUSD = *in.DailyBudgetUSD
+	if in.DailyBudgetCNY != nil {
+		p.DailyBudgetCNY = *in.DailyBudgetCNY
 	}
 	if in.Thresholds != nil {
 		p.Thresholds = *in.Thresholds
@@ -602,8 +602,8 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	case p.JitterMinutes > p.Flows.maxJitterMinutes():
 		return nil, httpx.BadRequest("INVALID_JITTER", fmt.Sprintf("随机抖动不能超过 %d 分钟：调度时抖动按最短流程周期（%d 分钟）的一半取值，请调小抖动或加长流程周期",
 			p.Flows.maxJitterMinutes(), p.Flows.minIntervalMinutes()))
-	case p.DailyBudgetUSD < 0:
-		return nil, httpx.BadRequest("INVALID_BUDGET", "daily_budget_usd must be >= 0")
+	case p.DailyBudgetCNY < 0:
+		return nil, httpx.BadRequest("INVALID_BUDGET", "daily_budget_cny must be >= 0")
 	}
 	switch p.DefaultGrade {
 	case "S", "A", "B", "C", "D":
@@ -623,17 +623,17 @@ func UpsertPolicy(ctx context.Context, db DB, platform, authType string, in Poli
 	th, _ := json.Marshal(p.Thresholds)
 	tp, _ := json.Marshal(p.ThirdParty)
 	return scanPolicy(db.QueryRow(ctx, `INSERT INTO detection_policies (platform, auth_type, enabled, scheduled_enabled, interval_minutes,
-			jitter_minutes, suites, models, daily_budget_usd, thresholds, auto_pause, default_grade, third_party, updated_by, item_parallelism, full_triggers, token_budgets, flows)
+			jitter_minutes, suites, models, daily_budget_cny, thresholds, auto_pause, default_grade, third_party, updated_by, item_parallelism, full_triggers, token_budgets, flows)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $14, $13, $15, $16, $17, $18)
 		ON CONFLICT (platform, auth_type) DO UPDATE SET enabled = EXCLUDED.enabled, scheduled_enabled = EXCLUDED.scheduled_enabled,
 			interval_minutes = EXCLUDED.interval_minutes, jitter_minutes = EXCLUDED.jitter_minutes, suites = EXCLUDED.suites,
-			models = EXCLUDED.models, daily_budget_usd = EXCLUDED.daily_budget_usd,
+			models = EXCLUDED.models, daily_budget_cny = EXCLUDED.daily_budget_cny,
 			thresholds = EXCLUDED.thresholds, auto_pause = EXCLUDED.auto_pause,
 			default_grade = EXCLUDED.default_grade, third_party = EXCLUDED.third_party, updated_by = EXCLUDED.updated_by,
 			item_parallelism = EXCLUDED.item_parallelism, full_triggers = EXCLUDED.full_triggers, token_budgets = EXCLUDED.token_budgets, flows = EXCLUDED.flows,
 			version = detection_policies.version + 1, updated_at = now()
 		RETURNING `+policyColumns,
-		platform, authType, p.Enabled, p.ScheduledEnabled, p.IntervalMinutes, p.JitterMinutes, p.Suites, p.Models, p.DailyBudgetUSD,
+		platform, authType, p.Enabled, p.ScheduledEnabled, p.IntervalMinutes, p.JitterMinutes, p.Suites, p.Models, p.DailyBudgetCNY,
 		th, p.AutoPause, p.DefaultGrade, adminID, tp, p.ItemParallelism, p.FullTriggers, mustJSON(p.TokenBudgets), mustJSON(p.Flows)))
 }
 

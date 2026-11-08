@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 	"github.com/yx-token/token-market/internal/pkg/timezone"
 )
 
@@ -94,7 +95,7 @@ func TestCalculateCostUnified_DeepseekDefaultCardPeakMultiplier(t *testing.T) {
 		PricingAt: time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC), // 周一低谷
 	})
 	require.NoError(t, err)
-	require.InDelta(t, offPeakTotal, offPeak.TotalCost, 1e-10)
+	require.InDelta(t, (offPeakTotal)*currency.USDToCNY, offPeak.TotalCost, 1e-10)
 
 	peak, err := bs.CalculateCostUnified(CostInput{
 		Ctx: context.Background(), Model: "deepseek-v4-flash", Tokens: tokens,
@@ -102,7 +103,7 @@ func TestCalculateCostUnified_DeepseekDefaultCardPeakMultiplier(t *testing.T) {
 		PricingAt: time.Date(2026, 8, 24, 2, 0, 0, 0, time.UTC), // 周一高峰
 	})
 	require.NoError(t, err)
-	require.InDelta(t, offPeakTotal*2, peak.TotalCost, 1e-10)
+	require.InDelta(t, (offPeakTotal*2)*currency.USDToCNY, peak.TotalCost, 1e-10)
 }
 
 func TestCalculateCostUnified_DeepseekProDefaultCardPeakMultiplier(t *testing.T) {
@@ -118,7 +119,7 @@ func TestCalculateCostUnified_DeepseekProDefaultCardPeakMultiplier(t *testing.T)
 		PricingAt: time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC),
 	})
 	require.NoError(t, err)
-	require.InDelta(t, offPeakTotal, offPeak.TotalCost, 1e-10)
+	require.InDelta(t, (offPeakTotal)*currency.USDToCNY, offPeak.TotalCost, 1e-10)
 
 	peak, err := bs.CalculateCostUnified(CostInput{
 		Ctx: context.Background(), Model: "deepseek-v4-pro", Tokens: tokens,
@@ -126,7 +127,7 @@ func TestCalculateCostUnified_DeepseekProDefaultCardPeakMultiplier(t *testing.T)
 		PricingAt: time.Date(2026, 8, 24, 6, 30, 0, 0, time.UTC), // 周一高峰
 	})
 	require.NoError(t, err)
-	require.InDelta(t, offPeakTotal*2, peak.TotalCost, 1e-10)
+	require.InDelta(t, (offPeakTotal*2)*currency.USDToCNY, peak.TotalCost, 1e-10)
 }
 
 func TestCalculateCostUnified_DeepseekVersionedNamePeakMultiplier(t *testing.T) {
@@ -142,7 +143,7 @@ func TestCalculateCostUnified_DeepseekVersionedNamePeakMultiplier(t *testing.T) 
 		PricingAt: time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC), // 周一低谷
 	})
 	require.NoError(t, err)
-	require.InDelta(t, offPeakTotal, offPeak.TotalCost, 1e-10)
+	require.InDelta(t, (offPeakTotal)*currency.USDToCNY, offPeak.TotalCost, 1e-10)
 
 	peak, err := bs.CalculateCostUnified(CostInput{
 		Ctx: context.Background(), Model: "deepseek-v4-flash-0731", Tokens: tokens,
@@ -150,7 +151,7 @@ func TestCalculateCostUnified_DeepseekVersionedNamePeakMultiplier(t *testing.T) 
 		PricingAt: time.Date(2026, 8, 24, 2, 0, 0, 0, time.UTC), // 周一高峰
 	})
 	require.NoError(t, err)
-	require.InDelta(t, offPeakTotal*2, peak.TotalCost, 1e-10)
+	require.InDelta(t, (offPeakTotal*2)*currency.USDToCNY, peak.TotalCost, 1e-10)
 }
 
 func TestCalculateCostUnified_DeepseekGroupPricingNotScaledByPeak(t *testing.T) {
@@ -171,7 +172,7 @@ func TestCalculateCostUnified_DeepseekGroupPricingNotScaledByPeak(t *testing.T) 
 
 	tokens := UsageTokens{InputTokens: 1000, OutputTokens: 500, CacheReadTokens: 1000}
 	// 分组自定义价：1000*1e-6 + 500*2e-6 + 1000*3e-9（缓存读沿用官方 flash 价）
-	groupTotal := 1000*1e-6 + 500*2e-6 + 1000*3e-9
+	groupTotal := 1000*1e-6 + 500*2e-6 + 1000*3e-9*currency.USDToCNY
 
 	for _, pricingAt := range []time.Time{
 		time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC), // 低谷
@@ -203,7 +204,7 @@ func TestCalculateCostUnified_NonDeepseekDefaultCardNotScaledByPeak(t *testing.T
 			RateMultiplier: 1.0, Resolver: resolver, PricingAt: pricingAt,
 		})
 		require.NoError(t, err)
-		require.InDelta(t, total, cost.TotalCost, 1e-10,
+		require.InDelta(t, (total)*currency.USDToCNY, cost.TotalCost, 1e-10,
 			"非 DeepSeek 模型不应受官方峰谷倍率影响（pricingAt=%v）", pricingAt)
 	}
 }
@@ -265,15 +266,15 @@ func TestGetModelPricing_DeepseekForcesOfficialRatesOverJSON(t *testing.T) {
 			// flash 档三档价与 pro→Flash 切换无关，GetModelPricing 断言不随时间翻转。
 			pricing, err := bs.GetModelPricing(tt.model)
 			require.NoError(t, err)
-			require.InDelta(t, tt.input, pricing.InputPricePerToken, 1e-15)
-			require.InDelta(t, tt.output, pricing.OutputPricePerToken, 1e-15)
-			require.InDelta(t, tt.cacheRead, pricing.CacheReadPricePerToken, 1e-15)
+			require.InDelta(t, (tt.input)*currency.USDToCNY, pricing.InputPricePerToken, 1e-15)
+			require.InDelta(t, (tt.output)*currency.USDToCNY, pricing.OutputPricePerToken, 1e-15)
+			require.InDelta(t, (tt.cacheRead)*currency.USDToCNY, pricing.CacheReadPricePerToken, 1e-15)
 			// 固定时点（切换点之后的 2026-10-01）复核：仍走 Flash 新价。
 			atPricing, err := bs.getModelPricingAt(tt.model, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
 			require.NoError(t, err)
-			require.InDelta(t, tt.input, atPricing.InputPricePerToken, 1e-15)
-			require.InDelta(t, tt.output, atPricing.OutputPricePerToken, 1e-15)
-			require.InDelta(t, tt.cacheRead, atPricing.CacheReadPricePerToken, 1e-15)
+			require.InDelta(t, (tt.input)*currency.USDToCNY, atPricing.InputPricePerToken, 1e-15)
+			require.InDelta(t, (tt.output)*currency.USDToCNY, atPricing.OutputPricePerToken, 1e-15)
+			require.InDelta(t, (tt.cacheRead)*currency.USDToCNY, atPricing.CacheReadPricePerToken, 1e-15)
 			require.True(t, bs.HasIdentifiedTokenPricing(tt.model))
 		})
 	}
@@ -284,23 +285,23 @@ func TestGetModelPricing_DeepseekForcesOfficialRatesOverJSON(t *testing.T) {
 		t.Run(model+"/before-cutoff", func(t *testing.T) {
 			pricing, err := bs.getModelPricingAt(model, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
 			require.NoError(t, err)
-			require.InDelta(t, 6.6e-7, pricing.InputPricePerToken, 1e-15)
-			require.InDelta(t, 1.98e-6, pricing.OutputPricePerToken, 1e-15)
-			require.InDelta(t, 2.2e-8, pricing.CacheReadPricePerToken, 1e-15)
+			require.InDelta(t, (6.6e-7)*currency.USDToCNY, pricing.InputPricePerToken, 1e-15)
+			require.InDelta(t, (1.98e-6)*currency.USDToCNY, pricing.OutputPricePerToken, 1e-15)
+			require.InDelta(t, (2.2e-8)*currency.USDToCNY, pricing.CacheReadPricePerToken, 1e-15)
 		})
 	}
 
 	// 半开边界钉死：2026-09-14 03:59:59 仍 Pro 价，04:00:00 整起 Flash 新价。
 	proBefore, err := bs.getModelPricingAt("deepseek-v4-pro", time.Date(2026, 9, 14, 3, 59, 59, 0, time.UTC))
 	require.NoError(t, err)
-	require.InDelta(t, 6.6e-7, proBefore.InputPricePerToken, 1e-15)
-	require.InDelta(t, 1.98e-6, proBefore.OutputPricePerToken, 1e-15)
-	require.InDelta(t, 2.2e-8, proBefore.CacheReadPricePerToken, 1e-15)
+	require.InDelta(t, (6.6e-7)*currency.USDToCNY, proBefore.InputPricePerToken, 1e-15)
+	require.InDelta(t, (1.98e-6)*currency.USDToCNY, proBefore.OutputPricePerToken, 1e-15)
+	require.InDelta(t, (2.2e-8)*currency.USDToCNY, proBefore.CacheReadPricePerToken, 1e-15)
 	proAtCutoff, err := bs.getModelPricingAt("deepseek-v4-pro", time.Date(2026, 9, 14, 4, 0, 0, 0, time.UTC))
 	require.NoError(t, err)
-	require.InDelta(t, 1.5e-7, proAtCutoff.InputPricePerToken, 1e-15)
-	require.InDelta(t, 6e-7, proAtCutoff.OutputPricePerToken, 1e-15)
-	require.InDelta(t, 3e-9, proAtCutoff.CacheReadPricePerToken, 1e-15)
+	require.InDelta(t, (1.5e-7)*currency.USDToCNY, proAtCutoff.InputPricePerToken, 1e-15)
+	require.InDelta(t, (6e-7)*currency.USDToCNY, proAtCutoff.OutputPricePerToken, 1e-15)
+	require.InDelta(t, (3e-9)*currency.USDToCNY, proAtCutoff.CacheReadPricePerToken, 1e-15)
 
 	// 版本化名称（不在 JSON / fallbackPrices 精确表中）：按子串归档计价。
 	// flash-0731 归 flash 档，三档价与切换无关，GetModelPricing 断言稳定。
@@ -314,9 +315,9 @@ func TestGetModelPricing_DeepseekForcesOfficialRatesOverJSON(t *testing.T) {
 		t.Run(tt.model, func(t *testing.T) {
 			pricing, err := bs.GetModelPricing(tt.model)
 			require.NoError(t, err)
-			require.InDelta(t, tt.input, pricing.InputPricePerToken, 1e-15)
-			require.InDelta(t, tt.output, pricing.OutputPricePerToken, 1e-15)
-			require.InDelta(t, tt.cacheRead, pricing.CacheReadPricePerToken, 1e-15)
+			require.InDelta(t, (tt.input)*currency.USDToCNY, pricing.InputPricePerToken, 1e-15)
+			require.InDelta(t, (tt.output)*currency.USDToCNY, pricing.OutputPricePerToken, 1e-15)
+			require.InDelta(t, (tt.cacheRead)*currency.USDToCNY, pricing.CacheReadPricePerToken, 1e-15)
 		})
 	}
 }
@@ -333,9 +334,9 @@ func TestGetModelPricing_UnknownDeepseekMapsToFlash(t *testing.T) {
 		t.Run(m, func(t *testing.T) {
 			pricing, err := bs.GetModelPricing(m)
 			require.NoError(t, err)
-			require.InDelta(t, 1.5e-7, pricing.InputPricePerToken, 1e-15)
-			require.InDelta(t, 6e-7, pricing.OutputPricePerToken, 1e-15)
-			require.InDelta(t, 3e-9, pricing.CacheReadPricePerToken, 1e-15)
+			require.InDelta(t, (1.5e-7)*currency.USDToCNY, pricing.InputPricePerToken, 1e-15)
+			require.InDelta(t, (6e-7)*currency.USDToCNY, pricing.OutputPricePerToken, 1e-15)
+			require.InDelta(t, (3e-9)*currency.USDToCNY, pricing.CacheReadPricePerToken, 1e-15)
 		})
 	}
 }
@@ -372,9 +373,9 @@ func TestDeepseekPricingFileMatchesOfficialRates(t *testing.T) {
 		t.Run(tt.model, func(t *testing.T) {
 			entry, ok := pricingData[tt.model]
 			require.True(t, ok, "model %s must exist in pricing file", tt.model)
-			require.InDelta(t, tt.input, entry.InputCostPerToken, 1e-15)
-			require.InDelta(t, tt.output, entry.OutputCostPerToken, 1e-15)
-			require.InDelta(t, tt.cacheRead, entry.CacheReadInputTokenCost, 1e-15)
+			require.InDelta(t, (tt.input)*currency.USDToCNY, entry.InputCostPerToken, 1e-15)
+			require.InDelta(t, (tt.output)*currency.USDToCNY, entry.OutputCostPerToken, 1e-15)
+			require.InDelta(t, (tt.cacheRead)*currency.USDToCNY, entry.CacheReadInputTokenCost, 1e-15)
 		})
 	}
 }
@@ -401,7 +402,7 @@ func TestCalculateCostUnified_DeepseekFlashAndLegacyFlashShareNewRates(t *testin
 			PricingAt: time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC),
 		})
 		require.NoError(t, err)
-		require.InDelta(t, offPeakTotal, cost.TotalCost, 1e-10, "model %s must use new flash rates", model)
+		require.InDelta(t, (offPeakTotal)*currency.USDToCNY, cost.TotalCost, 1e-10, "model %s must use new flash rates", model)
 	}
 }
 
@@ -420,7 +421,7 @@ func TestCalculateCostUnified_DeepseekProRoutesToFlashAtCutoff(t *testing.T) {
 		PricingAt: time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC),
 	})
 	require.NoError(t, err)
-	require.InDelta(t, proTotal, before.TotalCost, 1e-10,
+	require.InDelta(t, (proTotal)*currency.USDToCNY, before.TotalCost, 1e-10,
 		"deepseek-v4-pro must use Pro rates before the 2026-09-14 04:00 UTC cutoff")
 
 	// 到达切换时点（2026-09-14 04:00 UTC 整，周一低谷窗口边界外）：按 Flash 价。
@@ -430,7 +431,7 @@ func TestCalculateCostUnified_DeepseekProRoutesToFlashAtCutoff(t *testing.T) {
 		PricingAt: time.Date(2026, 9, 14, 4, 0, 0, 0, time.UTC),
 	})
 	require.NoError(t, err)
-	require.InDelta(t, flashTotal, after.TotalCost, 1e-10,
+	require.InDelta(t, (flashTotal)*currency.USDToCNY, after.TotalCost, 1e-10,
 		"deepseek-v4-pro must use Flash rates at/after the 2026-09-14 04:00 UTC cutoff")
 
 	// 版本化名称同口径：切换后 deepseek-v4-pro-0813 也按 Flash 价。
@@ -440,6 +441,6 @@ func TestCalculateCostUnified_DeepseekProRoutesToFlashAtCutoff(t *testing.T) {
 		PricingAt: time.Date(2026, 9, 14, 4, 0, 0, 0, time.UTC),
 	})
 	require.NoError(t, err)
-	require.InDelta(t, flashTotal, versioned.TotalCost, 1e-10,
+	require.InDelta(t, (flashTotal)*currency.USDToCNY, versioned.TotalCost, 1e-10,
 		"versioned pro names must also route to Flash rates after the cutoff")
 }

@@ -10,6 +10,7 @@ import (
 )
 
 // LazyZeroQuotaForResponse 按 D14 规则把过期档位归零（不写 DB）。
+// All legacy *_usd response fields are CNY amounts; numeric values are preserved.
 // includeWindowStart=true 时输出 *_window_start 字段（admin 视角调试用）
 func LazyZeroQuotaForResponse(r service.UserPlatformQuotaRecord, now time.Time, includeWindowStart bool) map[string]any {
 	daily := buildWindowSlice(r.DailyUsageUSD, r.DailyLimitUSD, r.DailyWindowStart, NeedsDailyReset(r.DailyWindowStart, now), nextDailyResetTime(now), includeWindowStart)

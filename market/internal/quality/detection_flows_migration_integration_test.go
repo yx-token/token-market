@@ -78,7 +78,7 @@ func TestDetectionFlowsMigrationPreservesLegacyHistory(t *testing.T) {
 	if history != probeSnapshot(t, pool, resultsQuery) {
 		t.Fatal("迁移修改了旧逐题结果")
 	}
-	p, err := scanPolicy(pool.QueryRow(ctx, "SELECT "+policyColumns+" FROM detection_policies WHERE platform='openai' AND auth_type=''"))
+	p, err := scanPolicy(pool.QueryRow(ctx, "SELECT "+prePolicyCNYColumns+" FROM detection_policies WHERE platform='openai' AND auth_type=''"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestDetectionFlowsMigrationPreservesLegacyHistory(t *testing.T) {
 		t.Fatalf("身份来源和检测站触发并集迁移错误：%+v", p.Flows.Identity)
 	}
 	// 未开检测的厂商：测智流程仍启用，保证上架检测会测智；定时与身份核验保持关闭。
-	disabled, err := scanPolicy(pool.QueryRow(ctx, "SELECT "+policyColumns+" FROM detection_policies WHERE platform='anthropic' AND auth_type=''"))
+	disabled, err := scanPolicy(pool.QueryRow(ctx, "SELECT "+prePolicyCNYColumns+" FROM detection_policies WHERE platform='anthropic' AND auth_type=''"))
 	if err != nil {
 		t.Fatal(err)
 	}

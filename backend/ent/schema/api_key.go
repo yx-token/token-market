@@ -59,16 +59,16 @@ func (APIKey) Fields() []ent.Field {
 			Comment("Blocked IPs/CIDRs"),
 
 		// ========== Quota fields ==========
-		// Quota limit in USD (0 = unlimited)
+		// Quota limit in CNY (0 = unlimited)
 		field.Float("quota").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0).
-			Comment("Quota limit in USD for this API key (0 = unlimited)"),
+			Comment("Quota limit in CNY for this API key (0 = unlimited)"),
 		// Used quota amount
 		field.Float("quota_used").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0).
-			Comment("Used quota amount in USD"),
+			Comment("Used quota amount in CNY"),
 		// Expiration time (nil = never expires)
 		field.Time("expires_at").
 			Optional().
@@ -80,28 +80,28 @@ func (APIKey) Fields() []ent.Field {
 		field.Float("rate_limit_5h").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0).
-			Comment("Rate limit in USD per 5 hours (0 = unlimited)"),
+			Comment("Rate limit in CNY per 5 hours (0 = unlimited)"),
 		field.Float("rate_limit_1d").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0).
-			Comment("Rate limit in USD per day (0 = unlimited)"),
+			Comment("Rate limit in CNY per day (0 = unlimited)"),
 		field.Float("rate_limit_7d").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0).
-			Comment("Rate limit in USD per 7 days (0 = unlimited)"),
+			Comment("Rate limit in CNY per 7 days (0 = unlimited)"),
 		// Rate limit usage tracking
 		field.Float("usage_5h").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0).
-			Comment("Used amount in USD for the current 5h window"),
+			Comment("Used amount in CNY for the current 5h window"),
 		field.Float("usage_1d").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0).
-			Comment("Used amount in USD for the current 1d window"),
+			Comment("Used amount in CNY for the current 1d window"),
 		field.Float("usage_7d").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0).
-			Comment("Used amount in USD for the current 7d window"),
+			Comment("Used amount in CNY for the current 7d window"),
 		// Window start times
 		field.Time("window_5h_start").
 			Optional().

@@ -29,7 +29,7 @@ func TestCreditOffersSellerIsolationAndScopes(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE vendor_configs SET enabled = true WHERE platform = 'openai'`); err != nil {
 		t.Fatal(err)
 	}
-	in := CreditOfferInput{Title: "  初始活动  ", PriceCNY: 30, FaceValueUSD: 10,
+	in := CreditOfferInput{Title: "  初始活动  ", PriceCNY: 30, FaceValueCNY: 10,
 		AllowedPlatforms: []string{" openai ", "openai"}, AllowedModels: []string{" gpt-6-astra "}}
 	offer, err := CreateCreditOffer(ctx, pool, seller, in)
 	if err != nil {
@@ -39,7 +39,7 @@ func TestCreditOffersSellerIsolationAndScopes(t *testing.T) {
 		len(offer.AllowedPlatforms) != 1 || offer.AllowedPlatforms[0] != "openai" || offer.AllowedModels[0] != "gpt-6-astra" {
 		t.Fatalf("unexpected saved offer: %+v", offer)
 	}
-	if _, err := CreateCreditOffer(ctx, pool, other, CreditOfferInput{Title: "其他店活动", PriceCNY: 5, FaceValueUSD: 5}); err != nil {
+	if _, err := CreateCreditOffer(ctx, pool, other, CreditOfferInput{Title: "其他店活动", PriceCNY: 5, FaceValueCNY: 5}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := UpdateCreditOffer(ctx, pool, other, offer.ID, in); !errors.Is(err, ErrCreditOfferNotFound) {
@@ -66,12 +66,12 @@ func TestCreditOffersSellerIsolationAndScopes(t *testing.T) {
 	// Purchased value, price, and scope belong to the pack snapshot, unaffected by later edits.
 	var packID int64
 	if err := pool.QueryRow(ctx, `INSERT INTO store_credit_packs(offer_id,buyer_id,seller_id,title,price_cny,
-		face_value_usd,remaining_usd,remaining_balance_units,prepaid_remaining_cny,usd_to_balance_rate,allowed_platforms,allowed_models,status,idempotency_key)
-		SELECT id,$2,seller_id,title,price_cny,face_value_usd,face_value_usd,face_value_usd*7,price_cny,7,allowed_platforms,allowed_models,'active','snapshot-test'
+		face_value_cny,remaining_balance_units,prepaid_remaining_cny,allowed_platforms,allowed_models,status,idempotency_key)
+		SELECT id,$2,seller_id,title,price_cny,face_value_cny,face_value_cny,price_cny,allowed_platforms,allowed_models,'active','snapshot-test'
 		FROM store_credit_offers WHERE id=$1 RETURNING id`, offer.ID, other).Scan(&packID); err != nil {
 		t.Fatal(err)
 	}
-	in.Title, in.PriceCNY, in.FaceValueUSD, in.Status = "修改活动", 50, 20, "paused"
+	in.Title, in.PriceCNY, in.FaceValueCNY, in.Status = "修改活动", 50, 20, "paused"
 	in.AllowedPlatforms, in.AllowedModels = []string{}, []string{}
 	if _, err := UpdateCreditOffer(ctx, pool, seller, offer.ID, in); err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestCreditOffersSellerIsolationAndScopes(t *testing.T) {
 	var price, face float64
 	var title string
 	var platforms, models []string
-	if err := pool.QueryRow(ctx, `SELECT title,price_cny::float8,face_value_usd::float8,allowed_platforms,allowed_models
+	if err := pool.QueryRow(ctx, `SELECT title,price_cny::float8,face_value_cny::float8,allowed_platforms,allowed_models
 		FROM store_credit_packs WHERE id=$1`, packID).Scan(&title, &price, &face, &platforms, &models); err != nil {
 		t.Fatal(err)
 	}

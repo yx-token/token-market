@@ -42,23 +42,23 @@ type APIKey struct {
 	IPWhitelist []string `json:"ip_whitelist,omitempty"`
 	// Blocked IPs/CIDRs
 	IPBlacklist []string `json:"ip_blacklist,omitempty"`
-	// Quota limit in USD for this API key (0 = unlimited)
+	// Quota limit in CNY for this API key (0 = unlimited)
 	Quota float64 `json:"quota,omitempty"`
-	// Used quota amount in USD
+	// Used quota amount in CNY
 	QuotaUsed float64 `json:"quota_used,omitempty"`
 	// Expiration time for this API key (null = never expires)
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	// Rate limit in USD per 5 hours (0 = unlimited)
+	// Rate limit in CNY per 5 hours (0 = unlimited)
 	RateLimit5h float64 `json:"rate_limit_5h,omitempty"`
-	// Rate limit in USD per day (0 = unlimited)
+	// Rate limit in CNY per day (0 = unlimited)
 	RateLimit1d float64 `json:"rate_limit_1d,omitempty"`
-	// Rate limit in USD per 7 days (0 = unlimited)
+	// Rate limit in CNY per 7 days (0 = unlimited)
 	RateLimit7d float64 `json:"rate_limit_7d,omitempty"`
-	// Used amount in USD for the current 5h window
+	// Used amount in CNY for the current 5h window
 	Usage5h float64 `json:"usage_5h,omitempty"`
-	// Used amount in USD for the current 1d window
+	// Used amount in CNY for the current 1d window
 	Usage1d float64 `json:"usage_1d,omitempty"`
-	// Used amount in USD for the current 7d window
+	// Used amount in CNY for the current 7d window
 	Usage7d float64 `json:"usage_7d,omitempty"`
 	// Start time of the current 5h rate limit window
 	Window5hStart *time.Time `json:"window_5h_start,omitempty"`

@@ -187,7 +187,8 @@ const emit = defineEmits<{
   (e: 'cancel'): void
 }>()
 
-const creditedAmountSymbol = currencySymbol('USD')
+// 账户额度（amount / bonus_amount）统一为人民币
+const creditedAmountSymbol = currencySymbol('CNY')
 
 const paymentAmountSymbol = computed(() => currencySymbol(props.order?.currency))
 

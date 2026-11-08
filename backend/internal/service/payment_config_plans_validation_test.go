@@ -193,31 +193,30 @@ func TestValidatePlanPatch_AllNil(t *testing.T) {
 }
 
 // --- normalizePlanCurrency tests ---
-// Empty must stay empty (not coerced to the default payment currency),
-// so existing plans keep rendering without any currency label.
+// Subscription prices always use CNY.
 
-func TestNormalizePlanCurrency_EmptyKeepsEmpty(t *testing.T) {
+func TestNormalizePlanCurrency_EmptyUsesCNY(t *testing.T) {
 	currency, err := normalizePlanCurrency("")
 	require.NoError(t, err)
-	require.Equal(t, "", currency)
+	require.Equal(t, "CNY", currency)
 }
 
-func TestNormalizePlanCurrency_WhitespaceKeepsEmpty(t *testing.T) {
+func TestNormalizePlanCurrency_WhitespaceUsesCNY(t *testing.T) {
 	currency, err := normalizePlanCurrency("   ")
 	require.NoError(t, err)
-	require.Equal(t, "", currency)
+	require.Equal(t, "CNY", currency)
 }
 
 func TestNormalizePlanCurrency_LowercaseNormalized(t *testing.T) {
-	currency, err := normalizePlanCurrency("nzd")
+	currency, err := normalizePlanCurrency("cny")
 	require.NoError(t, err)
-	require.Equal(t, "NZD", currency)
+	require.Equal(t, "CNY", currency)
 }
 
 func TestNormalizePlanCurrency_ValidUppercase(t *testing.T) {
-	currency, err := normalizePlanCurrency("USD")
+	currency, err := normalizePlanCurrency("CNY")
 	require.NoError(t, err)
-	require.Equal(t, "USD", currency)
+	require.Equal(t, "CNY", currency)
 }
 
 func TestNormalizePlanCurrency_TooShort(t *testing.T) {
@@ -236,4 +235,9 @@ func TestNormalizePlanCurrency_NonLetter(t *testing.T) {
 	_, err := normalizePlanCurrency("N2D")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "currency")
+}
+
+func TestNormalizePlanCurrencyRejectsUSD(t *testing.T) {
+	_, err := normalizePlanCurrency("USD")
+	require.Error(t, err)
 }

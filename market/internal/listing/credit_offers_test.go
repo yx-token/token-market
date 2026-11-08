@@ -25,7 +25,7 @@ func TestCreditOfferMoneyValidation(t *testing.T) {
 
 func TestNormalizeCreditOfferInput(t *testing.T) {
 	in := CreditOfferInput{
-		Title: "  店铺活动  ", Description: "  限本店使用  ", PriceCNY: 30.01, FaceValueUSD: 10,
+		Title: "  店铺活动  ", Description: "  限本店使用  ", PriceCNY: 30.01, FaceValueCNY: 10,
 		AllowedPlatforms: []string{" openai ", "openai", "anthropic"},
 		AllowedModels:    []string{" gpt-6-astra ", "gpt-6-astra", "GPT-6-astra"},
 	}
@@ -48,7 +48,7 @@ func TestNormalizeCreditOfferInput(t *testing.T) {
 }
 
 func TestCreditOfferRejectsInvalidInput(t *testing.T) {
-	valid := func() CreditOfferInput { return CreditOfferInput{Title: "活动", PriceCNY: 1, FaceValueUSD: 10} }
+	valid := func() CreditOfferInput { return CreditOfferInput{Title: "活动", PriceCNY: 1, FaceValueCNY: 10} }
 	tests := []struct {
 		name string
 		edit func(*CreditOfferInput)
@@ -58,7 +58,7 @@ func TestCreditOfferRejectsInvalidInput(t *testing.T) {
 		{"long title", func(in *CreditOfferInput) { in.Title = strings.Repeat("中", 121) }, "INVALID_CREDIT_TITLE"},
 		{"long description", func(in *CreditOfferInput) { in.Description = strings.Repeat("中", 4001) }, "INVALID_CREDIT_DESCRIPTION"},
 		{"zero price", func(in *CreditOfferInput) { in.PriceCNY = 0 }, "INVALID_CREDIT_AMOUNT"},
-		{"rounded face", func(in *CreditOfferInput) { in.FaceValueUSD = 10.001 }, "INVALID_CREDIT_AMOUNT"},
+		{"rounded face", func(in *CreditOfferInput) { in.FaceValueCNY = 10.001 }, "INVALID_CREDIT_AMOUNT"},
 		{"unknown status", func(in *CreditOfferInput) { in.Status = "deleted" }, "INVALID_CREDIT_STATUS"},
 		{"empty platform", func(in *CreditOfferInput) { in.AllowedPlatforms = []string{" "} }, "INVALID_CREDIT_SCOPE"},
 		{"model glob", func(in *CreditOfferInput) { in.AllowedModels = []string{"gpt-*"} }, "INVALID_CREDIT_SCOPE"},

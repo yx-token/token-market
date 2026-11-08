@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coverageUnits, creditFormError, emptyCreditDraft } from '@/components/seller/creditForm'
+import { creditFormError, emptyCreditDraft } from '@/components/seller/creditForm'
 import { freezeTimingText, resolveFreezeHours } from '@/components/seller/funds'
 import { privacyBlocksListing, sellerUntested } from '@/components/seller/listingGate'
 
@@ -20,15 +20,14 @@ describe('卖家资金与未检测挂单', () => {
     expect(privacyBlocksListing({ privacy_ok: true })).toBe(false)
   })
 
-  it('活动包表单同时校验人民币实付和美元额度', () => {
+  it('活动包表单同时校验人民币实付和额度面值', () => {
     const draft = emptyCreditDraft()
     expect(creditFormError(draft)).toContain('标题')
     draft.title = '本店额度'
     draft.price = '30'
     draft.face = '0'
-    expect(creditFormError(draft)).toContain('美元额度')
+    expect(creditFormError(draft)).toContain('额度面值')
     draft.face = '10.00'
     expect(creditFormError(draft)).toBe('')
-    expect(coverageUnits(10, 7)).toBe(70)
   })
 })

@@ -27,7 +27,7 @@
 SELECT platform, auth_type, enabled FROM detection_policies
 ```
 
-编辑弹窗需要的 `flows`、`third_party`、`thresholds`、`jitter_minutes`、`daily_budget_usd`、`token_budgets` 等二十余个字段全部缺失。
+编辑弹窗需要的 `flows`、`third_party`、`thresholds`、`jitter_minutes`、`daily_budget_usd`（2026-11-08 迁移 0054 起改名为 `daily_budget_cny`，按人民币计）、`token_budgets` 等二十余个字段全部缺失。
 
 **后果是数据丢失型的**：
 

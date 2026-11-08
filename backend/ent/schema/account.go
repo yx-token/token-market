@@ -80,7 +80,7 @@ func (Account) Fields() []ent.Field {
 			Default(func() map[string]any { return map[string]any{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
 
-		// extra: 扩展数据，存储平台特定的额外信息
+		// extra: 扩展数据；quota_limit/used、quota_daily/weekly_limit/used 和 window_cost_* 均为 CNY 成本量。
 		// 如 CRS 账户的 crs_account_id、组织信息等
 		field.JSON("extra", map[string]any{}).
 			Default(func() map[string]any { return map[string]any{} }).

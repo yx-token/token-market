@@ -12,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/yx-token/token-market/internal/pkg/currency"
 	"time"
 
 	coderws "github.com/coder/websocket"
@@ -1602,7 +1604,7 @@ func TestOpenAIResponsesWebSocket_PassthroughKeepsTurnMappingSnapshot(t *testing
 	require.Equal(t, "gpt-5.6-sol", *got.logs[0].UpstreamModel)
 	require.NotNil(t, got.logs[0].ModelMappingChain)
 	require.Equal(t, "sol→gpt-5.6-sol", *got.logs[0].ModelMappingChain)
-	require.InDelta(t, 40e-6, got.logs[0].TotalCost, 1e-12,
+	require.InDelta(t, currency.USDToCNY*(40e-6), got.logs[0].TotalCost, 1e-12,
 		"the in-flight turn must retain the channel-mapped billing model used when it was sent")
 
 	require.Equal(t, "sol", got.logs[1].Model)
@@ -1635,11 +1637,11 @@ func TestOpenAIResponsesWebSocket_CtxPoolAppliesPerTurnMappingAndPreservesReques
 	require.Len(t, got.logs, 2)
 	require.Equal(t, "gpt-5.6-sol", got.logs[0].RequestedModel)
 	require.Nil(t, got.logs[0].ModelMappingChain)
-	require.InDelta(t, 40e-6, got.logs[0].TotalCost, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(40e-6), got.logs[0].TotalCost, 1e-12)
 	require.Equal(t, "gpt-5.6-terra", got.logs[1].RequestedModel)
 	require.NotNil(t, got.logs[1].ModelMappingChain)
 	require.Equal(t, "gpt-5.6-terra→gpt-5.6-sol", *got.logs[1].ModelMappingChain)
-	require.InDelta(t, 16e-6, got.logs[1].TotalCost, 1e-12,
+	require.InDelta(t, currency.USDToCNY*(16e-6), got.logs[1].TotalCost, 1e-12,
 		"BillingModelSourceRequested must use the client model before channel mapping")
 }
 

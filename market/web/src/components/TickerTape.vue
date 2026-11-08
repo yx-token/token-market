@@ -3,7 +3,7 @@
 import { computed, onMounted } from 'vue'
 import { useMarketBoard } from '@/stores/marketBoard'
 import { label } from '@/utils/labels'
-import { multiplier, percent } from '@/utils/format'
+import { money, multiplier, percent } from '@/utils/format'
 
 const board = useMarketBoard()
 onMounted(board.start)
@@ -28,7 +28,7 @@ const ticks = computed<Tick[]>(() => {
   }
   for (const p of board.pools) out.push({ key: `p-${p.name}`, name: `默认分组 ${label('platform', p.platform).text}`, value: multiplier(p.price) })
   for (const p of board.prices.slice(0, 8))
-    out.push({ key: `o-${p.model}`, name: p.model, value: `$${p.input_per_1m.toFixed(2)} / $${p.output_per_1m.toFixed(2)}`, note: '官方价 每百万' })
+    out.push({ key: `o-${p.model}`, name: p.model, value: `${money(p.input_per_1m)} / ${money(p.output_per_1m)}`, note: '官方价 每百万' })
   if (!out.length) out.push({ key: 'idle', name: '行情', value: '等待第一笔挂单', note: '卖家挂出闲置额度后在这里显示最低价' })
   return out
 })

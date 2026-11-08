@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 // newTokenCostTestEnv 构造带渠道定价的计费环境：group 100 挂一个渠道，定价由 pricing 指定。
@@ -123,10 +124,10 @@ func TestCalculateTokenCostForRequest_CatalogLadderFollowsGroupToggle(t *testing
 		require.NoError(t, err)
 		if enabled {
 			// 300K × 1.25e-6 × 2 = 0.75；1000 × 10e-6 × 1.5 = 0.015
-			require.InDelta(t, 0.765, got.ActualCost, 1e-9)
+			require.InDelta(t, (0.765)*currency.USDToCNY, got.ActualCost, 1e-9)
 			require.True(t, got.LongContextBillingApplied)
 		} else {
-			require.InDelta(t, 0.385, got.ActualCost, 1e-9)
+			require.InDelta(t, (0.385)*currency.USDToCNY, got.ActualCost, 1e-9)
 			require.False(t, got.LongContextBillingApplied)
 		}
 	}
@@ -154,17 +155,17 @@ func TestCalculateTokenCostForRequest_GeminiLadderAppliesToCacheItems(t *testing
 	// 不计 cache_creation 时只有 110K，不会过阈值——用例同时守住"缓存写入 token 计入阈值"。
 	above := calc(UsageTokens{InputTokens: 90000, CacheCreationTokens: 100000, CacheReadTokens: 20000, OutputTokens: 1000})
 	require.True(t, above.LongContextBillingApplied)
-	require.InDelta(t, 90000*1.25e-6*2, above.InputCost, 1e-9)
-	require.InDelta(t, 100000*1.25e-6*2, above.CacheCreationCost, 1e-9)
-	require.InDelta(t, 20000*1.25e-7*2, above.CacheReadCost, 1e-9)
-	require.InDelta(t, 1000*1e-5*1.5, above.OutputCost, 1e-9)
+	require.InDelta(t, (90000*1.25e-6*2)*currency.USDToCNY, above.InputCost, 1e-9)
+	require.InDelta(t, (100000*1.25e-6*2)*currency.USDToCNY, above.CacheCreationCost, 1e-9)
+	require.InDelta(t, (20000*1.25e-7*2)*currency.USDToCNY, above.CacheReadCost, 1e-9)
+	require.InDelta(t, (1000*1e-5*1.5)*currency.USDToCNY, above.OutputCost, 1e-9)
 
 	// 输入侧合计 50K + 100K + 40K = 190K ≤ 200K：按基础价计
 	below := calc(UsageTokens{InputTokens: 50000, CacheCreationTokens: 100000, CacheReadTokens: 40000, OutputTokens: 1000})
 	require.False(t, below.LongContextBillingApplied)
-	require.InDelta(t, 50000*1.25e-6, below.InputCost, 1e-9)
-	require.InDelta(t, 100000*1.25e-6, below.CacheCreationCost, 1e-9)
-	require.InDelta(t, 40000*1.25e-7, below.CacheReadCost, 1e-9)
+	require.InDelta(t, (50000*1.25e-6)*currency.USDToCNY, below.InputCost, 1e-9)
+	require.InDelta(t, (100000*1.25e-6)*currency.USDToCNY, below.CacheCreationCost, 1e-9)
+	require.InDelta(t, (40000*1.25e-7)*currency.USDToCNY, below.CacheReadCost, 1e-9)
 }
 
 // 目录条目没有阶梯字段时，开关开启也不产生阶梯。
@@ -203,7 +204,7 @@ func TestCalculateTokenCostForRequest_BuiltInPricingUsesUnifiedPath(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, want, got)
 	// 目录阶梯：超 272K 整单输入 ×2
-	require.InDelta(t, 300000*2.5e-6*2, got.InputCost, 1e-9)
+	require.InDelta(t, (300000*2.5e-6*2)*currency.USDToCNY, got.InputCost, 1e-9)
 	require.True(t, got.LongContextBillingApplied)
 }
 

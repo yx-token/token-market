@@ -75,7 +75,7 @@ func (s *KeyService) purchasePackBalance(ctx context.Context, userID int64, l *l
 	plain, key, err := s.Create(ctx, userID, KeyInput{
 		Name:   name,
 		Route:  RouteInput{Type: "chain", Hops: []HopInput{{ListingID: l.ID}}},
-		Limits: Limits{QuotaUSD: l.FaceValue},
+		Limits: Limits{QuotaCNY: l.FaceValue},
 	})
 	if err != nil {
 		_ = listing.ReleasePackStock(ctx, s.DB, l.ID)
@@ -246,7 +246,7 @@ func (s *KeyService) fulfillOne(ctx context.Context, checkoutID, rechargeID, lis
 	_, key, err := s.Create(ctx, buyerID, KeyInput{
 		Name:   name,
 		Route:  RouteInput{Type: "chain", Hops: []HopInput{{ListingID: listingID}}},
-		Limits: Limits{QuotaUSD: l.FaceValue},
+		Limits: Limits{QuotaCNY: l.FaceValue},
 	})
 	if err != nil {
 		return 0, err

@@ -43,6 +43,7 @@ func (RedeemCode) Fields() []ent.Field {
 			MaxLen(20).
 			Default(domain.RedeemTypeBalance),
 		field.Float("value").
+			Comment("CNY amount").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),
 		field.String("status").

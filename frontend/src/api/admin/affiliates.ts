@@ -88,7 +88,7 @@ export interface AffiliateTransferRecord {
 }
 
 export interface WithdrawAffiliateQuotaRequest {
-  /** Amount already paid to the user outside the site (USD). */
+  /** Amount already paid to the user outside the site (CNY). */
   amount: number
 }
 

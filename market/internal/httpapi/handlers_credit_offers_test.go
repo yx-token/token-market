@@ -24,7 +24,7 @@ func TestMarketCreditOffersRequiresSeller(t *testing.T) {
 func TestCreateCreditOfferRejectsOwnershipInjection(t *testing.T) {
 	server := &Server{}
 	r := httptest.NewRequest("POST", "/api/seller/credit-offers", strings.NewReader(
-		`{"seller_id":123,"title":"活动","price_cny":30,"face_value_usd":10}`))
+		`{"seller_id":123,"title":"活动","price_cny":30,"face_value_cny":10}`))
 	err := server.createCreditOffer(httptest.NewRecorder(), r)
 	var he *httpx.Error
 	if !errors.As(err, &he) || he.Code != "INVALID_JSON" {

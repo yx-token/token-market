@@ -8,7 +8,7 @@ import (
 	"github.com/yx-token/token-market/internal/service"
 )
 
-// inflightReservationEstimator 估算单请求在途预留金额（USD）；false 表示无法定价。
+// inflightReservationEstimator 估算单请求在途预留金额（CNY）；false 表示无法定价。
 type inflightReservationEstimator interface {
 	EstimateInflightReservation(ctx context.Context, apiKey *service.APIKey, req service.InflightEstimateRequest) (float64, bool)
 }

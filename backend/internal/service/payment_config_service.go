@@ -15,19 +15,16 @@ import (
 )
 
 const (
-	SettingPaymentEnabled      = "payment_enabled"
-	SettingMinRechargeAmount   = "MIN_RECHARGE_AMOUNT"
-	SettingMaxRechargeAmount   = "MAX_RECHARGE_AMOUNT"
-	SettingDailyRechargeLimit  = "DAILY_RECHARGE_LIMIT"
-	SettingOrderTimeoutMinutes = "ORDER_TIMEOUT_MINUTES"
-	SettingMaxPendingOrders    = "MAX_PENDING_ORDERS"
-	SettingEnabledPaymentTypes = "ENABLED_PAYMENT_TYPES"
-	SettingLoadBalanceStrategy = "LOAD_BALANCE_STRATEGY"
-	SettingBalancePayDisabled  = "BALANCE_PAYMENT_DISABLED"
-	SettingBalanceRechargeMult = "BALANCE_RECHARGE_MULTIPLIER"
-	// SettingSubscriptionUSDToCNYRate 是订阅 CNY 换算汇率（1 USD = X CNY）。
-	// 0/未配置 = 关闭换算（订阅按 price 数值直付），显式配置后 CNY 通道订阅按 price × rate 收款。
-	SettingSubscriptionUSDToCNYRate      = "SUBSCRIPTION_USD_TO_CNY_RATE"
+	SettingPaymentEnabled                = "payment_enabled"
+	SettingMinRechargeAmount             = "MIN_RECHARGE_AMOUNT"
+	SettingMaxRechargeAmount             = "MAX_RECHARGE_AMOUNT"
+	SettingDailyRechargeLimit            = "DAILY_RECHARGE_LIMIT"
+	SettingOrderTimeoutMinutes           = "ORDER_TIMEOUT_MINUTES"
+	SettingMaxPendingOrders              = "MAX_PENDING_ORDERS"
+	SettingEnabledPaymentTypes           = "ENABLED_PAYMENT_TYPES"
+	SettingLoadBalanceStrategy           = "LOAD_BALANCE_STRATEGY"
+	SettingBalancePayDisabled            = "BALANCE_PAYMENT_DISABLED"
+	SettingBalanceRechargeMult           = "BALANCE_RECHARGE_MULTIPLIER"
 	SettingRechargeFeeRate               = "RECHARGE_FEE_RATE"
 	SettingProductNamePrefix             = "PRODUCT_NAME_PREFIX"
 	SettingProductNameSuffix             = "PRODUCT_NAME_SUFFIX"
@@ -59,9 +56,7 @@ type PaymentConfig struct {
 	EnabledTypes              []string `json:"enabled_payment_types"`
 	BalanceDisabled           bool     `json:"balance_disabled"`
 	BalanceRechargeMultiplier float64  `json:"balance_recharge_multiplier"`
-	// SubscriptionUSDToCNYRate 为 0 时订阅换算关闭（兼容存量行为）。
-	SubscriptionUSDToCNYRate float64 `json:"subscription_usd_to_cny_rate"`
-	RechargeFeeRate          float64 `json:"recharge_fee_rate"`
+	RechargeFeeRate           float64  `json:"recharge_fee_rate"`
 	// RechargeBonusTiers 余额充值优惠阶梯（按 MinAmount 升序）；空表示无优惠。
 	RechargeBonusTiers []RechargeBonusTier `json:"recharge_bonus_tiers"`
 	// RechargeBonusMode 阶梯模式：bonus（赠金）/ discount（折扣），已归一化。
@@ -99,7 +94,6 @@ type UpdatePaymentConfigRequest struct {
 	EnabledTypes              []string `json:"enabled_payment_types"`
 	BalanceDisabled           *bool    `json:"balance_disabled"`
 	BalanceRechargeMultiplier *float64 `json:"balance_recharge_multiplier"`
-	SubscriptionUSDToCNYRate  *float64 `json:"subscription_usd_to_cny_rate"`
 	RechargeFeeRate           *float64 `json:"recharge_fee_rate"`
 	// RechargeBonusTiers nil 表示不更新；空切片表示清空阶梯。
 	RechargeBonusTiers  *[]RechargeBonusTier `json:"recharge_bonus_tiers"`
@@ -176,8 +170,8 @@ type CreatePlanRequest struct {
 	GroupID       int64    `json:"group_id"`
 	Name          string   `json:"name"`
 	Description   string   `json:"description"`
-	Price         float64  `json:"price"`
-	OriginalPrice *float64 `json:"original_price"`
+	Price         float64  `json:"price"`          // Subscription price in CNY.
+	OriginalPrice *float64 `json:"original_price"` // Original subscription price in CNY.
 	Currency      string   `json:"currency"`
 	ValidityDays  int      `json:"validity_days"`
 	ValidityUnit  string   `json:"validity_unit"`
@@ -191,8 +185,8 @@ type UpdatePlanRequest struct {
 	GroupID       *int64   `json:"group_id"`
 	Name          *string  `json:"name"`
 	Description   *string  `json:"description"`
-	Price         *float64 `json:"price"`
-	OriginalPrice *float64 `json:"original_price"`
+	Price         *float64 `json:"price"`          // Subscription price in CNY.
+	OriginalPrice *float64 `json:"original_price"` // Original subscription price in CNY.
 	Currency      *string  `json:"currency"`
 	ValidityDays  *int     `json:"validity_days"`
 	ValidityUnit  *string  `json:"validity_unit"`
@@ -229,7 +223,7 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 	keys := []string{
 		SettingPaymentEnabled, SettingMinRechargeAmount, SettingMaxRechargeAmount,
 		SettingDailyRechargeLimit, SettingOrderTimeoutMinutes, SettingMaxPendingOrders,
-		SettingEnabledPaymentTypes, SettingBalancePayDisabled, SettingBalanceRechargeMult, SettingSubscriptionUSDToCNYRate, SettingRechargeFeeRate, SettingLoadBalanceStrategy,
+		SettingEnabledPaymentTypes, SettingBalancePayDisabled, SettingBalanceRechargeMult, SettingRechargeFeeRate, SettingLoadBalanceStrategy,
 		SettingRechargeBonusTiers, SettingRechargeBonusMode, SettingRechargeBonusNotice,
 		SettingProductNamePrefix, SettingProductNameSuffix,
 		SettingHelpImageURL, SettingHelpText,
@@ -259,7 +253,6 @@ func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *Payme
 		MaxPendingOrders:          pcParseInt(vals[SettingMaxPendingOrders], defaultMaxPendingOrders),
 		BalanceDisabled:           vals[SettingBalancePayDisabled] == "true",
 		BalanceRechargeMultiplier: normalizeBalanceRechargeMultiplier(pcParseFloat(vals[SettingBalanceRechargeMult], defaultBalanceRechargeMultiplier)),
-		SubscriptionUSDToCNYRate:  normalizeSubscriptionUSDToCNYRate(pcParseFloat(vals[SettingSubscriptionUSDToCNYRate], 0)),
 		RechargeFeeRate:           pcParseFloat(vals[SettingRechargeFeeRate], 0),
 		RechargeBonusTiers:        parseRechargeBonusTiers(vals[SettingRechargeBonusTiers]),
 		RechargeBonusNotice:       vals[SettingRechargeBonusNotice],
@@ -341,12 +334,6 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 			return infraerrors.BadRequest("INVALID_BALANCE_RECHARGE_MULTIPLIER", "balance recharge multiplier must be greater than 0")
 		}
 	}
-	if req.SubscriptionUSDToCNYRate != nil {
-		v := *req.SubscriptionUSDToCNYRate
-		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
-			return infraerrors.BadRequest("INVALID_SUBSCRIPTION_USD_TO_CNY_RATE", "subscription USD to CNY rate must be 0 (disabled) or a positive number")
-		}
-	}
 	if req.RechargeFeeRate != nil {
 		v := *req.RechargeFeeRate
 		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 100 {
@@ -393,9 +380,6 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 	}
 	if req.BalanceRechargeMultiplier != nil {
 		m[SettingBalanceRechargeMult] = formatPositiveFloat(req.BalanceRechargeMultiplier)
-	}
-	if req.SubscriptionUSDToCNYRate != nil {
-		m[SettingSubscriptionUSDToCNYRate] = formatPositiveFloatExact(req.SubscriptionUSDToCNYRate)
 	}
 	if req.RechargeFeeRate != nil {
 		m[SettingRechargeFeeRate] = formatNonNegativeFloat(req.RechargeFeeRate)
@@ -472,14 +456,6 @@ func formatPositiveFloat(v *float64) string {
 		return "" // empty → parsePaymentConfig uses default
 	}
 	return strconv.FormatFloat(*v, 'f', 2, 64)
-}
-
-// formatPositiveFloatExact 保留完整精度，用于汇率等对小数位敏感的配置。
-func formatPositiveFloatExact(v *float64) string {
-	if v == nil || *v <= 0 {
-		return "" // empty → parsePaymentConfig 视为未配置（换算关闭）
-	}
-	return strconv.FormatFloat(*v, 'f', -1, 64)
 }
 
 func formatNonNegativeFloat(v *float64) string {

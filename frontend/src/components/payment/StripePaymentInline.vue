@@ -103,7 +103,8 @@ const cancelling = ref(false)
 const success = ref(false)
 const ready = ref(false)
 const selectedType = ref('')
-const creditedAmountSymbol = currencySymbol('USD')
+// 账户额度（amount / bonus_amount）统一为人民币
+const creditedAmountSymbol = currencySymbol('CNY')
 const paymentAmountSymbol = computed(() => currencySymbol(props.currency))
 
 let stripeInstance: Stripe | null = null

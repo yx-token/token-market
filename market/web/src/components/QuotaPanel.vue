@@ -4,7 +4,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { seller } from '@/api'
 import type { AccountQuota } from '@/api/types'
 import { useToast } from '@/stores/toast'
-import { dateTime, tokens, usd } from '@/utils/format'
+import { dateTime, money, tokens } from '@/utils/format'
 
 const props = defineProps<{ upstreamId: number }>()
 const toast = useToast()
@@ -84,7 +84,7 @@ function barClass(u: number) {
           <div v-if="stopAt !== null" class="absolute top-0 h-full w-0.5 bg-slate-500" :style="{ left: `${stopAt}%` }" :title="`用量达到 ${stopAt}% 时暂停调度`" />
         </div>
         <div v-if="w.requests !== undefined" class="mt-1 text-xs text-slate-500">
-          窗口内经本平台 {{ w.requests }} 次请求 · {{ tokens(w.tokens) }} token · 官方价 {{ usd(w.cost) }}
+          窗口内经本平台 {{ w.requests }} 次请求 · {{ tokens(w.tokens) }} token · 官方价 {{ money(w.cost) }}
         </div>
       </div>
     </div>

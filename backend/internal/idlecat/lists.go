@@ -80,6 +80,8 @@ func (s *Store) ListUpstreams(ctx context.Context) ([]map[string]any, error) {
 		WHERE up.status <> 'removed' ORDER BY up.id DESC LIMIT 500`)
 }
 
+// ListRecharges is a legacy internal summary. Amount is already CNY, never USD.
+// Public financial routes use relay to preserve market's complete money schema.
 func (s *Store) ListRecharges(ctx context.Context) ([]map[string]any, error) {
 	return s.queryMaps(ctx, `
 		SELECT r.id, r.user_id, COALESCE(u.email, '') AS user_email, r.amount, r.status, r.provider, r.channel, r.created_at

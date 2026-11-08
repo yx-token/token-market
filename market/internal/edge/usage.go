@@ -17,12 +17,11 @@ import (
 // UsageSnapshot contains consumption credit in market balance units (CNY).
 // Store credit retains its shop/model restrictions and is not withdrawable cash.
 type UsageSnapshot struct {
-	Cash, QuotaPack, StoreCredit                      float64
-	StoreCreditUSD, StoreCreditPrepaidCNY             float64
-	IsQuotaPack                                       bool
-	Used, Used5h, Used1d, Used7d                      float64
-	QuotaLimit, RateLimit5h, RateLimit1d, RateLimit7d *float64
-	AsOf                                              time.Time
+	Cash, QuotaPack, StoreCredit, StoreCreditPrepaidCNY float64
+	IsQuotaPack                                         bool
+	Used, Used5h, Used1d, Used7d                        float64
+	QuotaLimit, RateLimit5h, RateLimit1d, RateLimit7d   *float64
+	AsOf                                                time.Time
 }
 
 type UsageReader interface {
@@ -57,10 +56,10 @@ const buyerUsageSQL = `SELECT bk.status, buyer_user.status, COALESCE(buyer.statu
  EXISTS(SELECT 1 FROM quota_packs q WHERE q.buyer_key_id=bk.id),
  COALESCE((SELECT sum(q.remaining) FROM quota_packs q
    WHERE q.buyer_key_id=bk.id AND q.buyer_id=bk.user_id AND q.status='active'),0)::float8,
- credit.balance::float8, credit.usd::float8, credit.prepaid::float8,
+ credit.balance::float8, credit.prepaid::float8,
  spent.total::float8, spent.h5::float8, spent.d1::float8, spent.d7::float8,
- (bk.limits->>'quota_usd')::float8, (bk.limits->>'rate_limit_5h_usd')::float8,
- (bk.limits->>'rate_limit_1d_usd')::float8, (bk.limits->>'rate_limit_7d_usd')::float8, now()
+ (bk.limits->>'quota_cny')::float8, (bk.limits->>'rate_limit_5h_cny')::float8,
+ (bk.limits->>'rate_limit_1d_cny')::float8, (bk.limits->>'rate_limit_7d_cny')::float8, now()
  FROM buyer_keys bk JOIN users buyer_user ON buyer_user.id=bk.user_id
  LEFT JOIN shadow_identities buyer ON buyer.kind='buyer' AND buyer.owner_id=bk.user_id
  CROSS JOIN LATERAL (
@@ -72,9 +71,9 @@ const buyerUsageSQL = `SELECT bk.status, buyer_user.status, COALESCE(buyer.statu
  ) spent
  CROSS JOIN LATERAL (
    SELECT COALESCE(sum(p.remaining_balance_units),0) AS balance,
-     COALESCE(sum(p.remaining_usd),0) AS usd, COALESCE(sum(p.prepaid_remaining_cny),0) AS prepaid
+     COALESCE(sum(p.prepaid_remaining_cny),0) AS prepaid
    FROM (
-     SELECT DISTINCT p.id,p.remaining_balance_units,p.remaining_usd,p.prepaid_remaining_cny
+     SELECT DISTINCT p.id,p.remaining_balance_units,p.prepaid_remaining_cny
      FROM store_credit_keys ck JOIN store_credit_packs p ON p.id=ck.pack_id
      JOIN buyer_key_hops bh ON bh.key_id=bk.id AND bh.listing_id=ck.listing_id
      JOIN listings l ON l.id=ck.listing_id AND l.seller_id=p.seller_id
@@ -118,7 +117,7 @@ func (r *dbUsageReader) ReadUsage(ctx context.Context, keyID, userID int64) (Usa
 	var expires, blocked *time.Time
 	err := r.db.QueryRow(ctx, buyerUsageSQL, keyID, userID).Scan(
 		&keyStatus, &userStatus, &shadowStatus, &locked, &expires, &blocked,
-		&out.Cash, &out.IsQuotaPack, &out.QuotaPack, &out.StoreCredit, &out.StoreCreditUSD, &out.StoreCreditPrepaidCNY,
+		&out.Cash, &out.IsQuotaPack, &out.QuotaPack, &out.StoreCredit, &out.StoreCreditPrepaidCNY,
 		&out.Used, &out.Used5h, &out.Used1d, &out.Used7d,
 		&out.QuotaLimit, &out.RateLimit5h, &out.RateLimit1d, &out.RateLimit7d, &out.AsOf)
 	if errors.Is(err, pgx.ErrNoRows) || err == nil && keyStatus == "deleted" {
@@ -164,7 +163,7 @@ type usageResponse struct {
 	WalletRemaining    float64          `json:"wallet_remaining"`
 	QuotaPackRemaining float64          `json:"quota_pack_remaining"`
 	StoreCredit        float64          `json:"store_credit_remaining_balance_units"`
-	StoreCreditUSD     float64          `json:"store_credit_remaining_usd"`
+	StoreCreditCNY     float64          `json:"store_credit_remaining_cny"` // 与 store_credit_remaining_balance_units 相同，按人民币计
 	StoreCreditPrepaid float64          `json:"store_credit_prepaid_remaining_cny"`
 	Used               float64          `json:"used"`
 	Limit              *float64         `json:"limit,omitempty"`
@@ -199,13 +198,13 @@ func (s *Server) serveUsage(w http.ResponseWriter, r *http.Request, cfg *edgecfg
 		writeError(w, http.StatusServiceUnavailable, "api_error", ErrUsageUnavailable.Error())
 		return
 	}
-	wallet, pack, credit, creditUSD, prepaid := snapshot.Cash, 0.0, snapshot.StoreCredit, snapshot.StoreCreditUSD, snapshot.StoreCreditPrepaidCNY
+	wallet, pack, credit, prepaid := snapshot.Cash, 0.0, snapshot.StoreCredit, snapshot.StoreCreditPrepaidCNY
 	if snapshot.IsQuotaPack {
-		wallet, pack, credit, creditUSD, prepaid = 0, snapshot.QuotaPack, 0, 0, 0
+		wallet, pack, credit, prepaid = 0, snapshot.QuotaPack, 0, 0
 	}
 	remaining := math.Max(0, wallet+pack+credit)
 	response := usageResponse{WalletRemaining: math.Max(0, wallet), QuotaPackRemaining: math.Max(0, pack),
-		StoreCredit: credit, StoreCreditUSD: creditUSD, StoreCreditPrepaid: prepaid, Used: snapshot.Used, Limit: snapshot.QuotaLimit,
+		StoreCredit: credit, StoreCreditCNY: credit, StoreCreditPrepaid: prepaid, Used: snapshot.Used, Limit: snapshot.QuotaLimit,
 		Unit: "CNY", Currency: "CNY", Mode: "unrestricted", Status: "active", Source: "market_ledger",
 		Scope: "key_routes", AmountKind: "consumption_credit", AsOf: snapshot.AsOf}
 	if response.AsOf.IsZero() {

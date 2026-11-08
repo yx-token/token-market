@@ -112,3 +112,17 @@ func TestMarketPaymentConfigRelayEndpointsAreRemoved(t *testing.T) {
 		require.False(t, have[removed], "已移除的收款配置路由仍被注册：%s", removed)
 	}
 }
+
+func TestMarketFinancialReadsUseCNYRelay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerNativeIdleCat(router.Group("/api/v1/admin"), &idlecat.Store{})
+	for _, path := range []string{"recharges", "refunds", "withdrawals"} {
+		t.Run(path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/market/"+path, nil)
+			require.NotPanics(t, func() { router.ServeHTTP(recorder, request) })
+			require.Equal(t, http.StatusServiceUnavailable, recorder.Code, recorder.Body.String())
+		})
+	}
+}

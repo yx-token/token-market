@@ -14,13 +14,14 @@ import (
 )
 
 // CreditOffer is a seller-wide promotion, independent of any upstream or legacy quota pack.
+// FaceValueCNY 是买家获得的店铺额度，按平台余额单位（人民币）计。
 type CreditOffer struct {
 	ID               int64     `json:"id"`
 	SellerID         int64     `json:"seller_id"`
 	Title            string    `json:"title"`
 	Description      string    `json:"description"`
 	PriceCNY         float64   `json:"price_cny"`
-	FaceValueUSD     float64   `json:"face_value_usd"`
+	FaceValueCNY     float64   `json:"face_value_cny"`
 	AllowedPlatforms []string  `json:"allowed_platforms"`
 	AllowedModels    []string  `json:"allowed_models"`
 	Status           string    `json:"status"`
@@ -33,21 +34,21 @@ type CreditOfferInput struct {
 	Title            string   `json:"title"`
 	Description      string   `json:"description"`
 	PriceCNY         float64  `json:"price_cny"`
-	FaceValueUSD     float64  `json:"face_value_usd"`
+	FaceValueCNY     float64  `json:"face_value_cny"`
 	AllowedPlatforms []string `json:"allowed_platforms"`
 	AllowedModels    []string `json:"allowed_models"`
 	Status           string   `json:"status,omitempty"`
 }
 
 const creditOfferColumns = `id, seller_id, title, description, price_cny::float8,
-	face_value_usd::float8, allowed_platforms, allowed_models, status, created_at, updated_at`
+	face_value_cny::float8, allowed_platforms, allowed_models, status, created_at, updated_at`
 
 var ErrCreditOfferNotFound = httpx.NotFound("CREDIT_OFFER_NOT_FOUND", "store credit offer not found")
 
 func scanCreditOffer(row pgx.Row) (*CreditOffer, error) {
 	var offer CreditOffer
 	err := row.Scan(&offer.ID, &offer.SellerID, &offer.Title, &offer.Description, &offer.PriceCNY,
-		&offer.FaceValueUSD, &offer.AllowedPlatforms, &offer.AllowedModels, &offer.Status,
+		&offer.FaceValueCNY, &offer.AllowedPlatforms, &offer.AllowedModels, &offer.Status,
 		&offer.CreatedAt, &offer.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -80,8 +81,8 @@ func normalizeCreditOfferInput(in CreditOfferInput) (CreditOfferInput, error) {
 	if utf8.RuneCountInString(in.Description) > 4000 || strings.ContainsRune(in.Description, '\x00') {
 		return in, httpx.BadRequest("INVALID_CREDIT_DESCRIPTION", "description must contain at most 4000 characters")
 	}
-	if !validCreditOfferMoney(in.PriceCNY) || !validCreditOfferMoney(in.FaceValueUSD) {
-		return in, httpx.BadRequest("INVALID_CREDIT_AMOUNT", "price_cny and face_value_usd must be positive, at most 1000000000, with at most two decimals")
+	if !validCreditOfferMoney(in.PriceCNY) || !validCreditOfferMoney(in.FaceValueCNY) {
+		return in, httpx.BadRequest("INVALID_CREDIT_AMOUNT", "price_cny and face_value_cny must be positive, at most 1000000000, with at most two decimals")
 	}
 	if in.Status != "" && in.Status != "active" && in.Status != "paused" {
 		return in, httpx.BadRequest("INVALID_CREDIT_STATUS", "status must be active or paused")
@@ -143,9 +144,9 @@ func CreateCreditOffer(ctx context.Context, db DB, sellerID int64, in CreditOffe
 		in.Status = "active"
 	}
 	return scanCreditOffer(db.QueryRow(ctx, `INSERT INTO store_credit_offers
-		(seller_id, title, description, price_cny, face_value_usd, allowed_platforms, allowed_models, status)
+		(seller_id, title, description, price_cny, face_value_cny, allowed_platforms, allowed_models, status)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+creditOfferColumns,
-		sellerID, in.Title, in.Description, in.PriceCNY, in.FaceValueUSD, in.AllowedPlatforms, in.AllowedModels, in.Status))
+		sellerID, in.Title, in.Description, in.PriceCNY, in.FaceValueCNY, in.AllowedPlatforms, in.AllowedModels, in.Status))
 }
 
 // UpdateCreditOffer never changes purchased snapshots or ownership, including under concurrent updates.
@@ -162,10 +163,10 @@ func UpdateCreditOffer(ctx context.Context, db DB, sellerID, id int64, in Credit
 		return nil, err
 	}
 	offer, err := scanCreditOffer(db.QueryRow(ctx, `UPDATE store_credit_offers SET
-		title = $3, description = $4, price_cny = $5, face_value_usd = $6,
+		title = $3, description = $4, price_cny = $5, face_value_cny = $6,
 		allowed_platforms = $7, allowed_models = $8, status = COALESCE(NULLIF($9, ''), status), updated_at = now()
 		WHERE seller_id = $1 AND id = $2 RETURNING `+creditOfferColumns,
-		sellerID, id, in.Title, in.Description, in.PriceCNY, in.FaceValueUSD, in.AllowedPlatforms, in.AllowedModels, in.Status))
+		sellerID, id, in.Title, in.Description, in.PriceCNY, in.FaceValueCNY, in.AllowedPlatforms, in.AllowedModels, in.Status))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrCreditOfferNotFound
 	}

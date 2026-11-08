@@ -360,7 +360,6 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentEnabledTypes:                                    paymentCfg.EnabledTypes,
 		PaymentBalanceDisabled:                                 paymentCfg.BalanceDisabled,
 		PaymentBalanceRechargeMultiplier:                       paymentCfg.BalanceRechargeMultiplier,
-		PaymentSubscriptionUSDToCNYRate:                        paymentCfg.SubscriptionUSDToCNYRate,
 		PaymentRechargeFeeRate:                                 paymentCfg.RechargeFeeRate,
 		PaymentRechargeBonusTiers:                              rechargeBonusTiersToDTO(paymentCfg.RechargeBonusTiers),
 		PaymentRechargeBonusMode:                               rechargeBonusModeToDTO(paymentCfg.RechargeBonusMode),

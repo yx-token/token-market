@@ -8,7 +8,8 @@ export interface CreditOfferInput {
   title: string
   description?: string
   price_cny: number
-  face_value_usd: number
+  /** 活动额度面值，人民币 */
+  face_value_cny: number
   allowed_platforms?: string[]
   allowed_models?: string[]
   status?: CreditOfferStatus

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 // gpt55OverrideCatalogJSON 镜像真实目录形态：长上下文以 above_272k 绝对价字段表达。
@@ -44,8 +45,8 @@ func TestPricingOverride_ExplicitZeroThresholdDisablesCatalogLadder(t *testing.T
 	require.NotNil(t, patched)
 	require.Zero(t, patched.LongContextInputTokenThreshold)
 	require.Zero(t, patched.LongContextInputCostMultiplier)
-	require.InDelta(t, 5e-6, patched.InputCostPerToken, 1e-12, "补丁不得影响基础价")
-	require.InDelta(t, 3e-5, patched.OutputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(5e-6), patched.InputCostPerToken, 1e-12, "补丁不得影响基础价")
+	require.InDelta(t, currency.USDToCNY*(3e-5), patched.OutputCostPerToken, 1e-12)
 	require.Equal(t, 272000, data["gpt-5.4"].LongContextInputTokenThreshold, "未覆盖的模型保持目录阶梯")
 
 	svc.pricingData = data
@@ -54,9 +55,9 @@ func TestPricingOverride_ExplicitZeroThresholdDisablesCatalogLadder(t *testing.T
 	cost, err := billing.CalculateCost("gpt-5.5", tokens, 1)
 	require.NoError(t, err)
 	require.False(t, cost.LongContextBillingApplied)
-	require.InDelta(t, 300000*5e-6, cost.InputCost, 1e-10)
-	require.InDelta(t, 1000*3e-5, cost.OutputCost, 1e-10)
-	require.InDelta(t, 10000*5e-7, cost.CacheReadCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*(300000*5e-6), cost.InputCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*(1000*3e-5), cost.OutputCost, 1e-10)
+	require.InDelta(t, currency.USDToCNY*(10000*5e-7), cost.CacheReadCost, 1e-10)
 }
 
 func TestPricingOverride_FieldLevelMergeKeepsOtherFields(t *testing.T) {
@@ -65,8 +66,8 @@ func TestPricingOverride_FieldLevelMergeKeepsOtherFields(t *testing.T) {
 	require.NoError(t, err)
 
 	patched := data["gpt-5.4"]
-	require.InDelta(t, 3e-6, patched.InputCostPerToken, 1e-12)
-	require.InDelta(t, 1.5e-5, patched.OutputCostPerToken, 1e-12, "未覆盖字段保持目录值")
+	require.InDelta(t, currency.USDToCNY*(3e-6), patched.InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(1.5e-5), patched.OutputCostPerToken, 1e-12, "未覆盖字段保持目录值")
 	require.Equal(t, "openai", patched.LiteLLMProvider)
 	require.Equal(t, 272000, patched.LongContextInputTokenThreshold, "above 折算仍生效")
 	// 折算发生在合并之后：above 价不变、基础价被补丁改小，倍率随之变化。
@@ -81,7 +82,7 @@ func TestPricingOverride_NullFieldValueRemovesField(t *testing.T) {
 	data, err := svc.parsePricingData([]byte(gpt55OverrideCatalogJSON))
 	require.NoError(t, err)
 	require.Zero(t, data["gpt-5.5"].LongContextInputTokenThreshold, "above 字段删除后不再折算阶梯")
-	require.InDelta(t, 5e-6, data["gpt-5.5"].InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(5e-6), data["gpt-5.5"].InputCostPerToken, 1e-12)
 }
 
 // 完整加载管线：纯补丁不得抢在回退合并前建条目（否则回退完整条目被跳过、
@@ -113,16 +114,16 @@ func TestPricingOverride_LoadPipelineAddsNewModelAndPatchesFallbackOnly(t *testi
 
 	patched := svc.pricingData["fallback-only-model"]
 	require.NotNil(t, patched)
-	require.InDelta(t, 9e-6, patched.InputCostPerToken, 1e-12)
-	require.InDelta(t, 8e-6, patched.OutputCostPerToken, 1e-12, "回退条目的其余字段必须保留")
-	require.InDelta(t, 4e-7, patched.CacheReadInputTokenCost, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(9e-6), patched.InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(8e-6), patched.OutputCostPerToken, 1e-12, "回退条目的其余字段必须保留")
+	require.InDelta(t, currency.USDToCNY*(4e-7), patched.CacheReadInputTokenCost, 1e-12)
 
 	added := svc.pricingData["override-new-model"]
 	require.NotNil(t, added)
-	require.InDelta(t, 5e-6, added.InputCostPerToken, 1e-12)
-	require.InDelta(t, 1e-5, added.OutputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(5e-6), added.InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(1e-5), added.OutputCostPerToken, 1e-12)
 
-	require.InDelta(t, 1e-6, svc.pricingData["remote-model"].InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(1e-6), svc.pricingData["remote-model"].InputCostPerToken, 1e-12)
 }
 
 // 拼错模型名（或纯补丁落在不存在的模型上）会被有效性过滤丢弃，必须有哨兵 WARN。
@@ -153,7 +154,7 @@ func TestPricingOverride_NonObjectEntryKeepsCatalogEntry(t *testing.T) {
 	data, err := svc.parsePricingData([]byte(gpt55OverrideCatalogJSON))
 	require.NoError(t, err)
 	require.Equal(t, 272000, data["gpt-5.5"].LongContextInputTokenThreshold, "非法补丁忽略，目录条目原样保留")
-	require.InDelta(t, 5e-6, data["gpt-5.5"].InputCostPerToken, 1e-12)
+	require.InDelta(t, currency.USDToCNY*(5e-6), data["gpt-5.5"].InputCostPerToken, 1e-12)
 }
 
 func TestPricingOverride_MissingOrInvalidFileIsIgnored(t *testing.T) {
@@ -192,7 +193,7 @@ func TestPricingOverride_DisablesGPT55LadderOnDefaultCatalog(t *testing.T) {
 		pricing, err := billing.GetModelPricing(model)
 		require.NoError(t, err)
 		require.Zero(t, pricing.LongContextInputThreshold, model)
-		require.InDelta(t, 5e-6, pricing.InputPricePerToken, 1e-12, model)
+		require.InDelta(t, currency.USDToCNY*(5e-6), pricing.InputPricePerToken, 1e-12, model)
 	}
 
 	pricing, err := billing.GetModelPricing("gpt-5.4")

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 // newPlazaService 构造 ListGroups 测试用的 ModelPlazaService（不接计费服务：展示定价原样透传）。
@@ -391,22 +392,22 @@ func TestListGroups_TokenLadderFollowsGroupToggle(t *testing.T) {
 	require.Len(t, onModel.Pricing.Intervals, 2)
 	require.Equal(t, "≤272K", onModel.Pricing.Intervals[0].TierLabel)
 	require.Equal(t, ">272K", onModel.Pricing.Intervals[1].TierLabel)
-	require.InDelta(t, 2.5e-6, *onModel.Pricing.InputPrice, 1e-15)
-	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[1].InputPrice, 1e-15)
-	require.InDelta(t, 22.5e-6, *onModel.Pricing.Intervals[1].OutputPrice, 1e-15)
-	require.InDelta(t, 5e-6, *onModel.Pricing.Intervals[1].CacheWritePrice, 1e-15)
-	require.InDelta(t, 0.5e-6, *onModel.Pricing.Intervals[1].CacheReadPrice, 1e-15)
+	require.InDelta(t, (2.5e-6)*currency.USDToCNY, *onModel.Pricing.InputPrice, 1e-15)
+	require.InDelta(t, (5e-6)*currency.USDToCNY, *onModel.Pricing.Intervals[1].InputPrice, 1e-15)
+	require.InDelta(t, (22.5e-6)*currency.USDToCNY, *onModel.Pricing.Intervals[1].OutputPrice, 1e-15)
+	require.InDelta(t, (5e-6)*currency.USDToCNY, *onModel.Pricing.Intervals[1].CacheWritePrice, 1e-15)
+	require.InDelta(t, (0.5e-6)*currency.USDToCNY, *onModel.Pricing.Intervals[1].CacheReadPrice, 1e-15)
 
 	offModel := off.Models[0]
 	require.Empty(t, offModel.LongContextBasis)
 	require.Empty(t, offModel.Pricing.Intervals)
-	require.InDelta(t, 2.5e-6, *offModel.Pricing.InputPrice, 1e-15)
+	require.InDelta(t, (2.5e-6)*currency.USDToCNY, *offModel.Pricing.InputPrice, 1e-15)
 
 	for _, m := range []PlazaModel{onModel, offModel} {
 		require.NotNil(t, m.OfficialPricing)
 		require.Len(t, m.OfficialPricing.Intervals, 2, "官方阶梯不受分组开关影响")
-		require.InDelta(t, 5e-6, *m.OfficialPricing.Intervals[1].InputPrice, 1e-15)
-		require.InDelta(t, 2.5e-6, *m.OfficialPricing.InputPrice, 1e-15)
+		require.InDelta(t, (5e-6)*currency.USDToCNY, *m.OfficialPricing.Intervals[1].InputPrice, 1e-15)
+		require.InDelta(t, (2.5e-6)*currency.USDToCNY, *m.OfficialPricing.InputPrice, 1e-15)
 	}
 }
 
@@ -426,8 +427,8 @@ func TestListGroups_GeminiCatalogLadderShownWholeRequest(t *testing.T) {
 	require.Len(t, m.Pricing.Intervals, 2)
 	require.Equal(t, "≤200K", m.Pricing.Intervals[0].TierLabel)
 	require.Equal(t, ">200K", m.Pricing.Intervals[1].TierLabel)
-	require.InDelta(t, 2.5e-6, *m.Pricing.Intervals[1].InputPrice, 1e-15)
-	require.InDelta(t, 15e-6, *m.Pricing.Intervals[1].OutputPrice, 1e-15)
+	require.InDelta(t, (2.5e-6)*currency.USDToCNY, *m.Pricing.Intervals[1].InputPrice, 1e-15)
+	require.InDelta(t, (15e-6)*currency.USDToCNY, *m.Pricing.Intervals[1].OutputPrice, 1e-15)
 	// 官方参考价与实付同源：都来自目录数据的阶梯字段
 	require.NotNil(t, m.OfficialPricing)
 	require.Len(t, m.OfficialPricing.Intervals, 2)
@@ -444,7 +445,7 @@ func TestListGroups_GroupTokenCardOverridesChannelPricing(t *testing.T) {
 	require.NoError(t, err)
 	m := out[0].Models[0]
 	require.InDelta(t, 1e-6, *m.Pricing.InputPrice, 1e-15, "分组价卡优先于渠道平价")
-	require.InDelta(t, 15e-6, *m.Pricing.OutputPrice, 1e-15, "卡未配置的项回落目录价")
+	require.InDelta(t, (15e-6)*currency.USDToCNY, *m.Pricing.OutputPrice, 1e-15, "卡未配置的项回落目录价")
 	require.Empty(t, m.Pricing.Intervals)
 }
 

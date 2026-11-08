@@ -6,7 +6,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import { useAction } from '@/composables/useAsync'
 import { useToast } from '@/stores/toast'
-import { dateTime, money, usd } from '@/utils/format'
+import { dateTime, money } from '@/utils/format'
 import { label } from '@/utils/labels'
 
 const route = useRoute()
@@ -87,7 +87,7 @@ async function purchase() {
   }
 }
 function usedPercent(pack: CreditPack) {
-  return Math.max(0, Math.min(100, (1 - pack.remaining_usd / pack.face_value_usd) * 100))
+  return Math.max(0, Math.min(100, (1 - pack.remaining_cny / pack.face_value_cny) * 100))
 }
 watch(sellerId, loadOffers, { immediate: true })
 onMounted(async () => {
@@ -100,7 +100,7 @@ onMounted(async () => {
 
 <template>
   <div class="store-credits">
-    <PageHeader title="店铺活动额度包" description="人民币购买美元额度，仅限对应店铺；匹配的调用先扣活动额度，用完后自动扣平台余额。">
+    <PageHeader title="店铺活动额度包" description="人民币购买店铺额度，仅限对应店铺；匹配的调用先扣活动额度，用完后自动扣平台余额。">
       <RouterLink to="/buyer/keys" class="xm-btn xm-btn-ghost">配置 API Key</RouterLink>
       <RouterLink to="/buyer/wallet" class="xm-btn xm-btn-primary">充值余额</RouterLink>
     </PageHeader>
@@ -129,7 +129,7 @@ onMounted(async () => {
           <div class="credit-offer-top"><span class="xm-tag pack">店铺专享</span><span>商家 #{{ offer.seller_id }}</span></div>
           <h3>{{ offer.title }}</h3>
           <p v-if="offer.description" class="credit-description">{{ offer.description }}</p>
-          <div class="credit-price"><strong>{{ money(offer.price_cny) }}</strong><span>购买 <b>{{ usd(offer.face_value_usd) }}</b> 额度</span></div>
+          <div class="credit-price"><strong>{{ money(offer.price_cny) }}</strong><span>购买 <b>{{ money(offer.face_value_cny) }}</b> 额度</span></div>
           <p class="credit-scope">{{ scope(offer.allowed_platforms, offer.allowed_models) }}</p>
           <button class="xm-btn xm-btn-primary" :disabled="busy" @click="chooseOffer(offer)">购买活动包</button>
         </article>
@@ -146,10 +146,10 @@ onMounted(async () => {
           <div class="credit-owned-main">
             <div class="credit-offer-top"><span>商家 #{{ pack.seller_id }} · 包 #{{ pack.id }}</span><span class="credit-status" :class="{ 'is-active': pack.status === 'active' }">{{ statusText[pack.status] || pack.status }}</span></div>
             <h3>{{ pack.title }}</h3>
-            <div class="credit-remaining"><strong>{{ usd(pack.remaining_usd) }}</strong><span> / {{ usd(pack.face_value_usd) }} 剩余</span></div>
+            <div class="credit-remaining"><strong>{{ money(pack.remaining_cny) }}</strong><span> / {{ money(pack.face_value_cny) }} 剩余</span></div>
             <div class="credit-progress" role="progressbar" :aria-valuenow="Math.round(usedPercent(pack))" aria-valuemin="0" aria-valuemax="100" :aria-label="`${pack.title} 已用额度`"><span :style="{ width: `${usedPercent(pack)}%` }" /></div>
             <p class="credit-scope">{{ scope(pack.allowed_platforms, pack.allowed_models) }}</p>
-            <p class="credit-meta">实付 {{ money(pack.price_cny) }} · 购买时每 $1 抵 {{ money(pack.usd_to_balance_rate) }} · {{ dateTime(pack.created_at) }}</p>
+            <p class="credit-meta">实付 {{ money(pack.price_cny) }} · {{ dateTime(pack.created_at) }}</p>
             <p v-if="pack.status === 'provisioning'" class="credit-meta">正在开通，稍后刷新查看。开通后自动抵扣符合范围的调用。</p>
             <p v-if="pack.status === 'depleted'" class="credit-meta">额度已用完，后续调用继续使用平台余额。</p>
           </div>
@@ -163,9 +163,9 @@ onMounted(async () => {
     <ModalDialog v-model:open="purchaseOpen" title="确认购买活动额度包">
       <template v-if="selectedOffer">
         <h3>{{ selectedOffer.title }}</h3>
-        <p>从平台余额支付 <strong>{{ money(selectedOffer.price_cny) }}</strong>，获得 <strong>{{ usd(selectedOffer.face_value_usd) }}</strong> 店铺额度。</p>
+        <p>从平台余额支付 <strong>{{ money(selectedOffer.price_cny) }}</strong>，获得 <strong>{{ money(selectedOffer.face_value_cny) }}</strong> 店铺额度。</p>
         <p>仅限商家 #{{ selectedOffer.seller_id }}：{{ scope(selectedOffer.allowed_platforms, selectedOffer.allowed_models) }}。</p>
-        <p class="hint">符合范围的调用优先扣此包，额度用完后自动扣平台余额。美元额度不能转到其他店铺；购买后不可退款。</p>
+        <p class="hint">符合范围的调用优先扣此包，额度用完后自动扣平台余额。店铺额度不能转到其他店铺；购买后不可退款。</p>
       </template>
       <template #footer><button class="btn-secondary" :disabled="busy" @click="purchaseOpen = false">取消</button><button class="btn-primary" :disabled="busy" @click="purchase">{{ busy ? '正在购买…' : '确认支付' }}</button></template>
     </ModalDialog>

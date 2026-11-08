@@ -90,7 +90,7 @@ func TestDegradationFlowMigration(t *testing.T) {
 	}
 
 	// 降智流程继承测智的模型与周期，但定时检测保持关闭。
-	p, err := scanPolicy(pool.QueryRow(ctx, "SELECT "+policyColumns+" FROM detection_policies WHERE platform='openai' AND auth_type=''"))
+	p, err := scanPolicy(pool.QueryRow(ctx, "SELECT "+prePolicyCNYColumns+" FROM detection_policies WHERE platform='openai' AND auth_type=''"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestDegradationFlowMigration(t *testing.T) {
 	if applied, err := db.Migrate(ctx, pool, migrationsThrough(t, migration, true)); err != nil || len(applied) != 0 {
 		t.Fatalf("重复运行迁移应无操作：%v %v", applied, err)
 	}
-	updated, err := scanPolicy(pool.QueryRow(ctx, "SELECT "+policyColumns+" FROM detection_policies WHERE platform='openai' AND auth_type=''"))
+	updated, err := scanPolicy(pool.QueryRow(ctx, "SELECT "+prePolicyCNYColumns+" FROM detection_policies WHERE platform='openai' AND auth_type=''"))
 	if err != nil {
 		t.Fatal(err)
 	}
