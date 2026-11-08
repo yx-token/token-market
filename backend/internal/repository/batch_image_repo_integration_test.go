@@ -37,7 +37,7 @@ func TestBatchImageRepository_CreateJobAndDuplicates(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, batchID, job.BatchID)
 	require.Equal(t, service.BatchImageJobStatusCreated, job.Status)
-	require.Equal(t, "USD", job.Currency)
+	require.Equal(t, "CNY", job.Currency)
 
 	_, err = repo.CreateBatchImageJob(ctx, service.CreateBatchImageJobParams{
 		BatchID:   batchID,
