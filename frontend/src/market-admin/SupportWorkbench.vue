@@ -5,6 +5,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/icons/Icon.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { MARKET_API_PREFIX, marketGet, marketSend } from './api'
 
@@ -52,8 +53,22 @@ interface Alerts {
   staff_unread_total: number
   pending_alert_threshold: number
   reply_timeout_minutes: number
+  idle_close_minutes?: number
   pending_alert_fired: boolean
   overdue_conversations: Conversation[]
+}
+
+interface AlertSettings {
+  emails: string[]
+  reply_timeout_minutes: number
+  pending_alert_threshold: number
+  idle_close_minutes: number
+  email_enabled: boolean
+  delivery?: {
+    last_error?: string
+    last_error_at?: string
+    last_sent_at?: string
+  }
 }
 
 const WAIT_MS = 20000
@@ -73,6 +88,17 @@ const loadingThread = ref(false)
 const sending = ref(false)
 const closing = ref(false)
 const closeConfirmationOpen = ref(false)
+const settingsOpen = ref(false)
+const settingsBusy = ref(false)
+const settingsError = ref('')
+const settingsDeliveryError = ref('')
+const settingsForm = ref({
+  emailsText: '',
+  reply_timeout_minutes: 15,
+  pending_alert_threshold: 5,
+  idle_close_minutes: 10,
+  email_enabled: true,
+})
 const error = ref('')
 const threadError = ref('')
 const peerTyping = ref(false)
@@ -415,6 +441,89 @@ async function loadAlerts() {
   } catch {
     /* ignore */
   }
+}
+
+function applyAlertSettings(cfg: AlertSettings) {
+  settingsForm.value = {
+    emailsText: (cfg.emails || []).join('\n'),
+    reply_timeout_minutes: cfg.reply_timeout_minutes || 15,
+    pending_alert_threshold: cfg.pending_alert_threshold || 5,
+    idle_close_minutes: cfg.idle_close_minutes || 10,
+    email_enabled: cfg.email_enabled !== false,
+  }
+  settingsDeliveryError.value = cfg.delivery?.last_error || ''
+}
+
+async function openAlertSettings() {
+  settingsError.value = ''
+  settingsDeliveryError.value = ''
+  settingsBusy.value = true
+  settingsOpen.value = true
+  try {
+    const cfg = await marketGet<AlertSettings>(`${MARKET_API_PREFIX}/support/alert-settings`)
+    applyAlertSettings(cfg)
+  } catch (e) {
+    settingsError.value = e instanceof Error ? e.message : '加载预警设置失败'
+  } finally {
+    settingsBusy.value = false
+  }
+}
+
+async function saveAlertSettings() {
+  settingsError.value = ''
+  settingsBusy.value = true
+  try {
+    const emails = settingsForm.value.emailsText
+      .split(/[\n,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const cfg = await marketSend<AlertSettings>('PUT', `${MARKET_API_PREFIX}/support/alert-settings`, {
+      emails,
+      reply_timeout_minutes: Number(settingsForm.value.reply_timeout_minutes) || 15,
+      pending_alert_threshold: Number(settingsForm.value.pending_alert_threshold) || 5,
+      idle_close_minutes: Number(settingsForm.value.idle_close_minutes) || 10,
+      email_enabled: settingsForm.value.email_enabled,
+    })
+    applyAlertSettings(cfg)
+    settingsOpen.value = false
+    await loadAlerts()
+  } catch (e) {
+    settingsError.value = e instanceof Error ? e.message : '保存失败'
+  } finally {
+    settingsBusy.value = false
+  }
+}
+
+async function testAlertEmail() {
+  settingsError.value = ''
+  settingsBusy.value = true
+  try {
+    await saveAlertSettingsDraft()
+    await marketSend('POST', `${MARKET_API_PREFIX}/support/alert-settings/test`)
+    settingsDeliveryError.value = ''
+    settingsError.value = '测试邮件已发出，请查收件箱'
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : '测试发送失败'
+    settingsError.value = msg
+    settingsDeliveryError.value = msg
+  } finally {
+    settingsBusy.value = false
+  }
+}
+
+async function saveAlertSettingsDraft() {
+  const emails = settingsForm.value.emailsText
+    .split(/[\n,;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const cfg = await marketSend<AlertSettings>('PUT', `${MARKET_API_PREFIX}/support/alert-settings`, {
+    emails,
+    reply_timeout_minutes: Number(settingsForm.value.reply_timeout_minutes) || 15,
+    pending_alert_threshold: Number(settingsForm.value.pending_alert_threshold) || 5,
+    idle_close_minutes: Number(settingsForm.value.idle_close_minutes) || 10,
+    email_enabled: settingsForm.value.email_enabled,
+  })
+  applyAlertSettings(cfg)
 }
 
 function clearActiveConversation() {
@@ -766,7 +875,11 @@ onUnmounted(() => {
     <header class="sw-top">
       <div class="sw-top-title">
         <h2>官方客服工作台</h2>
-        <p>用户留言 · {{ alerts?.reply_timeout_minutes ?? 15 }} 分钟未回预警 · 10 分钟无消息自动结束</p>
+        <p>
+          用户留言 · {{ alerts?.reply_timeout_minutes ?? 15 }} 分钟未回预警 ·
+          {{ alerts?.idle_close_minutes ?? 10 }} 分钟无消息自动结束 ·
+          <button type="button" class="sw-inline-link" @click="openAlertSettings">配置预警邮箱</button>
+        </p>
       </div>
       <div class="sw-top-search">
         <Icon name="search" size="sm" class="sw-search-ico" />
@@ -780,6 +893,7 @@ onUnmounted(() => {
         <button type="button" class="sw-link-btn" @click="loadList(false)">搜索</button>
       </div>
       <div class="sw-top-actions">
+        <button type="button" class="sw-refresh" @click="openAlertSettings">预警设置</button>
         <button type="button" class="sw-refresh" @click="router.push('/admin/market/support-h5')">
           手机版
         </button>
@@ -1095,6 +1209,86 @@ onUnmounted(() => {
       <p v-if="closeConfirmationOpen && error" class="y-msg y-msg--error" role="alert">{{ error }}</p>
     </ConfirmDialog>
 
+    <BaseDialog
+      :show="settingsOpen"
+      title="客服预警设置"
+      :z-index="90"
+      close-on-click-outside
+      @close="settingsOpen = false"
+    >
+      <div class="sw-settings-form">
+        <p v-if="settingsDeliveryError" class="y-msg y-msg--error" role="alert">
+          最近发信失败：{{ settingsDeliveryError }}
+          <br />
+          请到「系统设置 → 邮件/SMTP」修正主机账号密码，并在该页先「发送测试邮件」通过后再试。
+        </p>
+        <p v-if="settingsError" class="y-msg" :class="settingsDeliveryError ? 'y-msg--error' : ''" role="status">
+          {{ settingsError }}
+        </p>
+        <label class="y-check">
+          <input v-model="settingsForm.email_enabled" type="checkbox" :disabled="settingsBusy" />
+          启用邮件预警
+        </label>
+        <label class="y-field">
+          <span>预警收件邮箱</span>
+          <textarea
+            v-model="settingsForm.emailsText"
+            class="input w-full y-textarea"
+            rows="4"
+            :disabled="settingsBusy"
+            placeholder="每行一个邮箱，或用逗号分隔"
+          />
+          <em class="sw-settings-hint">不依赖用户管理；配置后超过阈值会发邮件到这些地址。</em>
+        </label>
+        <div class="sw-settings-grid">
+          <label class="y-field">
+            <span>未回复预警（分钟）</span>
+            <input
+              v-model.number="settingsForm.reply_timeout_minutes"
+              type="number"
+              min="1"
+              max="1440"
+              class="input w-full"
+              :disabled="settingsBusy"
+            />
+          </label>
+          <label class="y-field">
+            <span>积压预警（条）</span>
+            <input
+              v-model.number="settingsForm.pending_alert_threshold"
+              type="number"
+              min="1"
+              max="1000"
+              class="input w-full"
+              :disabled="settingsBusy"
+            />
+          </label>
+          <label class="y-field">
+            <span>无消息自动结束（分钟）</span>
+            <input
+              v-model.number="settingsForm.idle_close_minutes"
+              type="number"
+              min="1"
+              max="1440"
+              class="input w-full"
+              :disabled="settingsBusy"
+            />
+          </label>
+        </div>
+      </div>
+      <template #footer>
+        <button type="button" class="btn btn-secondary" :disabled="settingsBusy" @click="settingsOpen = false">
+          取消
+        </button>
+        <button type="button" class="btn btn-secondary" :disabled="settingsBusy" @click="testAlertEmail">
+          发送测试邮件
+        </button>
+        <button type="button" class="btn btn-primary" :disabled="settingsBusy" @click="saveAlertSettings">
+          保存
+        </button>
+      </template>
+    </BaseDialog>
+
     <Teleport to="body">
       <div
         v-if="historyOpen && selected"
@@ -1201,6 +1395,17 @@ onUnmounted(() => {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+}
+.sw-inline-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--sw-primary, #2563eb);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .sw-top-actions {
   display: flex;
@@ -2030,6 +2235,27 @@ onUnmounted(() => {
   }
   .sw-msgs {
     scroll-behavior: auto;
+  }
+}
+.sw-settings-form {
+  display: grid;
+  gap: 14px;
+}
+.sw-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.sw-settings-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-style: normal;
+  color: var(--color-text-secondary, #6b7280);
+}
+@media (max-width: 720px) {
+  .sw-settings-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

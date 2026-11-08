@@ -397,7 +397,9 @@ onUnmounted(() => {
             <template v-if="alerts?.overdue_count"> · 超时 {{ alerts.overdue_count }}</template>
           </p>
         </div>
-        <button type="button" class="sm-link" @click="router.push('/admin/market/support')">桌面版</button>
+        <button type="button" class="sm-link" @click="router.push('/admin/market/support')">
+          桌面版 / 预警设置
+        </button>
       </template>
       <template v-else>
         <button type="button" class="sm-back" @click="backToList">‹</button>

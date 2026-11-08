@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
+	"github.com/yx-token/token-market/market/internal/mail"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 	"github.com/yx-token/token-market/market/internal/support"
 )
@@ -197,4 +199,58 @@ func (s *Server) adminSupportAlerts(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	return ok(w, out)
+}
+
+func (s *Server) adminSupportAlertSettings(w http.ResponseWriter, r *http.Request) error {
+	view, err := s.supportSvc().LoadAlertSettingsView(r.Context())
+	if err != nil {
+		return err
+	}
+	return ok(w, view)
+}
+
+func (s *Server) adminSupportUpdateAlertSettings(w http.ResponseWriter, r *http.Request) error {
+	var in support.AlertConfig
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	cfg, err := s.supportSvc().SaveAlertConfig(r.Context(), in)
+	if err != nil {
+		return err
+	}
+	view, err := s.supportSvc().LoadAlertSettingsView(r.Context())
+	if err != nil {
+		return ok(w, cfg)
+	}
+	view.AlertConfig = cfg
+	return ok(w, view)
+}
+
+func (s *Server) adminSupportTestAlertEmail(w http.ResponseWriter, r *http.Request) error {
+	svc := s.supportSvc()
+	cfg, err := svc.LoadAlertConfig(r.Context())
+	if err != nil {
+		return err
+	}
+	emails := cfg.NotifyEmails()
+	if len(emails) == 0 {
+		return httpx.BadRequest("NO_ALERT_EMAIL", "请先配置预警收件邮箱并启用邮件预警")
+	}
+	boot := mail.BootFromEnv(os.Getenv("TM_RESEND_API_KEY"), os.Getenv("TM_RESEND_FROM"))
+	enabled, sender, err := mail.ResolveOpsSender(r.Context(), s.DB, nil, boot, s.Log)
+	if err != nil {
+		svc.RecordAlertDeliveryErr(r.Context(), err)
+		return err
+	}
+	if !enabled || sender == nil {
+		return httpx.BadRequest("MAIL_NOT_READY", "发信通道未就绪：请在系统设置配置可用的 SMTP，或设置 Resend/dev 发信")
+	}
+	subject := "【闲猫客服】预警邮件测试"
+	body := `<div style="font-family:sans-serif;line-height:1.6"><p>这是一封客服预警测试邮件。若你收到它，说明发信通道可用。</p></div>`
+	if err := sender.Send(r.Context(), emails[0], subject, body); err != nil {
+		svc.RecordAlertDeliveryErr(r.Context(), err)
+		return err
+	}
+	svc.RecordAlertDeliveryOK(r.Context())
+	return ok(w, map[string]any{"status": "ok", "to": emails[0]})
 }

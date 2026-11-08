@@ -200,6 +200,74 @@ func Update(ctx context.Context, db DB, kr *crypto.Keyring, boot Boot, patch Pat
 	}, nil
 }
 
+// ResolveOpsSender 运营告警发信器：宿主 SMTP 已就绪即可（不依赖「注册邮箱验证」开关）。
+// 无宿主桥时回退到 settings / boot（与 ResolveSender 相同）。
+// 宿主 SMTP 已配但发信鉴权失败时，FailoverSender 会再试 boot/settings（本地 dev / Resend）。
+func ResolveOpsSender(ctx context.Context, db DB, kr *crypto.Keyring, boot Boot, log *slog.Logger) (enabled bool, sender Sender, err error) {
+	fallbackOn, fallback, ferr := resolveStoredOrBoot(ctx, db, kr, boot, log)
+	if ferr != nil {
+		return false, nil, ferr
+	}
+	if hostmail.Active() {
+		hs, err := hostmail.LoadStatus(ctx)
+		if err != nil {
+			return false, nil, err
+		}
+		if hs.SMTPReady {
+			// 仅回退到可真发信的 Resend；dev 日志通道不算成功，避免把未投递会话标成已预警。
+			return true, FailoverSender{Primary: hostmail.Sender{}, Fallback: realMailFallback(fallbackOn, fallback), Log: log}, nil
+		}
+	}
+	return fallbackOn, fallback, nil
+}
+
+func realMailFallback(on bool, s Sender) Sender {
+	if !on || s == nil {
+		return nil
+	}
+	if _, ok := s.(*Resend); ok {
+		return s
+	}
+	return nil
+}
+
+// FailoverSender 主通道失败（常见：SMTP 535）时改走 Fallback。
+type FailoverSender struct {
+	Primary  Sender
+	Fallback Sender
+	Log      *slog.Logger
+}
+
+func (f FailoverSender) Send(ctx context.Context, to, subject, html string) error {
+	if f.Primary == nil {
+		if f.Fallback == nil {
+			return ErrNotConfigured
+		}
+		return f.Fallback.Send(ctx, to, subject, html)
+	}
+	err := f.Primary.Send(ctx, to, subject, html)
+	if err == nil || f.Fallback == nil || !smtpAuthFailed(err) {
+		return err
+	}
+	log := f.Log
+	if log == nil {
+		log = slog.Default()
+	}
+	log.Warn("ops mail primary failed, trying fallback", "err", err, "to", to)
+	return f.Fallback.Send(ctx, to, subject, html)
+}
+
+func smtpAuthFailed(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "smtp auth") ||
+		strings.Contains(msg, "535") ||
+		strings.Contains(msg, "authentication credentials invalid") ||
+		strings.Contains(msg, "auth failed")
+}
+
 // ResolveSender 按当前配置构造发信器；未启用或不完整时返回 (false, Disabled, nil)。
 func ResolveSender(ctx context.Context, db DB, kr *crypto.Keyring, boot Boot, log *slog.Logger) (enabled bool, sender Sender, err error) {
 	if hostmail.Active() {
@@ -215,6 +283,10 @@ func ResolveSender(ctx context.Context, db DB, kr *crypto.Keyring, boot Boot, lo
 		}
 		// VerifyEnabled 但 SMTP 未就绪：继续走 boot/settings
 	}
+	return resolveStoredOrBoot(ctx, db, kr, boot, log)
+}
+
+func resolveStoredOrBoot(ctx context.Context, db DB, kr *crypto.Keyring, boot Boot, log *slog.Logger) (enabled bool, sender Sender, err error) {
 	st, ok, err := loadStored(ctx, db)
 	if err != nil {
 		return false, nil, err

@@ -19,13 +19,13 @@ func TestAnnotateOverdue(t *testing.T) {
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	since := now.Add(-20 * time.Minute)
 	c := Conversation{Status: StatusOpen, AwaitingStaffSince: &since}
-	annotateOverdue(&c, now)
+	annotateOverdue(&c, now, ReplyTimeout)
 	if !c.Overdue || c.WaitingMinutes < 19 {
 		t.Fatalf("expected overdue, got %+v", c)
 	}
 	fresh := now.Add(-5 * time.Minute)
 	c2 := Conversation{Status: StatusOpen, AwaitingStaffSince: &fresh}
-	annotateOverdue(&c2, now)
+	annotateOverdue(&c2, now, ReplyTimeout)
 	if c2.Overdue {
 		t.Fatal("5 minutes should not be overdue")
 	}
@@ -36,7 +36,7 @@ func TestAnnotatePresenceTyping(t *testing.T) {
 	fresh := now.Add(-2 * time.Second)
 	stale := now.Add(-10 * time.Second)
 	c := Conversation{userTypingAt: &fresh, staffTypingAt: &stale}
-	annotatePresence(&c, now)
+	annotatePresence(&c, now, ReplyTimeout)
 	annotateViewer(&c, SenderStaff)
 	if !c.UserTyping || c.StaffTyping || !c.PeerTyping {
 		t.Fatalf("want user typing + peer for staff, got %+v", c)

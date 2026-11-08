@@ -4,6 +4,7 @@ package support
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -35,8 +36,7 @@ const (
 	welcomeBody    = "你好，这里是闲猫官方。直接说问题就行，我们看到会回。"
 	closeNoteUser  = "你已结束本次会话。再发一条消息即可重新联系官方。"
 	closeNoteStaff = "官方已结束本次会话。再发一条消息即可重新打开。"
-	closeNoteIdle  = "超过 10 分钟没有新消息，会话已自动结束。再发一条即可重新联系官方。"
-	reopenNote     = "会话已重新打开，请继续描述问题。"
+	reopenNote = "会话已重新打开，请继续描述问题。"
 
 	convCols = `c.id, c.user_id, COALESCE(u.email, ''), c.status, c.last_message_at, c.last_preview, c.last_sender,
 			c.user_unread_count, c.staff_unread_count, c.awaiting_staff_since,
@@ -89,6 +89,7 @@ type Alerts struct {
 	StaffUnreadTotal     int            `json:"staff_unread_total"`
 	PendingAlertCount    int            `json:"pending_alert_threshold"`
 	ReplyTimeoutMin      int            `json:"reply_timeout_minutes"`
+	IdleCloseMin         int            `json:"idle_close_minutes"`
 	PendingAlertFired    bool           `json:"pending_alert_fired"`
 	OverdueConversations []Conversation `json:"overdue_conversations"`
 }
@@ -253,6 +254,10 @@ func (s *Service) AdminList(ctx context.Context, status, q string, limit, offset
 	if offset < 0 {
 		offset = 0
 	}
+	cfg, err := s.LoadAlertConfig(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
 	args := []any{}
 	where := []string{"1=1"}
 	switch status {
@@ -262,7 +267,7 @@ func (s *Service) AdminList(ctx context.Context, status, q string, limit, offset
 	case "pending":
 		where = append(where, "c.status = 'open' AND c.awaiting_staff_since IS NOT NULL")
 	case "overdue":
-		args = append(args, time.Now().Add(-ReplyTimeout))
+		args = append(args, time.Now().Add(-cfg.ReplyTimeout()))
 		where = append(where, "c.status = 'open' AND c.awaiting_staff_since IS NOT NULL AND c.awaiting_staff_since <= $"+itoa(len(args)))
 	}
 	q = strings.TrimSpace(q)
@@ -296,12 +301,13 @@ func (s *Service) AdminList(ctx context.Context, status, q string, limit, offset
 	defer rows.Close()
 	out := make([]Conversation, 0)
 	now := time.Now()
+	replyTO := cfg.ReplyTimeout()
 	for rows.Next() {
 		c, err := scanConv(rows)
 		if err != nil {
 			return nil, 0, err
 		}
-		annotatePresence(&c, now)
+		annotatePresence(&c, now, replyTO)
 		annotateViewer(&c, SenderStaff)
 		out = append(out, c)
 	}
@@ -359,6 +365,7 @@ func (s *Service) PostStaffMessage(ctx context.Context, staffUserID, conversatio
 			staff_unread_count = 0,
 			staff_last_read_msg_id = GREATEST(staff_last_read_msg_id, $5),
 			awaiting_staff_since = NULL,
+			overdue_alerted_at = NULL,
 			staff_typing_at = NULL,
 			updated_at = now()
 		WHERE id = $1`,
@@ -395,7 +402,12 @@ func (s *Service) CloseMine(ctx context.Context, userID int64) error {
 
 // CloseIdle 结束超时无新消息的会话；供 worker 周期调用。
 func (s *Service) CloseIdle(ctx context.Context) (int, error) {
-	cutoff := time.Now().Add(-IdleCloseTimeout)
+	cfg, err := s.LoadAlertConfig(ctx)
+	if err != nil {
+		return 0, err
+	}
+	idleMin := cfg.IdleCloseMinutes
+	cutoff := time.Now().Add(-cfg.IdleCloseTimeout())
 	rows, err := s.DB.Query(ctx, `
 		SELECT id FROM support_conversations
 		WHERE status = 'open' AND last_message_at <= $1
@@ -416,9 +428,10 @@ func (s *Service) CloseIdle(ctx context.Context) (int, error) {
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
+	note := fmt.Sprintf("超过 %d 分钟没有新消息，会话已自动结束。再发一条即可重新联系官方。", idleMin)
 	n := 0
 	for _, id := range ids {
-		if err := s.closeWithNote(ctx, id, closeNoteIdle); err != nil {
+		if err := s.closeWithNote(ctx, id, note); err != nil {
 			return n, err
 		}
 		n++
@@ -463,6 +476,7 @@ func (s *Service) closeWithNote(ctx context.Context, conversationID int64, note 
 			last_preview = $3,
 			last_sender = $4,
 			awaiting_staff_since = NULL,
+			overdue_alerted_at = NULL,
 			staff_unread_count = 0,
 			user_unread_count = user_unread_count + 1,
 			user_typing_at = NULL,
@@ -518,8 +532,13 @@ func (s *Service) SetStaffTyping(ctx context.Context, conversationID int64, typi
 }
 
 func (s *Service) Alerts(ctx context.Context) (*Alerts, error) {
+	cfg, err := s.LoadAlertConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
-	cutoff := now.Add(-ReplyTimeout)
+	cutoff := now.Add(-cfg.ReplyTimeout())
+	threshold := cfg.PendingThreshold()
 	var pending, overdue, unread int
 	if err := s.DB.QueryRow(ctx, `
 		SELECT count(*) FROM support_conversations
@@ -548,21 +567,23 @@ func (s *Service) Alerts(ctx context.Context) (*Alerts, error) {
 	}
 	defer rows.Close()
 	list := make([]Conversation, 0)
+	replyTO := cfg.ReplyTimeout()
 	for rows.Next() {
 		c, err := scanConv(rows)
 		if err != nil {
 			return nil, err
 		}
-		annotatePresence(&c, now)
+		annotatePresence(&c, now, replyTO)
 		list = append(list, c)
 	}
 	return &Alerts{
 		PendingCount:         pending,
 		OverdueCount:         overdue,
 		StaffUnreadTotal:     unread,
-		PendingAlertCount:    PendingAlertCount,
-		ReplyTimeoutMin:      int(ReplyTimeout / time.Minute),
-		PendingAlertFired:    pending >= PendingAlertCount,
+		PendingAlertCount:    threshold,
+		ReplyTimeoutMin:      cfg.ReplyTimeoutMinutes,
+		IdleCloseMin:         cfg.IdleCloseMinutes,
+		PendingAlertFired:    pending >= threshold,
 		OverdueConversations: list,
 	}, rows.Err()
 }
@@ -624,7 +645,8 @@ func (s *Service) getByUser(ctx context.Context, userID int64) (*Conversation, e
 	if err != nil {
 		return nil, err
 	}
-	annotatePresence(&c, time.Now())
+	cfg, _ := s.LoadAlertConfig(ctx)
+	annotatePresence(&c, time.Now(), cfg.ReplyTimeout())
 	return &c, nil
 }
 
@@ -641,7 +663,8 @@ func (s *Service) getByID(ctx context.Context, id int64) (*Conversation, error) 
 	if err != nil {
 		return nil, err
 	}
-	annotatePresence(&c, time.Now())
+	cfg, _ := s.LoadAlertConfig(ctx)
+	annotatePresence(&c, time.Now(), cfg.ReplyTimeout())
 	return &c, nil
 }
 
@@ -685,8 +708,8 @@ func scanConv(row scannable) (Conversation, error) {
 	return c, err
 }
 
-func annotatePresence(c *Conversation, now time.Time) {
-	annotateOverdue(c, now)
+func annotatePresence(c *Conversation, now time.Time, replyTimeout time.Duration) {
+	annotateOverdue(c, now, replyTimeout)
 	c.UserTyping = c.userTypingAt != nil && now.Sub(*c.userTypingAt) < TypingTTL
 	c.StaffTyping = c.staffTypingAt != nil && now.Sub(*c.staffTypingAt) < TypingTTL
 }
@@ -720,16 +743,19 @@ func clipPreview(s string) string {
 	return s
 }
 
-func annotateOverdue(c *Conversation, now time.Time) {
+func annotateOverdue(c *Conversation, now time.Time, replyTimeout time.Duration) {
 	if c.AwaitingStaffSince == nil || c.Status != StatusOpen {
 		return
+	}
+	if replyTimeout <= 0 {
+		replyTimeout = ReplyTimeout
 	}
 	mins := int(now.Sub(*c.AwaitingStaffSince) / time.Minute)
 	if mins < 0 {
 		mins = 0
 	}
 	c.WaitingMinutes = mins
-	c.Overdue = now.Sub(*c.AwaitingStaffSince) >= ReplyTimeout
+	c.Overdue = now.Sub(*c.AwaitingStaffSince) >= replyTimeout
 }
 
 func itoa(n int) string {

@@ -87,8 +87,8 @@ async function loop() {
 }
 
 function openWorkbench() {
-  const mobile = window.matchMedia('(max-width: 860px)').matches
-  void router.push(mobile ? '/admin/market/support-h5' : '/admin/market/support')
+  // 桌面工作台含预警设置；窄屏也先进桌面版（可再点「手机版」）
+  void router.push('/admin/market/support')
 }
 
 function onVisible() {

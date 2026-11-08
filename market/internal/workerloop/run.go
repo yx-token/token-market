@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/yx-token/token-market/market/contract"
 	"github.com/yx-token/token-market/market/internal/app"
 	"github.com/yx-token/token-market/market/internal/billing"
+	"github.com/yx-token/token-market/market/internal/mail"
 	"github.com/yx-token/token-market/market/internal/platform/buildinfo"
 	"github.com/yx-token/token-market/market/internal/platform/config"
 	"github.com/yx-token/token-market/market/internal/sub2api/compatguard"
@@ -132,6 +134,9 @@ func Run(ctx context.Context, a *app.App, cfg *config.Config, log *slog.Logger) 
 				log.Info("support conversations auto-closed", "count", n)
 			}
 			return err
+		}},
+		{"support.alert_email", time.Minute, func(ctx context.Context) error {
+			return runSupportAlertEmail(ctx, a, cfg, log)
 		}},
 	}
 
@@ -255,4 +260,31 @@ func acquireLeader(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) (<
 		conn.Release()
 	}
 	return lost, release, nil
+}
+
+func runSupportAlertEmail(ctx context.Context, a *app.App, cfg *config.Config, log *slog.Logger) error {
+	svc := &support.Service{DB: a.DB}
+	boot := mail.BootFromEnv(cfg.Email.ResendAPIKey, cfg.Email.From)
+	enabled, sender, err := mail.ResolveOpsSender(ctx, a.DB, a.Keyring, boot, log)
+	if err != nil {
+		svc.RecordAlertDeliveryErr(ctx, err)
+		return err
+	}
+	if !enabled || sender == nil {
+		return nil
+	}
+	workbenchURL := ""
+	if base := strings.TrimRight(strings.TrimSpace(cfg.Edge.PublicURL), "/"); base != "" {
+		workbenchURL = base + "/admin/market/support"
+	}
+	n, err := svc.NotifyAlertEmails(ctx, sender, workbenchURL, log)
+	if err != nil {
+		svc.RecordAlertDeliveryErr(ctx, err)
+		return err
+	}
+	if n > 0 {
+		svc.RecordAlertDeliveryOK(ctx)
+		log.Info("support alert emails sent", "count", n)
+	}
+	return nil
 }
