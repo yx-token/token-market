@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	alertSettingsKey   = "support_alerts"
-	deliveryAlertKey   = "email_delivery"
+	alertSettingsKey = "support_alerts"
+	deliveryAlertKey = "email_delivery"
 )
 
 // AlertConfig 客服工作台预警与自动结束配置（存 settings 表，不依赖用户管理）。

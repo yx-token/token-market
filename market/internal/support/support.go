@@ -36,7 +36,7 @@ const (
 	welcomeBody    = "你好，这里是闲猫官方。直接说问题就行，我们看到会回。"
 	closeNoteUser  = "你已结束本次会话。再发一条消息即可重新联系官方。"
 	closeNoteStaff = "官方已结束本次会话。再发一条消息即可重新打开。"
-	reopenNote = "会话已重新打开，请继续描述问题。"
+	reopenNote     = "会话已重新打开，请继续描述问题。"
 
 	convCols = `c.id, c.user_id, COALESCE(u.email, ''), c.status, c.last_message_at, c.last_preview, c.last_sender,
 			c.user_unread_count, c.staff_unread_count, c.awaiting_staff_since,
