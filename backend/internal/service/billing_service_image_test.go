@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 // TestCalculateImageCost_DefaultPricing 测试无分组配置时使用默认价格
@@ -14,12 +15,12 @@ func TestCalculateImageCost_DefaultPricing(t *testing.T) {
 
 	// 2K 尺寸，默认价格 $0.134 * 1.5 = $0.201
 	cost := svc.CalculateImageCost("gemini-3-pro-image", "2K", 1, nil, 1.0)
-	require.InDelta(t, 0.201, cost.TotalCost, 0.0001)
-	require.InDelta(t, 0.201, cost.ActualCost, 0.0001)
+	require.InDelta(t, (0.201)*currency.USDToCNY, cost.TotalCost, 0.0001)
+	require.InDelta(t, (0.201)*currency.USDToCNY, cost.ActualCost, 0.0001)
 
 	// 多张图片
 	cost = svc.CalculateImageCost("gemini-3-pro-image", "2K", 3, nil, 1.0)
-	require.InDelta(t, 0.603, cost.TotalCost, 0.0001)
+	require.InDelta(t, (0.603)*currency.USDToCNY, cost.TotalCost, 0.0001)
 }
 
 // TestCalculateImageCost_GroupCustomPricing 测试分组自定义价格
@@ -69,7 +70,7 @@ func TestCalculateImageCost_4KDoublePrice(t *testing.T) {
 
 	// 4K 尺寸，默认价格翻倍 $0.134 * 2 = $0.268
 	cost := svc.CalculateImageCost("gemini-3-pro-image", "4K", 1, nil, 1.0)
-	require.InDelta(t, 0.268, cost.TotalCost, 0.0001)
+	require.InDelta(t, (0.268)*currency.USDToCNY, cost.TotalCost, 0.0001)
 }
 
 // TestCalculateImageCost_RateMultiplier 测试费率倍数
@@ -78,13 +79,13 @@ func TestCalculateImageCost_RateMultiplier(t *testing.T) {
 
 	// 费率倍数 1.5x
 	cost := svc.CalculateImageCost("gemini-3-pro-image", "2K", 1, nil, 1.5)
-	require.InDelta(t, 0.201, cost.TotalCost, 0.0001)   // TotalCost = 0.134 * 1.5
-	require.InDelta(t, 0.3015, cost.ActualCost, 0.0001) // ActualCost = 0.201 * 1.5
+	require.InDelta(t, (0.201)*currency.USDToCNY, cost.TotalCost, 0.0001)   // TotalCost = 0.134 * 1.5
+	require.InDelta(t, (0.3015)*currency.USDToCNY, cost.ActualCost, 0.0001) // ActualCost = 0.201 * 1.5
 
 	// 费率倍数 2.0x
 	cost = svc.CalculateImageCost("gemini-3-pro-image", "2K", 2, nil, 2.0)
-	require.InDelta(t, 0.402, cost.TotalCost, 0.0001)
-	require.InDelta(t, 0.804, cost.ActualCost, 0.0001)
+	require.InDelta(t, (0.402)*currency.USDToCNY, cost.TotalCost, 0.0001)
+	require.InDelta(t, (0.804)*currency.USDToCNY, cost.ActualCost, 0.0001)
 }
 
 // TestCalculateImageCost_ZeroCount 测试 imageCount=0
@@ -111,7 +112,7 @@ func TestCalculateImageCost_ZeroRateMultiplier(t *testing.T) {
 	svc := &BillingService{}
 
 	cost := svc.CalculateImageCost("gemini-3-pro-image", "2K", 1, nil, 0)
-	require.InDelta(t, 0.201, cost.TotalCost, 0.0001)
+	require.InDelta(t, (0.201)*currency.USDToCNY, cost.TotalCost, 0.0001)
 	require.InDelta(t, 0.0, cost.ActualCost, 1e-10)
 }
 
@@ -145,11 +146,11 @@ func TestGetImageUnitPrice_PartialGroupConfig(t *testing.T) {
 
 	// 2K 回退默认价格 $0.201 (1.5倍)
 	cost = svc.CalculateImageCost("gemini-3-pro-image", "2K", 1, groupConfig, 1.0)
-	require.InDelta(t, 0.201, cost.TotalCost, 0.0001)
+	require.InDelta(t, (0.201)*currency.USDToCNY, cost.TotalCost, 0.0001)
 
 	// 4K 回退默认价格 $0.268 (翻倍)
 	cost = svc.CalculateImageCost("gemini-3-pro-image", "4K", 1, groupConfig, 1.0)
-	require.InDelta(t, 0.268, cost.TotalCost, 0.0001)
+	require.InDelta(t, (0.268)*currency.USDToCNY, cost.TotalCost, 0.0001)
 }
 
 // TestGetDefaultImagePrice_FallbackHardcoded 测试 PricingService 无数据时使用硬编码默认值
@@ -158,8 +159,8 @@ func TestGetDefaultImagePrice_FallbackHardcoded(t *testing.T) {
 
 	// 1K 默认价格 $0.134，2K 默认价格 $0.201 (1.5倍)
 	cost := svc.CalculateImageCost("gemini-3-pro-image", "1K", 1, nil, 1.0)
-	require.InDelta(t, 0.134, cost.TotalCost, 0.0001)
+	require.InDelta(t, (0.134)*currency.USDToCNY, cost.TotalCost, 0.0001)
 
 	cost = svc.CalculateImageCost("gemini-3-pro-image", "2K", 1, nil, 1.0)
-	require.InDelta(t, 0.201, cost.TotalCost, 0.0001)
+	require.InDelta(t, (0.201)*currency.USDToCNY, cost.TotalCost, 0.0001)
 }

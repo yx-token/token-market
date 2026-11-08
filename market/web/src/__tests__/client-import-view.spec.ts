@@ -40,7 +40,6 @@ beforeEach(() => {
     commission_rate: 0.2,
     freeze_days: 1,
     freeze_hours: 24,
-    credit_usd_to_balance_rate: 1,
     withdraw_min: 10,
     max_hops: 5,
     payment_channels: [],

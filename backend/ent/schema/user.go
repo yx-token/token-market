@@ -47,9 +47,11 @@ func (User) Fields() []ent.Field {
 			MaxLen(20).
 			Default(domain.RoleUser),
 		field.Float("balance").
+			Comment("CNY amount").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),
 		field.Float("frozen_balance").
+			Comment("CNY amount").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),
 		field.Int("concurrency").

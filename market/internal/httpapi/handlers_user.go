@@ -241,8 +241,7 @@ func (s *Server) marketConfig(w http.ResponseWriter, r *http.Request) error {
 	}
 	return ok(w, map[string]any{
 		"edge_url": s.EdgeURL, "commission_rate": st.CommissionRate, "freeze_days": st.FreezeDays,
-		"freeze_hours": st.FreezeHours, "credit_usd_to_balance_rate": st.CreditUSDToBalanceRate,
-		"withdraw_min": st.WithdrawMin, "max_hops": 5,
+		"freeze_hours": st.FreezeHours, "withdraw_min": st.WithdrawMin, "max_hops": 5,
 		"payment_channels": channels, "recharge_min": paymentConfig.MinAmount, "recharge_max": paymentConfig.MaxAmount,
 		"price_models":         st.PriceModels,
 		"email_verify_enabled": s.Accounts != nil && s.Accounts.EmailVerifyEnabled(r.Context()),

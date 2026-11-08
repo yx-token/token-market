@@ -147,7 +147,6 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		Plans:                         planList,
 		BalanceDisabled:               cfg.BalanceDisabled,
 		BalanceRechargeMultiplier:     cfg.BalanceRechargeMultiplier,
-		SubscriptionUSDToCNYRate:      cfg.SubscriptionUSDToCNYRate,
 		RechargeFeeRate:               cfg.RechargeFeeRate,
 		RechargeBonusTiers:            cfg.RechargeBonusTiers,
 		RechargeBonusMode:             cfg.RechargeBonusMode,
@@ -167,7 +166,6 @@ type checkoutInfoResponse struct {
 	Plans                         []checkoutPlan                  `json:"plans"`
 	BalanceDisabled               bool                            `json:"balance_disabled"`
 	BalanceRechargeMultiplier     float64                         `json:"balance_recharge_multiplier"`
-	SubscriptionUSDToCNYRate      float64                         `json:"subscription_usd_to_cny_rate"`
 	RechargeFeeRate               float64                         `json:"recharge_fee_rate"`
 	RechargeBonusTiers            []service.RechargeBonusTier     `json:"recharge_bonus_tiers"`
 	RechargeBonusMode             string                          `json:"recharge_bonus_mode"`
@@ -189,9 +187,9 @@ type checkoutPlan struct {
 	PeakStart          string   `json:"peak_start"`
 	PeakEnd            string   `json:"peak_end"`
 	PeakRateMultiplier float64  `json:"peak_rate_multiplier"`
-	DailyLimitUSD      *float64 `json:"daily_limit_usd"`
-	WeeklyLimitUSD     *float64 `json:"weekly_limit_usd"`
-	MonthlyLimitUSD    *float64 `json:"monthly_limit_usd"`
+	DailyLimitUSD      *float64 `json:"daily_limit_usd"`   // CNY amount; legacy JSON name retained for compatibility.
+	WeeklyLimitUSD     *float64 `json:"weekly_limit_usd"`  // CNY amount; legacy JSON name retained for compatibility.
+	MonthlyLimitUSD    *float64 `json:"monthly_limit_usd"` // CNY amount; legacy JSON name retained for compatibility.
 	ModelScopes        []string `json:"supported_model_scopes"`
 	Name               string   `json:"name"`
 	Description        string   `json:"description"`

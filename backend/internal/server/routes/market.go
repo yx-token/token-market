@@ -71,9 +71,8 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 	// pools 的读取走 relay（见 registerIdleCatRelay）：编辑弹窗和启停/上架按钮要回传 min_margin、safety_buffer、
 	// market_description，简表没有这几列，弹窗会显示 undefined，上架/启停还会把市场描述当空串写回去。
 	bind("upstreams", func(c *gin.Context) (any, error) { return store.ListUpstreams(c.Request.Context()) })
-	bind("recharges", func(c *gin.Context) (any, error) { return store.ListRecharges(c.Request.Context()) })
-	bind("refunds", func(c *gin.Context) (any, error) { return store.ListRefunds(c.Request.Context()) })
-	bind("withdrawals", func(c *gin.Context) (any, error) { return store.ListWithdrawals(c.Request.Context()) })
+	// Financial reads share the market handlers' CNY fields and serialization
+	// with writes; native SQL summaries must not introduce another money format.
 	bind("appeals", func(c *gin.Context) (any, error) { return store.ListAppeals(c.Request.Context()) })
 	// 以下路径与 frontend/src/market-admin 一致；已去掉 policies/providers/categories/quality/payments/hot-searches 别名。
 	// detection-policies / detection-providers 的读取走 relay（见 registerIdleCatRelay）：编辑弹窗依赖 flows、third_party、
@@ -128,6 +127,9 @@ func registerNativeIdleCat(admin *gin.RouterGroup, store *idlecat.Store) {
 // 系统升级不在此列，仍由 market-api 本进程处理。
 func registerIdleCatRelay(admin *gin.RouterGroup) {
 	paths := []string{
+		"GET recharges",
+		"GET refunds",
+		"GET withdrawals",
 		"GET vendors",
 		"POST identities/bind",
 		"GET inspection/settings",

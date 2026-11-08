@@ -15,12 +15,12 @@ type SubscriptionSummaryItem struct {
 	GroupID         int64   `json:"group_id"`
 	GroupName       string  `json:"group_name"`
 	Status          string  `json:"status"`
-	DailyUsedUSD    float64 `json:"daily_used_usd,omitempty"`
-	DailyLimitUSD   float64 `json:"daily_limit_usd,omitempty"`
-	WeeklyUsedUSD   float64 `json:"weekly_used_usd,omitempty"`
-	WeeklyLimitUSD  float64 `json:"weekly_limit_usd,omitempty"`
-	MonthlyUsedUSD  float64 `json:"monthly_used_usd,omitempty"`
-	MonthlyLimitUSD float64 `json:"monthly_limit_usd,omitempty"`
+	DailyUsedUSD    float64 `json:"daily_used_usd,omitempty"`    // CNY amount; legacy JSON name retained for compatibility.
+	DailyLimitUSD   float64 `json:"daily_limit_usd,omitempty"`   // CNY amount; legacy JSON name retained for compatibility.
+	WeeklyUsedUSD   float64 `json:"weekly_used_usd,omitempty"`   // CNY amount; legacy JSON name retained for compatibility.
+	WeeklyLimitUSD  float64 `json:"weekly_limit_usd,omitempty"`  // CNY amount; legacy JSON name retained for compatibility.
+	MonthlyUsedUSD  float64 `json:"monthly_used_usd,omitempty"`  // CNY amount; legacy JSON name retained for compatibility.
+	MonthlyLimitUSD float64 `json:"monthly_limit_usd,omitempty"` // CNY amount; legacy JSON name retained for compatibility.
 	ExpiresAt       *string `json:"expires_at,omitempty"`
 }
 
@@ -176,7 +176,7 @@ func (h *SubscriptionHandler) GetSummary(c *gin.Context) {
 
 	summary := struct {
 		ActiveCount   int                       `json:"active_count"`
-		TotalUsedUSD  float64                   `json:"total_used_usd"`
+		TotalUsedUSD  float64                   `json:"total_used_usd"` // CNY amount; legacy JSON name retained for compatibility.
 		Subscriptions []SubscriptionSummaryItem `json:"subscriptions"`
 	}{
 		ActiveCount:   len(subscriptions),

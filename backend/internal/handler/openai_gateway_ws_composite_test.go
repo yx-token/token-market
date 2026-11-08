@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/yx-token/token-market/internal/pkg/currency"
+
 	coderws "github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -131,9 +133,9 @@ func TestOpenAIResponsesWebSocket_CompositeChannelBilling(t *testing.T) {
 				require.Equal(t, "gpt-5.6-sol", log.RequestedModel)
 				require.Equal(t, "gpt-5.6-sol", log.Model)
 				if source == service.BillingModelSourceRequested {
-					require.InDelta(t, 40e-6, log.TotalCost, 1e-12)
+					require.InDelta(t, currency.USDToCNY*(40e-6), log.TotalCost, 1e-12)
 				} else {
-					require.InDelta(t, 20e-6, log.TotalCost, 1e-12)
+					require.InDelta(t, currency.USDToCNY*(20e-6), log.TotalCost, 1e-12)
 				}
 			}
 		})

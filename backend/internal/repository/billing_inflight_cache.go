@@ -12,7 +12,7 @@ import (
 
 // 余额在途预留：
 //   - billing:inflight:{uid}      ZSET  member=requestID score=过期时间(ms)
-//   - billing:inflight_amt:{uid}  HASH  field=requestID value=预留金额(USD)
+//   - billing:inflight_amt:{uid}  HASH  field=requestID value=预留金额(CNY)
 //
 // 两个 key 使用同一 hash tag，保证 Redis Cluster 下 Lua 可同时访问。
 const (

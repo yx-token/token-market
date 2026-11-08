@@ -158,7 +158,8 @@ type SettingService struct {
 	channelMonitorRuntimeListeners   []func()
 }
 
-// DefaultPlatformQuotaSetting 单 platform 三档限额（nil = 沿用上层；0 = 显式禁用；>0 = 上限）
+// DefaultPlatformQuotaSetting 单 platform 三档 CNY 限额（nil = 沿用上层；0 = 显式禁用；>0 = 上限）。
+// USD Go field names are retained for compatibility; these amounts are CNY.
 type DefaultPlatformQuotaSetting struct {
 	DailyLimitUSD   *float64 `json:"daily"`
 	WeeklyLimitUSD  *float64 `json:"weekly"`

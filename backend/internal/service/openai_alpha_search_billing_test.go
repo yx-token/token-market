@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 func TestCalculateWebSearchCostDefaultAndOverride(t *testing.T) {
@@ -17,8 +18,8 @@ func TestCalculateWebSearchCostDefaultAndOverride(t *testing.T) {
 
 	// 默认价：官方 $10/1000 次 = 0.01/次
 	cost := s.CalculateWebSearchCost(1, nil, 1.0)
-	require.InDelta(t, 0.01, cost.TotalCost, 1e-12)
-	require.InDelta(t, 0.01, cost.ActualCost, 1e-12)
+	require.InDelta(t, (0.01)*currency.USDToCNY, cost.TotalCost, 1e-12)
+	require.InDelta(t, (0.01)*currency.USDToCNY, cost.ActualCost, 1e-12)
 	require.Equal(t, string(BillingModePerRequest), cost.BillingMode)
 
 	// 分组覆盖价 + 倍率
@@ -33,7 +34,7 @@ func TestCalculateWebSearchCostDefaultAndOverride(t *testing.T) {
 
 	// 负数倍率按 0 处理，避免按 1x 误扣
 	cost = s.CalculateWebSearchCost(1, nil, -1)
-	require.InDelta(t, 0.01, cost.TotalCost, 1e-12)
+	require.InDelta(t, (0.01)*currency.USDToCNY, cost.TotalCost, 1e-12)
 	require.Zero(t, cost.ActualCost)
 
 	// 次数 <= 0 不产生费用
@@ -54,8 +55,8 @@ func TestCalculateOpenAIRecordUsageCostWebSearchPerCall(t *testing.T) {
 	cost, err := svc.calculateOpenAIRecordUsageCost(context.Background(), result, apiKey, []string{"gpt-5.6-sol"}, 3.0, 1.0, 1.0, 2.0, UsageTokens{}, "", boolPtr(false), time.Time{})
 	require.NoError(t, err)
 	require.Equal(t, string(BillingModePerRequest), cost.BillingMode)
-	require.InDelta(t, 0.01, cost.TotalCost, 1e-12)
-	require.InDelta(t, 0.02, cost.ActualCost, 1e-12)
+	require.InDelta(t, (0.01)*currency.USDToCNY, cost.TotalCost, 1e-12)
+	require.InDelta(t, (0.02)*currency.USDToCNY, cost.ActualCost, 1e-12)
 
 	// 分组配置单价 0.005
 	apiKey.Group.WebSearchPricePerCall = float64Ptr(0.005)

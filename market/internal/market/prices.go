@@ -9,7 +9,8 @@ import (
 	"github.com/yx-token/token-market/market/internal/sub2api/adminclient"
 )
 
-// Price 是一个模型的官方价格（美元 / 百万 token），寄售与回收倍率都相对它计算。
+// Price 是一个模型的官方价格（人民币 / 百万 token），寄售与回收倍率都相对它计算。
+// 引擎加载 LiteLLM 美元价目时已统一按 1 USD = 7 CNY 换算，这里原样展示，不再换算。
 type Price struct {
 	Model           string  `json:"model"`
 	Provider        string  `json:"provider,omitempty"`

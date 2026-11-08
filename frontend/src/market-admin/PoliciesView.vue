@@ -41,7 +41,7 @@ interface Policy {
   interval_minutes: number
   jitter_minutes: number
   models: string[]
-  daily_budget_usd: number
+  daily_budget_cny: number
   thresholds: { h0: number; h1: number; alpha: number; beta: number }
   auto_pause: boolean
   default_grade: string
@@ -140,7 +140,7 @@ const form = reactive({
   enabled: false,
   scheduled: false,
   jitter: 30,
-  budget: 1,
+  budget: 7,
   h0: 0.9,
   h1: 0.7,
   alpha: 0.05,
@@ -175,7 +175,7 @@ const columns: Column[] = [
   { key: 'degradation', label: '降智', class: 'col-flow' },
   { key: 'identity', label: '身份', class: 'col-flow' },
   { key: 'third_party', label: '第三方', class: 'col-flow' },
-  { key: 'budget', label: '预算', class: 'col-budget' },
+  { key: 'budget', label: '预算(¥)', class: 'col-budget' },
   { key: 'actions', label: '操作', class: 'col-ops' },
 ]
 
@@ -393,6 +393,11 @@ function closeCreate() {
   error.value = ''
 }
 
+function formatBudget(value: unknown) {
+  const amount = Number(value)
+  return Number.isFinite(amount) ? `¥${amount.toFixed(2)}` : '—'
+}
+
 function openEdit(p: Policy) {
   error.value = ''
   msg.value = ''
@@ -402,7 +407,7 @@ function openEdit(p: Policy) {
     enabled: p.enabled,
     scheduled: p.scheduled_enabled,
     jitter: p.jitter_minutes,
-    budget: p.daily_budget_usd,
+    budget: p.daily_budget_cny,
     h0: p.thresholds?.h0 ?? 0.9,
     h1: p.thresholds?.h1 ?? 0.7,
     alpha: p.thresholds?.alpha ?? 0.05,
@@ -491,7 +496,7 @@ async function save() {
     enabled: form.enabled,
     scheduled_enabled: form.enabled && form.scheduled,
     jitter_minutes: Number(form.jitter),
-    daily_budget_usd: Number(form.budget),
+    daily_budget_cny: Number(form.budget),
     thresholds: { h0: Number(form.h0), h1: Number(form.h1), alpha: Number(form.alpha), beta: Number(form.beta) },
     auto_pause: form.autoPause,
     default_grade: form.grade,
@@ -773,7 +778,7 @@ onMounted(load)
                 {{ providerLabel(site.provider) }}<span v-if="providerDisabled(site.provider)" class="hint">（已停用）</span>
               </span>
             </template>
-            <template #cell-budget="{ row }">{{ row.daily_budget_usd }}</template>
+            <template #cell-budget="{ row }">{{ formatBudget(row.daily_budget_cny) }}</template>
             <template #cell-actions="{ row }">
               <div class="table-ops">
                 <button type="button" class="y-link" :disabled="busy" @click="quick(row, 'enabled')">
@@ -899,7 +904,7 @@ onMounted(load)
         <p class="hint">定时执行需同时开启总检测、总定时检测，以及对应流程和流程定时。</p>
         <div class="y-field-row y-field-row--4">
           <label class="y-field"><span>抖动(分)</span><input v-model.number="form.jitter" type="number" class="input w-full" /></label>
-          <label class="y-field"><span>每日预算$</span><input v-model.number="form.budget" type="number" class="input w-full" step="0.1" /></label>
+          <label class="y-field"><span>每日预算（¥）</span><input v-model.number="form.budget" type="number" class="input w-full" step="0.1" /></label>
           <label class="y-field"><span>默认等级</span><input v-model="form.grade" class="input w-full" /></label>
           <label class="y-field"><span>并发</span><input v-model.number="form.parallelism" type="number" class="input w-full" min="1" /></label>
         </div>

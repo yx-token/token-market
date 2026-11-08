@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/ctxkey"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 func newGatewayRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo UserRepository, subRepo UserSubscriptionRepository) *GatewayService {
@@ -516,7 +517,7 @@ func TestGatewayServiceRecordUsage_DeepSeekAccountStatsUsesRequestPricingAtAndUp
 				require.Equal(t, 1, userRepo.deductCalls)
 				require.InDelta(t, customerTotal*0.8, userRepo.lastAmount, 1e-12)
 				require.NotNil(t, log.AccountStatsCost)
-				require.InDelta(t, model.offPeakCost*slot.multiplier, *log.AccountStatsCost, 1e-12,
+				require.InDelta(t, model.offPeakCost*slot.multiplier*currency.USDToCNY, *log.AccountStatsCost, 1e-12,
 					"account cost must use the upstream model and historical PricingAt")
 			})
 		}

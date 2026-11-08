@@ -38,9 +38,10 @@ func allocateStoreCredits(ctx context.Context, tx pgx.Tx, txnID int64) error {
 			return err
 		}
 		var buyerID int64
-		var coveredUSD, leftUSD, covered, prepaid, cash, payout string
+		var covered, prepaid, cash, payout string
+		// 面额与余额都按平台余额单位（人民币）计；预付本金按 已抵扣 / 面额 摊算。
 		err := tx.QueryRow(ctx, `WITH x AS (
- SELECT p.buyer_id,p.remaining_balance_units,p.usd_to_balance_rate,p.prepaid_remaining_cny,p.price_cny,p.face_value_usd,
+ SELECT p.buyer_id,p.remaining_balance_units,p.prepaid_remaining_cny,p.price_cny,p.face_value_cny,
  ur.actual_cost,ur.payout, GREATEST(0,LEAST(ur.actual_cost,CASE WHEN
  p.status IN ('active','refunding') AND p.seller_id=ur.seller_id
  AND (cardinality(p.allowed_platforms)=0 OR u.platform=ANY(p.allowed_platforms))
@@ -50,24 +51,22 @@ func allocateStoreCredits(ctx context.Context, tx pgx.Tx, txnID int64) error {
  JOIN upstreams u ON u.id=ur.upstream_id WHERE p.id=$1
  ), split AS (
  SELECT *,CASE WHEN covered=remaining_balance_units AND covered>0 THEN prepaid_remaining_cny
- ELSE LEAST(prepaid_remaining_cny,round(covered*price_cny/(face_value_usd*usd_to_balance_rate),10)) END AS prepaid
+ ELSE LEAST(prepaid_remaining_cny,round(covered*price_cny/face_value_cny,10)) END AS prepaid
  FROM x)
- SELECT buyer_id,round(covered/usd_to_balance_rate,16)::text,
- round((remaining_balance_units-covered)/usd_to_balance_rate,16)::text,
- covered::text,prepaid::text,GREATEST(actual_cost-covered,0)::text,
+ SELECT buyer_id,covered::text,prepaid::text,GREATEST(actual_cost-covered,0)::text,
  CASE WHEN actual_cost>0 THEN round(payout*(GREATEST(actual_cost-covered,0)+prepaid)/actual_cost,10) ELSE payout END::text
- FROM split`, it.packID, it.usageID).Scan(&buyerID, &coveredUSD, &leftUSD, &covered, &prepaid, &cash, &payout)
+ FROM split`, it.packID, it.usageID).Scan(&buyerID, &covered, &prepaid, &cash, &payout)
 		if err != nil {
 			return fmt.Errorf("allocate credit usage %d: %w", it.usageID, err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO store_credit_allocations(usage_id,pack_id,buyer_id,seller_id,model,platform,covered_usd,covered_balance_units,prepaid_cny,cash_cny)
- SELECT ur.sub2api_usage_id,$1,$3,ur.seller_id,ur.model,u.platform,$4::numeric,$5::numeric,$6::numeric,$7::numeric
- FROM usage_records ur JOIN upstreams u ON u.id=ur.upstream_id WHERE ur.sub2api_usage_id=$2`, it.packID, it.usageID, buyerID, coveredUSD, covered, prepaid, cash); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO store_credit_allocations(usage_id,pack_id,buyer_id,seller_id,model,platform,covered_balance_units,prepaid_cny,cash_cny)
+ SELECT ur.sub2api_usage_id,$1,$3,ur.seller_id,ur.model,u.platform,$4::numeric,$5::numeric,$6::numeric
+ FROM usage_records ur JOIN upstreams u ON u.id=ur.upstream_id WHERE ur.sub2api_usage_id=$2`, it.packID, it.usageID, buyerID, covered, prepaid, cash); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE store_credit_packs SET remaining_usd=$2::numeric,
- remaining_balance_units=remaining_balance_units-$3::numeric,prepaid_remaining_cny=prepaid_remaining_cny-$4::numeric,
- status=CASE WHEN remaining_balance_units=$3::numeric AND status='active' THEN 'depleted' ELSE status END WHERE id=$1`, it.packID, leftUSD, covered, prepaid); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE store_credit_packs SET
+ remaining_balance_units=remaining_balance_units-$2::numeric,prepaid_remaining_cny=prepaid_remaining_cny-$3::numeric,
+ status=CASE WHEN remaining_balance_units=$2::numeric AND status='active' THEN 'depleted' ELSE status END WHERE id=$1`, it.packID, covered, prepaid); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE usage_records SET credit_covered_units=$2::numeric,credit_prepaid_cny=$3::numeric,

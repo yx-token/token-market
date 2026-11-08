@@ -35,3 +35,15 @@ The file contains JSON data with model pricing information including:
 - Model capabilities
 
 Last updated: 2025-08-10
+
+## Accounting Currency
+
+Remote catalogs, this fallback file, `plaza_channel_catalog.json`, and
+`pricing.override_file` use the original LiteLLM **USD** price format. Never
+preconvert these files. The engine converts every absolute price to **CNY** once
+when parsing it into memory, using `internal/pkg/currency.USDToCNY` (1 USD = 7 CNY).
+Raw downloaded JSON, SHA-256 hashes and cache files remain unchanged in USD.
+Reloads rebuild from those raw files, so they do not multiply an existing CNY
+price again. Tier thresholds and all dimensionless multipliers are unchanged.
+Administrator-entered channel/group prices are already CNY and are not converted
+by the parser. Pricing catalog and model plaza official prices return CNY.

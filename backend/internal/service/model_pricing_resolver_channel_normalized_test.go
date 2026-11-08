@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 const (
@@ -157,6 +158,6 @@ func TestChannelPricing_UnrelatedChannelModelNotMatched(t *testing.T) {
 	log := recordUsageWithChannelPricing(t, "gpt-5.6-luna-high", false, []ChannelModelPricing{
 		tokenPricingForModels([]string{"gpt-5.4"}, channelPricingUnrelatedCost),
 	})
-	require.InDelta(t, channelPricingExpectedOfficialCost, log.InputCost, 1e-9,
+	require.InDelta(t, (channelPricingExpectedOfficialCost)*currency.USDToCNY, log.InputCost, 1e-9,
 		"normalized lookup must not match an unrelated channel pricing entry")
 }

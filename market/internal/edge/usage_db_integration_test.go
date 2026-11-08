@@ -96,14 +96,14 @@ func newUsageDBFixture(t *testing.T) *usageDBFixture {
 
 func (f *usageDBFixture) addStoreCredit(t *testing.T) {
 	t.Helper()
-	f.offerID = f.id(t, `INSERT INTO store_credit_offers(seller_id,title,price_cny,face_value_usd,allowed_platforms,allowed_models)
-	 VALUES($1,'usage-credit',80,100,'{anthropic}','{match}') RETURNING id`, f.sellerID)
+	f.offerID = f.id(t, `INSERT INTO store_credit_offers(seller_id,title,price_cny,face_value_cny,allowed_platforms,allowed_models)
+	 VALUES($1,'usage-credit',80,200,'{anthropic}','{match}') RETURNING id`, f.sellerID)
 	f.fundingID = f.id(t, `INSERT INTO sub2api_ops(op_type,target,payload,idempotency_key,status)
 	 VALUES('user_balance_add','usage-credit','{}','usage-credit-funding','done') RETURNING id`)
-	f.packID = f.id(t, `INSERT INTO store_credit_packs(offer_id,buyer_id,seller_id,title,price_cny,face_value_usd,
-	 remaining_usd,remaining_balance_units,prepaid_remaining_cny,usd_to_balance_rate,allowed_platforms,allowed_models,
+	f.packID = f.id(t, `INSERT INTO store_credit_packs(offer_id,buyer_id,seller_id,title,price_cny,face_value_cny,
+	 remaining_balance_units,prepaid_remaining_cny,allowed_platforms,allowed_models,
 	 idempotency_key,status,funding_op_id)
-	 VALUES($1,$2,$3,'usage-credit',80,100,40,80,32,2,'{anthropic}','{match}','usage-credit-purchase','active',$4) RETURNING id`,
+	 VALUES($1,$2,$3,'usage-credit',80,200,80,32,'{anthropic}','{match}','usage-credit-purchase','active',$4) RETURNING id`,
 		f.offerID, f.buyerID, f.sellerID, f.fundingID)
 	f.creditShadowID = f.id(t, `INSERT INTO shadow_identities(kind,owner_id,status,sub2api_user_id,email,password_enc)
 	 VALUES('credit_pack',$1,'active',102,'usage-credit@shadow','test') RETURNING id`, f.packID)
@@ -129,7 +129,6 @@ func TestDBUsageReaderBalancesAndScope(t *testing.T) {
 		got := f.read(t)
 		require.Equal(t, 25.5, got.Cash)
 		require.Equal(t, 80.0, got.StoreCredit)
-		require.Equal(t, 40.0, got.StoreCreditUSD)
 		require.Equal(t, 32.0, got.StoreCreditPrepaidCNY)
 	})
 	for _, status := range []string{"active", "depleted", "refunding", "refunded"} {
@@ -183,7 +182,6 @@ func TestDBUsageReaderBalancesAndScope(t *testing.T) {
 			got := f.read(t)
 			require.Equal(t, 25.5, got.Cash, "unusable activity must not erase ordinary wallet funds")
 			require.Zero(t, got.StoreCredit)
-			require.Zero(t, got.StoreCreditUSD)
 			require.Zero(t, got.StoreCreditPrepaidCNY)
 		})
 	}
@@ -241,7 +239,7 @@ func TestDBUsageReaderBalancesAndScope(t *testing.T) {
 		require.Equal(t, 80.0, f.read(t).StoreCredit)
 	})
 	t.Run("usage windows and limits are key scoped", func(t *testing.T) {
-		f.exec(t, `UPDATE buyer_keys SET limits='{"quota_usd":100,"rate_limit_5h_usd":10,"rate_limit_1d_usd":20,"rate_limit_7d_usd":30}' WHERE id=$1`, f.keyID)
+		f.exec(t, `UPDATE buyer_keys SET limits='{"quota_cny":100,"rate_limit_5h_cny":10,"rate_limit_1d_cny":20,"rate_limit_7d_cny":30}' WHERE id=$1`, f.keyID)
 		t.Cleanup(func() {
 			f.exec(t, `DELETE FROM usage_records`)
 			f.exec(t, `UPDATE buyer_keys SET limits='{}' WHERE id=$1`, f.keyID)

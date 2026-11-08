@@ -44,7 +44,7 @@ func TestSpendingLimitAndRiskControls(t *testing.T) {
 	buyer.must("POST", "/api/buyer/keys", map[string]any{
 		"name":   "limited",
 		"route":  map[string]any{"type": "chain", "hops": []map[string]any{{"listing_id": created.Listing.ID}}},
-		"limits": map[string]any{"quota_usd": 0.5},
+		"limits": map[string]any{"quota_cny": 0.5},
 	}, &key)
 	e.schedule()
 	e.ingestAll() // 上架检测的探测流量
@@ -72,7 +72,7 @@ func TestSpendingLimitAndRiskControls(t *testing.T) {
 		t.Fatalf("buyer should see why the key is blocked: %+v", k)
 	}
 	// 买家提高额度后立即解除
-	buyer.must("PUT", fmt.Sprintf("/api/buyer/keys/%d", key.Detail.ID), map[string]any{"limits": map[string]any{"quota_usd": 5}}, nil)
+	buyer.must("PUT", fmt.Sprintf("/api/buyer/keys/%d", key.Detail.ID), map[string]any{"limits": map[string]any{"quota_cny": 5}}, nil)
 	if err := e.app.Limits.RunOnce(ctx); err != nil {
 		t.Fatal(err)
 	}

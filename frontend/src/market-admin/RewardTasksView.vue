@@ -11,6 +11,7 @@ import {
   REWARD_EVENT_STATES, REWARD_TICKET_STATES,
   type RewardEvent, type RewardEventState, type RewardPingResult, type RewardTaskConfig, type RewardTicket, type RewardTicketState,
 } from './api'
+import { money } from './money'
 
 defineOptions({ name: 'MarketAdminRewardTasks' })
 
@@ -369,7 +370,7 @@ onBeforeUnmount(() => {
             <span class="cell-main">{{ TASK_TYPES[row.event_type] || row.event_type }}</span>
             <span v-if="row.recharge_order_id" class="y-hint">充值单 #{{ row.recharge_order_id }}</span>
           </template>
-          <template #cell-amount="{ row }">{{ row.amount ?? '—' }}</template>
+          <template #cell-amount="{ row }">{{ money(row.amount) }}</template>
           <template #cell-state="{ row }">
             <span class="cell-main">{{ EVENT_LABELS[row.state as RewardEventState] || row.state }}</span>
             <span v-if="row.reason" class="y-hint">{{ reasonText(row.reason) }}</span>

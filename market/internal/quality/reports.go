@@ -226,7 +226,7 @@ func ListAppeals(ctx context.Context, db DB, status string, limit, offset int) (
 	return out, rows.Err()
 }
 
-// ResolveAppeal 管理员处理申诉：完整复测不受每日美元预算限制，推翻清除对应流程旧证据。
+// ResolveAppeal 管理员处理申诉：完整复测不受每日人民币预算限制，推翻清除对应流程旧证据。
 func (e *Engine) ResolveAppeal(ctx context.Context, appealID int64, action, note string) (*Appeal, error) {
 	a, err := scanAppeal(e.DB.QueryRow(ctx, "SELECT "+appealColumns+" FROM appeals WHERE id = $1", appealID))
 	if errors.Is(err, pgx.ErrNoRows) {

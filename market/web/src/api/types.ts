@@ -23,8 +23,6 @@ export interface MarketConfig {
   freeze_days: number
   /** 卖家收益冻结小时数。公开配置已下发；缺省时前端才退回 freeze_days。 */
   freeze_hours?: number
-  /** 1 美元活动额度可抵的平台余额单位。购买时快照，不追改已购包。 */
-  credit_usd_to_balance_rate?: number
   withdraw_min: number
   max_hops: number
   payment_channels: string[]
@@ -272,10 +270,11 @@ export interface RouteInput {
 }
 
 export interface Limits {
-  quota_usd?: number
-  rate_limit_5h_usd?: number
-  rate_limit_1d_usd?: number
-  rate_limit_7d_usd?: number
+  /** 人民币额度上限；1 元 = 1 个平台余额单位 */
+  quota_cny?: number
+  rate_limit_5h_cny?: number
+  rate_limit_1d_cny?: number
+  rate_limit_7d_cny?: number
   ip_whitelist?: string[]
   expires_at?: string
 }
@@ -313,7 +312,8 @@ export interface CreatedKey {
 export interface BuyerCostAllocation {
   cash_cost?: number
   credit_prepaid_cny?: number
-  credit_covered_usd?: number
+  /** 活动额度抵扣的金额（人民币），与 credit_covered_units 相同 */
+  credit_covered_cny?: number
   credit_covered_units?: number
   credit_pack_id?: number
 }

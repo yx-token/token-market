@@ -49,31 +49,37 @@ func (UserPlatformQuota) Fields() []ent.Field {
 				}
 			}),
 
-		// 日 / 周 / 月 USD 上限：
+		// 日 / 周 / 月 CNY 上限：
 		//   nil / not set → 无限额（完全放行）
 		//   0            → 完全禁用（任何请求都会被拒绝，因为 usage >= 0 恒成立）
-		//   > 0          → USD 限额上限
+		//   > 0          → CNY 限额上限
 		field.Float("daily_limit_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Float("weekly_limit_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Float("monthly_limit_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 
-		// 当前窗口已用量（USD，preflight 时与 limit 比较）
+		// 当前窗口已用量（CNY，preflight 时与 limit 比较）
 		field.Float("daily_usage_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Float("weekly_usage_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 		field.Float("monthly_usage_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			Default(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}),
 

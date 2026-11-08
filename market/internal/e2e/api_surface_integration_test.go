@@ -186,7 +186,7 @@ func TestAPISurface(t *testing.T) {
 		OutputPer1M float64 `json:"output_per_1m"`
 	}
 	e.anon().must("GET", "/api/market/prices", nil, &prices)
-	if len(prices) != 1 || prices[0].Model != "claude-sonnet-4-5" || !approx(prices[0].InputPer1M, 3) || !approx(prices[0].OutputPer1M, 15) {
+	if len(prices) != 1 || prices[0].Model != "claude-sonnet-4-5" || !approx(prices[0].InputPer1M, 21) || !approx(prices[0].OutputPer1M, 105) {
 		t.Fatalf("official prices: %+v", prices)
 	}
 	var ref struct {

@@ -60,12 +60,15 @@ func (UserSubscription) Fields() []ent.Field {
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 
 		field.Float("daily_usage_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}).
 			Default(0),
 		field.Float("weekly_usage_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}).
 			Default(0),
 		field.Float("monthly_usage_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}).
 			Default(0),
 

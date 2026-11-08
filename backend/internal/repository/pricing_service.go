@@ -55,6 +55,8 @@ func NewPricingRemoteClient(proxyURL string, allowDirectOnProxyError bool) servi
 	}
 }
 
+// FetchPricingJSON preserves provider USD bytes for the raw cache and hash;
+// PricingService converts fresh parsed entries to CNY, never this transport.
 func (c *pricingRemoteClient) FetchPricingJSON(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

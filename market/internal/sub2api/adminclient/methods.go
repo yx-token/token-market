@@ -404,7 +404,7 @@ func (c *Client) AccountUsage(ctx context.Context, id int64, passive bool) (*Acc
 	return &out, nil
 }
 
-// ModelPricing 是 sub2api 内置价目表中某个模型的官方单价（美元 / token）。
+// ModelPricing 是 sub2api 内置价目表中某个模型的官方单价（人民币 / token；引擎加载美元价目时已按 1 USD = 7 CNY 换算）。
 type ModelPricing struct {
 	Found           bool    `json:"found"`
 	InputPrice      float64 `json:"input_price"`
@@ -413,7 +413,7 @@ type ModelPricing struct {
 	CacheReadPrice  float64 `json:"cache_read_price"`
 }
 
-// PricingCatalogEntry 是全量价目表中的一条（含厂商与能力类型）。
+// PricingCatalogEntry 是全量价目表中的一条（含厂商与能力类型），单价为人民币 / token，与 ModelPricing 同一口径。
 type PricingCatalogEntry struct {
 	Model           string  `json:"model"`
 	Provider        string  `json:"provider"`

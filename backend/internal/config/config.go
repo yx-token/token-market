@@ -669,15 +669,15 @@ type TokenRefreshConfig struct {
 }
 
 type PricingConfig struct {
-	// 价格数据远程URL（默认使用LiteLLM镜像）
+	// 价格数据远程URL（LiteLLM 美元格式，解析入内存后转 CNY；原始缓存保持 USD）
 	RemoteURL string `mapstructure:"remote_url"`
 	// 哈希校验文件URL
 	HashURL string `mapstructure:"hash_url"`
 	// 本地数据目录
 	DataDir string `mapstructure:"data_dir"`
-	// 回退文件路径
+	// 回退文件路径（LiteLLM USD 格式，解析后一次换算为 CNY）
 	FallbackFile string `mapstructure:"fallback_file"`
-	// 覆盖补丁文件路径（可选）：条目按字段浅合并覆盖目录/回退数据，优先级最高
+	// 覆盖补丁文件路径（可选，LiteLLM USD 格式）：字段浅合并后一次换算为 CNY，优先级最高
 	OverrideFile string `mapstructure:"override_file"`
 	// 更新间隔（小时）
 	UpdateIntervalHours int `mapstructure:"update_interval_hours"`
@@ -940,7 +940,7 @@ type InflightReservationConfig struct {
 	MaxOutputTokens int `mapstructure:"max_output_tokens"`
 	// MaxInputTokens 输入 token 估算（请求体字节数 / 4）的上限。
 	MaxInputTokens int `mapstructure:"max_input_tokens"`
-	// MaxReservationUSD 单请求预留金额上限；0 表示不设上限。
+	// MaxReservationUSD 单请求预留金额上限（CNY，保留旧配置键 max_reservation_usd）；0 表示不设上限。
 	MaxReservationUSD float64 `mapstructure:"max_reservation_usd"`
 	// FailClosedOnUnpriced 无法为请求估算费用（模型/分组/渠道均无定价）时是否拒绝请求。
 	// 默认 false：放行且不预留（fail-open，节流告警日志）。

@@ -6,7 +6,8 @@ export interface CreditOffer {
   title: string
   description: string
   price_cny: number
-  face_value_usd: number
+  /** 活动额度面值，人民币 */
+  face_value_cny: number
   allowed_platforms: string[]
   allowed_models: string[]
   status: string
@@ -21,11 +22,11 @@ export interface CreditPack {
   seller_id: number
   title: string
   price_cny: number
-  face_value_usd: number
-  remaining_usd: number
+  face_value_cny: number
+  /** 剩余额度，人民币；等于 remaining_balance_units */
+  remaining_cny: number
   remaining_balance_units: number
   prepaid_remaining_cny: number
-  usd_to_balance_rate: number
   allowed_platforms: string[]
   allowed_models: string[]
   status: 'provisioning' | 'active' | 'depleted' | 'refunding' | 'refunded'

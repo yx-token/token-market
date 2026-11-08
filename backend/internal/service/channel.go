@@ -86,7 +86,7 @@ type AccountStatsPricingRule struct {
 	UpdatedAt  time.Time
 }
 
-// ChannelModelPricing 渠道模型定价条目
+// ChannelModelPricing 渠道模型定价条目：所有绝对单价以 CNY 录入和返回，倍率不带币种。
 type ChannelModelPricing struct {
 	ID                         int64               `json:"id,omitempty"`
 	ChannelID                  int64               `json:"channel_id,omitempty"`
@@ -124,7 +124,7 @@ type ChannelTimePricingPeriod struct {
 	Multiplier float64 `json:"multiplier"`
 }
 
-// PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层）
+// PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层），绝对单价均为 CNY。
 type PricingInterval struct {
 	ID                   int64     `json:"id,omitempty"`
 	PricingID            int64     `json:"pricing_id,omitempty"`

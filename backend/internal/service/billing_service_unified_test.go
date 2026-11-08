@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/yx-token/token-market/internal/config"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 // ---------------------------------------------------------------------------
@@ -55,8 +56,8 @@ func TestCalculateCostUnified_TokenMode(t *testing.T) {
 
 	// Verify token billing: Input: 1000*3e-6=0.003, Output: 500*15e-6=0.0075
 	expectedTotal := 1000*3e-6 + 500*15e-6
-	require.InDelta(t, expectedTotal, cost.TotalCost, 1e-10)
-	require.InDelta(t, expectedTotal*1.5, cost.ActualCost, 1e-10)
+	require.InDelta(t, (expectedTotal)*currency.USDToCNY, cost.TotalCost, 1e-10)
+	require.InDelta(t, (expectedTotal*1.5)*currency.USDToCNY, cost.ActualCost, 1e-10)
 	require.Equal(t, string(BillingModeToken), cost.BillingMode)
 }
 
@@ -77,9 +78,9 @@ func TestCalculateCostUnified_TokenModeAppliesRateMultiplierToImageTokens(t *tes
 	textInput := 1000 * 3e-6
 	textOutput := 500 * 15e-6
 	imageOutput := 100 * 15e-6
-	require.InDelta(t, textInput+textOutput+imageOutput, cost.TotalCost, 1e-10)
-	require.InDelta(t, (textInput+textOutput+imageOutput)*3.0, cost.ActualCost, 1e-10)
-	require.InDelta(t, imageOutput, cost.ImageOutputCost, 1e-10)
+	require.InDelta(t, (textInput+textOutput+imageOutput)*currency.USDToCNY, cost.TotalCost, 1e-10)
+	require.InDelta(t, ((textInput+textOutput+imageOutput)*3.0)*currency.USDToCNY, cost.ActualCost, 1e-10)
+	require.InDelta(t, (imageOutput)*currency.USDToCNY, cost.ImageOutputCost, 1e-10)
 }
 
 func TestCalculateCostUnified_PerRequestMode(t *testing.T) {

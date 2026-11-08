@@ -133,15 +133,15 @@ func TestCreditRuntimeIndependentWalletScopeAndFallback(t *testing.T) {
 		e.put(t, "tm-buyer", cfg)
 	}
 	var offerID, packID, purchaseID int64
-	scan(market.QueryRow(ctx, `INSERT INTO store_credit_offers(seller_id,title,price_cny,face_value_usd,allowed_platforms,allowed_models)
-		VALUES($1,'test-credit',1,1,'{anthropic}','{match}') RETURNING id`, sellerID), &offerID)
+	scan(market.QueryRow(ctx, `INSERT INTO store_credit_offers(seller_id,title,price_cny,face_value_cny,allowed_platforms,allowed_models)
+		VALUES($1,'test-credit',1,2,'{anthropic}','{match}') RETURNING id`, sellerID), &offerID)
 	purchaseID, err = ops.Enqueue(ctx, market, ops.NewOp{Type: opshandlers.TypeUserBalanceSubtract, Target: "purchase:test", Payload: map[string]any{}, IdempotencyKey: "credit-test-purchase"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	scan(market.QueryRow(ctx, `INSERT INTO store_credit_packs(offer_id,buyer_id,seller_id,title,price_cny,face_value_usd,
-		remaining_usd,remaining_balance_units,prepaid_remaining_cny,usd_to_balance_rate,allowed_platforms,allowed_models,idempotency_key,purchase_op_id)
-		VALUES($1,$2,$3,'test-credit',1,1,1,2,1,2,'{anthropic}','{match}','test-buy',$4) RETURNING id`, offerID, buyerID, sellerID, purchaseID), &packID)
+	scan(market.QueryRow(ctx, `INSERT INTO store_credit_packs(offer_id,buyer_id,seller_id,title,price_cny,face_value_cny,
+		remaining_balance_units,prepaid_remaining_cny,allowed_platforms,allowed_models,idempotency_key,purchase_op_id)
+		VALUES($1,$2,$3,'test-credit',1,2,2,1,'{anthropic}','{match}','test-buy',$4) RETURNING id`, offerID, buyerID, sellerID, purchaseID), &packID)
 	provision := func() {
 		t.Helper()
 		if err := keys.ProvisionCreditPacks(ctx); err != nil {
@@ -274,9 +274,9 @@ func TestCreditRuntimeIndependentWalletScopeAndFallback(t *testing.T) {
 		t.Fatalf("group倍率2 must consume1.2 per call, ordinary=%v credit=%v", balance(ordinaryUserID), balance(creditUserID))
 	}
 	var secondPackID, secondCreditUserID int64
-	scan(market.QueryRow(ctx, `INSERT INTO store_credit_packs(offer_id,buyer_id,seller_id,title,price_cny,face_value_usd,
-		remaining_usd,remaining_balance_units,prepaid_remaining_cny,usd_to_balance_rate,allowed_platforms,allowed_models,idempotency_key,purchase_op_id)
-		VALUES($1,$2,$3,'next-credit',1,1,1,2,1,2,'{anthropic}','{match}','test-buy-next',$4) RETURNING id`, offerID, buyerID, sellerID, purchaseID), &secondPackID)
+	scan(market.QueryRow(ctx, `INSERT INTO store_credit_packs(offer_id,buyer_id,seller_id,title,price_cny,face_value_cny,
+		remaining_balance_units,prepaid_remaining_cny,allowed_platforms,allowed_models,idempotency_key,purchase_op_id)
+		VALUES($1,$2,$3,'next-credit',1,2,2,1,'{anthropic}','{match}','test-buy-next',$4) RETURNING id`, offerID, buyerID, sellerID, purchaseID), &secondPackID)
 	provision()
 	if _, err := sender.RunOnce(ctx); err != nil {
 		t.Fatal(err)

@@ -1103,7 +1103,7 @@ func circuitStateString(state billingCircuitBreakerState) string {
 
 // checkUserPlatformQuotaEligibility 在 standard 模式下检查 user × platform 日/周/月 quota。
 // 返回 nil = 允许；返回 ErrUserPlatform{Daily/Weekly/Monthly}QuotaExhausted = 拒绝（带 window_resets_at metadata）。
-// checkUserPlatformQuotaEligibility 检查用户在指定平台的 USD 配额。
+// checkUserPlatformQuotaEligibility 检查用户在指定平台的 CNY 配额。
 //
 // 流程（Redis-first / DB-fallback）：
 //  1. 先读 Redis cache；若命中且 SchemaVersion==1，直接用 entry 中的 limits 和 window_start 做校验，

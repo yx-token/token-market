@@ -43,8 +43,9 @@ beforeEach(() => {
   refunds = []
   appeals = []
   api.get.mockImplementation(async (path: string) => {
-    if (path.endsWith('/recharges')) return structuredClone(recharges)
-    if (path.endsWith('/refunds')) return structuredClone(refunds)
+    // 资金三表走 relay，前端带 ?limit=200 一次拉满，本地分页
+    if (path.startsWith('/api/v1/admin/market/recharges')) return structuredClone(recharges)
+    if (path.startsWith('/api/v1/admin/market/refunds')) return structuredClone(refunds)
     if (path.endsWith('/appeals')) return structuredClone(appeals)
     return []
   })
@@ -94,7 +95,7 @@ describe('资金与申诉资源页', () => {
       'ok',
     ])
     const amounts = wrapper.findAll('.amount-cell')
-    expect(amounts.map((cell) => cell.text())).toEqual(['1,234.50', '20.00', '—'])
+    expect(amounts.map((cell) => cell.text())).toEqual(['¥1,234.50', '¥20.00', '—'])
     expect(wrapper.find('tbody').text()).not.toContain('USD')
     expect(wrapper.find('tbody').text()).not.toContain('$')
   })
@@ -114,6 +115,13 @@ describe('资金与申诉资源页', () => {
     await wrapper.setProps({ kind: 'refunds' })
     await flushPromises()
     expect(wrapper.text()).not.toContain('充值 7 已同步查单')
+  })
+
+  it('资金列表按 relay 约定请求 limit=200，金额按人民币展示', async () => {
+    recharges = [{ id: 11, status: 'credited', channel: 'alipay', amount: 12.5 }]
+    const wrapper = await page()
+    expect(api.get).toHaveBeenCalledWith('/api/v1/admin/market/recharges?limit=200')
+    expect(wrapper.find('.amount-cell').text()).toBe('¥12.50')
   })
 
   it('取消确认充值对话框不发送请求', async () => {

@@ -8,6 +8,7 @@ import (
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/domain"
 	"github.com/yx-token/token-market/internal/pkg/claude"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 // Claude Opus 5 官方定价（USD per token）：$5 输入 / $25 输出 per MTok。
@@ -75,15 +76,15 @@ func TestClaudeOpus5_HardcodedFallbackPricing(t *testing.T) {
 			pricing, err := svc.GetModelPricing(tt.model)
 			require.NoError(t, err)
 			require.NotNil(t, pricing)
-			assert.InDelta(t, tt.input, pricing.InputPricePerToken, 1e-12)
-			assert.InDelta(t, tt.output, pricing.OutputPricePerToken, 1e-12)
+			assert.InDelta(t, currency.USDToCNY*(tt.input), pricing.InputPricePerToken, 1e-12)
+			assert.InDelta(t, currency.USDToCNY*(tt.output), pricing.OutputPricePerToken, 1e-12)
 		})
 	}
 
 	opus5, err := svc.GetModelPricing("claude-opus-5")
 	require.NoError(t, err)
-	assert.InDelta(t, opus5CacheCreationPricePerToken, opus5.CacheCreationPricePerToken, 1e-12)
-	assert.InDelta(t, opus5CacheReadPricePerToken, opus5.CacheReadPricePerToken, 1e-12)
+	assert.InDelta(t, currency.USDToCNY*(opus5CacheCreationPricePerToken), opus5.CacheCreationPricePerToken, 1e-12)
+	assert.InDelta(t, currency.USDToCNY*(opus5CacheReadPricePerToken), opus5.CacheReadPricePerToken, 1e-12)
 }
 
 // TestClaudeOpus5_BedrockCapabilityGates 锁定只有主版本号的模型 ID

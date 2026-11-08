@@ -38,14 +38,16 @@ func (SubscriptionPlan) Fields() []ent.Field {
 			SchemaType(map[string]string{dialect.Postgres: "text"}).
 			Default(""),
 		field.Float("price").
+			Comment("Subscription sale price in CNY").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}),
 		field.Float("original_price").
+			Comment("Original subscription price in CNY").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}).
 			Optional().
 			Nillable(),
 		field.String("currency").
 			MaxLen(3).
-			Default(""),
+			Default("CNY"),
 		field.Int("validity_days").
 			Default(30),
 		field.String("validity_unit").

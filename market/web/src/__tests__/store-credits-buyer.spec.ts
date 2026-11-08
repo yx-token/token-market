@@ -12,12 +12,12 @@ vi.mock('@/api/storeCreditsBuyer', () => ({ storeCreditsBuyer: {
 
 const offer: CreditOffer = {
   id: 11, seller_id: 7, title: '周末店铺活动', description: '写代码专享', price_cny: 80,
-  face_value_usd: 100, allowed_platforms: ['openai'], allowed_models: ['gpt-6-astra'],
+  face_value_cny: 100, allowed_platforms: ['openai'], allowed_models: ['gpt-6-astra'],
   status: 'active', created_at: '', updated_at: '',
 }
 const pack: CreditPack = {
-  ...offer, id: 22, offer_id: 11, buyer_id: 3, remaining_usd: 60,
-  remaining_balance_units: 60, prepaid_remaining_cny: 48, usd_to_balance_rate: 1, status: 'active',
+  ...offer, id: 22, offer_id: 11, buyer_id: 3, remaining_cny: 60,
+  remaining_balance_units: 60, prepaid_remaining_cny: 48, status: 'active',
 }
 const dialog = defineComponent({ props: ['open'], template: '<section v-if="open"><slot/><slot name="footer"/></section>' })
 const header = defineComponent({ props: ['title', 'description'], template: '<header><h1>{{ title }}</h1><p>{{ description }}</p><slot/></header>' })
@@ -42,12 +42,12 @@ describe('买家店铺活动包', () => {
     vi.mocked(storeCreditsBuyer.packs).mockResolvedValue([pack])
   })
 
-  it('分别展示人民币售价、美元额度和购买快照中的模型范围', async () => {
+  it('分别展示人民币售价、额度面值和购买快照中的模型范围', async () => {
     const { wrapper } = await open()
     expect(storeCreditsBuyer.offers).toHaveBeenCalledWith(7)
     expect(wrapper.text()).toContain('¥80.00')
-    expect(wrapper.text()).toContain('$100.00')
-    expect(wrapper.text()).toContain('$60.00')
+    expect(wrapper.text()).toContain('¥100.00')
+    expect(wrapper.text()).toContain('¥60.00')
     expect(wrapper.text()).toContain('gpt-6-astra')
     expect(wrapper.text()).toContain('用完后自动扣平台余额')
     wrapper.unmount()

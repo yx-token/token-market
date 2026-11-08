@@ -572,7 +572,7 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 	return cost
 }
 
-// estimate 返回保守的单请求费用（USD，已乘倍率）；无法定价返回 (0,false)。
+// estimate 返回保守的单请求费用（CNY，已乘倍率）；无法定价返回 (0,false)。
 func (d inflightEstimateDeps) estimate(ctx context.Context, apiKey *APIKey, req InflightEstimateRequest) (float64, bool) {
 	if apiKey == nil || apiKey.User == nil {
 		return 0, false

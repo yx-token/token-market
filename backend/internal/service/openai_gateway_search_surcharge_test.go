@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 )
 
 func TestCalculateOpenAIRecordUsageCost_SearchIsAdditiveToTokens(t *testing.T) {
@@ -42,8 +43,8 @@ func TestCalculateOpenAIRecordUsageCost_SearchIsAdditiveToTokens(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, cost)
-	require.InDelta(t, 1.0105, cost.ActualCost, 1e-9)
-	require.InDelta(t, 1.0105, cost.TotalCost, 1e-9)
+	require.InDelta(t, 1+0.0105*currency.USDToCNY, cost.ActualCost, 1e-9)
+	require.InDelta(t, 1+0.0105*currency.USDToCNY, cost.TotalCost, 1e-9)
 }
 
 func TestCalculateOpenAIRecordUsageCost_SearchOnlyWhenNoTokenPricing(t *testing.T) {

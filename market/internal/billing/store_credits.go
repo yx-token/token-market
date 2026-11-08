@@ -19,7 +19,9 @@ const KindBuyerStoreCredit = "buyer_store_credit"
 // Keep the existing refund grace period for in-flight billing.
 const creditRefundUsageGrace = 3 * time.Minute
 
-// CreditPack 是人民币预付资金与美元面额的购买快照，不是全平台可消费余额。
+// CreditPack 是人民币预付资金与店铺额度面额的购买快照，不是全平台可消费余额。
+// 面额与余额都按平台余额单位（人民币）计：RemainingCNY 与 RemainingBalanceUnits 是同一个值，
+// 后者保留给既有客户端。
 type CreditPack struct {
 	ID                    int64     `json:"id"`
 	OfferID               int64     `json:"offer_id"`
@@ -27,25 +29,24 @@ type CreditPack struct {
 	SellerID              int64     `json:"seller_id"`
 	Title                 string    `json:"title"`
 	PriceCNY              float64   `json:"price_cny"`
-	FaceValueUSD          float64   `json:"face_value_usd"`
-	RemainingUSD          float64   `json:"remaining_usd"`
+	FaceValueCNY          float64   `json:"face_value_cny"`
+	RemainingCNY          float64   `json:"remaining_cny"`
 	RemainingBalanceUnits float64   `json:"remaining_balance_units"`
 	PrepaidRemainingCNY   float64   `json:"prepaid_remaining_cny"`
-	USDToBalanceRate      float64   `json:"usd_to_balance_rate"`
 	AllowedPlatforms      []string  `json:"allowed_platforms"`
 	AllowedModels         []string  `json:"allowed_models"`
 	Status                string    `json:"status"`
 	CreatedAt             time.Time `json:"created_at"`
 }
 
-const creditPackColumns = `id,offer_id,buyer_id,seller_id,title,price_cny::float8,face_value_usd::float8,
- remaining_usd::float8,remaining_balance_units::float8,prepaid_remaining_cny::float8,
- usd_to_balance_rate::float8,allowed_platforms,allowed_models,status,created_at`
+const creditPackColumns = `id,offer_id,buyer_id,seller_id,title,price_cny::float8,face_value_cny::float8,
+ remaining_balance_units::float8,prepaid_remaining_cny::float8,allowed_platforms,allowed_models,status,created_at`
 
 func scanCreditPack(row pgx.Row) (*CreditPack, error) {
 	var p CreditPack
-	err := row.Scan(&p.ID, &p.OfferID, &p.BuyerID, &p.SellerID, &p.Title, &p.PriceCNY, &p.FaceValueUSD, &p.RemainingUSD,
-		&p.RemainingBalanceUnits, &p.PrepaidRemainingCNY, &p.USDToBalanceRate, &p.AllowedPlatforms, &p.AllowedModels, &p.Status, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.OfferID, &p.BuyerID, &p.SellerID, &p.Title, &p.PriceCNY, &p.FaceValueCNY,
+		&p.RemainingBalanceUnits, &p.PrepaidRemainingCNY, &p.AllowedPlatforms, &p.AllowedModels, &p.Status, &p.CreatedAt)
+	p.RemainingCNY = p.RemainingBalanceUnits
 	return &p, err
 }
 
@@ -102,10 +103,6 @@ func (f *Funds) PurchaseCreditPack(ctx context.Context, userID int64, in Purchas
 	if ident.Sub2APIUserID == nil {
 		return nil, httpx.Conflict("WALLET_NOT_READY", "钱包尚未开通")
 	}
-	st, err := f.Settings(ctx)
-	if err != nil {
-		return nil, err
-	}
 	tx, err := f.DB.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -132,7 +129,7 @@ func (f *Funds) PurchaseCreditPack(ctx context.Context, userID int64, in Purchas
 	var price, face, title string
 	var sellerID int64
 	var platforms, models []string
-	err = tx.QueryRow(ctx, `SELECT price_cny::text,face_value_usd::text,title,seller_id,allowed_platforms,allowed_models
+	err = tx.QueryRow(ctx, `SELECT price_cny::text,face_value_cny::text,title,seller_id,allowed_platforms,allowed_models
  FROM store_credit_offers WHERE id=$1 AND status='active' FOR SHARE`, in.OfferID).Scan(&price, &face, &title, &sellerID, &platforms, &models)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, httpx.NotFound("CREDIT_OFFER_NOT_FOUND", "活动不存在或已停售")
@@ -148,14 +145,6 @@ func (f *Funds) PurchaseCreditPack(ctx context.Context, userID int64, in Purchas
 	if len(balances) == 1 {
 		realtime = balances[0].Balance
 	}
-	var validConversion bool
-	if err := tx.QueryRow(ctx, `SELECT $1::numeric*$2::numeric BETWEEN 0.00000001 AND 1000000000
- AND $1::numeric*$2::numeric=round($1::numeric*$2::numeric,8)`, face, st.CreditUSDToBalanceRate).Scan(&validConversion); err != nil {
-		return nil, err
-	}
-	if !validConversion {
-		return nil, httpx.BadRequest("INVALID_CREDIT_CONVERSION", "活动美元额度换算后的平台单位须在0.00000001到1000000000之间且最多8位小数")
-	}
 	var enough bool
 	err = tx.QueryRow(ctx, `SELECT
  COALESCE((SELECT -sum(e.amount) FROM ledger_accounts a JOIN ledger_entries e ON e.account_id=a.id WHERE a.kind='buyer_cash' AND a.owner_type='buyer' AND a.owner_id=$1),0)>=$2::numeric
@@ -169,8 +158,9 @@ func (f *Funds) PurchaseCreditPack(ctx context.Context, userID int64, in Purchas
 		return nil, httpx.BadRequest("INSUFFICIENT_BALANCE", "平台余额不足，请先充值")
 	}
 	var packID int64
-	err = tx.QueryRow(ctx, `INSERT INTO store_credit_packs(offer_id,buyer_id,seller_id,title,price_cny,face_value_usd,remaining_usd,remaining_balance_units,prepaid_remaining_cny,usd_to_balance_rate,allowed_platforms,allowed_models,idempotency_key)
- VALUES($1,$2,$3,$4,$5::numeric,$6::numeric,$6::numeric,$6::numeric*$7::numeric,$5::numeric,$7,$8,$9,$10) RETURNING id`, in.OfferID, userID, sellerID, title, price, face, st.CreditUSDToBalanceRate, platforms, models, in.IdempotencyKey).Scan(&packID)
+	// 面额就是平台余额单位（人民币），原样作为隔离钱包的初始余额。
+	err = tx.QueryRow(ctx, `INSERT INTO store_credit_packs(offer_id,buyer_id,seller_id,title,price_cny,face_value_cny,remaining_balance_units,prepaid_remaining_cny,allowed_platforms,allowed_models,idempotency_key)
+ VALUES($1,$2,$3,$4,$5::numeric,$6::numeric,$6::numeric,$5::numeric,$7,$8,$9) RETURNING id`, in.OfferID, userID, sellerID, title, price, face, platforms, models, in.IdempotencyKey).Scan(&packID)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +187,7 @@ func (f *Funds) PurchaseCreditPack(ctx context.Context, userID int64, in Purchas
 }
 
 // RefundCreditPack 先停止新调用；已在途请求由同包 advisory 锁等待结束。
-// worker 追平用量后才退按实付款摊算的余额，赠送美元不能提现。
+// worker 追平用量后才退按实付款摊算的余额，赠送的店铺额度不能提现。
 func (f *Funds) RefundCreditPack(ctx context.Context, userID, packID int64) (*CreditPack, error) {
 	if err := DenyBuyerRefund(); err != nil {
 		return nil, err
@@ -313,7 +303,7 @@ func (f *Funds) advanceCreditRefund(ctx context.Context, packID int64) error {
  WHERE credit_pack_id=$3 AND ledger_txn_id IS NOT NULL),0)
  +COALESCE((SELECT sum(abs(round((payload->>'amount')::numeric,8)-(payload->>'amount')::numeric))
  FROM sub2api_ops WHERE target=$4 AND status='done' AND op_type='user.balance_add'),0)
- +COALESCE((SELECT abs((o.payload->>'amount')::numeric-p.face_value_usd*p.usd_to_balance_rate)
+ +COALESCE((SELECT abs((o.payload->>'amount')::numeric-p.face_value_cny)
  FROM store_credit_packs p JOIN sub2api_ops o ON o.id=p.funding_op_id WHERE p.id=$3 AND o.status='done'),0)
  +COALESCE((SELECT sum(abs((o.payload->>'amount')::numeric-a.cash_cny))
  FROM store_credit_allocations a JOIN sub2api_ops o ON o.idempotency_key='tm-credit-restore-'||a.usage_id::text
@@ -361,11 +351,11 @@ func (f *Funds) advanceCreditRefund(ctx context.Context, packID int64) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, "UPDATE store_credit_packs SET refund_credit_op_id=$2,remaining_usd=0,remaining_balance_units=0,prepaid_remaining_cny=0 WHERE id=$1", packID, id); err != nil {
+		if _, err := tx.Exec(ctx, "UPDATE store_credit_packs SET refund_credit_op_id=$2,remaining_balance_units=0,prepaid_remaining_cny=0 WHERE id=$1", packID, id); err != nil {
 			return err
 		}
 	} else {
-		if _, err := tx.Exec(ctx, "UPDATE store_credit_packs SET status='refunded',refunded_at=now(),remaining_usd=0,remaining_balance_units=0,prepaid_remaining_cny=0 WHERE id=$1", packID); err != nil {
+		if _, err := tx.Exec(ctx, "UPDATE store_credit_packs SET status='refunded',refunded_at=now(),remaining_balance_units=0,prepaid_remaining_cny=0 WHERE id=$1", packID); err != nil {
 			return err
 		}
 	}

@@ -18,10 +18,10 @@ import (
 
 // 充值优惠阶梯：余额充值订单按用户输入的支付金额命中阶梯（取不超过该金额的最大 MinAmount），
 // 整条阶梯只有一种模式（RECHARGE_BONUS_MODE）：
-//   - bonus（赠金）：实付不变，在到账基数（输入 × 充值倍率）之上额外赠送 BonusPercent% 的 USD 余额；
+//   - bonus（赠金）：实付不变，在到账基数（输入 × 充值倍率）之上额外赠送 BonusPercent% 的 CNY 余额；
 //   - discount（折扣）：到账不变（输入 × 倍率），实付基数按 BonusPercent% 打折。
 //
-// 两种模式落库形态相同：amount 为到账总额，bonus_amount 为其中「免费」的 USD 部分，pay_amount 为实收。
+// 两种模式落库形态相同：amount 为到账总额，bonus_amount 为其中「免费」的 CNY 部分，pay_amount 为实收。
 // 订阅订单不参与。优惠在下单时按当时配置计算并落库，后续改配置不影响已建订单。
 const (
 	// SettingRechargeBonusTiers 存 JSON 数组（RechargeBonusTier 列表），空/缺失表示未启用优惠。
@@ -263,9 +263,9 @@ func calculateDiscountedPayBase(paymentAmount, discountPercent float64, currency
 type rechargeBonusQuote struct {
 	// PayBase 网关收款基数（支付币种，不含手续费）；赠金模式等于支付金额，折扣模式为折后金额。
 	PayBase float64
-	// Credited 到账总额（USD），含 Bonus。
+	// Credited 到账总额（CNY），含 Bonus。
 	Credited float64
-	// Bonus 免费额度（USD）：赠金模式为额外赠送，折扣模式为未付费却到账的部分。
+	// Bonus 免费额度（CNY）：赠金模式为额外赠送，折扣模式为未付费却到账的部分。
 	Bonus float64
 	// Percent 命中档位的百分比；未命中或未产生优惠时为 0。
 	Percent float64
@@ -318,7 +318,7 @@ func quoteRechargeBonus(cfg *PaymentConfig, paymentAmount float64, currency stri
 	return quote
 }
 
-// paymentOrderAmountWithoutBonus 订单到账金额剔除免费额度后的实付部分（USD），用于推广返利基数。
+// paymentOrderAmountWithoutBonus 订单到账金额剔除免费额度后的实付部分（CNY），用于推广返利基数。
 func paymentOrderAmountWithoutBonus(o *dbent.PaymentOrder) float64 {
 	if o == nil {
 		return 0

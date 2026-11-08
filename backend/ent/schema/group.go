@@ -83,14 +83,17 @@ func (Group) Fields() []ent.Field {
 			MaxLen(20).
 			Default(domain.SubscriptionTypeStandard),
 		field.Float("daily_limit_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("weekly_limit_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("monthly_limit_usd").
+			Comment("CNY amount; legacy column name retained for compatibility").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
@@ -112,14 +115,17 @@ func (Group) Fields() []ent.Field {
 			Default(1.0).
 			Comment("图片生成独立倍率，仅 image_rate_independent=true 时生效"),
 		field.Float("image_price_1k").
+			Comment("CNY amount").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("image_price_2k").
+			Comment("CNY amount").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("image_price_4k").
+			Comment("CNY amount").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
@@ -139,14 +145,17 @@ func (Group) Fields() []ent.Field {
 			Default(1.0).
 			Comment("视频生成独立倍率，仅 video_rate_independent=true 时生效"),
 		field.Float("video_price_480p").
+			Comment("CNY amount").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("video_price_720p").
+			Comment("CNY amount").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
 		field.Float("video_price_1080p").
+			Comment("CNY amount").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
@@ -158,7 +167,7 @@ func (Group) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
-			Comment("Codex alpha/search 网页搜索单次价格（USD/次）；nil 表示使用默认价 0.01（官方 $10/1000 次）"),
+			Comment("Codex alpha/search 网页搜索单次价格（CNY/次）；nil 表示使用默认价 0.07（官方 $10/1000 次）"),
 
 		// 搜索/工具调用显式定价（per 1k calls），用于 Grok web_search 等。
 		field.Float("search_price_per_1k").
@@ -174,19 +183,19 @@ func (Group) Fields() []ent.Field {
 			Nillable().
 			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
-			Comment("Voice realtime 每分钟价格（USD）"),
+			Comment("Voice realtime 每分钟价格（CNY）"),
 		field.Float("audio_tts_price_per_million_chars").
 			Optional().
 			Nillable().
 			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
-			Comment("TTS 每百万字符价格（USD）"),
+			Comment("TTS 每百万字符价格（CNY）"),
 		field.Float("audio_stt_price_per_hour").
 			Optional().
 			Nillable().
 			Min(0).
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
-			Comment("STT 每小时价格（USD）"),
+			Comment("STT 每小时价格（CNY）"),
 		field.Bool("long_context_pricing_enabled").
 			Default(true).
 			Comment("是否按上下文长度应用模型阶梯价格；默认开启以保持官方/渠道长上下文价"),

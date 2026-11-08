@@ -7,9 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,7 +22,6 @@ type Settings struct {
 	CommissionRate             float64            `json:"commission_rate"`               // 寄售抽佣率 c：买家价 = m_s × (1 + c)
 	FreezeHours                int                `json:"freeze_hours"`                  // 卖家收益冻结小时数；0 为无额外冻结
 	FreezeDays                 int                `json:"freeze_days"`                   // 兼容旧客户端，向上取整的冻结天数
-	CreditUSDToBalanceRate     float64            `json:"credit_usd_to_balance_rate"`    // 店铺活动包 1 USD 额度对应的平台记账单位
 	WithdrawMin                float64            `json:"withdraw_min"`                  // 最低提现金额
 	WithdrawAutoApproveMax     float64            `json:"withdraw_auto_approve_max"`     // 低于该金额且无风险时自动审核通过
 	ManualRetestDailyLimit     int                `json:"manual_retest_daily_limit"`     // 卖家每天手动复测次数
@@ -51,7 +47,6 @@ func Defaults() Settings {
 		CommissionRate:             0.20,
 		FreezeHours:                24,
 		FreezeDays:                 1,
-		CreditUSDToBalanceRate:     1,
 		WithdrawMin:                10,
 		WithdrawAutoApproveMax:     100,
 		ManualRetestDailyLimit:     3,
@@ -81,8 +76,6 @@ func (s Settings) Validate() error {
 		return errors.New("freeze_days must be >= 0")
 	case s.FreezeHours < 0 || s.FreezeHours > MaxFreezeHours:
 		return fmt.Errorf("freeze_hours must be between 0 and %d", MaxFreezeHours)
-	case !validCreditUSDToBalanceRate(s.CreditUSDToBalanceRate):
-		return errors.New("credit_usd_to_balance_rate must be between 0.00000001 and 1000000 with at most 8 decimal places")
 	case s.WithdrawMin < 0 || s.WithdrawAutoApproveMax < 0:
 		return errors.New("withdraw limits must be >= 0")
 	case s.ManualRetestDailyLimit < 0:
@@ -108,15 +101,6 @@ func (s Settings) Validate() error {
 		}
 	}
 	return nil
-}
-
-func validCreditUSDToBalanceRate(rate float64) bool {
-	if rate < 0.00000001 || rate > 1000000 || math.IsNaN(rate) || math.IsInf(rate, 0) {
-		return false
-	}
-	decimal := strconv.FormatFloat(rate, 'f', -1, 64)
-	point := strings.IndexByte(decimal, '.')
-	return point < 0 || len(decimal)-point-1 <= 8
 }
 
 // GradeCoefficient 返回等级系数，未配置的等级视为 0（不报价）。

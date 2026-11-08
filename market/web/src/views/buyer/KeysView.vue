@@ -237,10 +237,10 @@ function openEdit(k: BuyerKey) {
     type: k.route_type === 'chain' ? 'chain' : 'default',
     pool: k.route_type === 'default' ? (k.hops?.[0]?.pool ?? '') : (pools.value[0]?.name ?? ''),
     hops: k.route_type === 'chain' ? hops : [],
-    quota: k.limits.quota_usd?.toString() ?? '',
-    h5: k.limits.rate_limit_5h_usd?.toString() ?? '',
-    d1: k.limits.rate_limit_1d_usd?.toString() ?? '',
-    d7: k.limits.rate_limit_7d_usd?.toString() ?? '',
+    quota: k.limits.quota_cny?.toString() ?? '',
+    h5: k.limits.rate_limit_5h_cny?.toString() ?? '',
+    d1: k.limits.rate_limit_1d_cny?.toString() ?? '',
+    d7: k.limits.rate_limit_7d_cny?.toString() ?? '',
     ips: (k.limits.ip_whitelist ?? []).join(', '),
     expires: k.limits.expires_at ? k.limits.expires_at.slice(0, 10) : '',
   })
@@ -253,10 +253,10 @@ function num(s: string): number | undefined {
 }
 
 const limits = computed<Limits>(() => ({
-  quota_usd: num(form.quota),
-  rate_limit_5h_usd: num(form.h5),
-  rate_limit_1d_usd: num(form.d1),
-  rate_limit_7d_usd: num(form.d7),
+  quota_cny: num(form.quota),
+  rate_limit_5h_cny: num(form.h5),
+  rate_limit_1d_cny: num(form.d1),
+  rate_limit_7d_cny: num(form.d7),
   ip_whitelist: form.ips.split(/[,\s]+/).filter(Boolean),
   expires_at: form.expires ? new Date(`${form.expires}T23:59:59`).toISOString() : undefined,
 }))
@@ -558,8 +558,8 @@ async function handleCcsClientSelect(clientType: CcSwitchClientType) {
             已用 ¥{{ (packForKey(k.id)!.face_value - packForKey(k.id)!.remaining).toFixed(2) }}
             / 面额 ¥{{ packForKey(k.id)!.face_value.toFixed(0) }}
           </span>
-          <span v-else-if="k.limits.quota_usd">总额度 {{ money(k.limits.quota_usd) }}</span>
-          <span v-if="k.limits.rate_limit_5h_usd">5h {{ money(k.limits.rate_limit_5h_usd) }}</span>
+          <span v-else-if="k.limits.quota_cny">总额度 {{ money(k.limits.quota_cny) }}</span>
+          <span v-if="k.limits.rate_limit_5h_cny">5h {{ money(k.limits.rate_limit_5h_cny) }}</span>
           <span v-if="k.limit_blocked_until">限额至 {{ dateTime(k.limit_blocked_until) }}</span>
           <span>创建于 {{ dateTime(k.created_at) }}</span>
         </div>

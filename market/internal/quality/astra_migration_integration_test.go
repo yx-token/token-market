@@ -6,6 +6,7 @@ import (
 	"context"
 	"io/fs"
 	"reflect"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -52,6 +53,9 @@ func migrationsThrough(t *testing.T, last string, inclusive bool) fstest.MapFS {
 	}
 	return picked
 }
+
+// prePolicyCNYColumns 是 0054 改名之前的策略列：只迁移到更早版本的用例里，每日预算列仍叫 daily_budget_usd。
+var prePolicyCNYColumns = strings.Replace(policyColumns, "daily_budget_cny::float8", "daily_budget_usd::float8", 1)
 
 func applyAstraMigration(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()

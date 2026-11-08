@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useMarketBoard } from '@/stores/marketBoard'
-import { usd, multiplier } from '@/utils/format'
+import { money, multiplier } from '@/utils/format'
 import {
   applyMult,
   buildModelSquare,
@@ -85,14 +85,14 @@ function cacheCell(write: number, read: number, mult: number | null, paidMode: b
   const w = paidMode ? paid(write, mult) : write
   const r = paidMode ? paid(read, mult) : read
   if ((w === null || w === 0) && (r === null || r === 0)) return '—'
-  const fmt = (v: number | null) => (v === null ? '—' : usd(v))
+  const fmt = (v: number | null) => (v === null ? '—' : money(v))
   return `写 ${fmt(w)} / 读 ${fmt(r)}`
 }
 
 function ioPair(input: number, output: number, mult: number | null = null) {
   const i = mult === null ? input : paid(input, mult)
   const o = mult === null ? output : paid(output, mult)
-  return `${usd(i ?? undefined)} / ${usd(o ?? undefined)}`
+  return `${money(i ?? undefined)} / ${money(o ?? undefined)}`
 }
 
 </script>
@@ -104,7 +104,7 @@ function ioPair(input: number, output: number, mult: number | null = null) {
         <p class="msq-kicker">模型价格</p>
         <h1 class="msq-title">官方价对照 · 市场实付一眼看清</h1>
         <p class="msq-lead">
-          汇聚全球主流 API 渠道的官方价目（OpenAI、Anthropic、Google、Mistral、通义、火山、Bedrock、Groq、Together…），价格按官方美元标价 × 市场在售最低倍率估算。
+          汇聚全球主流 API 渠道的官方价目（OpenAI、Anthropic、Google、Mistral、通义、火山、Bedrock、Groq、Together…），价格按官方人民币价目 × 市场在售最低倍率估算。
         </p>
         <div class="msq-toolbar">
           <label class="msq-search">
@@ -184,7 +184,7 @@ function ioPair(input: number, output: number, mult: number | null = null) {
 
         <!-- 桌面紧凑表：入/出合并，避免右侧被裁切 -->
         <div class="msq-table-wrap">
-          <p class="msq-scroll-hint">价格单位：美元 / 百万 token · 较窄时可左右滑动</p>
+          <p class="msq-scroll-hint">价格单位：人民币 / 百万 token · 较窄时可左右滑动</p>
           <table class="msq-table">
             <thead>
               <tr>
@@ -229,16 +229,16 @@ function ioPair(input: number, output: number, mult: number | null = null) {
               <div class="msq-mblock paid">
                 <span class="msq-mblock-label">实付估算</span>
                 <div class="msq-mpairs">
-                  <span>输入 <b>{{ usd(paid(row.official.input_per_1m, row.bestMult) ?? undefined) }}</b></span>
-                  <span>输出 <b>{{ usd(paid(row.official.output_per_1m, row.bestMult) ?? undefined) }}</b></span>
+                  <span>输入 <b>{{ money(paid(row.official.input_per_1m, row.bestMult) ?? undefined) }}</b></span>
+                  <span>输出 <b>{{ money(paid(row.official.output_per_1m, row.bestMult) ?? undefined) }}</b></span>
                 </div>
                 <p class="msq-mcache">{{ cacheCell(row.official.cache_write_per_1m, row.official.cache_read_per_1m, row.bestMult, true) }}</p>
               </div>
               <div class="msq-mblock off">
                 <span class="msq-mblock-label">官方价</span>
                 <div class="msq-mpairs">
-                  <span>输入 {{ usd(row.official.input_per_1m) }}</span>
-                  <span>输出 {{ usd(row.official.output_per_1m) }}</span>
+                  <span>输入 {{ money(row.official.input_per_1m) }}</span>
+                  <span>输出 {{ money(row.official.output_per_1m) }}</span>
                 </div>
                 <p class="msq-mcache">{{ cacheCell(row.official.cache_write_per_1m, row.official.cache_read_per_1m, null, false) }}</p>
               </div>

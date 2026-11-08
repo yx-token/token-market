@@ -23,13 +23,14 @@ const props = defineProps<{ kind: Kind }>()
 const { t } = useI18n()
 
 const catalog = computed<
-  Record<Kind, { title: string; path: string; pick?: (data: unknown) => unknown[] }>
+  Record<Kind, { title: string; path: string; query?: string; pick?: (data: unknown) => unknown[] }>
 >(() => ({
   'probe-runs': { title: t('nav.marketProbeRuns'), path: `${MARKET_API_PREFIX}/probe-runs` },
   appeals: { title: t('nav.marketAppeals'), path: `${MARKET_API_PREFIX}/appeals` },
-  recharges: { title: t('nav.marketFundsRecharge'), path: `${MARKET_API_PREFIX}/recharges` },
-  refunds: { title: t('nav.marketFundsRefund'), path: `${MARKET_API_PREFIX}/refunds` },
-  withdrawals: { title: t('nav.marketFundsWithdraw'), path: `${MARKET_API_PREFIX}/withdrawals` },
+  // 资金三表走 market 原处理函数（relay），支持 limit/offset；列表在本地分页，一次拉满 200 行保持旧行为。
+  recharges: { title: t('nav.marketFundsRecharge'), path: `${MARKET_API_PREFIX}/recharges`, query: '?limit=200' },
+  refunds: { title: t('nav.marketFundsRefund'), path: `${MARKET_API_PREFIX}/refunds`, query: '?limit=200' },
+  withdrawals: { title: t('nav.marketFundsWithdraw'), path: `${MARKET_API_PREFIX}/withdrawals`, query: '?limit=200' },
 }))
 
 const rows = ref<Record<string, unknown>[]>([])
@@ -233,6 +234,9 @@ function cellText(v: unknown) {
 }
 
 const amountFormatter = new Intl.NumberFormat('zh-CN', {
+  style: 'currency',
+  currency: 'CNY',
+  currencyDisplay: 'narrowSymbol',
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })
@@ -248,7 +252,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const raw = await marketGet<unknown>(meta.value.path)
+    const raw = await marketGet<unknown>(`${meta.value.path}${meta.value.query ?? ''}`)
     const picked = meta.value.pick
       ? meta.value.pick(raw)
       : Array.isArray(raw)

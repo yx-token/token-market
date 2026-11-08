@@ -20,6 +20,7 @@ import (
 
 	"github.com/yx-token/token-market/internal/config"
 	"github.com/yx-token/token-market/internal/pkg/claude"
+	"github.com/yx-token/token-market/internal/pkg/currency"
 	"github.com/yx-token/token-market/internal/pkg/logger"
 	"github.com/yx-token/token-market/internal/pkg/openai"
 	"github.com/yx-token/token-market/internal/util/urlvalidator"
@@ -40,7 +41,7 @@ var (
 	cacheTierPricePattern = regexp.MustCompile(`^(cache_(?:creation|read)_input_token_cost)(_above_1hr)?_above_\d+k_tokens((?:_[a-z]+)?)$`)
 	// Official GPT Image 2.5 token rates (2026-09-08):
 	// https://developers.openai.com/api/docs/pricing#image-generation-models
-	openAIGPTImage25FallbackPricing = &LiteLLMModelPricing{
+	openAIGPTImage25FallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:       5e-06,
 		CacheReadInputTokenCost: 1.25e-06,
 		InputCostPerImageToken:  8e-06, CacheReadInputImageTokenCost: 2e-06,
@@ -48,16 +49,16 @@ var (
 		LiteLLMProvider:         "openai",
 		Mode:                    "image_generation",
 		SupportsPromptCaching:   true,
-	}
-	openAIGPT54FallbackPricing = &LiteLLMModelPricing{
+	})
+	openAIGPT54FallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:       2.5e-06, // $2.5 per MTok
 		OutputCostPerToken:      1.5e-05, // $15 per MTok
 		CacheReadInputTokenCost: 2.5e-07, // $0.25 per MTok
 		LiteLLMProvider:         "openai",
 		Mode:                    "chat",
 		SupportsPromptCaching:   true,
-	}
-	openAIGPT6AstraFallbackPricing = &LiteLLMModelPricing{
+	})
+	openAIGPT6AstraFallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:                   1e-05,
 		InputCostPerTokenPriority:           2e-05,
 		OutputCostPerToken:                  5e-05,
@@ -73,8 +74,8 @@ var (
 		LiteLLMProvider:                     "openai",
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
-	}
-	openAIGPT61SolFallbackPricing = &LiteLLMModelPricing{
+	})
+	openAIGPT61SolFallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:                   2e-6,
 		InputCostPerTokenPriority:           4e-6,
 		OutputCostPerToken:                  10e-6,
@@ -90,8 +91,8 @@ var (
 		LiteLLMProvider:                     "openai",
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
-	}
-	openAIGPT6SolFallbackPricing = &LiteLLMModelPricing{
+	})
+	openAIGPT6SolFallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:                   2e-6,
 		InputCostPerTokenPriority:           4e-6,
 		OutputCostPerToken:                  10e-6,
@@ -107,8 +108,8 @@ var (
 		LiteLLMProvider:                     "openai",
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
-	}
-	openAIGPT6LunaFallbackPricing = &LiteLLMModelPricing{
+	})
+	openAIGPT6LunaFallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:                   0.1e-6,
 		InputCostPerTokenPriority:           0.2e-6,
 		OutputCostPerToken:                  0.5e-6,
@@ -124,22 +125,22 @@ var (
 		LiteLLMProvider:                     "openai",
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
-	}
-	claudeOpus55FallbackPricing = &LiteLLMModelPricing{
+	})
+	claudeOpus55FallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken: 4e-6, OutputCostPerToken: 20e-6,
 		CacheCreationInputTokenCost: 5e-6, CacheCreationInputTokenCostAbove1hr: 8e-6,
 		CacheReadInputTokenCost:   0.2e-6,
 		InputCostPerTokenPriority: 8e-6, OutputCostPerTokenPriority: 40e-6,
 		CacheCreationInputTokenCostPriority: 10e-6, CacheReadInputTokenCostPriority: 0.4e-6,
 		SupportsServiceTier: true, LiteLLMProvider: "anthropic", Mode: "chat", SupportsPromptCaching: true,
-	}
-	claudeSonnet55FallbackPricing = &LiteLLMModelPricing{
+	})
+	claudeSonnet55FallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken: 2e-6, OutputCostPerToken: 10e-6,
 		CacheCreationInputTokenCost: 2.5e-6, CacheCreationInputTokenCostAbove1hr: 4e-6,
 		CacheReadInputTokenCost: 0.2e-6,
 		LiteLLMProvider:         "anthropic", Mode: "chat", SupportsPromptCaching: true,
-	}
-	openAIGPT56SolFallbackPricing = &LiteLLMModelPricing{
+	})
+	openAIGPT56SolFallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:                   5e-06,
 		InputCostPerTokenPriority:           1e-05,
 		OutputCostPerToken:                  3e-05,
@@ -152,8 +153,8 @@ var (
 		LiteLLMProvider:                     "openai",
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
-	}
-	openAIGPT56TerraFallbackPricing = &LiteLLMModelPricing{
+	})
+	openAIGPT56TerraFallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:                   2e-06,
 		InputCostPerTokenPriority:           4e-06,
 		OutputCostPerToken:                  1.2e-05,
@@ -166,8 +167,8 @@ var (
 		LiteLLMProvider:                     "openai",
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
-	}
-	openAIGPT56LunaFallbackPricing = &LiteLLMModelPricing{
+	})
+	openAIGPT56LunaFallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:                   2e-07,
 		InputCostPerTokenPriority:           4e-07,
 		OutputCostPerToken:                  1.2e-06,
@@ -180,26 +181,26 @@ var (
 		LiteLLMProvider:                     "openai",
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
-	}
-	openAIGPT54MiniFallbackPricing = &LiteLLMModelPricing{
+	})
+	openAIGPT54MiniFallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:       7.5e-07,
 		OutputCostPerToken:      4.5e-06,
 		CacheReadInputTokenCost: 7.5e-08,
 		LiteLLMProvider:         "openai",
 		Mode:                    "chat",
 		SupportsPromptCaching:   true,
-	}
-	openAIGPT54NanoFallbackPricing = &LiteLLMModelPricing{
+	})
+	openAIGPT54NanoFallbackPricing = pricingUSDToCNY(&LiteLLMModelPricing{
 		InputCostPerToken:       2e-07,
 		OutputCostPerToken:      1.25e-06,
 		CacheReadInputTokenCost: 2e-08,
 		LiteLLMProvider:         "openai",
 		Mode:                    "chat",
 		SupportsPromptCaching:   true,
-	}
+	})
 )
 
-// LiteLLMModelPricing LiteLLM价格数据结构
+// LiteLLMModelPricing 内存 CNY 价格；原始 LiteLLM 文件是 USD，只在解析新结构时换算。
 // 只保留我们需要的字段，使用指针来处理可能缺失的值
 type LiteLLMModelPricing struct {
 	CacheCreationInputTokenCostExplicit bool    `json:"-"`
@@ -745,7 +746,7 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 			orphanCacheTiers = append(orphanCacheTiers, modelName+"("+strings.Join(orphans, ",")+")")
 		}
 
-		result[modelName] = pricing
+		result[modelName] = pricingUSDToCNY(pricing)
 	}
 
 	if skipped > 0 {
@@ -759,6 +760,25 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 	}
 
 	return result, nil
+}
+
+// Convert a fresh USD entry only, after deriving dimensionless tier multipliers.
+// Raw remote/cache/fallback/override JSON is never rewritten into CNY.
+func pricingUSDToCNY(p *LiteLLMModelPricing) *LiteLLMModelPricing {
+	p.InputCostPerToken *= currency.USDToCNY
+	p.InputCostPerTokenPriority *= currency.USDToCNY
+	p.OutputCostPerToken *= currency.USDToCNY
+	p.OutputCostPerTokenPriority *= currency.USDToCNY
+	p.CacheCreationInputTokenCost *= currency.USDToCNY
+	p.CacheCreationInputTokenCostPriority *= currency.USDToCNY
+	p.CacheCreationInputTokenCostAbove1hr *= currency.USDToCNY
+	p.CacheReadInputTokenCost *= currency.USDToCNY
+	p.CacheReadInputTokenCostPriority *= currency.USDToCNY
+	p.OutputCostPerImage *= currency.USDToCNY
+	p.OutputCostPerImageToken *= currency.USDToCNY
+	p.InputCostPerImageToken *= currency.USDToCNY
+	p.CacheReadInputImageTokenCost *= currency.USDToCNY
+	return p
 }
 
 // deriveLongContextFromAboveTierFields 把 LiteLLM 目录的 *_above_XXXk_tokens 绝对价字段
@@ -1727,7 +1747,7 @@ func (s *PricingService) ListModelNamesByProvider(provider string) []string {
 	return names
 }
 
-// PricingCatalogEntry 是模型广场 / 价目表用的全量条目（含厂商与能力类型）。
+// PricingCatalogEntry 是模型广场 / 价目表用的全量条目，所有价格为 CNY。
 type PricingCatalogEntry struct {
 	Model           string  `json:"model"`
 	Provider        string  `json:"provider"`
@@ -1811,6 +1831,12 @@ func (s *PricingService) loadPlazaChannelExtras() []PricingCatalogEntry {
 	if err := json.Unmarshal(body, &file); err != nil {
 		logger.LegacyPrintf("service.pricing", "[Pricing] plaza channel catalog ignored: %v", err)
 		return nil
+	}
+	for i := range file.Models {
+		file.Models[i].InputPrice *= currency.USDToCNY
+		file.Models[i].OutputPrice *= currency.USDToCNY
+		file.Models[i].CacheWritePrice *= currency.USDToCNY
+		file.Models[i].CacheReadPrice *= currency.USDToCNY
 	}
 	return file.Models
 }

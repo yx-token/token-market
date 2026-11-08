@@ -14,7 +14,7 @@ import (
 	"github.com/yx-token/token-market/internal/config"
 )
 
-const apiKeyAuthSnapshotVersion = 24 // v24: group model_allowlist field (renamed from models_list_config, enforcing semantics)
+const apiKeyAuthSnapshotVersion = 25 // v25: invalidate cached USD group pricing at the CNY cutover.
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int

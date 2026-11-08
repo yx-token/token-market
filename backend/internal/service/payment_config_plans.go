@@ -13,17 +13,12 @@ import (
 	infraerrors "github.com/yx-token/token-market/internal/pkg/errors"
 )
 
-// normalizePlanCurrency validates and normalizes the display-only currency label.
-// Empty means "no label" and is kept as-is so existing plans stay unchanged.
+// Subscription prices are CNY; accepting another label would misrepresent the charge.
 func normalizePlanCurrency(raw string) (string, error) {
-	if strings.TrimSpace(raw) == "" {
-		return "", nil
+	if value := strings.ToUpper(strings.TrimSpace(raw)); value != "" && value != payment.DefaultPaymentCurrency {
+		return "", infraerrors.BadRequest("PLAN_CURRENCY_INVALID", "subscription currency must be CNY")
 	}
-	currency, err := payment.NormalizePaymentCurrency(raw)
-	if err != nil {
-		return "", infraerrors.BadRequest("PLAN_CURRENCY_INVALID", "currency must be a 3-letter ISO currency code")
-	}
-	return currency, nil
+	return payment.DefaultPaymentCurrency, nil
 }
 
 // validatePlanRequired checks that all required fields for a plan are provided.
@@ -83,9 +78,9 @@ type PlanGroupInfo struct {
 	PeakStart          string   `json:"peak_start"`
 	PeakEnd            string   `json:"peak_end"`
 	PeakRateMultiplier float64  `json:"peak_rate_multiplier"`
-	DailyLimitUSD      *float64 `json:"daily_limit_usd"`
-	WeeklyLimitUSD     *float64 `json:"weekly_limit_usd"`
-	MonthlyLimitUSD    *float64 `json:"monthly_limit_usd"`
+	DailyLimitUSD      *float64 `json:"daily_limit_usd"`   // CNY amount; legacy JSON name retained for compatibility.
+	WeeklyLimitUSD     *float64 `json:"weekly_limit_usd"`  // CNY amount; legacy JSON name retained for compatibility.
+	MonthlyLimitUSD    *float64 `json:"monthly_limit_usd"` // CNY amount; legacy JSON name retained for compatibility.
 	ModelScopes        []string `json:"supported_model_scopes"`
 }
 

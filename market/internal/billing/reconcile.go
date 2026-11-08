@@ -317,8 +317,8 @@ func (e *LimitEnforcer) RunOnce(ctx context.Context) error {
 		now = e.Now()
 	}
 	rows, err := e.DB.Query(ctx, `SELECT id, limits, limit_blocked_until FROM buyer_keys
-		WHERE status = 'active' AND (limits ? 'quota_usd' OR limits ? 'rate_limit_5h_usd' OR limits ? 'rate_limit_1d_usd'
-			OR limits ? 'rate_limit_7d_usd' OR limit_blocked_until IS NOT NULL)`)
+		WHERE status = 'active' AND (limits ? 'quota_cny' OR limits ? 'rate_limit_5h_cny' OR limits ? 'rate_limit_1d_cny'
+			OR limits ? 'rate_limit_7d_cny' OR limit_blocked_until IS NOT NULL)`)
 	if err != nil {
 		return err
 	}
@@ -362,7 +362,7 @@ func (e *LimitEnforcer) RunOnce(ctx context.Context) error {
 				until, reason = &t, name
 			}
 		}
-		block(it.limits.QuotaUSD, total, 100*365*24*time.Hour, "quota exhausted")
+		block(it.limits.QuotaCNY, total, 100*365*24*time.Hour, "quota exhausted")
 		block(it.limits.RateLimit7d, d7, time.Hour, "7-day limit reached")
 		block(it.limits.RateLimit1d, d1, 30*time.Minute, "daily limit reached")
 		block(it.limits.RateLimit5h, h5, 10*time.Minute, "5-hour limit reached")
