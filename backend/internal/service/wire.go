@@ -994,7 +994,7 @@ var ProviderSet = wire.NewSet(
 	ProvideScheduledTestService,
 	ProvideScheduledTestRunnerService,
 	NewGroupCapacityService,
-	NewChannelService,
+	ProvideChannelService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),
 	NewModelPricingResolver,
 	NewModelPlazaService,
@@ -1045,6 +1045,20 @@ func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService, lockCache Lead
 	svc := NewPaymentOrderExpiryService(paymentSvc, 60*time.Second)
 	svc.SetLeaderLock(lockCache, db)
 	svc.Start()
+	return svc
+}
+
+// ProvideChannelService 创建渠道服务，并在后台幂等补齐「模型价格页」官方价目渠道。
+// 远程升级后若运营未配渠道定价，广场会空；仅当当前没有任何可展示官方价目时写入。
+func ProvideChannelService(
+	repo ChannelRepository,
+	groupRepo GroupRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	pricingService *PricingService,
+	cachePubSub ChannelCachePubSub,
+) *ChannelService {
+	svc := NewChannelService(repo, groupRepo, authCacheInvalidator, pricingService, cachePubSub)
+	svc.scheduleEnsureOfficialPlazaPricing()
 	return svc
 }
 

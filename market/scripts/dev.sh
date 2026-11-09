@@ -439,13 +439,13 @@ for row in rows:
 
 # 真实引擎：写入「dev-official-pricing」渠道，按官方支持模型（sync-models）配渠道定价，
 # 供 C 端「模型价格」页直接展示。替身引擎无渠道管理，跳过。
-# 分组可选：未绑分组时仍会出现在广场；有 default 分组则挂上。
+# 幂等：以引擎里是否已有带 model_pricing 的同名渠道为准，不只看本地标记文件
+#（避免删了渠道 / 清了库但标记还在时被误跳过）。有空闲 default 分组则挂上。
 seed_channel_pricing() {
   if [[ "$USE_REAL_ENGINE" != "1" ]]; then
     return
   fi
-  [[ -f "$DATA/seeded-channel-pricing" ]] && return
-  echo "写入官方渠道定价（模型价格页）…"
+  echo "检查官方渠道定价（模型价格页）…"
   local key out
   key="$(ensure_engine_admin_key)"
   out="$(python3 - "$ENGINE" "$key" <<'PY'
@@ -459,6 +459,50 @@ def req(method, path, body=None):
     r = urllib.request.Request(engine + path, data=data, headers=hdr, method=method)
     with urllib.request.urlopen(r, timeout=30) as resp:
         return json.load(resp)
+
+def pricing_model_count(ch):
+    return sum(len(p.get("models") or []) for p in (ch or {}).get("model_pricing") or [])
+
+name = "dev-official-pricing"
+items = []
+try:
+    items = (req("GET", "/api/v1/admin/channels?page=1&page_size=100").get("data") or {}).get("items") or []
+except Exception as e:
+    raise SystemExit(f"list channels failed: {e}")
+
+existing = next((ch for ch in items if ch.get("name") == name), None)
+
+def free_default_group_id(all_items, self_name):
+    owned = {gid for ch in all_items for gid in (ch.get("group_ids") or []) if ch.get("name") != self_name}
+    try:
+        groups = (req("GET", "/api/v1/admin/groups?page=1&page_size=100").get("data") or {}).get("items") or []
+    except Exception:
+        return None
+    for g in groups:
+        if g.get("name") == "default" and g.get("id") not in owned:
+            return g.get("id")
+    return None
+
+# 已有完整定价：可跳过 sync；若还没绑分组且 default 空闲，补挂一次。
+if existing and pricing_model_count(existing) > 0:
+    group_ids = list(existing.get("group_ids") or [])
+    if not group_ids:
+        gid = free_default_group_id(items, name)
+        if gid is not None:
+            body = {
+                "name": existing.get("name") or name,
+                "description": existing.get("description") or "本地演示：官方支持模型渠道定价（模型价格页）",
+                "group_ids": [gid],
+                "model_pricing": existing.get("model_pricing") or [],
+            }
+            try:
+                resp = req("PUT", f"/api/v1/admin/channels/{existing['id']}", body)
+                print(f"patched groups id={existing.get('id')} models={pricing_model_count(existing)} groups={[gid]}")
+                raise SystemExit(0)
+            except urllib.error.HTTPError as e:
+                print(f"patch groups failed HTTP {e.code}: {e.read().decode()[:200]}", file=sys.stderr)
+    print(f"skip existing id={existing.get('id')} models={pricing_model_count(existing)} groups={group_ids}")
+    raise SystemExit(0)
 
 def sync_models(platform):
     try:
@@ -474,9 +518,9 @@ def pick(models, want, prefixes, limit=8):
     def ok(m):
         low = m.lower()
         return low not in seen and not any(s in low for s in skip)
-    for name in want:
+    for want_name in want:
         for m in models:
-            if m.lower() == name.lower() and ok(m):
+            if m.lower() == want_name.lower() and ok(m):
                 out.append(m); seen.add(m.lower())
                 break
     for p in prefixes:
@@ -506,19 +550,13 @@ for platform, want, prefixes in specs:
 if not pricing:
     raise SystemExit("no official models resolved from sync-models")
 
-name = "dev-official-pricing"
-existing = None
-try:
-    items = (req("GET", "/api/v1/admin/channels?page=1&page_size=100").get("data") or {}).get("items") or []
-    for ch in items:
-        if ch.get("name") == name:
-            existing = ch
-            break
-except Exception as e:
-    print(f"list channels failed: {e}", file=sys.stderr)
-
-# 新建不绑分组，避免 default 已被别的渠道占用导致 409；更新则保留原有分组。
+# 已有分组保留；空着时尝试挂空闲的 default（分组全局互斥，占用则跳过）。
 group_ids = list((existing or {}).get("group_ids") or [])
+if not group_ids:
+    gid = free_default_group_id(items, name)
+    if gid is not None:
+        group_ids = [gid]
+
 body = {
     "name": name,
     "description": "本地演示：官方支持模型渠道定价（模型价格页）",
@@ -640,10 +678,13 @@ case "${1:-}" in
   down) down ;;
   reset)
     down
-    docker exec "$PG_CONTAINER" psql -U tm -d tm -qc "DROP DATABASE IF EXISTS $MARKET_DB WITH (FORCE)" -c "DROP DATABASE IF EXISTS $FAKE_DB WITH (FORCE)"
+    docker exec "$PG_CONTAINER" psql -U tm -d tm -qc \
+      "DROP DATABASE IF EXISTS $MARKET_DB WITH (FORCE)" \
+      -c "DROP DATABASE IF EXISTS $FAKE_DB WITH (FORCE)" \
+      -c "DROP DATABASE IF EXISTS $ENGINE_DB WITH (FORCE)"
     docker exec "$REDIS_CONTAINER" redis-cli -n 2 flushdb >/dev/null
     rm -rf "$DATA"
-    echo "已重置"
+    echo "已重置（含引擎库 $ENGINE_DB）"
     ;;
   status)
     for name in fake-sub2api fake-thirdparty api worker edge dev-proxy; do
