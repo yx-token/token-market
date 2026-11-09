@@ -1758,18 +1758,13 @@ type PricingCatalogEntry struct {
 	CacheReadPrice  float64 `json:"cache_read_price"`
 }
 
-type plazaChannelCatalogFile struct {
-	Models []PricingCatalogEntry `json:"models"`
-}
-
-// ListPricingCatalog 返回官方价目 + 全球渠道扩展目录（广场用）。
-// 扩展条目不覆盖内存价目表已有模型，也不写入计费热路径。
+// ListPricingCatalog 返回内存中的官方 LiteLLM 价目（不含第三方扩展目录）。
+// 市场「模型价格」页请走 ChannelService.ListConfiguredPricingCatalog（按渠道定价）。
 func (s *PricingService) ListPricingCatalog() []PricingCatalogEntry {
 	s.mu.RLock()
-	out := make([]PricingCatalogEntry, 0, len(s.pricingData)+256)
-	seen := make(map[string]struct{}, len(s.pricingData)+256)
+	defer s.mu.RUnlock()
+	out := make([]PricingCatalogEntry, 0, len(s.pricingData))
 	for name, p := range s.pricingData {
-		seen[name] = struct{}{}
 		out = append(out, PricingCatalogEntry{
 			Model:           name,
 			Provider:        p.LiteLLMProvider,
@@ -1780,65 +1775,8 @@ func (s *PricingService) ListPricingCatalog() []PricingCatalogEntry {
 			CacheReadPrice:  p.CacheReadInputTokenCost,
 		})
 	}
-	s.mu.RUnlock()
-
-	for _, e := range s.loadPlazaChannelExtras() {
-		if e.Model == "" {
-			continue
-		}
-		if _, ok := seen[e.Model]; ok {
-			continue
-		}
-		seen[e.Model] = struct{}{}
-		out = append(out, e)
-	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Model < out[j].Model })
 	return out
-}
-
-func (s *PricingService) plazaChannelCatalogPath() string {
-	candidates := make([]string, 0, 4)
-	if s != nil && s.cfg != nil {
-		if fb := strings.TrimSpace(s.cfg.Pricing.FallbackFile); fb != "" {
-			candidates = append(candidates, filepath.Join(filepath.Dir(fb), "plaza_channel_catalog.json"))
-		}
-		if dd := strings.TrimSpace(s.cfg.Pricing.DataDir); dd != "" {
-			candidates = append(candidates, filepath.Join(dd, "plaza_channel_catalog.json"))
-		}
-	}
-	candidates = append(candidates,
-		filepath.Join("resources", "model-pricing", "plaza_channel_catalog.json"),
-		filepath.Join("backend", "resources", "model-pricing", "plaza_channel_catalog.json"),
-	)
-	for _, path := range candidates {
-		if st, err := os.Stat(path); err == nil && !st.IsDir() {
-			return path
-		}
-	}
-	if len(candidates) > 0 {
-		return candidates[0]
-	}
-	return filepath.Join("resources", "model-pricing", "plaza_channel_catalog.json")
-}
-
-func (s *PricingService) loadPlazaChannelExtras() []PricingCatalogEntry {
-	path := s.plazaChannelCatalogPath()
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	var file plazaChannelCatalogFile
-	if err := json.Unmarshal(body, &file); err != nil {
-		logger.LegacyPrintf("service.pricing", "[Pricing] plaza channel catalog ignored: %v", err)
-		return nil
-	}
-	for i := range file.Models {
-		file.Models[i].InputPrice *= currency.USDToCNY
-		file.Models[i].OutputPrice *= currency.USDToCNY
-		file.Models[i].CacheWritePrice *= currency.USDToCNY
-		file.Models[i].CacheReadPrice *= currency.USDToCNY
-	}
-	return file.Models
 }
 
 // isNumeric 检查字符串是否为纯数字

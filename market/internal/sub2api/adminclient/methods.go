@@ -433,7 +433,7 @@ func (c *Client) GetModelPricing(ctx context.Context, model string) (*ModelPrici
 	return &out, nil
 }
 
-// ListPricingCatalog 一次拉取内置价目表全部模型。
+// ListPricingCatalog 一次拉取渠道定价中已配置的官方支持模型价目。
 func (c *Client) ListPricingCatalog(ctx context.Context) ([]PricingCatalogEntry, error) {
 	var out struct {
 		Models []PricingCatalogEntry `json:"models"`

@@ -9,6 +9,7 @@ import (
 	"github.com/yx-token/token-market/internal/pkg/pagination"
 	"github.com/yx-token/token-market/internal/pkg/response"
 	"github.com/yx-token/token-market/internal/service"
+	"github.com/yx-token/token-market/market/enginehost"
 
 	"github.com/gin-gonic/gin"
 )
@@ -508,6 +509,7 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 		return
 	}
 
+	enginehost.InvalidateMarketPrices()
 	response.Success(c, channelToResponse(channel))
 }
 
@@ -573,6 +575,7 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		return
 	}
 
+	enginehost.InvalidateMarketPrices()
 	response.Success(c, channelToResponse(channel))
 }
 
@@ -590,6 +593,7 @@ func (h *ChannelHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	enginehost.InvalidateMarketPrices()
 	response.Success(c, gin.H{"message": "Channel deleted successfully"})
 }
 
@@ -631,23 +635,7 @@ func (h *ChannelHandler) GetModelDefaultPricing(c *gin.Context) {
 	})
 }
 
-// platformToLiteLLMProvider maps a channel platform name to the corresponding
-// LiteLLM provider string used as the key in the pricing catalog.
-var platformToLiteLLMProvider = map[string]string{
-	service.PlatformAnthropic:   "anthropic",
-	service.PlatformOpenAI:      "openai",
-	service.PlatformGemini:      "gemini",
-	service.PlatformAntigravity: "anthropic",
-	service.PlatformGrok:        "xai",
-	service.PlatformKimi:        "moonshot",
-	service.PlatformZhipu:       "zhipu",
-	service.PlatformDeepseek:    "deepseek",
-	service.PlatformMiniMax:     "minimax",
-	service.PlatformOpenCodeGo:  "opencode-go",
-	service.PlatformTypeSafe:    "typesafe",
-}
-
-// SyncPricingModels 返回 LiteLLM 定价目录中指定平台的最新模型列表
+// SyncPricingModels 返回 LiteLLM 定价目录中指定平台的最新模型列表（仅官方支持平台）。
 // GET /api/v1/admin/channels/pricing/sync-models?platform=anthropic
 func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 	platform := strings.ToLower(strings.TrimSpace(c.Query("platform")))
@@ -657,7 +645,7 @@ func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 		return
 	}
 
-	provider, ok := platformToLiteLLMProvider[platform]
+	provider, ok := service.OfficialLiteLLMProvider(platform)
 	if !ok {
 		response.ErrorFrom(c, infraerrors.BadRequest("UNSUPPORTED_PLATFORM",
 			fmt.Sprintf("unsupported platform: %s", platform)).
@@ -669,12 +657,18 @@ func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 	response.Success(c, gin.H{"models": models})
 }
 
-// ListPricingCatalog 返回内置价目表全量模型（市场模型广场一次拉全，避免按模型 N+1）。
+// ListPricingCatalog 返回市场「模型价格」价目：活跃渠道「渠道定价」中已配置、
+// 且属于官方支持平台、并能命中内置官方参考价的模型（一次拉全，避免按模型 N+1）。
 // GET /api/v1/admin/channels/pricing/catalog
 func (h *ChannelHandler) ListPricingCatalog(c *gin.Context) {
-	if h.pricingService == nil {
+	if h.channelService == nil {
 		response.Success(c, gin.H{"models": []service.PricingCatalogEntry{}})
 		return
 	}
-	response.Success(c, gin.H{"models": h.pricingService.ListPricingCatalog()})
+	models, err := h.channelService.ListConfiguredPricingCatalog(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"models": models})
 }

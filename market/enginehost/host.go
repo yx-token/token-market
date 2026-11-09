@@ -52,6 +52,15 @@ func market(ctx context.Context) (*app.App, error) {
 	return a, open
 }
 
+// InvalidateMarketPrices 丢弃内嵌市场的价目缓存。
+// 渠道定价增删改后调用，使 C 端「模型价格」立刻读到新 catalog。
+func InvalidateMarketPrices() {
+	if a == nil || a.Market == nil || a.Market.Prices == nil {
+		return
+	}
+	a.Market.Prices.Invalidate()
+}
+
 // RewardScriptOrigins 返回 loxo 浏览任务 SDK 需要加入 CSP script-src 的来源。
 // 市场未内嵌、尚未初始化或未开启 SDK 时为空；只读缓存，不阻塞请求。
 func RewardScriptOrigins() []string {

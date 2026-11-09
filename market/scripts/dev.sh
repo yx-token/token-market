@@ -437,6 +437,113 @@ for row in rows:
   engine_payment_write PUT /api/v1/admin/payment/config '{"enabled":true,"balance_disabled":false}'
 }
 
+# 真实引擎：写入「dev-official-pricing」渠道，按官方支持模型（sync-models）配渠道定价，
+# 供 C 端「模型价格」页直接展示。替身引擎无渠道管理，跳过。
+# 分组可选：未绑分组时仍会出现在广场；有 default 分组则挂上。
+seed_channel_pricing() {
+  if [[ "$USE_REAL_ENGINE" != "1" ]]; then
+    return
+  fi
+  [[ -f "$DATA/seeded-channel-pricing" ]] && return
+  echo "写入官方渠道定价（模型价格页）…"
+  local key out
+  key="$(ensure_engine_admin_key)"
+  out="$(python3 - "$ENGINE" "$key" <<'PY'
+import json, sys, urllib.error, urllib.request
+
+engine, key = sys.argv[1], sys.argv[2]
+hdr = {"x-api-key": key, "Content-Type": "application/json"}
+
+def req(method, path, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    r = urllib.request.Request(engine + path, data=data, headers=hdr, method=method)
+    with urllib.request.urlopen(r, timeout=30) as resp:
+        return json.load(resp)
+
+def sync_models(platform):
+    try:
+        d = req("GET", f"/api/v1/admin/channels/pricing/sync-models?platform={platform}")
+        return list((d.get("data") or {}).get("models") or [])
+    except Exception as e:
+        print(f"skip sync {platform}: {e}", file=sys.stderr)
+        return []
+
+def pick(models, want, prefixes, limit=8):
+    skip = ("audio", "tts", "realtime", "transcribe", "embedding", "moderation")
+    out, seen = [], set()
+    def ok(m):
+        low = m.lower()
+        return low not in seen and not any(s in low for s in skip)
+    for name in want:
+        for m in models:
+            if m.lower() == name.lower() and ok(m):
+                out.append(m); seen.add(m.lower())
+                break
+    for p in prefixes:
+        for m in models:
+            if m.lower().startswith(p.lower()) and ok(m):
+                out.append(m); seen.add(m.lower())
+                if len(out) >= limit:
+                    return out
+    return out[:limit]
+
+specs = [
+    ("anthropic", ["claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-5"], ["claude-sonnet-4", "claude-haiku-4", "claude-opus-4"]),
+    ("openai", ["gpt-5", "gpt-4.1", "gpt-4.1-mini", "gpt-5.1"], ["gpt-5", "gpt-4.1"]),
+    ("gemini", ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"], ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"]),
+    ("grok", ["grok-4"], ["grok-4", "grok-3"]),
+    ("kimi", ["kimi-for-coding", "kimi-k2.5"], ["kimi-", "moonshot"]),
+    ("zhipu", ["glm-4.6", "glm-5"], ["glm-"]),
+    ("minimax", ["MiniMax-M2", "minimax-m2.7"], ["minimax", "MiniMax"]),
+]
+
+pricing = []
+for platform, want, prefixes in specs:
+    models = pick(sync_models(platform), want, prefixes)
+    if models:
+        pricing.append({"platform": platform, "models": models, "billing_mode": "token"})
+
+if not pricing:
+    raise SystemExit("no official models resolved from sync-models")
+
+name = "dev-official-pricing"
+existing = None
+try:
+    items = (req("GET", "/api/v1/admin/channels?page=1&page_size=100").get("data") or {}).get("items") or []
+    for ch in items:
+        if ch.get("name") == name:
+            existing = ch
+            break
+except Exception as e:
+    print(f"list channels failed: {e}", file=sys.stderr)
+
+# 新建不绑分组，避免 default 已被别的渠道占用导致 409；更新则保留原有分组。
+group_ids = list((existing or {}).get("group_ids") or [])
+body = {
+    "name": name,
+    "description": "本地演示：官方支持模型渠道定价（模型价格页）",
+    "group_ids": group_ids,
+    "model_pricing": pricing,
+}
+try:
+    if existing:
+        resp = req("PUT", f"/api/v1/admin/channels/{existing['id']}", body)
+    else:
+        resp = req("POST", "/api/v1/admin/channels", body)
+except urllib.error.HTTPError as e:
+    raise SystemExit(f"channel upsert HTTP {e.code}: {e.read().decode()[:400]}")
+
+n = sum(len(p.get("models") or []) for p in ((resp.get("data") or {}).get("model_pricing") or pricing))
+print(f"ok id={(resp.get('data') or {}).get('id') or (existing or {}).get('id')} models={n} groups={group_ids}")
+PY
+)" || {
+    echo "  官方渠道定价写入失败：$out" >&2
+    return 1
+  }
+  echo "  $out"
+  touch "$DATA/seeded-channel-pricing"
+}
+
 # 第三方检测：BazaarLink 指向替身（Edge 是本机 http 地址，需要允许非 https 目标）。
 # Claude 开启「身份与功能核验」流程并以第三方为来源，在上架检测、管理员检测、卖家复测与申诉复测中执行。
 seed_thirdparty() {
@@ -491,6 +598,7 @@ up() {
   fi
   seed
   seed_payments
+  seed_channel_pricing
   seed_thirdparty
   seed_accounts
   local buyer_gateway=http://127.0.0.1:$EDGE_PORT

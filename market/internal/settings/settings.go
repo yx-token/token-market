@@ -35,7 +35,7 @@ type Settings struct {
 	SchedulerChangeBudget      int                `json:"scheduler_change_budget"`       // 每轮最多改动的 sub2api 账号数
 	BalanceMismatchTolerance   float64            `json:"balance_mismatch_tolerance"`    // 余额对账容差
 	AllowNoProxy               bool               `json:"allow_no_proxy"`                // 没有可用代理时是否允许上架（仅开发环境）
-	PriceModels                []string           `json:"price_models"`                  // 市场展示官方价格的模型（价格取自 sub2api 内置价目表）
+	PriceModels                []string           `json:"price_models"`                  // 模型价格页兜底短名单 + 文档示例（优先走渠道定价 catalog）
 	RefundOriginalRoute        bool               `json:"refund_original_route"`         // 余额退款优先原路退回到在线充值单
 	RefundOriginalRouteDays    int                `json:"refund_original_route_days"`    // 只原路退回这么多天内的充值单（渠道的可退款期限）
 	ProbeRequestTimeoutSeconds int                `json:"probe_request_timeout_seconds"` // 质量检测单次请求（一道题发给被测上游或基线账号）的超时

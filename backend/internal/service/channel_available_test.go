@@ -78,6 +78,80 @@ func newAvailableChannelService(channels []Channel, groupRepo GroupRepository) *
 	return NewChannelService(repo, groupRepo, nil, nil, nil)
 }
 
+func TestListConfiguredPricingCatalog_OnlyOfficialChannelModels(t *testing.T) {
+	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		"claude-sonnet-4-5": {
+			LiteLLMProvider:     "anthropic",
+			Mode:                "chat",
+			InputCostPerToken:   3e-6,
+			OutputCostPerToken:  15e-6,
+		},
+		"gpt-5.4": {
+			LiteLLMProvider:    "openai",
+			Mode:               "chat",
+			InputCostPerToken:  2e-6,
+			OutputCostPerToken: 8e-6,
+		},
+	})
+	channels := []Channel{
+		{
+			ID:     1,
+			Name:   "official-ch",
+			Status: StatusActive,
+			ModelPricing: []ChannelModelPricing{
+				{Platform: PlatformAnthropic, Models: []string{"claude-sonnet-4-5"}},
+				{Platform: PlatformOpenAI, Models: []string{"gpt-5.4"}},
+				// 渠道里配了但官方价目没有的名字 → 丢弃
+				{Platform: PlatformAnthropic, Models: []string{"custom-not-in-litellm"}},
+			},
+		},
+		{
+			ID:     2,
+			Name:   "disabled-ch",
+			Status: StatusDisabled,
+			ModelPricing: []ChannelModelPricing{
+				{Platform: PlatformOpenAI, Models: []string{"gpt-5.4"}},
+			},
+		},
+		{
+			ID:     3,
+			Name:   "dup-ch",
+			Status: StatusActive,
+			ModelPricing: []ChannelModelPricing{
+				{Platform: PlatformAnthropic, Models: []string{"Claude-Sonnet-4-5"}},
+			},
+		},
+	}
+	repo := &mockChannelRepository{
+		listAllFn: func(ctx context.Context) ([]Channel, error) { return channels, nil },
+	}
+	svc := NewChannelService(repo, &stubGroupRepoForAvailable{}, nil, pricingSvc, nil)
+
+	out, err := svc.ListConfiguredPricingCatalog(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	require.Equal(t, "claude-sonnet-4-5", out[0].Model)
+	require.Equal(t, "anthropic", out[0].Provider)
+	require.InDelta(t, 3e-6, out[0].InputPrice, 1e-12)
+	require.Equal(t, "gpt-5.4", out[1].Model)
+	require.Equal(t, "openai", out[1].Provider)
+}
+
+func TestListConfiguredPricingCatalog_SkipsWhenNoPricingService(t *testing.T) {
+	channels := []Channel{{
+		ID:     1,
+		Name:   "ch",
+		Status: StatusActive,
+		ModelPricing: []ChannelModelPricing{
+			{Platform: PlatformAnthropic, Models: []string{"claude-sonnet-4-5"}},
+		},
+	}}
+	svc := newAvailableChannelService(channels, &stubGroupRepoForAvailable{})
+	out, err := svc.ListConfiguredPricingCatalog(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, out)
+}
+
 func TestListAvailable_EmptyActiveGroups_NoGroupsAttached(t *testing.T) {
 	// 活跃分组列表为空时，渠道的 Groups 应为空切片，不报错。
 	channels := []Channel{{

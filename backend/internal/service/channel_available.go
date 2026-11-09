@@ -39,6 +39,86 @@ type AvailableChannel struct {
 	SupportedModels    []SupportedModel
 }
 
+// officialPlatformLiteLLMProvider 把渠道平台映射到 LiteLLM provider。
+// 仅这些「官方」平台会出现在市场模型价格页；同步渠道定价模型也用同一张表。
+var officialPlatformLiteLLMProvider = map[string]string{
+	PlatformAnthropic:   "anthropic",
+	PlatformOpenAI:      "openai",
+	PlatformGemini:      "gemini",
+	PlatformAntigravity: "anthropic",
+	PlatformGrok:        "xai",
+	PlatformKimi:        "moonshot",
+	PlatformZhipu:       "zhipu",
+	PlatformDeepseek:    "deepseek",
+	PlatformMiniMax:     "minimax",
+	PlatformOpenCodeGo:  "opencode-go",
+	PlatformTypeSafe:    "typesafe",
+}
+
+// OfficialLiteLLMProvider 返回渠道平台对应的 LiteLLM provider；非官方平台 ok=false。
+func OfficialLiteLLMProvider(platform string) (string, bool) {
+	provider, ok := officialPlatformLiteLLMProvider[strings.ToLower(strings.TrimSpace(platform))]
+	return provider, ok
+}
+
+// ListConfiguredPricingCatalog 返回市场「模型价格」页用的价目：
+// 只枚举活跃渠道在「渠道定价」里已配置的模型，且仅保留官方平台、
+// 并能在内置 LiteLLM 价目中命中官方参考价的模型（避免第三方扩展目录灌入广场）。
+func (s *ChannelService) ListConfiguredPricingCatalog(ctx context.Context) ([]PricingCatalogEntry, error) {
+	channels, err := s.repo.ListAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list channels: %w", err)
+	}
+
+	seen := make(map[string]struct{})
+	out := make([]PricingCatalogEntry, 0)
+	for i := range channels {
+		ch := &channels[i]
+		if ch.Status != StatusActive {
+			continue
+		}
+		ch.normalizeBillingModelSource()
+		supported := ch.SupportedModels()
+		for _, m := range supported {
+			provider, ok := officialPlatformLiteLLMProvider[m.Platform]
+			if !ok {
+				continue
+			}
+			key := strings.ToLower(strings.TrimSpace(m.Name))
+			if key == "" {
+				continue
+			}
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			if s.pricingService == nil {
+				continue
+			}
+			// 用确定性识别，避免系列模糊兜底把自定义名当成官方模型。
+			lp := s.pricingService.GetIdentifiedModelPricing(m.Name)
+			if lp == nil {
+				continue
+			}
+			seen[key] = struct{}{}
+			litellmProvider := strings.TrimSpace(lp.LiteLLMProvider)
+			if litellmProvider == "" {
+				litellmProvider = provider
+			}
+			out = append(out, PricingCatalogEntry{
+				Model:           m.Name,
+				Provider:        litellmProvider,
+				Mode:            lp.Mode,
+				InputPrice:      lp.InputCostPerToken,
+				OutputPrice:     lp.OutputCostPerToken,
+				CacheWritePrice: lp.CacheCreationInputTokenCost,
+				CacheReadPrice:  lp.CacheReadInputTokenCost,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Model < out[j].Model })
+	return out, nil
+}
+
 // ListAvailable 返回所有渠道的可用视图：每个渠道附带关联分组信息与支持模型列表。
 //
 // 支持模型通过 (*Channel).SupportedModels() 计算（mapping ∪ pricing 并联）。

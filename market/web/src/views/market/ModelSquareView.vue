@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useMarketBoard } from '@/stores/marketBoard'
 import { money, multiplier } from '@/utils/format'
@@ -25,10 +25,22 @@ const CAPABILITY_TABS: { id: ModelCapability | 'all'; label: string }[] = [
   { id: 'other', label: '其他' },
 ]
 
+const onPlazaVisible = () => {
+  if (document.visibilityState === 'visible') void board.load()
+}
+
 onMounted(async () => {
   board.start()
   await board.load()
   loading.value = false
+  // 后台改渠道定价后回到本页，主动再拉一次，避免仍显示旧价目。
+  document.addEventListener('visibilitychange', onPlazaVisible)
+  window.addEventListener('focus', onPlazaVisible)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onPlazaVisible)
+  window.removeEventListener('focus', onPlazaVisible)
 })
 
 const groups = computed(() => buildModelSquare(board.prices, board.listings, board.pools))
@@ -104,12 +116,12 @@ function ioPair(input: number, output: number, mult: number | null = null) {
         <p class="msq-kicker">模型价格</p>
         <h1 class="msq-title">官方价对照 · 市场实付一眼看清</h1>
         <p class="msq-lead">
-          汇聚全球主流 API 渠道的官方价目（OpenAI、Anthropic、Google、Mistral、通义、火山、Bedrock、Groq、Together…），价格按官方人民币价目 × 市场在售最低倍率估算。
+          按后台「渠道定价」已配置的官方支持模型展示参考价（Anthropic / OpenAI / Gemini / Grok / Kimi / 智谱 / MiniMax 等），实付按官方人民币价目 × 市场在售最低倍率估算。
         </p>
         <div class="msq-toolbar">
           <label class="msq-search">
             <span class="sr-only">搜索模型</span>
-            <input v-model="q" type="search" placeholder="搜索模型或渠道，如 mistral、通义、bedrock…" />
+            <input v-model="q" type="search" placeholder="搜索模型或平台，如 claude、gpt、gemini…" />
           </label>
           <div class="msq-chips" role="tablist" aria-label="能力筛选">
             <button

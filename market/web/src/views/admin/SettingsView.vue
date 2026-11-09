@@ -111,9 +111,9 @@ async function save() {
         <p class="hint">回收报价 = 厂商基础倍率 × 等级系数（不超过默认分组上限）</p>
       </div>
       <div>
-        <label class="label" for="models">市场展示价格的模型</label>
+        <label class="label" for="models">市场展示价格的模型（兜底）</label>
         <input id="models" v-model="models" class="input" />
-        <p class="hint">价格取自 sub2api 内置价目表，查不到的模型不展示</p>
+        <p class="hint">模型价格页优先用后台「渠道定价」已配置的官方支持模型；此项仅在 catalog 不可用时兜底，并用于文档示例</p>
       </div>
       <div class="md:col-span-2">
         <label class="flex items-center gap-2 text-sm">

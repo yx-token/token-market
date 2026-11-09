@@ -294,7 +294,7 @@ function offerCovers(offer: RateOffer, model: string, family: ModelFamilyId): bo
   return plat === 'composite'
 }
 
-/** 按全球渠道分组：官方价 × 市场最低在售倍率 */
+/** 按官方平台渠道分组：官方参考价 × 市场最低在售倍率 */
 export function buildModelSquare(prices: Price[], listings: MarketItem[], pools: PoolItem[]): ModelChannelGroup[] {
   const offers = collectOffers(listings, pools)
   const byChannel = new Map<string, ModelRateRow[]>()

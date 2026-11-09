@@ -278,14 +278,18 @@
             v-show="section.enabled && activeTab === section.platform"
             class="space-y-4"
           >
-            <!-- Groups -->
+            <!-- Groups（可选：不绑分组仍可配官方模型价目，供模型价格页展示；绑了才对用户计费生效） -->
             <div>
               <label class="input-label text-xs">
-                {{ t('admin.channels.form.groups', 'Associated Groups') }} <span class="text-red-500">*</span>
+                {{ t('admin.channels.form.groups', 'Associated Groups') }}
+                <span class="ml-1 font-normal text-gray-400">{{ t('admin.channels.form.groupsOptional') }}</span>
                 <span v-if="section.group_ids.length > 0" class="ml-1 font-normal text-gray-400">
                   ({{ t('admin.channels.form.selectedCount', { count: section.group_ids.length }) }})
                 </span>
               </label>
+              <p class="mb-1 text-[11px] text-gray-500 dark:text-gray-400">
+                {{ t('admin.channels.form.groupsHint') }}
+              </p>
               <div class="max-h-40 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-dark-600 dark:bg-dark-900">
                 <div v-if="groupsLoading" class="py-2 text-center text-xs text-gray-500">
                   {{ t('common.loading', 'Loading...') }}
@@ -1481,14 +1485,9 @@ async function handleSubmit() {
     return
   }
 
-  // Check for pricing entries with empty models (would be silently skipped)
+  // Check for pricing entries with empty models (would be silently skipped).
+  // 分组可选：未关联分组时定价仍可进模型价格页，只是不会挂到用户分组计费。
   for (const section of form.platforms.filter(s => s.enabled)) {
-    if (section.group_ids.length === 0) {
-      const platformLabel = t('admin.groups.platforms.' + section.platform, section.platform)
-      appStore.showError(t('admin.channels.noGroupsSelected', { platform: platformLabel }))
-      activeTab.value = section.platform
-      return
-    }
     for (const entry of section.model_pricing) {
       if (entry.models.length === 0) {
         const platformLabel = t('admin.groups.platforms.' + section.platform, section.platform)
