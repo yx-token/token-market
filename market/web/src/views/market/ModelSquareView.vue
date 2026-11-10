@@ -216,7 +216,8 @@ function ioPair(input: number, output: number, mult: number | null = null) {
                 </td>
                 <td class="col-off">{{ ioPair(row.official.input_per_1m, row.official.output_per_1m) }}</td>
                 <td class="col-paid strong">{{ row.bestMult === null ? '—' : ioPair(row.official.input_per_1m, row.official.output_per_1m, row.bestMult) }}</td>
-                <td class="col-cache">{{ cacheCell(row.official.cache_write_per_1m, row.official.cache_read_per_1m, row.bestMult, true) }}</td>
+                <!-- 无在售倍率时仍展示官方缓存价，避免整列被实付逻辑打成 — -->
+                <td class="col-cache">{{ cacheCell(row.official.cache_write_per_1m, row.official.cache_read_per_1m, row.bestMult, row.bestMult !== null) }}</td>
                 <td class="col-mult">
                   <span v-if="row.bestMult !== null" class="msq-mult">{{ multiplier(row.bestMult) }}</span>
                   <span v-else class="msq-mult none">—</span>
@@ -244,7 +245,7 @@ function ioPair(input: number, output: number, mult: number | null = null) {
                   <span>输入 <b>{{ money(paid(row.official.input_per_1m, row.bestMult) ?? undefined) }}</b></span>
                   <span>输出 <b>{{ money(paid(row.official.output_per_1m, row.bestMult) ?? undefined) }}</b></span>
                 </div>
-                <p class="msq-mcache">{{ cacheCell(row.official.cache_write_per_1m, row.official.cache_read_per_1m, row.bestMult, true) }}</p>
+                <p class="msq-mcache">{{ cacheCell(row.official.cache_write_per_1m, row.official.cache_read_per_1m, row.bestMult, row.bestMult !== null) }}</p>
               </div>
               <div class="msq-mblock off">
                 <span class="msq-mblock-label">官方价</span>
