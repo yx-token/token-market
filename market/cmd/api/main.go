@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/yx-token/token-market/market/internal/app"
+	"github.com/yx-token/token-market/market/internal/buyer"
 	"github.com/yx-token/token-market/market/internal/httpapi"
 	"github.com/yx-token/token-market/market/internal/platform/buildinfo"
 	"github.com/yx-token/token-market/market/internal/platform/config"
@@ -68,9 +69,10 @@ func run(configPath string, log *slog.Logger) error {
 	if err := updater.RecoverInterrupted(); err != nil {
 		return err
 	}
+	oneClick := &buyer.OneClickService{Redis: a.Redis, Keys: a.Keys, EdgeURL: cfg.Edge.PublicURL}
 	api := &httpapi.Server{
 		DB: a.DB, Issuer: a.Issuer, Accounts: a.Accounts, IAM: a.IAM, Listings: a.Listings, Proxies: a.Proxies, Pools: a.Pools,
-		Keys: a.Keys, Funds: a.Funds, Payments: a.Payments, Market: a.Market, Promo: a.Promo, Reward: a.Reward, Quality: a.Quality, Replica: a.Replica, Risk: a.Risk, Kicker: a.Kicker, Log: log,
+		Keys: a.Keys, OneClick: oneClick, Funds: a.Funds, Payments: a.Payments, Market: a.Market, Promo: a.Promo, Reward: a.Reward, Quality: a.Quality, Replica: a.Replica, Risk: a.Risk, Kicker: a.Kicker, Log: log,
 		TrustedProxies: cfg.HTTP.TrustedProxies, WebDir: cfg.HTTP.WebDir, AdminWebDir: adminWebDir(cfg.HTTP.WebDir, cfg.HTTP.AdminWebDir),
 		EngineProxyURL: cfg.Sub2API.BaseURL, EngineAdminKey: cfg.Sub2API.AdminAPIKey,
 		EngineLoginPassword: cfg.Auth.BootstrapAdminPassword, EdgeURL: cfg.Edge.PublicURL,

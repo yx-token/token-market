@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>闲猫助手</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <img class="logo" src="./assets/xianmao-logo.svg" width="48" height="41" alt="闲猫" />
+          <div>
+            <h1>闲猫助手</h1>
+            <p class="tag">选软件 → 一键装好并连上闲猫</p>
+          </div>
+        </div>
+        <div class="account-corner" id="accountCorner">
+          <p class="account-bar" id="accountBar">正在确认登录状态…</p>
+          <div class="wallet-row" id="walletRow" hidden>
+            <span class="wallet-balance" id="walletBalance">余额 —</span>
+            <button type="button" class="btn btn-accent btn-tiny" id="rechargeBtn" data-action="open-recharge">充值</button>
+          </div>
+          <button type="button" class="btn btn-primary" id="loginBtn" data-action="open-login">浏览器登录</button>
+          <button type="button" class="btn" id="cancelLoginBtn" data-action="cancel-login" hidden>取消授权</button>
+          <button type="button" class="btn" id="logoutBtn" data-action="logout-account" hidden>退出</button>
+        </div>
+      </header>
+
+      <section class="panel" id="idle">
+        <div class="idle-toolbar">
+          <div>
+            <p id="idleLead">正在确认闲猫登录状态…</p>
+            <p class="muted" id="idleHint">关联后可在下方直接安装、写入闲猫配置并打开各客户端。</p>
+          </div>
+          <div class="actions" id="idleActions">
+            <button type="button" class="btn" data-action="open-site">打开闲猫网站</button>
+            <button type="button" class="btn" data-action="refresh-agents">刷新状态</button>
+          </div>
+        </div>
+
+        <div class="agent-head">
+          <h2>客户端</h2>
+          <p class="muted" id="credHint">配置仅限闲猫，不支持自定义上游</p>
+        </div>
+        <div class="agent-list" id="agentList" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <div class="modal hidden" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button type="button" class="modal-backdrop" data-action="modal-dismiss" aria-label="关闭"></button>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3 id="modalTitle">处理中</h3>
+          <button type="button" class="modal-close" data-action="modal-dismiss" aria-label="关闭">×</button>
+        </div>
+
+        <div class="modal-body hidden" id="modalPreflight">
+          <p class="muted" id="preflightLead">正在检测本机资源是否满足安装需要…</p>
+          <ul class="check-list" id="preflightChecks"></ul>
+          <div class="actions" id="preflightActions" hidden>
+            <button type="button" class="btn btn-accent" id="preflightContinueBtn" data-action="preflight-continue">
+              开始安装
+            </button>
+            <button type="button" class="btn" data-action="modal-dismiss">取消</button>
+          </div>
+        </div>
+
+        <div class="modal-body" id="modalRunning">
+          <ol class="steps" id="steps">
+            <li data-step="exchange">确认账号</li>
+            <li data-step="download">安装软件</li>
+            <li data-step="import">连上闲猫</li>
+            <li data-step="open">打开使用</li>
+          </ol>
+          <p class="status" id="status">准备中…</p>
+          <div class="actions">
+            <button type="button" class="btn btn-danger" data-action="cancel">停止</button>
+          </div>
+        </div>
+
+        <div class="modal-body hidden" id="modalDone">
+          <p class="ok" id="doneMsg">完成</p>
+          <p class="muted" id="doneHint">客户端应该已经打开。如果没有，点下方再开一次。</p>
+          <ol class="done-guide hidden" id="doneGuide" aria-label="终端使用提示"></ol>
+          <div class="actions">
+            <button type="button" class="btn btn-primary" id="donePrimaryBtn" data-action="open-site">打开客户端</button>
+            <button type="button" class="btn hidden" id="doneHelpBtn" data-action="open-help">打开安装说明</button>
+            <button type="button" class="btn" data-action="modal-dismiss">好的</button>
+          </div>
+        </div>
+
+        <div class="modal-body hidden" id="modalError">
+          <p class="err" id="errMsg">出错了</p>
+          <p class="muted" id="errHint">可以再试一次登录，或点「打开安装说明」。</p>
+          <div class="actions">
+            <button type="button" class="btn btn-primary" id="errLoginBtn" data-action="open-login">浏览器登录</button>
+            <button type="button" class="btn hidden" id="errHelpBtn" data-action="open-help">打开安装说明</button>
+            <button type="button" class="btn" data-action="modal-dismiss">知道了</button>
+          </div>
+        </div>
+
+        <div class="modal-body hidden" id="modalSite">
+          <p class="muted" id="siteLead">
+            助手还不知道闲猫网站地址。请填写你浏览器地址栏里的网址（局域网一般是 http://电脑IP:8080）。
+          </p>
+          <label class="field-label" for="siteUrlInput">网站地址</label>
+          <input id="siteUrlInput" class="field-input" placeholder="例如 http://172.16.76.52:8080" />
+          <p class="err hidden" id="siteFormErr"></p>
+          <div class="actions">
+            <button type="button" class="btn btn-accent" data-action="save-site">保存并登录</button>
+            <button type="button" class="btn" data-action="modal-dismiss">取消</button>
+          </div>
+        </div>
+
+        <div class="modal-body hidden" id="modalRecharge">
+          <div id="rechargeForm">
+            <label class="field-label" for="rechargeAmount">金额（元）</label>
+            <input id="rechargeAmount" class="field-input" inputmode="decimal" placeholder="例如 100" />
+            <div class="preset-row" id="rechargePresets">
+              <button type="button" class="btn btn-tiny" data-action="recharge-preset:50">50</button>
+              <button type="button" class="btn btn-tiny" data-action="recharge-preset:100">100</button>
+              <button type="button" class="btn btn-tiny" data-action="recharge-preset:200">200</button>
+              <button type="button" class="btn btn-tiny" data-action="recharge-preset:500">500</button>
+            </div>
+            <p class="muted" id="rechargeLimitHint">单笔限额加载中…</p>
+            <p class="field-label">支付方式</p>
+            <div class="channel-list" id="rechargeChannels"></div>
+            <p class="err hidden" id="rechargeFormErr"></p>
+            <div class="actions">
+              <button type="button" class="btn btn-accent" id="rechargeSubmitBtn" data-action="recharge-submit">下一步</button>
+              <button type="button" class="btn" data-action="modal-dismiss">取消</button>
+            </div>
+          </div>
+          <div id="rechargePay" class="hidden">
+            <div class="recharge-pay-head">
+              <span id="rechargePayMeta">—</span>
+              <span class="recharge-status" id="rechargePayStatus">待支付</span>
+            </div>
+            <div id="rechargeQrWrap" class="recharge-qr-wrap hidden">
+              <img id="rechargeQrImg" alt="支付二维码" width="220" height="220" />
+              <p class="muted" id="rechargeQrHint">请扫码付款，到账后会自动更新余额。</p>
+            </div>
+            <div id="rechargeRedirectWrap" class="hidden">
+              <p class="muted">将打开支付宝收银台完成付款。付款完成后回到助手即可看到余额更新。</p>
+              <div class="actions">
+                <button type="button" class="btn btn-accent" id="rechargeOpenPayBtn" data-action="recharge-open-pay">打开收银台</button>
+              </div>
+            </div>
+            <p class="ok hidden" id="rechargeSuccess">支付成功，余额已更新。</p>
+            <p class="err hidden" id="rechargePayErr"></p>
+            <p class="muted" id="rechargeRemain"></p>
+            <div class="actions">
+              <button type="button" class="btn" data-action="recharge-back" id="rechargeBackBtn">重新下单</button>
+              <button type="button" class="btn" data-action="modal-dismiss">关闭</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

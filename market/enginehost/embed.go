@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/yx-token/token-market/market/internal/buyer"
 	"github.com/yx-token/token-market/market/internal/httpapi"
 	"github.com/yx-token/token-market/market/internal/platform/config"
 )
@@ -45,7 +46,9 @@ func PublicHandler() http.Handler {
 		}
 		api := &httpapi.Server{
 			DB: m.DB, Issuer: m.Issuer, Accounts: m.Accounts, IAM: m.IAM, Listings: m.Listings,
-			Proxies: m.Proxies, Pools: m.Pools, Keys: m.Keys, Funds: m.Funds, Payments: m.Payments,
+			Proxies: m.Proxies, Pools: m.Pools, Keys: m.Keys,
+			OneClick: &buyer.OneClickService{Redis: m.Redis, Keys: m.Keys, EdgeURL: cfg.Edge.PublicURL},
+			Funds: m.Funds, Payments: m.Payments,
 			Market: m.Market, Promo: m.Promo, Reward: m.Reward, Quality: m.Quality, Replica: m.Replica, Risk: m.Risk, Kicker: m.Kicker,
 			Log: slog.Default(), TrustedProxies: cfg.HTTP.TrustedProxies, WebDir: cfg.HTTP.WebDir,
 			EdgeURL: cfg.Edge.PublicURL,

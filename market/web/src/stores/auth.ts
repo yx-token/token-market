@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { auth as authApi } from '@/api'
 import { getToken, setToken } from '@/api/client'
 import type { ConsoleAccess, User } from '@/api/types'
+import { logoutHelperSession } from '@/utils/oneClickUse'
 import { bindPendingRewardTicket } from '@/utils/rewardTicket'
 
 export const useAuth = defineStore('auth', () => {
@@ -85,6 +86,8 @@ export const useAuth = defineStore('auth', () => {
     user.value = null
     consoleAccess.value = null
     if (refreshTimer) clearTimeout(refreshTimer)
+    // 显式退出时顺带清助手本地关联（助手不在线则忽略）
+    void logoutHelperSession()
   }
 
   // 令牌到期前 10 分钟自动续期

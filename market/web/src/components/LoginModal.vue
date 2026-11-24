@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { auth as authApi } from '@/api'
 import { useAction } from '@/composables/useAsync'
 import { useAuth } from '@/stores/auth'
@@ -15,6 +15,14 @@ const auth = useAuth()
 const cfg = useConfig()
 const toast = useToast()
 const router = useRouter()
+const route = useRoute()
+
+/** 授权页登录：遮罩用纯色，不透出市场杂乱底图 */
+const authFocus = computed(() => {
+  const path = route.path || ''
+  const redirect = String(modal.redirect || '')
+  return path.startsWith('/helper-auth') || redirect.includes('/helper-auth')
+})
 const email = ref('')
 const password = ref('')
 const code = ref('')
@@ -126,7 +134,7 @@ function onMaskClick(e: MouseEvent) {
   <Teleport to="body">
     <div
       class="xm-login-mask"
-      :class="{ 'is-open': modal.open }"
+      :class="{ 'is-open': modal.open, 'is-auth-focus': authFocus }"
       role="dialog"
       aria-modal="true"
       aria-labelledby="xm-login-title"
@@ -140,7 +148,17 @@ function onMaskClick(e: MouseEvent) {
         <div class="xm-login-card">
           <button type="button" class="xm-login-close" aria-label="关闭" @click="modal.hide()">×</button>
           <h2 id="xm-login-title">{{ modal.mode === 'login' ? '欢迎来闲猫' : '注册闲猫账号' }}</h2>
-          <p class="sub">{{ modal.mode === 'login' ? '登录后买卖挂单、充值调用' : '同一个账号既能买也能卖' }}</p>
+          <p class="sub">
+            {{
+              authFocus
+                ? modal.mode === 'login'
+                  ? '登录后授权闲猫助手'
+                  : '注册后即可授权助手'
+                : modal.mode === 'login'
+                  ? '登录后买卖挂单、充值调用'
+                  : '同一个账号既能买也能卖'
+            }}
+          </p>
           <form @submit.prevent="submit">
             <div class="xm-login-field">
               <label for="xm-login-email">邮箱</label>
@@ -196,7 +214,7 @@ function onMaskClick(e: MouseEvent) {
             <button type="button" class="linkish" @click="switchMode">
               {{ modal.mode === 'login' ? '没有账号？注册' : '已有账号？登录' }}
             </button>
-            <button type="button" class="linkish" @click="modal.hide()">先逛逛</button>
+            <button v-if="!authFocus" type="button" class="linkish" @click="modal.hide()">先逛逛</button>
           </div>
         </div>
       </div>

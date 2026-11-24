@@ -196,6 +196,64 @@
       color: #888;
     }
     .mh-admin:hover { color: var(--ink); }
+    .mh-one-click {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      box-sizing: border-box;
+      height: 32px;
+      border: 1px solid #1f1f1f;
+      background: linear-gradient(180deg, #ffe95a 0%, var(--yellow-btn) 48%, #f0c200 100%);
+      color: var(--ink);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      padding: 0 14px 0 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      flex-shrink: 0;
+      line-height: 1;
+      white-space: nowrap;
+      position: relative;
+      z-index: 2;
+      min-width: max-content;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.55) inset;
+      transition: background 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+    }
+    .mh-one-click-ico {
+      display: inline-grid;
+      place-items: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #1f1f1f;
+      color: var(--yellow-btn);
+      flex: 0 0 auto;
+    }
+    .mh-one-click-ico svg {
+      display: block;
+      width: 11px;
+      height: 11px;
+    }
+    .mh-one-click-label { line-height: 1; }
+    .mh-one-click-arrow {
+      font-size: 12px;
+      font-weight: 800;
+      opacity: 0.7;
+      line-height: 1;
+    }
+    .mh-one-click:hover {
+      background: linear-gradient(180deg, #fff07a 0%, #ffd400 50%, #e8b800 100%);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.65) inset, 0 4px 10px rgba(240, 194, 0, 0.22);
+    }
+    .mh-one-click:hover .mh-one-click-arrow {
+      opacity: 1;
+    }
+    .mh-one-click:active {
+      filter: brightness(0.97);
+    }
     .mh-wallet {
       display: inline-grid;
       place-items: center;
@@ -218,18 +276,23 @@
     }
     .mh-wallet svg { display: block; }
     .mh-login {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      height: 32px;
       border: none;
       background: #1f1f1f;
       color: #fff;
       font: inherit;
       font-size: 13px;
       font-weight: 700;
-      padding: 8px 16px;
+      padding: 0 16px;
       border-radius: 999px;
       cursor: pointer;
       flex-shrink: 0;
       white-space: nowrap;
-      line-height: 1.2;
+      line-height: 1;
       /* 避免 H5 被搜索框挤窄后「登录」折成竖排 */
       min-width: max-content;
     }
@@ -395,7 +458,10 @@
       }
       .mh-login {
         order: 1;
-        padding: 7px 14px;
+        height: 30px;
+        padding: 0 14px;
+        display: inline-flex;
+        align-items: center;
       }
       .mh-nav-m {
         order: 4;
@@ -408,6 +474,20 @@
         overflow: hidden; clip: rect(0,0,0,0); border: 0;
       }
       .mh-admin { display: none; }
+      .mh-one-click {
+        height: 30px;
+        padding: 0 12px 0 8px;
+        font-size: 12px;
+        gap: 4px;
+      }
+      .mh-one-click-ico {
+        width: 14px;
+        height: 14px;
+      }
+      .mh-one-click-ico svg {
+        width: 10px;
+        height: 10px;
+      }
       .mh-wallet {
         width: 30px;
         height: 30px;
@@ -458,6 +538,16 @@
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+}
+/* 助手授权登录：纯色底，不透出市场顶栏/卡片 */
+.xm-login-mask.is-auth-focus {
+  background: #f5f5f5;
+  align-items: center;
+  padding-top: 24px;
+}
+.xm-auth-lite {
+  min-height: 100vh;
+  background: #f5f5f5;
 }
 .xm-login-wrap {
   position: relative;

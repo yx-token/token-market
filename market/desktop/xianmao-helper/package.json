@@ -1,0 +1,109 @@
+{
+  "name": "xianmao-helper",
+  "version": "0.1.13",
+  "private": true,
+  "author": "闲猫",
+  "description": "闲猫助手：处理 xianmao:// 一键使用协议，换票、下载客户端并写入配置",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "bash scripts/run-dev.sh",
+    "dev": "bash scripts/run-dev.sh",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --mac --win",
+    "dist:mac": "electron-builder --mac zip dmg",
+    "dist:win": "electron-builder --win zip nsis --x64",
+    "dist:linux": "electron-builder --linux AppImage --x64"
+  },
+  "build": {
+    "appId": "com.xianmao.helper",
+    "productName": "闲猫助手",
+    "executableName": "XianmaoHelper",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "ui/**/*",
+      "package.json"
+    ],
+    "extraResources": [],
+    "icon": "build/icon.png",
+    "afterPack": "./scripts/after-pack-win-icon.cjs",
+    "artifactName": "xianmao-helper-${os}-${arch}.${ext}",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "extendInfo": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "Xianmao Helper",
+            "CFBundleURLSchemes": [
+              "xianmao"
+            ]
+          }
+        ]
+      },
+      "minimumSystemVersion": "11.0"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "闲猫助手",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "artifactName": "xianmao-helper-windows-setup-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility",
+      "mimeTypes": [
+        "x-scheme-handler/xianmao"
+      ]
+    },
+    "protocols": [
+      {
+        "name": "xianmao",
+        "schemes": [
+          "xianmao"
+        ]
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "resedit": "^1.7.2"
+  },
+  "dependencies": {
+    "level": "^8.0.1",
+    "qrcode": "^1.5.4"
+  }
+}

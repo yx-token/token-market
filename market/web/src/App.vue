@@ -47,8 +47,12 @@ const sections: Record<string, { title: string; items: NavItem[] }> = {
 }
 
 const isConsole = computed(() => route.path.startsWith('/admin'))
+/** 授权 / 登录聚焦页：不要市场顶栏和复杂底图，只留登录 */
+const isAuthLite = computed(
+  () => route.path === '/helper-auth' || route.path.startsWith('/helper-auth'),
+)
 const top = computed(() => route.path.split('/')[1] || 'market')
-const section = computed(() => (isConsole.value ? undefined : sections[top.value]))
+const section = computed(() => (isConsole.value || isAuthLite.value ? undefined : sections[top.value]))
 const isActive = (to: string) => route.path === to || route.path.startsWith(`${to}/`)
 /** 市场首页、API 文档：全宽布局，无侧栏 */
 const isMarketBrowse = computed(
@@ -66,11 +70,11 @@ watch(
   { immediate: true },
 )
 
-// 进站未登录：自动弹出登录窗（对齐闲鱼进站体验）
+// 进站未登录：自动弹出登录窗（对齐闲鱼进站体验）；授权页由自身引导登录
 watch(
   () => auth.loaded,
   (loaded) => {
-    if (!loaded || isConsole.value || auth.loggedIn) return
+    if (!loaded || isConsole.value || isAuthLite.value || auth.loggedIn) return
     loginModal.show({ redirect: route.path.startsWith('/login') ? '/' : route.fullPath })
   },
   { immediate: true },
@@ -87,6 +91,12 @@ function logout() {
   <!-- 挂在根上：避免进站 show() 早于市场壳挂载时猫动画 watch 漏触发 -->
   <LoginModal />
   <RouterView v-if="isConsole" />
+
+  <!-- 助手授权：纯净背景，只做登录/授权 -->
+  <div v-else-if="isAuthLite" class="xm-auth-lite">
+    <RouterView />
+    <ToastHost />
+  </div>
 
   <div v-else class="xm-market flex min-h-screen flex-col overflow-x-hidden" :class="{ 'is-browse': isMarketBrowse }">
     <MarketMasthead />

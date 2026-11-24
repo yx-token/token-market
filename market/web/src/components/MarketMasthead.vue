@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import OneClickUseModal from '@/components/OneClickUseModal.vue'
 import { useAuth } from '@/stores/auth'
 import { useLoginModal } from '@/stores/loginModal'
 import type { MarketAction } from '@/market/config'
@@ -10,6 +11,24 @@ const loginModal = useLoginModal()
 const route = useRoute()
 const router = useRouter()
 const q = ref(typeof route.query.q === 'string' ? route.query.q : '')
+const oneClickOpen = ref(false)
+
+watch(
+  () => [route.query.one_click, auth.loggedIn] as const,
+  ([flag, loggedIn]) => {
+    if (flag !== '1' && flag !== 'true') return
+    if (!loggedIn) return
+    oneClickOpen.value = true
+    const query = { ...route.query }
+    delete query.one_click
+    void router.replace({ path: route.path, query, hash: route.hash })
+  },
+  { immediate: true },
+)
+
+function openOneClick() {
+  oneClickOpen.value = true
+}
 
 watch(
   () => route.query.q,
@@ -138,6 +157,22 @@ function goWallet() {
 
         <a v-if="auth.canConsole" class="mh-admin" href="/open-admin?to=/admin/dashboard" title="运营控制台">控制台</a>
 
+        <button
+          type="button"
+          class="mh-one-click"
+          aria-label="一键使用"
+          title="打开闲猫助手，在助手里选客户端并自动配置"
+          @click="openOneClick"
+        >
+          <span class="mh-one-click-ico" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M9.2 1.5 3.8 9.1h3.5L6.8 14.5l5.4-7.6H8.7L9.2 1.5Z" fill="currentColor" />
+            </svg>
+          </span>
+          <span class="mh-one-click-label">一键使用</span>
+          <span class="mh-one-click-arrow" aria-hidden="true">→</span>
+        </button>
+
         <template v-if="auth.loggedIn">
           <RouterLink
             class="mh-wallet"
@@ -185,4 +220,5 @@ function goWallet() {
       </nav>
     </div>
   </header>
+  <OneClickUseModal v-model:open="oneClickOpen" />
 </template>

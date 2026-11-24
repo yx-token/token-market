@@ -38,6 +38,14 @@ export const market = {
   sellerRating: (id: number) => http.get<T.SellerRatingStats>(`/api/market/sellers/${id}/rating`),
   sellerReviews: (id: number, q?: Query) =>
     http.get<{ stats: T.SellerRatingStats; items: T.ReviewItem[] | null }>(`/api/market/sellers/${id}/reviews`, q),
+  oneClickHelper: () =>
+    http.get<{
+      name: string
+      version: string
+      protocol: string
+      description?: string
+      downloads: Record<string, { label: string; url: string; hint?: string }>
+    }>('/api/one-click/helper'),
 }
 
 export const buyer = {
@@ -61,6 +69,23 @@ export const buyer = {
   keys: () => http.get<T.BuyerKey[] | null>('/api/buyer/keys'),
   key: (id: number) => http.get<T.BuyerKey>(`/api/buyer/keys/${id}`),
   keySecret: (id: number) => http.get<{ key: string }>(`/api/buyer/keys/${id}/secret`),
+  createOneClickTicket: (body: { key_id?: number; client: string; os: string; api_base?: string }) =>
+    http.post<{ ticket: string; deeplink: string; expires_in: number; api_base: string }>(
+      '/api/buyer/one-click/tickets',
+      body,
+    ),
+  /** 网站端确认：把当前登录账号授权给助手设备码 */
+  authorizeHelperAuth: (code: string) =>
+    http.post<{
+      status: string
+      expires_in: number
+      user_id?: number
+      account?: string
+      api_base?: string
+      ticket?: string
+      os?: string
+      client?: string
+    }>('/api/buyer/helper-auth/authorize', { code }),
   createKey: (body: { name: string; route: T.RouteInput; limits: T.Limits }) => http.post<T.CreatedKey>('/api/buyer/keys', body),
   updateKey: (id: number, body: { name?: string; route?: T.RouteInput; limits?: T.Limits }) =>
     http.put<T.BuyerKey>(`/api/buyer/keys/${id}`, body),

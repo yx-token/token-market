@@ -199,7 +199,20 @@ describe('native client configuration files', () => {
   const openaiKey = { ...key, platform: 'openai' }
 
   it('lists CC Switch clients with native files in the config-file tab without duplicating ids', () => {
-    expect(targetsForKind('config-file').map((target) => target.id)).toEqual(['claude-code', 'codex', 'gemini', 'grok-build', 'opencode', 'openclaw', 'zcode', 'workbuddy', 'pi'])
+    expect(targetsForKind('config-file').map((target) => target.id)).toEqual([
+      'claude-code',
+      'codex',
+      'gemini',
+      'grok-build',
+      'opencode',
+      'openclaw',
+      'zcode',
+      'workbuddy',
+      'pi',
+      'paseo',
+      'deepseek-harness',
+      'obsidian',
+    ])
     expect(targetsForKind('cc-switch').map((target) => target.id)).toContain('claude-desktop')
     expect(supportsConfigFile('claude-desktop')).toBe(false)
     expect(supportsConfigFile('hermes')).toBe(false)

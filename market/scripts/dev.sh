@@ -13,6 +13,8 @@
 # 仅在需要旧替身时：USE_REAL_ENGINE=0 scripts/dev.sh up
 # 浏览器只开 http://127.0.0.1:8080
 set -euo pipefail
+# 本机 Docker Desktop 偏旧时，新 docker CLI 会报 client version too new
+export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.42}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -676,6 +678,7 @@ down() {
 case "${1:-}" in
   up) up ;;
   down) down ;;
+  restart-engine) start_real_engine ;;
   reset)
     down
     docker exec "$PG_CONTAINER" psql -U tm -d tm -qc \

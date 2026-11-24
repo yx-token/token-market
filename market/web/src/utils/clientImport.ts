@@ -16,6 +16,9 @@ export type ClientImportTargetId =
   | 'zcode'
   | 'workbuddy'
   | 'pi'
+  | 'paseo'
+  | 'deepseek-harness'
+  | 'obsidian'
 
 export type ClientConfigTargetId = 'cherry-studio' | 'chatbox' | 'zcode' | 'workbuddy' | 'pi'
 export type DirectImportTargetId = 'cherry-studio' | 'chatbox'
@@ -62,6 +65,9 @@ export const CLIENT_IMPORT_TARGETS: readonly ClientImportTarget[] = [
   { id: 'workbuddy', name: 'WorkBuddy', description: '下载官方 models.json，自定义模型可读取该配置。', kind: 'config-file', icon: 'WB' },
   // CC Switch 的 provider 深度链接不接受 app=pi，只能在其 Pi 面板手动添加，因此 Pi 以原生 models.json 提供。
   { id: 'pi', name: 'Pi', description: '一键命令合并 ~/.pi/agent/models.json，在 /model 中选择。', kind: 'config-file', icon: 'PI' },
+  { id: 'paseo', name: 'Paseo', description: '桌面/手机继续同一任务；沿用本机已配置的 Claude Code / Codex / Pi / Hermes。', kind: 'config-file', icon: 'PA' },
+  { id: 'deepseek-harness', name: 'DeepSeek Harness', description: '本地 Web UI 智能体；在 DeepSeek 提供方填网关与密钥。', kind: 'config-file', icon: 'DH' },
+  { id: 'obsidian', name: 'Obsidian', description: '通过 Claudian 插件使用 Anthropic Messages；写入 ~/.claude/settings.json。', kind: 'config-file', icon: 'OB' },
 ] as const
 
 /**
@@ -94,7 +100,20 @@ export function getClientImportTarget(id: ClientImportTargetId): ClientImportTar
  * 「配置文件」页签提供原生配置文件的客户端。Claude Desktop 只能在应用内配置、Hermes 由向导写入，
  * 所以仍只走 CC Switch；Cherry Studio 和 Chatbox 在一键导入页签内提供下载。
  */
-export const CONFIG_FILE_TARGET_IDS = ['claude-code', 'codex', 'gemini', 'grok-build', 'opencode', 'openclaw', 'zcode', 'workbuddy', 'pi'] as const
+export const CONFIG_FILE_TARGET_IDS = [
+  'claude-code',
+  'codex',
+  'gemini',
+  'grok-build',
+  'opencode',
+  'openclaw',
+  'zcode',
+  'workbuddy',
+  'pi',
+  'paseo',
+  'deepseek-harness',
+  'obsidian',
+] as const
 export type ConfigFileTargetId = typeof CONFIG_FILE_TARGET_IDS[number]
 
 export function supportsConfigFile(id: ClientImportTargetId): id is ConfigFileTargetId {
@@ -172,7 +191,7 @@ function withV1Endpoint(baseURL: string): string {
  * 仍由客户端自己拼 /v1 之后的路径，所以这里必须保留 /v1。
  */
 export function resolveNativeEndpoint(targetId: ClientImportTargetId, platform: string | undefined, baseURL: string): { endpoint: string; model?: string } {
-  if (targetId === 'claude-code' || targetId === 'claude-desktop') return { endpoint: baseURL }
+  if (targetId === 'claude-code' || targetId === 'claude-desktop' || targetId === 'obsidian') return { endpoint: baseURL }
   if (targetId === 'gemini' || platform === 'gemini') return { endpoint: baseURL }
   if (targetId === 'grok-build' || platform === 'grok') return { endpoint: withV1Endpoint(baseURL), model: GROK_CC_SWITCH_MODEL }
   if (platform === 'antigravity') return { endpoint: `${baseURL}/antigravity` }
@@ -347,6 +366,9 @@ export const CONFIG_FILE_NOTES: Record<ConfigFileTargetId, string> = {
   zcode: 'ZCode 官方当前未提供 JSON 导入协议。下载文件用于快速复制到「设置 → 模型设置 → 添加供应商」，请在 ZCode 中确认 API 格式并添加模型。',
   workbuddy: 'WorkBuddy 使用官方 models.json 格式。下载后按 WorkBuddy 文档放入用户级或项目级 .codebuddy/models.json，再重新打开或刷新模型设置。',
   pi: 'CC Switch 暂不支持通过深度链接导入 Pi。下载后放到 ~/.pi/agent/models.json（Windows 为 %USERPROFILE%\\.pi\\agent\\models.json）；已有该文件时，只把 providers.gateway 合并进去，保留其他供应商。重新打开 /model 即可读取。',
+  paseo: 'Paseo 不自带网关密钥。请先按 Claude Code / Codex / Pi / Hermes 指南配好本机客户端，再在 Paseo「Settings → Providers」选用对应提供方。本文件仅作提醒。',
+  'deepseek-harness': '在 DeepSeek Harness「设置 → 模型 → DeepSeek」填入 API Key；展开自定义设置，API 地址填网关根地址加 /v1。本 JSON 为填写参考，不是自动导入格式。',
+  obsidian: 'Claudian 插件可读 ~/.claude/settings.json（与 Claude Code 相同）。下载后合并到该路径，再在 Obsidian 中启用 Claudian。',
 }
 
 /** 不指定默认模型时，CC Switch 导入和原生配置共同使用的兜底模型；没有兜底时由客户端自行决定。 */
@@ -424,7 +446,23 @@ export function buildClientConfigFiles(
   const { endpoint, modelID } = nativeTarget(targetId, key, baseURL, model)
   switch (targetId) {
     case 'claude-code':
+    case 'obsidian':
       return [json('settings.json', '~/.claude/settings.json', { env: claudeCodeEnv(endpoint, key.key, modelID) })]
+    case 'paseo':
+      return [json('paseo-setup-note.json', '', {
+        note: 'Paseo 沿用本机 Claude Code / Codex / Pi / Hermes 配置；请先完成对应客户端接入，再在 Paseo Providers 中选择。',
+        baseURL,
+        apiKey: key.key,
+        providerName,
+      })]
+    case 'deepseek-harness':
+      return [json('deepseek-harness-provider.json', '', {
+        note: '在 DeepSeek Harness「设置 → 模型 → DeepSeek」填 API Key；自定义设置 API 地址用 baseURL（含 /v1）。',
+        provider: 'deepseek-official',
+        apiKey: key.key,
+        baseURL: withV1Endpoint(baseURL),
+        model: modelID || 'deepseek-chat',
+      })]
     case 'codex':
       return [
         { fileName: 'config.toml', path: '~/.codex/config.toml', format: 'TOML', content: text([...codexRootLines(modelID), '', ...codexProviderLines(providerName, endpoint)]) },

@@ -49,6 +49,7 @@ type Server struct {
 	Proxies  *listing.ProxyService
 	Pools    *scheduling.PoolService
 	Keys     *buyer.KeyService
+	OneClick *buyer.OneClickService
 	Funds    *billing.Funds
 	Payments *registry.Store
 	Market   *market.Service
@@ -299,6 +300,17 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 		{"GET /api/market/vendors", s.marketVendors},
 		{"GET /api/market/sellers/{id}/rating", s.marketSellerRating},
 		{"GET /api/market/sellers/{id}/reviews", s.marketSellerReviews},
+		{"GET /api/one-click/helper", s.oneClickHelperManifest},
+		{"GET /api/one-click/helper/download/{os}", s.downloadOneClickHelper},
+		{"GET /api/one-click/helper/status", s.statusOneClickHelper},
+		{"GET /api/one-click/helper/wallet", s.helperWallet},
+		{"GET /api/one-click/helper/recharge/options", s.helperRechargeOptions},
+		{"POST /api/one-click/helper/recharge", s.helperCreateRecharge},
+		{"GET /api/one-click/helper/recharge/{id}", s.helperGetRecharge},
+		{"POST /api/one-click/helper/launch", s.launchOneClickHelper},
+		{"POST /api/one-click/exchange", s.exchangeOneClickTicket},
+		{"POST /api/one-click/helper-auth/start", s.startHelperAuth},
+		{"GET /api/one-click/helper-auth/{code}", s.pollHelperAuth},
 	}
 	user := []route{
 		{"POST /api/auth/refresh", s.refreshToken},
@@ -333,6 +345,8 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 		{"POST /api/buyer/keys/{id}/disable", s.setKeyEnabled(false)},
 		{"POST /api/buyer/keys/{id}/enable", s.setKeyEnabled(true)},
 		{"DELETE /api/buyer/keys/{id}", s.deleteKey},
+		{"POST /api/buyer/one-click/tickets", s.issueOneClickTicket},
+		{"POST /api/buyer/helper-auth/authorize", s.authorizeHelperAuth},
 		{"GET /api/buyer/usage", s.buyerUsage},
 		{"GET /api/buyer/usage/{rid}", s.buyerRequestDetail},
 		{"GET /api/buyer/bills", s.buyerBills},

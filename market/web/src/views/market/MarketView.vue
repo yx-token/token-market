@@ -639,7 +639,7 @@ watch(
         <div class="mh-hero-main">
           <div class="mh-hero-copy">
             <span class="mh-hero-pill">闲置 Token 交易市场</span>
-            <h1>别让你的<em>Token</em>落了灰</h1>
+            <h1>全球最具性价比<em>Token</em></h1>
             <p class="mh-hero-lead">闲猫连接供需双方，提供安全、便捷、透明的 AI Token 交易服务</p>
             <div class="mh-hero-search-row">
               <form class="mh-hero-search" @submit.prevent="heroSearch">

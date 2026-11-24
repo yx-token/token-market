@@ -15,6 +15,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/api-docs', redirect: (to) => ({ path: '/docs', query: to.query, hash: to.hash }) },
   { path: '/login', name: 'login', component: () => import('@/views/auth/LoginView.vue') },
   { path: '/register', name: 'register', component: () => import('@/views/auth/RegisterView.vue') },
+  { path: '/helper-auth', name: 'helper-auth', component: () => import('@/views/helper/HelperAuthView.vue') },
   { path: '/me', name: 'me', component: () => import('@/views/auth/ProfileView.vue'), meta: { auth: true } },
 
   { path: '/buyer', redirect: '/buyer/keys' },

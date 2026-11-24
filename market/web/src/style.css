@@ -1530,8 +1530,9 @@ html:not(.is-console) .console-tp-card {
 }
 
 .yh-modal-accent {
-  height: 5px;
-  background: #ffe60f;
+  height: 3px;
+  /* 不用黄底顶条，避免弹窗像「黄底 logo 条」 */
+  background: #1f1f1f;
 }
 
 .yh-modal-head {
