@@ -21,8 +21,13 @@ for arch in amd64 arm64; do
   for binary in api worker edge s2a-compat; do test -s "$bundle/bin/$binary"; done
   test -s "$bundle/web/index.html"
   test -s "$bundle/web/admin-spa/index.html"
+  # helper/ 可能只有 .gitkeep；有安装包时一并打进站内更新包
+  include_helper=()
+  if compgen -G "$bundle/helper/dist/xianmao-helper-*" > /dev/null; then
+    include_helper=(helper)
+  fi
   tar -C "$bundle" -czf "release-assets/token-market_linux_$arch.tar.gz" \
-    manifest.json bin/api bin/worker bin/edge bin/s2a-compat web
+    manifest.json bin/api bin/worker bin/edge bin/s2a-compat web "${include_helper[@]}"
 done
 cd release-assets
 # 宿主二进制的 checksums.txt 在同一个 Release，市场单独命名避免互相覆盖

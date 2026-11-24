@@ -9,6 +9,8 @@ market/web/dist
 market/engine-dist
 market/bin
 market/data
+market/desktop/xianmao-helper/node_modules
+market/desktop/xianmao-helper/dist
 frontend/node_modules
 frontend/dist
 **/.DS_Store

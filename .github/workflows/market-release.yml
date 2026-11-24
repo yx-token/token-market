@@ -28,9 +28,46 @@ jobs:
     name: CI
     uses: ./.github/workflows/market-ci.yml
 
+  helper:
+    name: 构建闲猫助手安装包
+    needs: ci
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: market/desktop/xianmao-helper/package-lock.json
+      - name: 安装依赖并打包 mac + win
+        working-directory: market/desktop/xianmao-helper
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+        run: |
+          npm ci
+          bash scripts/pack-release.sh mac,win
+          test -s dist/xianmao-helper-macos.zip
+          test -s dist/xianmao-helper-windows-x64.zip
+      - name: 收集产物
+        run: |
+          mkdir -p helper-out
+          cp -f market/desktop/xianmao-helper/dist/xianmao-helper-macos.zip helper-out/
+          cp -f market/desktop/xianmao-helper/dist/xianmao-helper-windows-x64.zip helper-out/
+          if [[ -f market/desktop/xianmao-helper/dist/xianmao-helper-windows-setup.exe ]]; then
+            cp -f market/desktop/xianmao-helper/dist/xianmao-helper-windows-setup.exe helper-out/
+          fi
+          ls -lah helper-out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helper-packages
+          path: helper-out/
+          if-no-files-found: error
+
   image:
     name: 构建并推送镜像
-    needs: ci
+    needs: [ci, helper]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,6 +79,11 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: helper-packages
+          path: market/helper-packages/
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -100,10 +142,14 @@ jobs:
 
   assets:
     name: 构建站内更新包
-    needs: ci
+    needs: [ci, helper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: helper-packages
+          path: market/helper-packages/
       - uses: docker/setup-buildx-action@v3
       - name: 打包 linux/amd64 与 linux/arm64
         env:
@@ -118,7 +164,7 @@ jobs:
 
   release:
     name: 创建 Release
-    needs: [image, assets]
+    needs: [image, assets, helper]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -129,6 +175,11 @@ jobs:
         with:
           name: release-assets
           path: release-assets/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: helper-packages
+          path: helper-packages/
 
       - name: 打包部署文件
         run: |
@@ -174,6 +225,13 @@ jobs:
             echo
             echo "多架构（linux/amd64、linux/arm64），digest \`${DIGEST}\`。"
             echo
+            echo "## 闲猫助手"
+            echo
+            echo "镜像内已含安装包（\`/app/helper/dist\`）。也可在本 Release 附件直接下载："
+            echo
+            echo "- \`xianmao-helper-macos.zip\`"
+            echo "- \`xianmao-helper-windows-x64.zip\` / \`xianmao-helper-windows-setup.exe\`（若有）"
+            echo
             echo "## 升级"
             echo
             echo '```bash'
@@ -186,20 +244,21 @@ jobs:
             echo
           } > notes.md
           asset="token-market-deploy-${GITHUB_REF_NAME}.tar.gz"
+          helper_assets=(helper-packages/*)
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             # 重新运行时只更新附件，保留已有的说明
-            gh release upload "$GITHUB_REF_NAME" "$asset" release-assets/* --clobber
+            gh release upload "$GITHUB_REF_NAME" "$asset" release-assets/* "${helper_assets[@]}" --clobber
           else
             prerelease=()
             if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease=(--prerelease); fi
-            gh release create "$GITHUB_REF_NAME" "$asset" release-assets/* --verify-tag --title "$GITHUB_REF_NAME" \
+            gh release create "$GITHUB_REF_NAME" "$asset" release-assets/* "${helper_assets[@]}" --verify-tag --title "$GITHUB_REF_NAME" \
               --notes-file notes.md --generate-notes "${prerelease[@]}"
           fi
 
   # 发版结束（成功或任一环节失败）后通知；手动取消的发版不通知
   notify:
     name: 发版通知
-    needs: [ci, image, assets, release]
+    needs: [ci, helper, image, assets, release]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions: {}
@@ -208,6 +267,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.NOTIFY_DISPATCH_TOKEN }}
           CI_RESULT: ${{ needs.ci.result }}
+          HELPER_RESULT: ${{ needs.helper.result }}
           IMAGE_RESULT: ${{ needs.image.result }}
           ASSETS_RESULT: ${{ needs.assets.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
@@ -229,6 +289,7 @@ jobs:
             title="token-market ${GITHUB_REF_NAME} 发布失败"
             failed=()
             if [ "$CI_RESULT" = failure ]; then failed+=("CI"); fi
+            if [ "$HELPER_RESULT" = failure ]; then failed+=("构建闲猫助手安装包"); fi
             if [ "$IMAGE_RESULT" = failure ]; then failed+=("构建并推送镜像"); fi
             if [ "$ASSETS_RESULT" = failure ]; then failed+=("构建站内更新包"); fi
             if [ "$RELEASE_RESULT" = failure ]; then failed+=("创建 Release"); fi

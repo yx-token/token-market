@@ -51,12 +51,18 @@ COPY --from=admin-web /src/market/engine-dist /web/admin-spa/
 # 管理端按根路径引用 frontend/public 的图标（/logo.svg、/xianmao-logo.svg），C 端没有同名文件
 COPY --from=admin-web /src/market/engine-dist/logo.svg /src/market/engine-dist/xianmao-logo.svg /web/
 COPY --from=go /manifest.json /manifest.json
+# 闲猫助手安装包（发版 CI 写入 market/helper-packages/；本地可仅有 .gitkeep）
+COPY market/helper-packages/ /helper/dist/
 
 FROM ${REGISTRY}library/alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata && adduser -D -u 10001 market
 WORKDIR /app
 COPY --from=release / /app/
-ENV TM_HTTP_WEB_DIR=/app/web TM_EDGE_SPOOL_DIR=/app/data/edge-spool TM_UPDATE_RUNTIME_DIR=/app/runtime TZ=Asia/Shanghai
+ENV TM_HTTP_WEB_DIR=/app/web \
+    TM_HELPER_DIR=/app/helper \
+    TM_EDGE_SPOOL_DIR=/app/data/edge-spool \
+    TM_UPDATE_RUNTIME_DIR=/app/runtime \
+    TZ=Asia/Shanghai
 RUN mkdir -p /app/data /app/runtime && chown market /app/data /app/runtime
 USER market
 EXPOSE 8080 8090 8091 8092

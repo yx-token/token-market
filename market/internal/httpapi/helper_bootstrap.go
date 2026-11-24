@@ -22,20 +22,56 @@ var (
 	helperAppMu sync.Mutex
 )
 
+func helperDistReady(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	dist := filepath.Join(dir, "dist")
+	if st, err := os.Stat(dist); err == nil && st.IsDir() {
+		return true
+	}
+	// 允许直接把安装包放在 dir/dist 同级探测：若已有任一稳定文件名也算就绪
+	for _, name := range []string{
+		"xianmao-helper-macos.zip",
+		"xianmao-helper-windows-setup.exe",
+		"xianmao-helper-windows-x64.zip",
+		"xianmao-helper-linux-x64.AppImage",
+	} {
+		if firstExistingFile(filepath.Join(dist, name), filepath.Join(dir, name)) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func helperDesktopDir() string {
 	if d := strings.TrimSpace(os.Getenv("TM_HELPER_DIR")); d != "" {
 		return d
 	}
-	// 嵌入宿主时优先用静态资源目录反推：market/web/dist → market/desktop/xianmao-helper
+	candidates := make([]string, 0, 4)
+	// 镜像：TM_HTTP_WEB_DIR=/app/web → /app/helper（见 market/Dockerfile）
+	// 源码开发：market/web/dist → market/desktop/xianmao-helper
 	if web := strings.TrimSpace(os.Getenv("TM_HTTP_WEB_DIR")); web != "" {
-		return filepath.Clean(filepath.Join(web, "..", "..", "desktop", "xianmao-helper"))
+		candidates = append(candidates,
+			filepath.Clean(filepath.Join(web, "..", "helper")),
+			filepath.Clean(filepath.Join(web, "..", "..", "desktop", "xianmao-helper")),
+		)
 	}
-	// market/internal/httpapi → market/desktop/xianmao-helper
 	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return ""
+	if ok {
+		candidates = append(candidates,
+			filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "desktop", "xianmao-helper")),
+		)
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "desktop", "xianmao-helper"))
+	for _, c := range candidates {
+		if helperDistReady(c) {
+			return c
+		}
+	}
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+	return ""
 }
 
 func helperAppPath(dir string) string {
