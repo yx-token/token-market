@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yx-token/token-market/market/internal/platform/buildinfo"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
 )
 
@@ -233,6 +234,59 @@ func launchHelperDev(dir string) error {
 	return nil
 }
 
+func helperGitHubRepo() string {
+	for _, k := range []string{"UPDATE_GITHUB_REPO", "TM_UPDATE_REPOSITORY", "UPDATE_REPOSITORY"} {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
+	return "yx-token/token-market"
+}
+
+func helperReleaseAssetURL(filename string) string {
+	if base := strings.TrimSpace(os.Getenv("TM_HELPER_DOWNLOAD_BASE")); base != "" {
+		return strings.TrimRight(base, "/") + "/" + filename
+	}
+	repo := helperGitHubRepo()
+	tag := strings.TrimSpace(os.Getenv("TM_HELPER_RELEASE_TAG"))
+	if tag == "" {
+		tag = strings.TrimSpace(buildinfo.Version)
+	}
+	if tag != "" && !strings.EqualFold(tag, "dev") {
+		if !strings.HasPrefix(tag, "v") {
+			tag = "v" + tag
+		}
+		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repo, tag, filename)
+	}
+	// 嵌入宿主时 market buildinfo 常为 dev：回退到 latest，避免生产无本机包就挂掉
+	return fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, filename)
+}
+
+func proxyHelperReleaseAsset(w http.ResponseWriter, r *http.Request, filename string) error {
+	assetURL := helperReleaseAssetURL(filename)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, assetURL, nil)
+	if err != nil {
+		return httpx.BadRequest("HELPER_OS_UNSUPPORTED", "helper package unavailable")
+	}
+	req.Header.Set("User-Agent", "token-market-helper-download")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return httpx.BadRequest("HELPER_OS_UNSUPPORTED", "helper package unavailable")
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK {
+		return httpx.BadRequest("HELPER_OS_UNSUPPORTED", "helper package unavailable")
+	}
+	w.Header().Set("Content-Type", contentTypeForHelper(filename))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Cache-Control", "no-store")
+	if cl := res.Header.Get("Content-Length"); cl != "" {
+		w.Header().Set("Content-Length", cl)
+	}
+	_, err = io.Copy(w, res.Body)
+	return err
+}
+
 // GET /api/one-click/helper/download/{os}
 func (s *Server) downloadOneClickHelper(w http.ResponseWriter, r *http.Request) error {
 	osName := strings.ToLower(strings.TrimSpace(r.PathValue("os")))
@@ -240,9 +294,6 @@ func (s *Server) downloadOneClickHelper(w http.ResponseWriter, r *http.Request) 
 		osName = "macos"
 	}
 	dir := helperDesktopDir()
-	if dir == "" {
-		return httpx.BadRequest("HELPER_UNAVAILABLE", "helper package unavailable")
-	}
 	var (
 		file     string
 		filename string
@@ -250,41 +301,52 @@ func (s *Server) downloadOneClickHelper(w http.ResponseWriter, r *http.Request) 
 	)
 	switch osName {
 	case "macos", "darwin":
-		// 发布包优先；仅本机/显式允许时才现场打包，避免生产请求触发 ditto/sync
-		if p := firstExistingFile(
-			filepath.Join(dir, "dist", "xianmao-helper-macos.zip"),
-			filepath.Join(dir, "dist", "闲猫助手-macos.zip"),
-		); p != "" {
-			file, filename = p, "xianmao-helper-macos.zip"
-		} else if requestIsLoopback(r) || strings.TrimSpace(os.Getenv("TM_HELPER_BUILD")) == "1" {
-			file, err = ensureHelperZip(dir)
-			if err != nil {
-				return httpx.BadRequest("HELPER_BUILD_FAILED", "helper package unavailable")
+		filename = "xianmao-helper-macos.zip"
+		if dir != "" {
+			if p := firstExistingFile(
+				filepath.Join(dir, "dist", "xianmao-helper-macos.zip"),
+				filepath.Join(dir, "dist", "闲猫助手-macos.zip"),
+			); p != "" {
+				file = p
+			} else if requestIsLoopback(r) || strings.TrimSpace(os.Getenv("TM_HELPER_BUILD")) == "1" {
+				file, err = ensureHelperZip(dir)
+				if err != nil {
+					return httpx.BadRequest("HELPER_BUILD_FAILED", "helper package unavailable")
+				}
 			}
-			filename = "xianmao-helper-macos.zip"
-		} else {
-			return httpx.BadRequest("HELPER_OS_UNSUPPORTED", "macos helper package not built yet; run scripts/pack-release.sh mac")
 		}
 	case "windows", "win", "win32":
-		var ok bool
-		file, filename, ok = helperWindowsPackage(dir)
-		if !ok {
-			return httpx.BadRequest("HELPER_OS_UNSUPPORTED", "windows helper package not built yet; run scripts/pack-release.sh win")
+		if dir != "" {
+			var ok bool
+			file, filename, ok = helperWindowsPackage(dir)
+			if !ok {
+				filename = "xianmao-helper-windows-x64.zip"
+			}
+		} else {
+			filename = "xianmao-helper-windows-x64.zip"
 		}
 	case "linux":
-		var ok bool
-		file, filename, ok = helperLinuxPackage(dir)
-		if !ok {
-			return httpx.BadRequest("HELPER_OS_UNSUPPORTED", "linux helper package not built yet; run scripts/pack-release.sh linux")
+		if dir != "" {
+			var ok bool
+			file, filename, ok = helperLinuxPackage(dir)
+			if !ok {
+				filename = "xianmao-helper-linux-x64.AppImage"
+			}
+		} else {
+			filename = "xianmao-helper-linux-x64.AppImage"
 		}
 	default:
 		return httpx.BadRequest("HELPER_OS_UNSUPPORTED", "os must be macos, windows, or linux")
 	}
-	w.Header().Set("Content-Type", contentTypeForHelper(filename))
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-	w.Header().Set("Cache-Control", "no-store")
-	http.ServeFile(w, r, file)
-	return nil
+	if file != "" {
+		w.Header().Set("Content-Type", contentTypeForHelper(filename))
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		w.Header().Set("Cache-Control", "no-store")
+		http.ServeFile(w, r, file)
+		return nil
+	}
+	// 生产常见：MARKET_EMBED 无本机 dist。回源 GitHub Release（v0.17.61 起已上传安装包）。
+	return proxyHelperReleaseAsset(w, r, filename)
 }
 
 func probeHelperLocal(timeout time.Duration) bool {
