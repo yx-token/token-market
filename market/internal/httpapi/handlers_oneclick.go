@@ -186,12 +186,12 @@ func (s *Server) helperWallet(w http.ResponseWriter, r *http.Request) error {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	return ok(w, map[string]any{
-		"ok":          true,
-		"user_id":     userID,
-		"account":     account,
-		"balance":     wl.Balance,
-		"refundable":  wl.Refundable,
-		"ledger_cash": wl.LedgerCash,
+		"ok":           true,
+		"user_id":      userID,
+		"account":      account,
+		"balance":      wl.Balance,
+		"refundable":   wl.Refundable,
+		"ledger_cash":  wl.LedgerCash,
 		"recharge_url": "/buyer/wallet",
 	})
 }

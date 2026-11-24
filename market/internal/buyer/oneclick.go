@@ -62,7 +62,7 @@ type ExchangedOneClick struct {
 	Provider  string `json:"provider"`
 	UserID    int64  `json:"user_id,omitempty"`
 	Account   string `json:"account,omitempty"` // 登录邮箱，供助手展示「已关联账号」
-	ExpiresIn int    `json:"expires_in"`       // 已消费，恒为 0；保留字段兼容助手
+	ExpiresIn int    `json:"expires_in"`        // 已消费，恒为 0；保留字段兼容助手
 }
 
 func (s *OneClickService) ready() error {
