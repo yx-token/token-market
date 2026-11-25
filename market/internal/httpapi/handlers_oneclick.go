@@ -156,11 +156,25 @@ func (s *Server) helperUserFromKey(r *http.Request) (userID int64, account strin
 	if s.DB == nil {
 		return 0, "", httpx.BadRequest("WALLET_UNAVAILABLE", "wallet unavailable")
 	}
-	key := extractHelperAPIKey(r)
-	if key == "" || len(key) > 256 {
-		return 0, "", httpx.Unauthorized("KEY_REQUIRED", "api key required")
+	token := extractHelperAPIKey(r)
+	if token == "" || len(token) > 256 {
+		return 0, "", httpx.Unauthorized("KEY_REQUIRED", "api key or helper session required")
 	}
-	sum := sha256.Sum256([]byte(key))
+	// 优先助手长会话：不依赖网页上某把 tm- key 是否还在
+	if buyer.IsHelperSessionToken(token) {
+		if s.OneClick == nil {
+			return 0, "", httpx.Unauthorized("SESSION_INVALID", "helper session unavailable")
+		}
+		uid, acc, err := s.OneClick.LookupHelperSession(r.Context(), token)
+		if err != nil {
+			return 0, "", err
+		}
+		if acc == "" {
+			_ = s.DB.QueryRow(r.Context(), `SELECT COALESCE(NULLIF(TRIM(email), ''), '') FROM users WHERE id = $1`, uid).Scan(&acc)
+		}
+		return uid, acc, nil
+	}
+	sum := sha256.Sum256([]byte(token))
 	err = s.DB.QueryRow(r.Context(), `
 		SELECT k.user_id, COALESCE(NULLIF(TRIM(u.email), ''), '')
 		FROM buyer_keys k
@@ -233,17 +247,25 @@ func (s *Server) helperResolveKey(w http.ResponseWriter, r *http.Request) error 
 	if baseURL == "" {
 		baseURL = requestAPIBase(r, "")
 	}
+	// 每次换厂商密钥时续发/刷新助手会话，避免本地只剩失效 tm- key
+	session := ""
+	if tok := extractHelperAPIKey(r); buyer.IsHelperSessionToken(tok) {
+		session = tok
+	} else if sess, err := s.OneClick.IssueHelperSession(r.Context(), userID, account); err == nil {
+		session = sess
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	return ok(w, map[string]any{
-		"key":      plain,
-		"key_id":   k.ID,
-		"key_name": detail.Name,
-		"platform": detail.Platform,
-		"base_url": baseURL,
-		"provider": "闲猫",
-		"client":   client,
-		"user_id":  userID,
-		"account":  account,
+		"key":            plain,
+		"key_id":         k.ID,
+		"key_name":       detail.Name,
+		"platform":       detail.Platform,
+		"base_url":       baseURL,
+		"provider":       "闲猫",
+		"client":         client,
+		"user_id":        userID,
+		"account":        account,
+		"helper_session": session,
 	})
 }
 

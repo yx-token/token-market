@@ -117,6 +117,32 @@ func TestHelperAuthStartAndPoll(t *testing.T) {
 	require.Equal(t, "INVALID_DEVICE_CODE", hx.Code)
 }
 
+func TestHelperSessionIssueAndLookup(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	s := &OneClickService{Redis: rdb, Keys: &KeyService{}}
+
+	tok, err := s.IssueHelperSession(context.Background(), 42, "admin@idlicat.com")
+	require.NoError(t, err)
+	require.True(t, IsHelperSessionToken(tok))
+
+	uid, acc, err := s.LookupHelperSession(context.Background(), tok)
+	require.NoError(t, err)
+	require.Equal(t, int64(42), uid)
+	require.Equal(t, "admin@idlicat.com", acc)
+
+	_, _, err = s.LookupHelperSession(context.Background(), "hs-deadbeef")
+	var hx *httpx.Error
+	require.ErrorAs(t, err, &hx)
+	require.Equal(t, "SESSION_INVALID", hx.Code)
+
+	s.RevokeHelperSession(context.Background(), tok)
+	_, _, err = s.LookupHelperSession(context.Background(), tok)
+	require.ErrorAs(t, err, &hx)
+	require.Equal(t, "SESSION_INVALID", hx.Code)
+}
+
 func TestPreferredOneClickPlatform(t *testing.T) {
 	require.Equal(t, "openai", preferredOneClickPlatform("codex"))
 	require.Equal(t, "anthropic", preferredOneClickPlatform("obsidian"))

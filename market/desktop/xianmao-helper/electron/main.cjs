@@ -240,17 +240,26 @@ function pickClientBaseURL(payloadBase, siteApi) {
 function writeBoundCredentials(payload, api) {
   // 只存闲猫换票结果；禁止自定义上游
   const siteApi = String(api || '').replace(/\/$/, '')
+  let prev = null
+  try {
+    prev = JSON.parse(fs.readFileSync(credentialsStorePath(), 'utf8'))
+  } catch {
+    /* ignore */
+  }
+  const session = String(payload.helper_session || payload.helperSession || prev?.helper_session || '').trim()
   const next = {
-    key: String(payload.key || ''),
-    key_id: Number(payload.key_id) || 0,
-    key_name: String(payload.key_name || ''),
-    platform: String(payload.platform || '').trim().toLowerCase(),
-    base_url: pickClientBaseURL(payload.base_url, siteApi),
+    key: String(payload.key || prev?.key || ''),
+    key_id: Number(payload.key_id || prev?.key_id) || 0,
+    key_name: String(payload.key_name || prev?.key_name || ''),
+    platform: String(payload.platform || prev?.platform || '').trim().toLowerCase(),
+    base_url: pickClientBaseURL(payload.base_url || prev?.base_url, siteApi),
     provider: '闲猫',
+    helper_session: session,
     api: siteApi,
     saved_at: new Date().toISOString(),
   }
-  if (!next.key || !next.base_url) return null
+  // 有长会话或 API Key 之一即可；base_url 必须有
+  if ((!next.key && !next.helper_session) || !next.base_url) return null
   fs.mkdirSync(path.dirname(credentialsStorePath()), { recursive: true })
   fs.writeFileSync(credentialsStorePath(), JSON.stringify(next, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
   try {
@@ -259,6 +268,17 @@ function writeBoundCredentials(payload, api) {
     /* ignore */
   }
   return next
+}
+
+/** 助手调市场接口：优先用与 API Key 解耦的长会话 */
+function helperAuthBearer(creds) {
+  const session = String(creds?.helper_session || '').trim()
+  if (session) return session
+  return String(creds?.key || '').trim()
+}
+
+function hasHelperAuth(creds) {
+  return !!(creds && helperAuthBearer(creds) && creds.base_url)
 }
 
 function writeBoundAccount(info) {
@@ -861,6 +881,11 @@ async function applyAndOpenAgent(payload, client, send, bound) {
   })
 }
 
+function isInvalidAPIKeyMessage(msg) {
+  const s = String(msg || '').toLowerCase()
+  return /invalid api key|api key invalid|key_invalid|unauthorized/.test(s) || /\b401\b/.test(s)
+}
+
 async function fetchModelIds(baseURL, key) {
   const root = String(baseURL || '').replace(/\/$/, '')
   const endpoint = /\/v1$/i.test(root) ? `${root}/models` : `${root}/v1/models`
@@ -871,6 +896,11 @@ async function fetchModelIds(baseURL, key) {
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
     const msg = body?.error?.message || body?.message || `HTTP ${res.status}`
+    if (isInvalidAPIKeyMessage(msg) || res.status === 401) {
+      throw new Error(
+        '助手本地密钥已失效（和网页上看到的不是同一把）。请先点右上角退出，再「浏览器登录」；或回网站对 Codex 点一次「一键使用」把新密钥同步过来。',
+      )
+    }
     throw new Error(`拉取模型列表失败：${msg}`)
   }
   const data = body?.data || body?.models || []
@@ -908,6 +938,7 @@ async function finalizeVendorKey(raw, client, want, api) {
     platform: want,
     base_url: baseURL,
     provider: raw.provider || '闲猫',
+    helper_session: raw.helper_session,
     model,
     client,
   }
@@ -922,21 +953,32 @@ async function resolveVendorKey(creds, client, platform) {
   if (!want) {
     throw new Error('未指定厂商')
   }
-  // 每次「重新配置 / 一键使用」都向服务端按厂商取密钥，禁止静默沿用别的厂商 key
+  const bearer = helperAuthBearer(creds)
+  if (!bearer) {
+    throw new Error('还没有登录会话，请先点右上角「浏览器登录」')
+  }
+  // 每次「重新配置 / 一键使用」都向服务端按厂商取最新密钥（会话鉴权，不依赖网页旧 tm- key）
   try {
     const res = await fetch(`${api}/api/one-click/helper/resolve-key`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${creds.key}`,
+        Authorization: `Bearer ${bearer}`,
       },
       body: JSON.stringify({ client, platform: want }),
       cache: 'no-store',
     })
     const body = await res.json().catch(() => ({}))
     if (!res.ok) {
-      const msg = body?.error?.message || body?.message || `HTTP ${res.status}`
+      const msg = body?.error?.message || body?.message || body?.error?.code || `HTTP ${res.status}`
+      if (isInvalidAPIKeyMessage(msg) || res.status === 401) {
+        const err = new Error(
+          '登录会话或本地密钥已失效，正在打开浏览器重新授权以自动获取最新厂商密钥…',
+        )
+        err.code = 'HELPER_AUTH_EXPIRED'
+        throw err
+      }
       throw new Error(msg)
     }
     const data = body?.data || body
@@ -948,12 +990,17 @@ async function resolveVendorKey(creds, client, platform) {
         platform: data.platform || want,
         base_url: data.base_url || creds.base_url,
         provider: data.provider || '闲猫',
+        helper_session: data.helper_session || creds.helper_session,
       },
       client,
       want,
       api,
     )
   } catch (err) {
+    const tip = err instanceof Error ? err.message : String(err)
+    if (err?.code === 'HELPER_AUTH_EXPIRED' || isInvalidAPIKeyMessage(tip) || /本地密钥已失效|登录会话/.test(tip)) {
+      throw err instanceof Error ? err : new Error(tip)
+    }
     // 仅当本地已是「同厂商」密钥时，才允许离线复用；跨厂商绝不回退
     if (creds?.key && String(creds.platform || '').toLowerCase() === want) {
       try {
@@ -965,6 +1012,7 @@ async function resolveVendorKey(creds, client, platform) {
             platform: want,
             base_url: creds.base_url,
             provider: '闲猫',
+            helper_session: creds.helper_session,
           },
           client,
           want,
@@ -974,7 +1022,6 @@ async function resolveVendorKey(creds, client, platform) {
         throw verifyErr
       }
     }
-    const tip = err instanceof Error ? err.message : String(err)
     throw new Error(`无法准备 ${platformLabel(want)} 密钥：${tip}`)
   }
 }
@@ -995,11 +1042,11 @@ function enqueueLocalSetup(client, send, opts = {}) {
     })
     return Promise.resolve()
   }
-  if (!creds?.key || !creds?.base_url) {
+  if (!hasHelperAuth(creds)) {
     send({
       step: 'error',
       status: 'error',
-      message: '还没有连上闲猫。请回网站再点一次「一键使用」',
+      message: '还没有连上闲猫。请先「浏览器登录」，或回网站再点一次「一键使用」',
     })
     return Promise.resolve()
   }
@@ -1028,16 +1075,55 @@ function enqueueLocalSetup(client, send, opts = {}) {
       client,
     })
     let payload
+    let workingCreds = creds
     try {
-      payload = await resolveVendorKey(creds, client, platform)
+      payload = await resolveVendorKey(workingCreds, client, platform)
     } catch (err) {
-      jobSend({
-        step: 'error',
-        status: 'error',
-        message: err instanceof Error ? err.message : '准备密钥失败',
-        client,
-      })
-      return
+      const needRelogin =
+        err?.code === 'HELPER_AUTH_EXPIRED' ||
+        isInvalidAPIKeyMessage(err?.message) ||
+        /登录会话|本地密钥已失效|无法向服务器换/.test(String(err?.message || ''))
+      if (needRelogin) {
+        try {
+          jobSend({
+            step: 'exchange',
+            status: 'active',
+            message: '登录已失效，正在打开浏览器重新授权以获取最新厂商密钥…',
+            account: bound,
+            client,
+            loginPending: true,
+          })
+          await startBrowserLogin(jobSend)
+          workingCreds = readBoundCredentials({ allowMigrate: true })
+          if (!hasHelperAuth(workingCreds)) {
+            throw new Error('重新授权后仍未拿到会话，请再试一次「浏览器登录」')
+          }
+          jobSend({
+            step: 'exchange',
+            status: 'active',
+            message: '授权成功，正在按厂商拉取最新密钥…',
+            account: readBoundAccount(),
+            client,
+          })
+          payload = await resolveVendorKey(workingCreds, client, platform)
+        } catch (reErr) {
+          jobSend({
+            step: 'error',
+            status: 'error',
+            message: reErr instanceof Error ? reErr.message : '重新授权失败',
+            client,
+          })
+          return
+        }
+      } else {
+        jobSend({
+          step: 'error',
+          status: 'error',
+          message: err instanceof Error ? err.message : '准备密钥失败',
+          client,
+        })
+        return
+      }
     }
     jobSend({
       step: 'exchange',
@@ -1254,7 +1340,7 @@ function startLocalBridge() {
         const account = bound
           ? {
               ...bound,
-              has_credentials: !!(creds?.key && creds?.base_url),
+              has_credentials: hasHelperAuth(creds),
               logged_in: true,
             }
           : null
@@ -1361,7 +1447,7 @@ ipcMain.handle('one-click:account', () => {
   return {
     ...acc,
     account: String(acc.account || '').trim(),
-    has_credentials: !!(creds?.key && creds?.base_url),
+    has_credentials: hasHelperAuth(creds),
     logged_in: true,
   }
 })
@@ -1386,7 +1472,8 @@ ipcMain.handle('one-click:set-site', () => {
 ipcMain.handle('one-click:wallet', async () => {
   const bound = readBoundAccount()
   const creds = bound ? readBoundCredentials({ allowMigrate: true }) : null
-  if (!bound || !creds?.key) {
+  const bearer = helperAuthBearer(creds)
+  if (!bound || !bearer) {
     return { ok: false, error: '未登录或尚未同步密钥' }
   }
   const api = resolveSiteAPI()
@@ -1394,7 +1481,7 @@ ipcMain.handle('one-click:wallet', async () => {
     const res = await fetch(`${api}/api/one-click/helper/wallet`, {
       headers: {
         Accept: 'application/json',
-        Authorization: `Bearer ${creds.key}`,
+        Authorization: `Bearer ${bearer}`,
       },
       cache: 'no-store',
     })
@@ -1444,13 +1531,14 @@ function friendlyAPIError(code, message, fallback) {
 async function helperAPI(pathname, { method = 'GET', body } = {}) {
   const bound = readBoundAccount()
   const creds = bound ? readBoundCredentials({ allowMigrate: true }) : null
-  if (!bound || !creds?.key) {
+  const bearer = helperAuthBearer(creds)
+  if (!bound || !bearer) {
     return { ok: false, error: '未登录或尚未同步密钥' }
   }
   const api = resolveSiteAPI()
   const headers = {
     Accept: 'application/json',
-    Authorization: `Bearer ${creds.key}`,
+    Authorization: `Bearer ${bearer}`,
   }
   let payload
   if (body !== undefined) {
@@ -1604,7 +1692,7 @@ ipcMain.handle('one-click:agents', async () => {
     }
   }
   const creds = bound ? readBoundCredentials() : null
-  const hasCredentials = !!(creds?.key && creds?.base_url)
+  const hasCredentials = hasHelperAuth(creds)
   const userId = Number(bound?.user_id) || 0
   const account = String(bound?.account || '').trim()
   // 登录态只看 bound-account（网站一键使用换票关联），不单凭本地密钥文件
@@ -1694,13 +1782,14 @@ ipcMain.handle('one-click:vendors', async (_e, clientId) => {
       })),
     }
   }
-  if (!creds?.key) return fallback()
+  const bearer = helperAuthBearer(creds)
+  if (!bearer) return fallback()
   const api = resolveSiteAPI()
   try {
     const res = await fetch(`${api}/api/one-click/helper/vendors?client=${encodeURIComponent(client)}`, {
       headers: {
         Accept: 'application/json',
-        Authorization: `Bearer ${creds.key}`,
+        Authorization: `Bearer ${bearer}`,
       },
       cache: 'no-store',
     })

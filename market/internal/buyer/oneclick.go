@@ -53,17 +53,18 @@ type IssuedOneClickTicket struct {
 }
 
 type ExchangedOneClick struct {
-	Key       string `json:"key"`
-	KeyID     int64  `json:"key_id"`
-	KeyName   string `json:"key_name"`
-	Platform  string `json:"platform,omitempty"`
-	BaseURL   string `json:"base_url"`
-	Client    string `json:"client"`
-	OS        string `json:"os"`
-	Provider  string `json:"provider"`
-	UserID    int64  `json:"user_id,omitempty"`
-	Account   string `json:"account,omitempty"` // 登录邮箱，供助手展示「已关联账号」
-	ExpiresIn int    `json:"expires_in"`        // 已消费，恒为 0；保留字段兼容助手
+	Key           string `json:"key"`
+	KeyID         int64  `json:"key_id"`
+	KeyName       string `json:"key_name"`
+	Platform      string `json:"platform,omitempty"`
+	BaseURL       string `json:"base_url"`
+	Client        string `json:"client"`
+	OS            string `json:"os"`
+	Provider      string `json:"provider"`
+	UserID        int64  `json:"user_id,omitempty"`
+	Account       string `json:"account,omitempty"`        // 登录邮箱，供助手展示「已关联账号」
+	HelperSession string `json:"helper_session,omitempty"` // 与 API Key 解耦的长会话，供助手按厂商换 key
+	ExpiresIn     int    `json:"expires_in"`               // 已消费，恒为 0；保留字段兼容助手
 }
 
 func (s *OneClickService) ready() error {
@@ -328,17 +329,20 @@ func (s *OneClickService) Exchange(ctx context.Context, ticket string) (*Exchang
 		// users 表无 deleted_at；带该条件会导致查询失败、账号一直为空
 		_ = s.Keys.DB.QueryRow(ctx, `SELECT COALESCE(NULLIF(TRIM(email), ''), '') FROM users WHERE id = $1`, rec.UserID).Scan(&account)
 	}
+	account = strings.TrimSpace(account)
+	session, _ := s.IssueHelperSession(ctx, rec.UserID, account)
 	return &ExchangedOneClick{
-		Key:      plain,
-		KeyID:    rec.KeyID,
-		KeyName:  detail.Name,
-		Platform: detail.Platform,
-		BaseURL:  baseURL,
-		Client:   rec.Client,
-		OS:       rec.OS,
-		Provider: "闲猫",
-		UserID:   rec.UserID,
-		Account:  strings.TrimSpace(account),
+		Key:           plain,
+		KeyID:         rec.KeyID,
+		KeyName:       detail.Name,
+		Platform:      detail.Platform,
+		BaseURL:       baseURL,
+		Client:        rec.Client,
+		OS:            rec.OS,
+		Provider:      "闲猫",
+		UserID:        rec.UserID,
+		Account:       account,
+		HelperSession: session,
 	}, nil
 }
 
