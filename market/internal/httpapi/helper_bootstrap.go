@@ -283,6 +283,8 @@ func proxyHelperReleaseAsset(w http.ResponseWriter, r *http.Request, filename st
 	if cl := res.Header.Get("Content-Length"); cl != "" {
 		w.Header().Set("Content-Length", cl)
 	}
+	// 显式 200：嵌入宿主若经 Gin NoRoute 可能已预置 404，不 WriteHeader 会把 zip 标成失败。
+	w.WriteHeader(http.StatusOK)
 	_, err = io.Copy(w, res.Body)
 	return err
 }

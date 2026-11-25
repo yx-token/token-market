@@ -540,9 +540,18 @@ export async function downloadHelperPackage(
     throw new Error('NETWORK')
   }
   if (!res.ok) {
-    // 未打包该系统时后端会 400；与纯网络故障区分，方便 UI 提示
-    if (res.status === 400 || res.status === 404) throw new Error('HELPER_OS_UNSUPPORTED')
-    throw new Error('NETWORK')
+    // 嵌入宿主曾把 /api/one-click 走 Gin NoRoute，状态被预置成 404 但仍返回 zip；有包体就当成功。
+    const ctype = (res.headers.get('content-type') || '').toLowerCase()
+    const looksLikePackage =
+      ctype.includes('zip') ||
+      ctype.includes('octet-stream') ||
+      ctype.includes('msdownload') ||
+      ctype.includes('apple-diskimage')
+    if (!looksLikePackage) {
+      // 未打包该系统时后端会 400；与纯网络故障区分，方便 UI 提示
+      if (res.status === 400 || res.status === 404) throw new Error('HELPER_OS_UNSUPPORTED')
+      throw new Error('NETWORK')
+    }
   }
   const total = Number(res.headers.get('content-length') || 0)
   const headerName = res.headers.get('content-disposition') || ''

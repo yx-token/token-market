@@ -43,15 +43,19 @@ func RegisterMarketEmbed(r *gin.Engine) {
 func registerMarketEmbed(r *gin.Engine, h http.Handler) {
 	wrap := gin.WrapH(h)
 	// 控制面 API（含 /open-admin 换宿主会话的 /api/admin/engine/*）
+	// /api/one-click 必须显式挂载：走 NoRoute 时 Gin 会预置 404，助手 zip 会被前端当成「包不可用」。
 	for _, p := range []string{
 		"/api/auth", "/api/me", "/api/buyer", "/api/seller", "/api/market", "/api/payments",
-		"/api/admin/engine", "/healthz",
+		"/api/one-click", "/api/admin/engine", "/healthz",
 	} {
 		r.Any(p, wrap)
 		r.Any(p+"/*filepath", wrap)
 	}
 	// C 端页面与静态（管理端 /admin* 不走这里）
-	for _, p := range []string{"/buyer", "/seller", "/login", "/register", "/shop", "/open-admin", "/assets", "/plaza", "/docs"} {
+	for _, p := range []string{
+		"/buyer", "/seller", "/login", "/register", "/shop", "/open-admin", "/assets", "/plaza", "/docs",
+		"/helper-auth",
+	} {
 		r.Any(p, wrap)
 		r.Any(p+"/*filepath", wrap)
 	}
@@ -70,6 +74,8 @@ func registerMarketEmbed(r *gin.Engine, h http.Handler) {
 			c.Status(http.StatusNotFound)
 			return
 		}
+		// Gin 进入 NoRoute 前会把 status 预置为 404；交给市场前清回 200，避免下载/API 被污染。
+		c.Status(http.StatusOK)
 		h.ServeHTTP(c.Writer, c.Request)
 	})
 }

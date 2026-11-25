@@ -21,6 +21,43 @@ import (
 	"github.com/yx-token/token-market/market/enginehost"
 )
 
+func TestMarketEmbedOneClickDownloadNotPrefixed404(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	market := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/one-click/helper/download/macos" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", `attachment; filename="xianmao-helper-macos.zip"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("PK\x03\x04fake-zip"))
+	})
+	router := gin.New()
+	registerMarketEmbed(router, market)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/one-click/helper/download/macos", nil))
+	require.Equal(t, http.StatusOK, rec.Code, "one-click download must not inherit Gin NoRoute 404")
+	require.Equal(t, "application/zip", rec.Header().Get("Content-Type"))
+	require.Contains(t, rec.Body.String(), "PK")
+}
+
+func TestMarketEmbedNoRouteResetsStatusBeforeDelegation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	market := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// 不调用 WriteHeader：若 NoRoute 预置了 404，首写会带上 404。
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+	router := gin.New()
+	registerMarketEmbed(router, market)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/some-spa-path", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{"ok":true}`, rec.Body.String())
+}
+
 func TestMarketEdgeDispatchRunsBeforeGatewayRoutes(t *testing.T) {
 	t.Setenv("MARKET_EMBED", "1")
 	t.Setenv("MARKET_EMBED_EDGE", "1")
