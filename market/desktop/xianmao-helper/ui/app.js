@@ -4,10 +4,7 @@ const modalPreflight = document.getElementById('modalPreflight')
 const modalRunning = document.getElementById('modalRunning')
 const modalDone = document.getElementById('modalDone')
 const modalError = document.getElementById('modalError')
-const modalSite = document.getElementById('modalSite')
 const modalRecharge = document.getElementById('modalRecharge')
-const siteUrlInput = document.getElementById('siteUrlInput')
-const siteFormErr = document.getElementById('siteFormErr')
 const preflightLead = document.getElementById('preflightLead')
 const preflightChecks = document.getElementById('preflightChecks')
 const preflightActions = document.getElementById('preflightActions')
@@ -50,18 +47,6 @@ async function refreshSiteLinks() {
   }
 }
 
-function openSiteUrlModal(preset) {
-  openModal('site', '填写网站地址')
-  if (siteFormErr) {
-    siteFormErr.textContent = ''
-    siteFormErr.classList.add('hidden')
-  }
-  if (siteUrlInput) {
-    siteUrlInput.value = preset || (SITE ? SITE.replace(/\/$/, '') : '')
-    siteUrlInput.focus()
-    siteUrlInput.select()
-  }
-}
 
 const CHANNEL_LABEL = {
   alipay_page: '支付宝网页',
@@ -206,15 +191,12 @@ function openModal(mode, title) {
             ? '完成'
             : mode === 'recharge'
               ? '充值'
-              : mode === 'site'
-                ? '填写网站地址'
-                : '提示')
+              : '提示')
   }
   modalPreflight?.classList.toggle('hidden', mode !== 'preflight')
   modalRunning?.classList.toggle('hidden', mode !== 'running')
   modalDone?.classList.toggle('hidden', mode !== 'done')
   modalError?.classList.toggle('hidden', mode !== 'error')
-  modalSite?.classList.toggle('hidden', mode !== 'site')
   modalRecharge?.classList.toggle('hidden', mode !== 'recharge')
   if (mode !== 'done') renderDoneGuide(null)
   if (mode === 'error') syncErrorLoginBtn()
@@ -797,11 +779,7 @@ async function onAction(action) {
   }
   if (action === 'open-site') {
     await refreshSiteLinks()
-    if (!SITE) {
-      openSiteUrlModal('')
-      return
-    }
-    await window.xianmaoHelper.openExternal(SITE)
+    await window.xianmaoHelper.openExternal(SITE || 'https://idlicat.com/')
     return
   }
   if (action === 'open-recharge') {
@@ -830,21 +808,6 @@ async function onAction(action) {
     if (url) await window.xianmaoHelper.openPayURL?.(url)
     return
   }
-  if (action === 'save-site') {
-    const raw = String(siteUrlInput?.value || '').trim()
-    const r = await window.xianmaoHelper.setSite?.(raw)
-    if (!r?.ok) {
-      if (siteFormErr) {
-        siteFormErr.textContent = r?.error || '地址无效'
-        siteFormErr.classList.remove('hidden')
-      }
-      return
-    }
-    await refreshSiteLinks()
-    closeModal()
-    void onAction('open-login')
-    return
-  }
   if (action === 'cancel-login') {
     await window.xianmaoHelper.cancelLogin?.()
     setLoginPendingUI(false)
@@ -857,14 +820,6 @@ async function onAction(action) {
     if (!r?.ok) {
       setLoginPendingUI(false)
       renderAccount(null)
-      if (
-        r?.needSiteUrl ||
-        r?.error === 'NEED_SITE_URL' ||
-        /127\.0\.0\.1|localhost/i.test(String(r?.error || ''))
-      ) {
-        openSiteUrlModal('')
-        return
-      }
       const errText = String(r?.error || '')
       if (/取消/.test(errText)) {
         accountBar.textContent = '未登录'
@@ -880,16 +835,12 @@ async function onAction(action) {
         setHelpVisible('')
         if (errHelpBtn) {
           errHelpBtn.classList.remove('hidden')
-          errHelpBtn.textContent = '填写网站地址'
-          errHelpBtn.dataset.action = 'edit-site'
+          errHelpBtn.textContent = '打开闲猫网站'
+          errHelpBtn.dataset.action = 'open-site'
         }
       }
     }
     await refreshAgents()
-    return
-  }
-  if (action === 'edit-site') {
-    openSiteUrlModal('')
     return
   }
   if (action === 'logout-account') {
@@ -991,13 +942,7 @@ if (window.xianmaoHelper) {
         setLoginPendingUI(false)
         renderAccount(payload.account && isLoggedIn(payload.account) ? payload.account : null)
         const msg = String(payload.message || '')
-        if (
-          payload.needSiteUrl ||
-          msg === 'NEED_SITE_URL' ||
-          /127\.0\.0\.1|localhost/i.test(msg)
-        ) {
-          openSiteUrlModal('')
-        } else if (/取消|超时|过期/.test(msg)) {
+        if (/取消|超时|过期/.test(msg)) {
           if (/超时|过期/.test(msg)) accountBar.textContent = '授权已超时，请重新登录'
         } else if (msg) {
           openModal('error', '登录失败')
@@ -1005,8 +950,8 @@ if (window.xianmaoHelper) {
           setHelpVisible('')
           if (errHelpBtn) {
             errHelpBtn.classList.remove('hidden')
-            errHelpBtn.textContent = '填写网站地址'
-            errHelpBtn.dataset.action = 'edit-site'
+            errHelpBtn.textContent = '打开闲猫网站'
+            errHelpBtn.dataset.action = 'open-site'
           }
         }
       } else {

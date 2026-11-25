@@ -64,38 +64,78 @@ function preferredSitePath() {
   return path.join(app.getPath('userData'), 'preferred-site.json')
 }
 
-/** 记住网站根地址（局域网测 Windows 时不能用写死的 127.0.0.1）。 */
+/**
+ * 正式包固定连生产站，不再让用户填局域网 IP。
+ * 本地联调：启动前设 XIANMAO_SITE / XIANMAO_API_BASE（例如 http://127.0.0.1:8080）。
+ */
+const PRODUCTION_SITE = 'https://idlicat.com'
+
+function envSiteOverride() {
+  return String(process.env.XIANMAO_SITE || process.env.XIANMAO_API_BASE || '')
+    .trim()
+    .replace(/\/$/, '')
+}
+
+function canonicalSiteAPI() {
+  return envSiteOverride() || PRODUCTION_SITE
+}
+
+/** @deprecated 保留调用点兼容；正式包忽略网页推送的局域网地址。 */
 function rememberPreferredSite(api) {
   const next = String(api || '').trim().replace(/\/$/, '')
   if (!next || !/^https?:\/\//i.test(next)) return null
-  try {
-    const u = new URL(next)
-    if (!u.hostname) return null
-  } catch {
-    return null
+  // 有开发覆盖时才记住非生产地址，方便本机联调
+  if (envSiteOverride()) {
+    try {
+      fs.mkdirSync(path.dirname(preferredSitePath()), { recursive: true })
+      fs.writeFileSync(
+        preferredSitePath(),
+        JSON.stringify({ api: next, saved_at: new Date().toISOString() }, null, 2) + '\n',
+        'utf8',
+      )
+    } catch {
+      /* ignore */
+    }
+    return next
   }
-  // 不要把回环地址当成「已同步的站点」写进缓存，否则异机永远连 127.0.0.1
-  if (isLoopbackHTTPURL(next)) return null
+  return canonicalSiteAPI()
+}
+
+/** 清掉历史缓存的局域网地址，避免继续连 172.16 / 127.0.0.1。 */
+function migrateSiteToProduction() {
+  if (envSiteOverride()) return
+  const prod = PRODUCTION_SITE
   try {
-    fs.mkdirSync(path.dirname(preferredSitePath()), { recursive: true })
-    fs.writeFileSync(preferredSitePath(), JSON.stringify({ api: next, saved_at: new Date().toISOString() }, null, 2) + '\n', 'utf8')
+    fs.unlinkSync(preferredSitePath())
   } catch {
     /* ignore */
   }
-  // 若本地已存的密钥 base_url 仍是 127.0.0.1，按实际站点改掉
+  try {
+    const bound = readBoundAccount()
+    if (bound?.api && normalizeSiteHost(bound.api) !== normalizeSiteHost(prod)) {
+      writeBoundAccount({ ...bound, api: prod })
+    }
+  } catch {
+    /* ignore */
+  }
   try {
     const creds = readBoundCredentials()
-    if (creds?.key && isLoopbackHTTPURL(creds.base_url) && !isLoopbackHTTPURL(next)) {
-      writeBoundCredentials({ ...creds, base_url: next }, next)
-    }
-    const bound = readBoundAccount()
-    if (bound && isLoopbackHTTPURL(bound.api) && !isLoopbackHTTPURL(next)) {
-      writeBoundAccount({ ...bound, api: next })
+    if (!creds?.key) return
+    const base = String(creds.base_url || creds.api || '')
+    if (base && normalizeSiteHost(base) !== normalizeSiteHost(prod)) {
+      writeBoundCredentials({ ...creds, base_url: prod }, prod)
     }
   } catch {
     /* ignore */
   }
-  return next
+}
+
+function normalizeSiteHost(raw) {
+  try {
+    return String(new URL(String(raw || '').trim()).hostname || '').toLowerCase().replace(/^www\./, '')
+  } catch {
+    return ''
+  }
 }
 
 function readPreferredSite() {
@@ -263,11 +303,12 @@ function syncBoundSession(info) {
       /* ignore */
     }
   }
+  const site = canonicalSiteAPI()
   if (api) rememberPreferredSite(api)
   return writeBoundAccount({
     account,
     user_id: userId,
-    api: api || prev?.api || readPreferredSite() || '',
+    api: site,
     key_name: prev?.key_name || '',
   })
 }
@@ -531,18 +572,10 @@ async function exchangeTicket({ api, ticket }) {
   return body.data || body
 }
 
-const DEFAULT_SITE = String(process.env.XIANMAO_SITE || process.env.XIANMAO_API_BASE || '').replace(/\/$/, '')
 let helperAuthAbort = null
 
 function resolveSiteAPI() {
-  const bound = readBoundAccount()
-  const fromBound = String(bound?.api || '').replace(/\/$/, '')
-  if (fromBound && !isLoopbackHTTPURL(fromBound)) return fromBound
-  const preferred = readPreferredSite()
-  // 缓存里若仍是 127.0.0.1，当作无效（局域网场景必须用真实 IP/域名）
-  if (preferred && !isLoopbackHTTPURL(preferred)) return preferred
-  if (DEFAULT_SITE && !isLoopbackHTTPURL(DEFAULT_SITE)) return DEFAULT_SITE
-  return ''
+  return canonicalSiteAPI()
 }
 
 function detectHelperOS() {
@@ -561,17 +594,7 @@ async function startBrowserLogin(send) {
     helperAuthAbort.cancelled = true
     helperAuthAbort = null
   }
-  // 等网页一键使用把真实站点推过来（局域网 IP），避免一上来就打 127.0.0.1
-  let api = resolveSiteAPI()
-  for (let i = 0; i < 8 && (!api || isLoopbackHTTPURL(api)); i++) {
-    await new Promise((r) => setTimeout(r, 400))
-    api = resolveSiteAPI()
-  }
-  if (!api || isLoopbackHTTPURL(api)) {
-    const err = new Error('NEED_SITE_URL')
-    err.code = 'NEED_SITE_URL'
-    throw err
-  }
+  const api = resolveSiteAPI()
   const code = newDeviceCode()
   const osName = detectHelperOS()
   const ctrl = { cancelled: false }
@@ -700,11 +723,12 @@ async function runOneClick(parsed, send) {
         : '连接闲猫失败，请稍后再试。',
     )
   }
-  writeBoundCredentials(payload, parsed.api)
+  const site = canonicalSiteAPI()
+  writeBoundCredentials(payload, site)
   const bound = writeBoundAccount({
     account: payload.account,
     user_id: payload.user_id,
-    api: parsed.api,
+    api: site,
     key_name: payload.key_name,
   })
   send({
@@ -1138,6 +1162,7 @@ if (!gotLock) {
   })
 
   app.whenReady().then(() => {
+    migrateSiteToProduction()
     if (process.platform === 'darwin' && app.dock) {
       try {
         const { nativeImage } = require('electron')
@@ -1205,16 +1230,16 @@ ipcMain.handle('one-click:site', () => {
   return {
     ok: true,
     api,
-    site: api ? `${api}/` : '',
-    login: api ? `${api}/login` : '',
-    needs_site: !api || isLoopbackHTTPURL(api),
+    site: `${api}/`,
+    login: `${api}/login`,
+    needs_site: false,
   }
 })
 
-ipcMain.handle('one-click:set-site', (_event, raw) => {
-  const saved = rememberPreferredSite(raw)
-  if (!saved) return { ok: false, error: '请填写完整网址，例如 http://172.16.76.52:8080' }
-  return { ok: true, api: saved, site: `${saved}/`, login: `${saved}/login`, needs_site: false }
+ipcMain.handle('one-click:set-site', () => {
+  // 正式包不允许用户改站点；仅返回固定地址
+  const api = resolveSiteAPI()
+  return { ok: true, api, site: `${api}/`, login: `${api}/login`, needs_site: false }
 })
 
 ipcMain.handle('one-click:wallet', async () => {
@@ -1368,13 +1393,7 @@ ipcMain.handle('one-click:login-account', async () => {
   try {
     return await startBrowserLogin(sendToUI)
   } catch (err) {
-    const code = err && typeof err === 'object' ? err.code : ''
-    const msg =
-      code === 'NEED_SITE_URL' || (err instanceof Error && err.message === 'NEED_SITE_URL')
-        ? 'NEED_SITE_URL'
-        : err instanceof Error
-          ? err.message
-          : String(err)
+    const msg = err instanceof Error ? err.message : String(err)
     sendToUI({
       step: 'session',
       status: 'error',
@@ -1382,10 +1401,9 @@ ipcMain.handle('one-click:login-account', async () => {
       sessionSync: true,
       loginPending: false,
       message: msg,
-      needSiteUrl: msg === 'NEED_SITE_URL',
       account: readBoundAccount(),
     })
-    return { ok: false, error: msg, needSiteUrl: msg === 'NEED_SITE_URL' }
+    return { ok: false, error: msg }
   }
 })
 

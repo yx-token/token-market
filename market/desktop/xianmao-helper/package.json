@@ -1,6 +1,6 @@
 {
   "name": "xianmao-helper",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": true,
   "author": "闲猫",
   "description": "闲猫助手：处理 xianmao:// 一键使用协议，换票、下载客户端并写入配置",

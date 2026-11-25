@@ -10,6 +10,17 @@
 | Windows | 10 / 11 x64 | NSIS 安装包 `.exe`（由 `windows-latest` CI 产出） |
 | Linux | x64（可选） | `.AppImage` |
 
+## 站点地址
+
+正式安装包**固定**连接 `https://idlicat.com`，不要求（也不允许）用户填写网站地址。启动时会清掉历史缓存的局域网 IP。
+
+本地联调：启动前设置环境变量覆盖：
+
+```bash
+export XIANMAO_SITE=http://127.0.0.1:8080
+npm start
+```
+
 ## 开发
 
 本机需 Node 18+。首次：
