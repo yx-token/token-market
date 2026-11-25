@@ -175,10 +175,8 @@ func ListOneClickVendors(client string, pools []scheduling.Pool) ([]OneClickVend
 	}
 	supported := AgentSupportedVendors(client)
 	allow := map[string]bool{}
-	if supported != nil {
-		for _, p := range supported {
-			allow[p] = true
-		}
+	for _, p := range supported {
+		allow[p] = true
 	}
 	seen := map[string]bool{}
 	var out []OneClickVendorOption
