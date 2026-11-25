@@ -11,7 +11,7 @@
     "pack": "electron-builder --dir",
     "dist": "electron-builder --mac --win",
     "dist:mac": "electron-builder --mac zip dmg",
-    "dist:win": "electron-builder --win zip nsis --x64",
+    "dist:win": "electron-builder --win nsis zip --x64",
     "dist:linux": "electron-builder --linux AppImage --x64"
   },
   "build": {
@@ -54,13 +54,13 @@
       "signAndEditExecutable": false,
       "target": [
         {
-          "target": "zip",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
         },
         {
-          "target": "nsis",
+          "target": "zip",
           "arch": [
             "x64"
           ]

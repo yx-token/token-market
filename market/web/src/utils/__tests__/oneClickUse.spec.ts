@@ -15,6 +15,8 @@ import {
   primaryDownload,
   readPreferredClient,
   setStep,
+  helperPackageFilename,
+  parseContentDispositionFilename,
   setupPlatformToOS,
   syncHelperSession,
   writePreferredClient,
@@ -56,6 +58,19 @@ describe('oneClickUse', () => {
   it('maps setup platform to OS', () => {
     expect(setupPlatformToOS('windows')).toBe('windows')
     expect(setupPlatformToOS('unix')).toBe('macos')
+  })
+
+  it('uses 闲猫助手 as browser download filenames', () => {
+    expect(helperPackageFilename('windows')).toBe('闲猫助手.exe')
+    expect(helperPackageFilename('macos')).toBe('闲猫助手.zip')
+    expect(helperPackageFilename('linux')).toBe('闲猫助手.AppImage')
+  })
+
+  it('parses Content-Disposition filename*', () => {
+    const header =
+      `attachment; filename="xianmao-helper-windows-setup.exe"; filename*=UTF-8''${encodeURIComponent('闲猫助手.exe')}`
+    expect(parseContentDispositionFilename(header)).toBe('闲猫助手.exe')
+    expect(parseContentDispositionFilename('attachment; filename="闲猫助手.zip"')).toBe('闲猫助手.zip')
   })
 
   it('returns OS-specific downloads without CC Switch', () => {

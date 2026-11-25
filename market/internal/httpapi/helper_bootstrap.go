@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,9 +14,22 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/yx-token/token-market/market/internal/platform/buildinfo"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
+)
+
+// 浏览器另存为名称（用户可见）；GitHub Release / 镜像内仍用 ASCII 资产名，便于代理与 CI。
+const (
+	helperDownloadMacOS   = "闲猫助手.zip"
+	helperDownloadWindows = "闲猫助手.exe"
+	helperDownloadLinux   = "闲猫助手.AppImage"
+
+	helperAssetMacOS      = "xianmao-helper-macos.zip"
+	helperAssetWindows    = "xianmao-helper-windows-setup.exe"
+	helperAssetWindowsZip = "xianmao-helper-windows-x64.zip"
+	helperAssetLinux      = "xianmao-helper-linux-x64.AppImage"
 )
 
 var (
@@ -33,10 +47,13 @@ func helperDistReady(dir string) bool {
 	}
 	// 允许直接把安装包放在 dir/dist 同级探测：若已有任一稳定文件名也算就绪
 	for _, name := range []string{
-		"xianmao-helper-macos.zip",
-		"xianmao-helper-windows-setup.exe",
-		"xianmao-helper-windows-x64.zip",
-		"xianmao-helper-linux-x64.AppImage",
+		helperAssetMacOS,
+		helperAssetWindows,
+		helperDownloadWindows,
+		helperAssetWindowsZip,
+		helperAssetLinux,
+		helperDownloadMacOS,
+		helperDownloadLinux,
 	} {
 		if firstExistingFile(filepath.Join(dist, name), filepath.Join(dir, name)) != "" {
 			return true
@@ -82,7 +99,8 @@ func helperAppPath(dir string) string {
 func helperZipPath(dir string) string {
 	// 优先稳定别名（scripts/pack-release.sh）；兼容开发态旧名
 	for _, name := range []string{
-		"xianmao-helper-macos.zip",
+		helperAssetMacOS,
+		helperDownloadMacOS,
 		"闲猫助手-macos.zip",
 	} {
 		p := filepath.Join(dir, "dist", name)
@@ -90,7 +108,7 @@ func helperZipPath(dir string) string {
 			return p
 		}
 	}
-	return filepath.Join(dir, "dist", "闲猫助手-macos.zip")
+	return filepath.Join(dir, "dist", helperDownloadMacOS)
 }
 
 func firstExistingFile(paths ...string) string {
@@ -102,41 +120,44 @@ func firstExistingFile(paths ...string) string {
 	return ""
 }
 
-func helperWindowsPackage(dir string) (path string, filename string, ok bool) {
+// helperWindowsPackage 返回本机安装包路径、GitHub 资产名、浏览器下载名。
+func helperWindowsPackage(dir string) (path, assetName, downloadName string, ok bool) {
 	dist := filepath.Join(dir, "dist")
-	// 优先安装包，其次便携 zip
+	// 优先 NSIS 安装包，其次便携 zip
 	if p := firstExistingFile(
-		filepath.Join(dist, "xianmao-helper-windows-setup.exe"),
+		filepath.Join(dist, helperAssetWindows),
+		filepath.Join(dist, helperDownloadWindows),
 		filepath.Join(dist, "xianmao-helper-windows-setup-x64.exe"),
 	); p != "" {
-		return p, "xianmao-helper-windows-setup.exe", true
+		return p, helperAssetWindows, helperDownloadWindows, true
 	}
 	if matches, _ := filepath.Glob(filepath.Join(dist, "xianmao-helper-windows-setup-*.exe")); len(matches) > 0 {
-		return matches[0], filepath.Base(matches[0]), true
+		return matches[0], helperAssetWindows, helperDownloadWindows, true
 	}
 	if p := firstExistingFile(
-		filepath.Join(dist, "xianmao-helper-windows-x64.zip"),
+		filepath.Join(dist, helperAssetWindowsZip),
 		filepath.Join(dist, "xianmao-helper-win-x64.zip"),
 	); p != "" {
-		return p, "xianmao-helper-windows-x64.zip", true
+		return p, helperAssetWindowsZip, "闲猫助手-便携.zip", true
 	}
 	if matches, _ := filepath.Glob(filepath.Join(dist, "xianmao-helper-win-*.zip")); len(matches) > 0 {
-		return matches[0], "xianmao-helper-windows-x64.zip", true
+		return matches[0], helperAssetWindowsZip, "闲猫助手-便携.zip", true
 	}
-	return "", "", false
+	return "", "", "", false
 }
 
-func helperLinuxPackage(dir string) (path string, filename string, ok bool) {
+func helperLinuxPackage(dir string) (path, assetName, downloadName string, ok bool) {
 	dist := filepath.Join(dir, "dist")
 	if p := firstExistingFile(
-		filepath.Join(dist, "xianmao-helper-linux-x64.AppImage"),
+		filepath.Join(dist, helperAssetLinux),
+		filepath.Join(dist, helperDownloadLinux),
 	); p != "" {
-		return p, "xianmao-helper-linux-x64.AppImage", true
+		return p, helperAssetLinux, helperDownloadLinux, true
 	}
 	if matches, _ := filepath.Glob(filepath.Join(dist, "xianmao-helper-linux-*.AppImage")); len(matches) > 0 {
-		return matches[0], "xianmao-helper-linux-x64.AppImage", true
+		return matches[0], helperAssetLinux, helperDownloadLinux, true
 	}
-	return "", "", false
+	return "", "", "", false
 }
 
 func contentTypeForHelper(filename string) string {
@@ -151,6 +172,37 @@ func contentTypeForHelper(filename string) string {
 	default:
 		return "application/zip"
 	}
+}
+
+// contentDispositionAttachment 用 UTF-8 文件名；ASCII fallback 给老浏览器。
+func contentDispositionAttachment(downloadName string) string {
+	ascii := asciiFilenameFallback(downloadName)
+	escaped := url.PathEscape(downloadName)
+	escaped = strings.ReplaceAll(escaped, "+", "%20")
+	return fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, ascii, escaped)
+}
+
+func asciiFilenameFallback(name string) string {
+	switch name {
+	case helperDownloadMacOS:
+		return helperAssetMacOS
+	case helperDownloadWindows:
+		return helperAssetWindows
+	case helperDownloadLinux:
+		return helperAssetLinux
+	case "闲猫助手-便携.zip":
+		return helperAssetWindowsZip
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if r <= unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '-' || r == '_') {
+			b.WriteRune(r)
+		}
+	}
+	if s := b.String(); s != "" && strings.Contains(s, ".") {
+		return s
+	}
+	return "xianmao-helper.bin"
 }
 
 func requestIsLoopback(r *http.Request) bool {
@@ -262,8 +314,11 @@ func helperReleaseAssetURL(filename string) string {
 	return fmt.Sprintf("https://github.com/%s/releases/latest/download/%s", repo, filename)
 }
 
-func proxyHelperReleaseAsset(w http.ResponseWriter, r *http.Request, filename string) error {
-	assetURL := helperReleaseAssetURL(filename)
+func proxyHelperReleaseAsset(w http.ResponseWriter, r *http.Request, assetName, downloadName string) error {
+	if downloadName == "" {
+		downloadName = assetName
+	}
+	assetURL := helperReleaseAssetURL(assetName)
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, assetURL, nil)
 	if err != nil {
 		return httpx.BadRequest("HELPER_OS_UNSUPPORTED", "helper package unavailable")
@@ -277,8 +332,8 @@ func proxyHelperReleaseAsset(w http.ResponseWriter, r *http.Request, filename st
 	if res.StatusCode != http.StatusOK {
 		return httpx.BadRequest("HELPER_OS_UNSUPPORTED", "helper package unavailable")
 	}
-	w.Header().Set("Content-Type", contentTypeForHelper(filename))
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Content-Type", contentTypeForHelper(downloadName))
+	w.Header().Set("Content-Disposition", contentDispositionAttachment(downloadName))
 	w.Header().Set("Cache-Control", "no-store")
 	if cl := res.Header.Get("Content-Length"); cl != "" {
 		w.Header().Set("Content-Length", cl)
@@ -297,16 +352,19 @@ func (s *Server) downloadOneClickHelper(w http.ResponseWriter, r *http.Request) 
 	}
 	dir := helperDesktopDir()
 	var (
-		file     string
-		filename string
-		err      error
+		file         string
+		assetName    string
+		downloadName string
+		err          error
 	)
 	switch osName {
 	case "macos", "darwin":
-		filename = "xianmao-helper-macos.zip"
+		assetName = helperAssetMacOS
+		downloadName = helperDownloadMacOS
 		if dir != "" {
 			if p := firstExistingFile(
-				filepath.Join(dir, "dist", "xianmao-helper-macos.zip"),
+				filepath.Join(dir, "dist", helperAssetMacOS),
+				filepath.Join(dir, "dist", helperDownloadMacOS),
 				filepath.Join(dir, "dist", "闲猫助手-macos.zip"),
 			); p != "" {
 				file = p
@@ -318,37 +376,39 @@ func (s *Server) downloadOneClickHelper(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	case "windows", "win", "win32":
+		assetName = helperAssetWindows
+		downloadName = helperDownloadWindows
 		if dir != "" {
 			var ok bool
-			file, filename, ok = helperWindowsPackage(dir)
+			file, assetName, downloadName, ok = helperWindowsPackage(dir)
 			if !ok {
-				filename = "xianmao-helper-windows-x64.zip"
+				assetName = helperAssetWindows
+				downloadName = helperDownloadWindows
 			}
-		} else {
-			filename = "xianmao-helper-windows-x64.zip"
 		}
 	case "linux":
+		assetName = helperAssetLinux
+		downloadName = helperDownloadLinux
 		if dir != "" {
 			var ok bool
-			file, filename, ok = helperLinuxPackage(dir)
+			file, assetName, downloadName, ok = helperLinuxPackage(dir)
 			if !ok {
-				filename = "xianmao-helper-linux-x64.AppImage"
+				assetName = helperAssetLinux
+				downloadName = helperDownloadLinux
 			}
-		} else {
-			filename = "xianmao-helper-linux-x64.AppImage"
 		}
 	default:
 		return httpx.BadRequest("HELPER_OS_UNSUPPORTED", "os must be macos, windows, or linux")
 	}
 	if file != "" {
-		w.Header().Set("Content-Type", contentTypeForHelper(filename))
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		w.Header().Set("Content-Type", contentTypeForHelper(downloadName))
+		w.Header().Set("Content-Disposition", contentDispositionAttachment(downloadName))
 		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFile(w, r, file)
 		return nil
 	}
 	// 生产常见：MARKET_EMBED 无本机 dist。回源 GitHub Release（v0.17.61 起已上传安装包）。
-	return proxyHelperReleaseAsset(w, r, filename)
+	return proxyHelperReleaseAsset(w, r, assetName, downloadName)
 }
 
 func probeHelperLocal(timeout time.Duration) bool {

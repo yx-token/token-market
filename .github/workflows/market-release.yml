@@ -28,13 +28,13 @@ jobs:
     name: CI
     uses: ./.github/workflows/market-ci.yml
 
-  helper:
-    name: 构建闲猫助手安装包
+  # macOS zip 在 macos runner 打；Windows 安装包必须在 windows runner 打 NSIS（mac 交叉无 wine 会跳过）。
+  helper-mac:
+    name: 构建闲猫助手（macOS）
     needs: ci
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
-      # classic-level / node-gyp 需要 distutils（Python 3.12+ 已移除）
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -45,7 +45,7 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: market/desktop/xianmao-helper/package-lock.json
-      - name: 安装依赖并打包 mac + win
+      - name: 安装依赖并打包 macOS
         working-directory: market/desktop/xianmao-helper
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -54,17 +54,77 @@ jobs:
           npm_config_python: python3
         run: |
           npm ci
-          bash scripts/pack-release.sh mac,win
+          bash scripts/pack-release.sh mac
           test -s dist/xianmao-helper-macos.zip
-          test -s dist/xianmao-helper-windows-x64.zip
       - name: 收集产物
         run: |
           mkdir -p helper-out
           cp -f market/desktop/xianmao-helper/dist/xianmao-helper-macos.zip helper-out/
-          cp -f market/desktop/xianmao-helper/dist/xianmao-helper-windows-x64.zip helper-out/
-          if [[ -f market/desktop/xianmao-helper/dist/xianmao-helper-windows-setup.exe ]]; then
-            cp -f market/desktop/xianmao-helper/dist/xianmao-helper-windows-setup.exe helper-out/
-          fi
+          ls -lah helper-out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helper-mac
+          path: helper-out/
+          if-no-files-found: error
+
+  helper-win:
+    name: 构建闲猫助手（Windows 安装包）
+    needs: ci
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安装 node-gyp 构建依赖
+        shell: bash
+        run: python -m pip install --upgrade pip setuptools wheel
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: market/desktop/xianmao-helper/package-lock.json
+      - name: 安装依赖并打包 Windows NSIS
+        working-directory: market/desktop/xianmao-helper
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+          ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
+          npm_config_python: python
+        run: |
+          npm ci
+          bash scripts/pack-release.sh win
+          test -s dist/xianmao-helper-windows-setup.exe
+      - name: 收集产物
+        shell: bash
+        run: |
+          mkdir -p helper-out
+          cp -f market/desktop/xianmao-helper/dist/xianmao-helper-windows-setup.exe helper-out/
+          ls -lah helper-out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helper-win
+          path: helper-out/
+          if-no-files-found: error
+
+  helper:
+    name: 汇总闲猫助手安装包
+    needs: [helper-mac, helper-win]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: helper-mac
+          path: helper-out/
+      - uses: actions/download-artifact@v4
+        with:
+          name: helper-win
+          path: helper-out/
+      - name: 校验产物
+        run: |
+          test -s helper-out/xianmao-helper-macos.zip
+          test -s helper-out/xianmao-helper-windows-setup.exe
           ls -lah helper-out/
       - uses: actions/upload-artifact@v4
         with:
@@ -236,8 +296,8 @@ jobs:
             echo
             echo "镜像内已含安装包（\`/app/helper/dist\`）。也可在本 Release 附件直接下载："
             echo
-            echo "- \`xianmao-helper-macos.zip\`"
-            echo "- \`xianmao-helper-windows-x64.zip\` / \`xianmao-helper-windows-setup.exe\`（若有）"
+            echo "- \`xianmao-helper-macos.zip\`（浏览器下载名：闲猫助手.zip）"
+            echo "- \`xianmao-helper-windows-setup.exe\`（浏览器下载名：闲猫助手.exe）"
             echo
             echo "## 升级"
             echo

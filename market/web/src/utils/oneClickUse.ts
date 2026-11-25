@@ -499,9 +499,26 @@ export async function openHelperWindow(opts?: { allowProtocol?: boolean }): Prom
 export type HelperDownloadProgress = { loaded: number; total: number; percent: number }
 
 export function helperPackageFilename(os: OneClickOS): string {
-  if (os === 'windows') return 'xianmao-helper-windows-x64.zip'
-  if (os === 'linux') return 'xianmao-helper-linux-x64.AppImage'
-  return 'xianmao-helper-macos.zip'
+  if (os === 'windows') return '闲猫助手.exe'
+  if (os === 'linux') return '闲猫助手.AppImage'
+  return '闲猫助手.zip'
+}
+
+/** 解析 Content-Disposition，优先 filename*=UTF-8''… */
+export function parseContentDispositionFilename(header: string): string {
+  if (!header) return ''
+  const star = /filename\*\s*=\s*(?:UTF-8''|utf-8'')([^;\s]+)/i.exec(header)
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim().replace(/^"|"$/g, ''))
+    } catch {
+      /* ignore */
+    }
+  }
+  const quoted = /filename\s*=\s*"([^"]+)"/i.exec(header)
+  if (quoted?.[1]) return quoted[1].trim()
+  const plain = /filename\s*=\s*([^;]+)/i.exec(header)
+  return (plain?.[1] || '').trim()
 }
 
 /** 触发浏览器保存安装包（无法静默安装，需用户打开）。 */
@@ -546,6 +563,7 @@ export async function downloadHelperPackage(
       ctype.includes('zip') ||
       ctype.includes('octet-stream') ||
       ctype.includes('msdownload') ||
+      ctype.includes('portable-executable') ||
       ctype.includes('apple-diskimage')
     if (!looksLikePackage) {
       // 未打包该系统时后端会 400；与纯网络故障区分，方便 UI 提示
@@ -555,8 +573,7 @@ export async function downloadHelperPackage(
   }
   const total = Number(res.headers.get('content-length') || 0)
   const headerName = res.headers.get('content-disposition') || ''
-  const matched = /filename="?([^";]+)"?/i.exec(headerName)
-  const filename = matched?.[1] || helperPackageFilename(os)
+  const filename = parseContentDispositionFilename(headerName) || helperPackageFilename(os)
   if (!res.body || typeof res.body.getReader !== 'function') {
     const blob = await res.blob().catch(() => {
       throw new Error('NETWORK')

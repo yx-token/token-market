@@ -7,7 +7,7 @@
 | 系统 | 要求 | 安装包 |
 |------|------|--------|
 | macOS | 11+（Intel / Apple Silicon） | `.zip` / `.dmg` |
-| Windows | 10 / 11 x64 | 便携 `.zip`；有 wine 时可出 NSIS `.exe` |
+| Windows | 10 / 11 x64 | NSIS 安装包 `.exe`（由 `windows-latest` CI 产出） |
 | Linux | x64（可选） | `.AppImage` |
 
 ## 开发
@@ -42,8 +42,9 @@ npm run dist:win
 产物（下载 API 认这些稳定文件名）：
 
 - `dist/xianmao-helper-macos.zip`
-- `dist/xianmao-helper-windows-x64.zip`
-- `dist/xianmao-helper-windows-setup.exe`（可选，需 wine）
+- `dist/xianmao-helper-windows-setup.exe`（Windows 安装包；请在 Windows 本机 / CI `windows-latest` 打包）
+- `dist/xianmao-helper-windows-x64.zip`（可选便携包）
+- 浏览器下载名：`闲猫助手.exe` / `闲猫助手.zip`
 - `dist/xianmao-helper-linux-x64.AppImage`（可选）
 
 站点接口：
