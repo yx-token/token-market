@@ -707,6 +707,20 @@ async function openRechargeModal() {
   renderChannelList(rechargeOptions.channels)
 }
 
+/** 用户可见错误：过滤英文/技术原文。 */
+function userFacingError(msg, fallback = '操作失败，请稍后再试') {
+  const raw = String(msg || '').trim()
+  if (!raw) return fallback
+  if (/[\u4e00-\u9fff]/.test(raw)) return raw
+  if (/payment channel|temporarily unavailable|try another channel/i.test(raw)) {
+    return '当前支付方式暂时不可用，请换一种再试'
+  }
+  if (/fetch failed|network|timeout|econnrefused|enotfound/i.test(raw)) {
+    return '网络异常，请稍后再试'
+  }
+  return fallback
+}
+
 async function submitRecharge() {
   const formErr = document.getElementById('rechargeFormErr')
   const amountEl = document.getElementById('rechargeAmount')
@@ -741,7 +755,7 @@ async function submitRecharge() {
     const r = await window.xianmaoHelper.createRecharge?.(amount, selectedChannel)
     if (!r?.ok) {
       if (formErr) {
-        formErr.textContent = r?.error || '创建订单失败'
+        formErr.textContent = userFacingError(r?.error, '创建订单失败，请换一种支付方式或稍后再试')
         formErr.classList.remove('hidden')
       }
       return
@@ -831,7 +845,7 @@ async function onAction(action) {
       }
       if (errText) {
         openModal('error', '登录失败')
-        errMsg.textContent = errText
+        errMsg.textContent = userFacingError(errText, '登录失败，请稍后再试')
         setHelpVisible('')
         if (errHelpBtn) {
           errHelpBtn.classList.remove('hidden')

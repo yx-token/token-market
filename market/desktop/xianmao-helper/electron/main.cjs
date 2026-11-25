@@ -1277,6 +1277,29 @@ ipcMain.handle('one-click:wallet', async () => {
   }
 })
 
+/** 接口错误码 → 用户可读中文；避免把英文/技术文案直接甩到界面上。 */
+function friendlyAPIError(code, message, fallback) {
+  const c = String(code || '').toUpperCase()
+  const byCode = {
+    CHANNEL_REQUIRED: '请选择支付方式',
+    CHANNEL_UNAVAILABLE: '当前支付方式暂不可用，请换一种再试',
+    PAYMENT_UNAVAILABLE: '当前支付方式暂时不可用，请换一种再试',
+    AMOUNT_OUT_OF_RANGE: '充值金额超出允许范围',
+    AMOUNT_INVALID: '请输入正确的金额',
+    UNAUTHORIZED: '登录已失效，请重新登录',
+    FORBIDDEN: '没有权限执行此操作',
+    NOT_FOUND: '未找到相关内容',
+    RATE_LIMITED: '操作太频繁，请稍后再试',
+  }
+  if (byCode[c]) return byCode[c]
+  const msg = String(message || '').trim()
+  if (!msg) return fallback || '操作失败，请稍后再试'
+  // 已是中文则原样展示
+  if (/[\u4e00-\u9fff]/.test(msg)) return msg
+  // 英文 / 技术文案统一兜底，不直接暴露给用户
+  return fallback || '操作失败，请稍后再试'
+}
+
 async function helperAPI(pathname, { method = 'GET', body } = {}) {
   const bound = readBoundAccount()
   const creds = bound ? readBoundCredentials({ allowMigrate: true }) : null
@@ -1302,12 +1325,19 @@ async function helperAPI(pathname, { method = 'GET', body } = {}) {
     })
     const raw = await res.json().catch(() => ({}))
     if (!res.ok) {
-      const msg = raw?.error?.message || raw?.message || `HTTP ${res.status}`
-      return { ok: false, error: msg, status: res.status }
+      const code = raw?.error?.code || raw?.code || ''
+      const msg = raw?.error?.message || raw?.message || ''
+      return {
+        ok: false,
+        error: friendlyAPIError(code, msg, '操作失败，请稍后再试'),
+        code: String(code || ''),
+        status: res.status,
+      }
     }
     return { ok: true, data: raw?.data !== undefined ? raw.data : raw, api }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    const raw = err instanceof Error ? err.message : String(err)
+    return { ok: false, error: friendlyAPIError('', raw, '网络异常，请检查网络后重试') }
   }
 }
 

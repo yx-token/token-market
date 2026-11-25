@@ -101,10 +101,10 @@ func (f *Funds) RechargeChannels(ctx context.Context) ([]string, error) {
 // requestOrigin is optional for callers outside HTTP; the instance notify origin is the fallback.
 func (f *Funds) CreateRecharge(ctx context.Context, userID int64, amount float64, channel, ip string, requestOrigin ...string) (*RechargeOrder, error) {
 	if channel == "" {
-		return nil, httpx.BadRequest("CHANNEL_REQUIRED", "payment channel is required")
+		return nil, httpx.BadRequest("CHANNEL_REQUIRED", "请选择支付方式")
 	}
 	if channel == payment.ChannelManual {
-		return nil, httpx.BadRequest("CHANNEL_UNAVAILABLE", "payment channel is not available")
+		return nil, httpx.BadRequest("CHANNEL_UNAVAILABLE", "当前支付方式暂不可用，请换一种再试")
 	}
 	cfg, err := f.RechargeConfig(ctx)
 	if err != nil {
@@ -115,13 +115,13 @@ func (f *Funds) CreateRecharge(ctx context.Context, userID int64, amount float64
 		return nil, err
 	}
 	if amount < cfg.MinAmount || amount > cfg.MaxAmount {
-		return nil, httpx.BadRequest("AMOUNT_OUT_OF_RANGE", fmt.Sprintf("recharge amount must be between %.2f and %.2f", cfg.MinAmount, cfg.MaxAmount))
+		return nil, httpx.BadRequest("AMOUNT_OUT_OF_RANGE", fmt.Sprintf("单笔充值金额需在 %.2f 到 %.2f 之间", cfg.MinAmount, cfg.MaxAmount))
 	}
 	reg := f.registry(ctx)
 	provider := payment.ProviderOf(channel)
 	p, selectedID := reg.Select(channel)
 	if p == nil {
-		return nil, httpx.BadRequest("CHANNEL_UNAVAILABLE", "payment channel is not available")
+		return nil, httpx.BadRequest("CHANNEL_UNAVAILABLE", "当前支付方式暂不可用，请换一种再试")
 	}
 	expires := f.now().Add(time.Duration(cfg.OrderTimeoutMinutes) * time.Minute)
 	var id int64
@@ -156,7 +156,7 @@ func (f *Funds) startPayment(ctx context.Context, p payment.Provider, id int64, 
 	if err != nil {
 		f.Log.Error("create payment", "order_id", id, "channel", channel, "err", err)
 		_, _ = f.DB.Exec(ctx, "UPDATE recharge_orders SET status = 'failed', close_reason = $2 WHERE id = $1 AND status = 'pending'", id, truncate(err.Error(), 300))
-		return httpx.Unavailable("PAYMENT_UNAVAILABLE", "payment channel is temporarily unavailable, please try another channel")
+		return httpx.Unavailable("PAYMENT_UNAVAILABLE", "当前支付方式暂时不可用，请换一种再试")
 	}
 	payload := intent.URL
 	if intent.Kind == "qrcode" {
@@ -304,7 +304,7 @@ func (f *Funds) CancelRecharge(ctx context.Context, userID, orderID int64) error
 	if p == nil && instanceID(o.ProviderInstanceID) != 0 {
 		f.warnMissingPaymentInstance("payment instance missing for cancellation", o.ID, instanceID(o.ProviderInstanceID))
 		if o.OutTradeNo != nil {
-			return httpx.Unavailable("PAYMENT_UNAVAILABLE", "payment instance is unavailable; cannot safely close the order")
+			return httpx.Unavailable("PAYMENT_UNAVAILABLE", "暂时无法关闭该支付订单，请稍后再试")
 		}
 	}
 	if p != nil && o.OutTradeNo != nil {
@@ -317,7 +317,7 @@ func (f *Funds) CancelRecharge(ctx context.Context, userID, orderID int64) error
 				return httpx.Conflict("ORDER_PAID", "order has been paid and is being credited")
 			}
 			f.Log.Warn("close payment", "order_id", o.ID, "err", err)
-			return httpx.Unavailable("PAYMENT_UNAVAILABLE", "cannot close the payment right now, please retry later")
+			return httpx.Unavailable("PAYMENT_UNAVAILABLE", "暂时无法关闭该支付订单，请稍后再试")
 		}
 	}
 	tag, err := f.DB.Exec(ctx, "UPDATE recharge_orders SET status = 'cancelled', close_reason = 'cancelled by user' WHERE id = $1 AND status = 'pending'", orderID)
