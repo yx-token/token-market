@@ -1,20 +1,11 @@
 /**
  * 按客户端常用平台，从市场挂单取最低倍率，算出「比官网省 xx%」。
  */
+const { AGENT_VENDORS } = require('./vendors.cjs')
+
+/** 优惠计算：与 vendors 对齐；null = 全市场最低 */
 const AGENT_PLATFORMS = {
-  codex: ['openai'],
-  'claude-code': ['anthropic'],
-  'claude-desktop': ['anthropic'],
-  obsidian: ['anthropic'],
-  'deepseek-harness': ['deepseek'],
-  // 通用客户端：取全市场最低
-  pi: null,
-  hermes: null,
-  openclaw: null,
-  paseo: null,
-  zcode: null,
-  'cherry-studio': null,
-  chatbox: null,
+  ...AGENT_VENDORS,
 }
 
 let cache = { at: 0, byAgent: {} }

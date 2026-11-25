@@ -38,10 +38,11 @@ type OneClickTicketRecord struct {
 }
 
 type IssueOneClickInput struct {
-	KeyID   int64
-	Client  string
-	OS      string
-	APIBase string // 助手换票时回连的市场根地址（含 scheme）
+	KeyID    int64
+	Client   string
+	OS       string
+	APIBase  string // 助手换票时回连的市场根地址（含 scheme）
+	Platform string // 可选：保障池厂商；空则按客户端默认（多厂商默认 openai）
 }
 
 type IssuedOneClickTicket struct {
@@ -70,27 +71,6 @@ func (s *OneClickService) ready() error {
 		return httpx.BadRequest("ONECLICK_UNAVAILABLE", "one-click helper is not configured")
 	}
 	return nil
-}
-
-func normalizeOneClickClient(v string) (string, error) {
-	switch strings.TrimSpace(strings.ToLower(v)) {
-	case "codex",
-		"claude-code",
-		"claude-desktop",
-		"pi",
-		"hermes",
-		"openclaw",
-		"paseo",
-		"zcode",
-		"deepseek-harness",
-		"obsidian",
-		"cherry-studio",
-		"chatbox",
-		"helper": // 助手浏览器登录授权（不对应具体 Agent）
-		return strings.TrimSpace(strings.ToLower(v)), nil
-	default:
-		return "", httpx.BadRequest("INVALID_CLIENT", "unsupported one-click client")
-	}
 }
 
 func normalizeOneClickOS(v string) (string, error) {
@@ -157,18 +137,6 @@ func newOneClickToken() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-// preferredOneClickPlatform 按客户端挑保障池平台：Codex→openai，Claude 系→anthropic，其余优先综合池。
-func preferredOneClickPlatform(client string) string {
-	switch client {
-	case "codex":
-		return "openai"
-	case "claude-code", "claude-desktop", "obsidian":
-		return "anthropic"
-	default:
-		return "composite"
-	}
-}
-
 func pickGuaranteePool(pools []scheduling.Pool, wantPlatform string) (*scheduling.Pool, error) {
 	var candidates []scheduling.Pool
 	for _, p := range pools {
@@ -202,31 +170,29 @@ func pickGuaranteePool(pools []scheduling.Pool, wantPlatform string) (*schedulin
 	return &candidates[0], nil
 }
 
-// ResolveOrCreateOneClickKey 用买家密钥列表里第一条可用密钥；没有可恢复明文的 active 密钥时，自动创建保障池密钥。
-func (s *KeyService) ResolveOrCreateOneClickKey(ctx context.Context, userID int64, client string) (*BuyerKey, error) {
+// ResolveOrCreateOneClickKey 按厂商复用已有可恢复明文的保障池密钥；没有则自动创建。
+// platform 为空时用客户端默认厂商（多厂商默认 openai / ChatGPT）。
+// 不跨厂商复用（避免把 Claude 密钥写进 ChatGPT 客户端）。
+func (s *KeyService) ResolveOrCreateOneClickKey(ctx context.Context, userID int64, client, platform string) (*BuyerKey, error) {
 	if s == nil {
 		return nil, httpx.BadRequest("ONECLICK_UNAVAILABLE", "key service unavailable")
 	}
-	want := preferredOneClickPlatform(client)
+	want, err := ValidateAgentPlatform(client, platform)
+	if err != nil {
+		return nil, err
+	}
 	keys, err := s.List(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	var fallback *BuyerKey
 	for i := range keys {
 		k := &keys[i]
 		if k.Status != "active" || !k.Recoverable {
 			continue
 		}
-		if want != "composite" && k.Platform == want {
+		if strings.EqualFold(strings.TrimSpace(k.Platform), want) {
 			return k, nil
 		}
-		if fallback == nil {
-			fallback = k
-		}
-	}
-	if fallback != nil {
-		return fallback, nil
 	}
 
 	pools, err := scheduling.ListPools(ctx, s.DB, true)
@@ -270,6 +236,10 @@ func (s *OneClickService) Issue(ctx context.Context, userID int64, in IssueOneCl
 	if err != nil {
 		return nil, err
 	}
+	platform, err := ValidateAgentPlatform(client, in.Platform)
+	if err != nil {
+		return nil, err
+	}
 	keyID := in.KeyID
 	if keyID > 0 {
 		k, err := s.Keys.Get(ctx, userID, keyID)
@@ -281,7 +251,7 @@ func (s *OneClickService) Issue(ctx context.Context, userID int64, in IssueOneCl
 		}
 	}
 	if keyID <= 0 {
-		k, err := s.Keys.ResolveOrCreateOneClickKey(ctx, userID, client)
+		k, err := s.Keys.ResolveOrCreateOneClickKey(ctx, userID, client, platform)
 		if err != nil {
 			return nil, err
 		}

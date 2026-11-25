@@ -108,18 +108,22 @@ function macApps(names) {
 }
 
 function writeCodex(payload) {
+  const { defaultModelForPlatform } = require('./vendors.cjs')
   const base = String(payload.base_url || '').replace(/\/$/, '')
   const endpoint = withV1(base)
   const dir = process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
   fs.mkdirSync(dir, { recursive: true })
+  const model = String(payload.model || defaultModelForPlatform(payload.platform || 'openai') || 'gpt-5.5').trim()
   const toml = [
-    'model = "gpt-5.5"',
+    `model = "${model.replace(/"/g, '')}"`,
     'model_provider = "gateway"',
+    'cli_auth_credentials_store = "file"',
     '',
     '[model_providers.gateway]',
     `name = "${(payload.provider || '闲猫').replace(/"/g, '')}"`,
     `base_url = "${endpoint}"`,
     'wire_api = "responses"',
+    'requires_openai_auth = true',
     '',
   ].join('\n')
   const auth = JSON.stringify({ OPENAI_API_KEY: payload.key }, null, 2) + '\n'
@@ -978,6 +982,10 @@ async function applyClientConfig(payload, client, opts = {}) {
       urls: [link],
     }
   }
+
+  const { applyExtraAgent } = require('./extra-agents.cjs')
+  const extra = await applyExtraAgent(payload, client, onProgress)
+  if (extra) return extra
 
   return { mode: 'download', detail: '未知客户端', urls: [], helpUrl: undefined }
 }

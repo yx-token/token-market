@@ -304,6 +304,8 @@ func (s *Server) buildHandler(opts handlerOpts) http.Handler {
 		{"GET /api/one-click/helper/download/{os}", s.downloadOneClickHelper},
 		{"GET /api/one-click/helper/status", s.statusOneClickHelper},
 		{"GET /api/one-click/helper/wallet", s.helperWallet},
+		{"GET /api/one-click/helper/vendors", s.helperVendors},
+		{"POST /api/one-click/helper/resolve-key", s.helperResolveKey},
 		{"GET /api/one-click/helper/recharge/options", s.helperRechargeOptions},
 		{"POST /api/one-click/helper/recharge", s.helperCreateRecharge},
 		{"GET /api/one-click/helper/recharge/{id}", s.helperGetRecharge},

@@ -251,6 +251,20 @@ h2 {
   color: #5c4a00;
   background: linear-gradient(145deg, #fff6a8, #ffe60f);
   border: 1px solid rgba(232, 184, 0, 0.45);
+  overflow: hidden;
+}
+
+.agent-mark.has-logo {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+}
+
+.agent-mark .agent-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .agent-meta {
@@ -368,6 +382,26 @@ h2 {
   grid-template-columns: 1fr 1fr;
   gap: 6px;
   margin-top: auto;
+}
+
+.agent-actions .agent-vendor {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.agent-actions .agent-vendor select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 11px;
 }
 
 .agent-actions .btn {

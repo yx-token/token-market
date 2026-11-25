@@ -27,6 +27,18 @@ export type OneClickClientId =
   | 'obsidian'
   | 'cherry-studio'
   | 'chatbox'
+  | 'opencode'
+  | 'cline'
+  | 'aider'
+  | 'kimi-code'
+  | 'qwen-code'
+  | 'workbuddy'
+  | 'codebuddy'
+  | 'trae'
+  | 'gemini'
+  | 'goose'
+  | 'crush'
+  | 'kilo-code'
 
 export type OneClickPhase =
   | 'pick'
@@ -109,61 +121,12 @@ export const ONE_CLICK_CLIENTS: readonly OneClickClient[] = [
     },
   },
   {
-    id: 'claude-code',
-    name: 'Claude Code',
-    blurb: '终端里用 Claude 写代码；助手自动安装、写配置并打开',
-    icon: 'CC',
-    importTargetId: 'claude-code',
-    downloads: allOS([
-      { id: 'claude', label: 'Claude Code 说明', url: 'https://docs.anthropic.com/en/docs/claude-code/overview', auto: true },
-    ]),
-  },
-  {
-    id: 'claude-desktop',
-    name: 'Claude Desktop',
-    blurb: '官方桌面端；助手自动安装并写入可用配置后打开',
-    icon: 'CD',
-    importTargetId: 'claude-desktop',
-    downloads: allOS([{ id: 'claude-desktop', label: 'Claude Desktop', url: 'https://claude.ai/download', auto: true }]),
-  },
-  {
-    id: 'pi',
-    name: 'Pi',
-    blurb: '终端 Agent，助手直接安装、写配置并打开',
-    icon: 'PI',
-    importTargetId: 'pi',
-    downloads: allOS([{ id: 'pi', label: 'Pi 说明', url: 'https://github.com/badlogic/pi-mono', auto: true }]),
-  },
-  {
-    id: 'hermes',
-    name: 'Hermes',
-    blurb: 'Hermes Agent：助手官方安装、写配置并打开',
-    icon: 'HA',
-    importTargetId: 'hermes',
-    downloads: allOS([
-      {
-        id: 'hermes',
-        label: 'Hermes 安装说明',
-        url: 'https://hermes-agent.nousresearch.com/docs/getting-started/installation',
-        auto: false,
-      },
-    ]),
-  },
-  {
-    id: 'openclaw',
-    name: 'OpenClaw',
-    blurb: '本地 Gateway；助手安装、写配置并打开',
-    icon: 'OW',
-    importTargetId: 'openclaw',
-    downloads: allOS([{ id: 'openclaw', label: 'OpenClaw', url: 'https://github.com/openclaw/openclaw', auto: true }]),
-  },
-  {
-    id: 'paseo',
-    name: 'Paseo',
-    blurb: '助手自动装 Paseo，并配好 Claude/Codex/Pi',
-    icon: 'PA',
-    importTargetId: 'paseo',
-    downloads: allOS([{ id: 'paseo', label: 'Paseo', url: 'https://paseo.sh/download', auto: false }]),
+    id: 'workbuddy',
+    name: 'WorkBuddy',
+    blurb: '腾讯 Agent；写入 models.json',
+    icon: 'WB',
+    importTargetId: 'workbuddy',
+    downloads: allOS([{ id: 'workbuddy', label: 'WorkBuddy', url: 'https://www.workbuddy.cn', auto: false }]),
   },
   {
     id: 'zcode',
@@ -186,17 +149,6 @@ export const ONE_CLICK_CLIENTS: readonly OneClickClient[] = [
         url: 'https://github.com/deepseek-ai/deepseek-harness',
         auto: false,
       },
-    ]),
-  },
-  {
-    id: 'obsidian',
-    name: 'Obsidian',
-    blurb: '笔记里用 Claudian 插件聊 Claude',
-    icon: 'OB',
-    importTargetId: 'obsidian',
-    downloads: allOS([
-      { id: 'obsidian', label: 'Obsidian', url: 'https://obsidian.md/download', auto: true },
-      { id: 'claudian', label: 'Claudian 插件', url: 'https://github.com/YishenTu/claudian', auto: true },
     ]),
   },
   {
@@ -233,6 +185,173 @@ export const ONE_CLICK_CLIENTS: readonly OneClickClient[] = [
       linux: [{ id: 'chatbox', label: 'Chatbox', url: 'https://chatboxai.app/', auto: true }],
     },
   },
+  {
+    id: 'claude-desktop',
+    name: 'Claude Desktop',
+    blurb: '官方桌面端；助手自动安装并写入可用配置后打开',
+    icon: 'CD',
+    importTargetId: 'claude-desktop',
+    downloads: allOS([{ id: 'claude-desktop', label: 'Claude Desktop', url: 'https://claude.ai/download', auto: true }]),
+  },
+  {
+    id: 'codebuddy',
+    name: 'CodeBuddy',
+    blurb: '腾讯编程助手',
+    icon: 'CB',
+    importTargetId: 'workbuddy',
+    downloads: allOS([
+      { id: 'codebuddy', label: 'CodeBuddy', url: 'https://copilot.tencent.com/codebuddy', auto: false },
+    ]),
+  },
+  {
+    id: 'trae',
+    name: 'Trae',
+    blurb: '字节 AI IDE；自定义 OpenAI',
+    icon: 'TR',
+    importTargetId: 'opencode',
+    downloads: allOS([{ id: 'trae', label: 'Trae', url: 'https://www.trae.ai/', auto: false }]),
+  },
+  {
+    id: 'paseo',
+    name: 'Paseo',
+    blurb: '助手自动装 Paseo，并配好 Claude/Codex/Pi',
+    icon: 'PA',
+    importTargetId: 'paseo',
+    downloads: allOS([{ id: 'paseo', label: 'Paseo', url: 'https://paseo.sh/download', auto: false }]),
+  },
+  {
+    id: 'obsidian',
+    name: 'Obsidian',
+    blurb: '笔记里用 Claudian 插件聊 Claude',
+    icon: 'OB',
+    importTargetId: 'obsidian',
+    downloads: allOS([
+      { id: 'obsidian', label: 'Obsidian', url: 'https://obsidian.md/download', auto: true },
+      { id: 'claudian', label: 'Claudian 插件', url: 'https://github.com/YishenTu/claudian', auto: true },
+    ]),
+  },
+  {
+    id: 'claude-code',
+    name: 'Claude Code',
+    blurb: '终端里用 Claude 写代码；助手自动安装、写配置并打开',
+    icon: 'CC',
+    importTargetId: 'claude-code',
+    downloads: allOS([
+      { id: 'claude', label: 'Claude Code 说明', url: 'https://docs.anthropic.com/en/docs/claude-code/overview', auto: true },
+    ]),
+  },
+  {
+    id: 'pi',
+    name: 'Pi',
+    blurb: '终端 Agent，助手直接安装、写配置并打开',
+    icon: 'PI',
+    importTargetId: 'pi',
+    downloads: allOS([{ id: 'pi', label: 'Pi 说明', url: 'https://github.com/badlogic/pi-mono', auto: true }]),
+  },
+  {
+    id: 'hermes',
+    name: 'Hermes',
+    blurb: 'Hermes Agent：助手官方安装、写配置并打开',
+    icon: 'HA',
+    importTargetId: 'hermes',
+    downloads: allOS([
+      {
+        id: 'hermes',
+        label: 'Hermes 安装说明',
+        url: 'https://hermes-agent.nousresearch.com/docs/getting-started/installation',
+        auto: false,
+      },
+    ]),
+  },
+  {
+    id: 'openclaw',
+    name: 'OpenClaw',
+    blurb: '本地 Gateway；助手安装、写配置并打开',
+    icon: 'OW',
+    importTargetId: 'openclaw',
+    downloads: allOS([{ id: 'openclaw', label: 'OpenClaw', url: 'https://github.com/openclaw/openclaw', auto: true }]),
+  },
+  {
+    id: 'opencode',
+    name: 'OpenCode',
+    blurb: '终端编程 Agent；助手安装并写入闲猫',
+    icon: 'OC',
+    importTargetId: 'opencode',
+    downloads: allOS([{ id: 'opencode', label: 'OpenCode', url: 'https://opencode.ai/terminal', auto: true }]),
+  },
+  {
+    id: 'cline',
+    name: 'Cline',
+    blurb: 'IDE / 终端 Agent',
+    icon: 'CL',
+    importTargetId: 'opencode',
+    downloads: allOS([{ id: 'cline', label: 'Cline', url: 'https://docs.cline.bot/', auto: false }]),
+  },
+  {
+    id: 'aider',
+    name: 'Aider',
+    blurb: '结对编程终端',
+    icon: 'AI',
+    importTargetId: 'opencode',
+    downloads: allOS([{ id: 'aider', label: 'Aider', url: 'https://aider.chat/docs/install.html', auto: true }]),
+  },
+  {
+    id: 'kimi-code',
+    name: 'Kimi Code',
+    blurb: 'Kimi 编程 CLI',
+    icon: 'KM',
+    importTargetId: 'opencode',
+    downloads: allOS([{ id: 'kimi', label: 'Kimi Code', url: 'https://www.kimi.com/code', auto: false }]),
+  },
+  {
+    id: 'qwen-code',
+    name: 'Qwen Code',
+    blurb: '通义 / Qoder CLI',
+    icon: 'QW',
+    importTargetId: 'opencode',
+    downloads: allOS([{ id: 'qwen', label: 'Qwen Code', url: 'https://github.com/QwenLM/qwen-code', auto: false }]),
+  },
+  {
+    id: 'gemini',
+    name: 'Gemini CLI',
+    blurb: '终端 Gemini；助手写 ~/.gemini',
+    icon: 'GM',
+    importTargetId: 'gemini',
+    downloads: allOS([
+      {
+        id: 'gemini',
+        label: 'Gemini CLI',
+        url: 'https://geminicli.com/docs/get-started/installation/',
+        auto: true,
+      },
+    ]),
+  },
+  {
+    id: 'goose',
+    name: 'Goose',
+    blurb: 'Block 本地 Agent',
+    icon: 'GO',
+    importTargetId: 'opencode',
+    downloads: allOS([{ id: 'goose', label: 'Goose', url: 'https://block.github.io/goose/', auto: true }]),
+  },
+  {
+    id: 'crush',
+    name: 'Crush',
+    blurb: 'Charm 终端 Agent',
+    icon: 'CR',
+    importTargetId: 'opencode',
+    downloads: allOS([{ id: 'crush', label: 'Crush', url: 'https://crush.charm.land/installation/', auto: true }]),
+  },
+  {
+    id: 'kilo-code',
+    name: 'Kilo Code',
+    blurb: '终端编程 Agent',
+    icon: 'KI',
+    importTargetId: 'opencode',
+    downloads: allOS([
+      { id: 'kilo', label: 'Kilo Code', url: 'https://kilo.ai/docs/code-with-ai/platforms/cli', auto: true },
+    ]),
+  }
 ] as const
 
 export function getOneClickClient(id: OneClickClientId): OneClickClient {

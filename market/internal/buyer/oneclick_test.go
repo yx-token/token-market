@@ -121,7 +121,35 @@ func TestPreferredOneClickPlatform(t *testing.T) {
 	require.Equal(t, "openai", preferredOneClickPlatform("codex"))
 	require.Equal(t, "anthropic", preferredOneClickPlatform("obsidian"))
 	require.Equal(t, "anthropic", preferredOneClickPlatform("claude-code"))
-	require.Equal(t, "composite", preferredOneClickPlatform("cherry-studio"))
+	require.Equal(t, "openai", preferredOneClickPlatform("cherry-studio"))
+	require.Equal(t, "openai", preferredOneClickPlatform("opencode"))
+	require.Equal(t, "gemini", preferredOneClickPlatform("gemini"))
+	require.Equal(t, "openai", preferredOneClickPlatform("kimi-code"))
+}
+
+func TestListOneClickVendorsFiltersByAgent(t *testing.T) {
+	gid := int64(1)
+	pools := []scheduling.Pool{
+		{Name: "g", Platform: "openai", Enabled: true, MarketPublished: true, Sub2APIGroupID: &gid},
+		{Name: "a", Platform: "anthropic", Enabled: true, MarketPublished: true, Sub2APIGroupID: &gid},
+		{Name: "m", Platform: "gemini", Enabled: true, MarketPublished: true, Sub2APIGroupID: &gid},
+	}
+	v, err := ListOneClickVendors("gemini", pools)
+	require.NoError(t, err)
+	require.Len(t, v, 1)
+	require.Equal(t, "gemini", v[0].Platform)
+	require.True(t, v[0].Default)
+
+	v, err = ListOneClickVendors("opencode", pools)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(v), 2)
+	var def string
+	for _, o := range v {
+		if o.Default {
+			def = o.Platform
+		}
+	}
+	require.Equal(t, "openai", def)
 }
 
 func TestPickGuaranteePoolPrefersPlatformThenComposite(t *testing.T) {

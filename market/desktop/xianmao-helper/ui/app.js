@@ -63,6 +63,10 @@ let lastClient = ''
 let lastOpenCli = ''
 let lastHelpUrl = ''
 let agentsState = { bound: false, hasCredentials: false, agents: [] }
+/** @type {Record<string, string>} agentId → platform */
+const vendorSelection = Object.create(null)
+/** @type {Record<string, Array<{platform:string,label:string,default?:boolean}>>} */
+const vendorCache = Object.create(null)
 let modalMode = ''
 let pendingPreflightClient = ''
 let walletTimer = null
@@ -305,7 +309,7 @@ function renderAccount(acc) {
     idleLead.textContent = acc.has_credentials
       ? '已登录闲猫。在下方选择客户端，点「一键使用」或「打开」。'
       : '已登录闲猫，但本地还没有密钥。请回网站再点一次「一键使用」任意客户端。'
-    idleHint.textContent = '配置只会写入闲猫，不会改成其他上游。'
+    idleHint.textContent = ''
     if (logoutBtn) logoutBtn.hidden = false
     if (loginBtn) loginBtn.hidden = true
     if (acc.has_credentials) startWalletPoll()
@@ -399,10 +403,28 @@ function renderAgents(state) {
     const mark = document.createElement('div')
     mark.className = 'agent-mark'
     mark.setAttribute('aria-hidden', 'true')
-    mark.textContent = String(a.name || '?')
-      .replace(/\s+/g, '')
-      .slice(0, 2)
-      .toUpperCase()
+    if (a.logo) {
+      mark.classList.add('has-logo')
+      const img = document.createElement('img')
+      img.className = 'agent-logo'
+      img.src = a.logo
+      img.alt = ''
+      img.loading = 'lazy'
+      img.onerror = () => {
+        img.remove()
+        mark.classList.remove('has-logo')
+        mark.textContent = String(a.name || '?')
+          .replace(/\s+/g, '')
+          .slice(0, 2)
+          .toUpperCase()
+      }
+      mark.appendChild(img)
+    } else {
+      mark.textContent = String(a.name || '?')
+        .replace(/\s+/g, '')
+        .slice(0, 2)
+        .toUpperCase()
+    }
 
     const meta = document.createElement('div')
     meta.className = 'agent-meta'
@@ -448,19 +470,48 @@ function renderAgents(state) {
     const actions = document.createElement('div')
     actions.className = 'agent-actions'
 
+    const vendorWrap = document.createElement('label')
+    vendorWrap.className = 'agent-vendor'
+    vendorWrap.title = '按厂商从保障池取密钥；Codex 只能用 ChatGPT'
+    const vendorLab = document.createElement('span')
+    vendorLab.textContent = '密钥厂商'
+    const vendorSel = document.createElement('select')
+    vendorSel.dataset.vendorFor = a.id
+    vendorSel.disabled = !isBound || !hasCredentials
+    const cached = vendorCache[a.id]
+    const opts = cached && cached.length
+      ? cached
+      : [{ platform: a.default_vendor || 'openai', label: a.default_vendor === 'anthropic' ? 'Claude' : a.default_vendor === 'gemini' ? 'Gemini' : a.default_vendor === 'deepseek' ? 'DeepSeek' : 'ChatGPT', default: true }]
+    if (!vendorSelection[a.id]) {
+      const d = opts.find((o) => o.default) || opts[0]
+      vendorSelection[a.id] = d?.platform || 'openai'
+    }
+    for (const o of opts) {
+      const opt = document.createElement('option')
+      opt.value = o.platform
+      opt.textContent = o.label || o.platform
+      if (o.platform === vendorSelection[a.id]) opt.selected = true
+      vendorSel.appendChild(opt)
+    }
+    vendorSel.addEventListener('change', () => {
+      vendorSelection[a.id] = vendorSel.value
+    })
+    vendorWrap.appendChild(vendorLab)
+    vendorWrap.appendChild(vendorSel)
+
     const setupBtn = document.createElement('button')
     setupBtn.type = 'button'
     setupBtn.className = 'btn btn-accent'
     setupBtn.dataset.action = `setup-agent:${a.id}`
-    setupBtn.textContent = '一键使用'
+    setupBtn.textContent = a.installed ? '重新配置' : '一键使用'
     setupBtn.disabled = !isBound || !hasCredentials
     setupBtn.title = !isBound
       ? '请先登录闲猫'
       : !hasCredentials
         ? '请先在网站点一次「一键使用」'
         : a.installed
-          ? '自动配置闲猫并打开'
-          : '自动安装、配置闲猫并打开'
+          ? '按上方厂商重新取密钥并写入客户端'
+          : '自动安装、按厂商取密钥并打开'
 
     const openBtn = document.createElement('button')
     openBtn.type = 'button'
@@ -471,6 +522,7 @@ function renderAgents(state) {
     openBtn.disabled = !isBound
     openBtn.title = !isBound ? '请先登录闲猫' : a.installed ? '打开客户端' : '尚未安装，点此查看安装提示'
 
+    actions.appendChild(vendorWrap)
     actions.appendChild(setupBtn)
     actions.appendChild(openBtn)
     card.appendChild(top)
@@ -502,6 +554,9 @@ async function refreshAgents() {
     return
   }
   const state = await window.xianmaoHelper.agents()
+  if (state?.hasCredentials) {
+    await loadVendorsForAgents(state.agents || [])
+  }
   renderAgents(state)
 }
 
@@ -509,12 +564,35 @@ async function startSetupAfterPreflight(client) {
   resetSteps()
   openModal('running', '正在配置')
   statusEl.textContent = '已排队：安装并写入闲猫配置…'
-  const r = await window.xianmaoHelper.setupAgent?.(client, { skipPreflight: true })
+  const platform = vendorSelection[client] || ''
+  const r = await window.xianmaoHelper.setupAgent?.(client, { skipPreflight: true, platform })
   if (!r?.ok) {
     openModal('error', '无法开始')
     errMsg.textContent = r?.error || '无法开始配置'
     setHelpVisible('')
   }
+}
+
+async function loadVendorsForAgents(agents) {
+  if (!window.xianmaoHelper?.vendors) return
+  const list = Array.isArray(agents) ? agents : []
+  await Promise.all(
+    list.map(async (a) => {
+      if (!a?.id || vendorCache[a.id]) return
+      try {
+        const r = await window.xianmaoHelper.vendors(a.id)
+        if (r?.ok && Array.isArray(r.vendors) && r.vendors.length) {
+          vendorCache[a.id] = r.vendors
+          if (!vendorSelection[a.id]) {
+            const d = r.vendors.find((v) => v.default) || r.vendors[0]
+            vendorSelection[a.id] = d.platform
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }),
+  )
 }
 
 function preferChannels(channels) {
@@ -960,7 +1038,7 @@ if (window.xianmaoHelper) {
           if (/超时|过期/.test(msg)) accountBar.textContent = '授权已超时，请重新登录'
         } else if (msg) {
           openModal('error', '登录失败')
-          errMsg.textContent = msg
+          errMsg.textContent = userFacingError(msg, '登录失败，请稍后再试')
           setHelpVisible('')
           if (errHelpBtn) {
             errHelpBtn.classList.remove('hidden')

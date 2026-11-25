@@ -1775,4 +1775,9 @@ module.exports = {
   resetCancel,
   throwIfCancelled,
   isCancelledError,
+  runNpmGlobal,
+  refreshUserPath,
+  npmPrefixDir,
+  ensureShellPathHint,
+  brewInstallCask,
 }

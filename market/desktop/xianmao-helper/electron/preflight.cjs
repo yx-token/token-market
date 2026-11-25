@@ -22,6 +22,18 @@ const REQUIREMENTS = {
   obsidian: { diskGB: 1.5, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
   'cherry-studio': { diskGB: 2, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
   chatbox: { diskGB: 1.5, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
+  opencode: { diskGB: 1, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
+  cline: { diskGB: 1, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
+  aider: { diskGB: 1, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
+  'kimi-code': { diskGB: 1, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
+  'qwen-code': { diskGB: 1, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
+  workbuddy: { diskGB: 2, ramGB: 4, platforms: ['darwin', 'win32'] },
+  codebuddy: { diskGB: 2, ramGB: 4, platforms: ['darwin', 'win32'] },
+  trae: { diskGB: 2, ramGB: 4, platforms: ['darwin', 'win32'] },
+  gemini: { diskGB: 1, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
+  goose: { diskGB: 1.5, ramGB: 4, platforms: ['darwin', 'linux', 'win32'] },
+  crush: { diskGB: 1, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
+  'kilo-code': { diskGB: 1, ramGB: 4, platforms: ['darwin', 'win32', 'linux'] },
 }
 
 function platformLabel(p) {

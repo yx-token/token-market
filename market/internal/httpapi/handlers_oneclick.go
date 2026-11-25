@@ -7,13 +7,15 @@ import (
 
 	"github.com/yx-token/token-market/market/internal/buyer"
 	"github.com/yx-token/token-market/market/internal/platform/httpx"
+	"github.com/yx-token/token-market/market/internal/scheduling"
 )
 
 type issueOneClickBody struct {
-	KeyID   int64  `json:"key_id"`
-	Client  string `json:"client"`
-	OS      string `json:"os"`
-	APIBase string `json:"api_base"`
+	KeyID    int64  `json:"key_id"`
+	Client   string `json:"client"`
+	OS       string `json:"os"`
+	APIBase  string `json:"api_base"`
+	Platform string `json:"platform"`
 }
 
 type exchangeOneClickBody struct {
@@ -60,7 +62,7 @@ func (s *Server) issueOneClickTicket(w http.ResponseWriter, r *http.Request) err
 	}
 	apiBase := requestAPIBase(r, in.APIBase)
 	out, err := s.OneClick.Issue(r.Context(), httpx.MustUser(r).UserID, buyer.IssueOneClickInput{
-		KeyID: in.KeyID, Client: in.Client, OS: in.OS, APIBase: apiBase,
+		KeyID: in.KeyID, Client: in.Client, OS: in.OS, APIBase: apiBase, Platform: in.Platform,
 	})
 	if err != nil {
 		return err
@@ -169,6 +171,80 @@ func (s *Server) helperUserFromKey(r *http.Request) (userID int64, account strin
 		return 0, "", httpx.Unauthorized("KEY_INVALID", "api key invalid")
 	}
 	return userID, account, nil
+}
+
+// GET /api/one-click/helper/vendors?client=opencode — 该 Agent 可用的保障池厂商（助手下拉）
+func (s *Server) helperVendors(w http.ResponseWriter, r *http.Request) error {
+	if s.Keys == nil || s.DB == nil {
+		return httpx.BadRequest("ONECLICK_UNAVAILABLE", "one-click helper is not configured")
+	}
+	if _, _, err := s.helperUserFromKey(r); err != nil {
+		return err
+	}
+	client := strings.TrimSpace(r.URL.Query().Get("client"))
+	pools, err := scheduling.ListPools(r.Context(), s.DB, true)
+	if err != nil {
+		return err
+	}
+	vendors, err := buyer.ListOneClickVendors(client, pools)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	return ok(w, map[string]any{"client": client, "vendors": vendors})
+}
+
+type helperResolveKeyBody struct {
+	Client   string `json:"client"`
+	Platform string `json:"platform"`
+}
+
+// POST /api/one-click/helper/resolve-key — 按厂商复用/创建保障池密钥，返回明文供助手写入客户端
+func (s *Server) helperResolveKey(w http.ResponseWriter, r *http.Request) error {
+	if s.Keys == nil || s.OneClick == nil {
+		return httpx.BadRequest("ONECLICK_UNAVAILABLE", "one-click helper is not configured")
+	}
+	userID, account, err := s.helperUserFromKey(r)
+	if err != nil {
+		return err
+	}
+	var in helperResolveKeyBody
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	platform, err := buyer.ValidateAgentPlatform(in.Client, in.Platform)
+	if err != nil {
+		return err
+	}
+	client := strings.TrimSpace(strings.ToLower(in.Client))
+	k, err := s.Keys.ResolveOrCreateOneClickKey(r.Context(), userID, client, platform)
+	if err != nil {
+		return err
+	}
+	plain, err := s.Keys.Secret(r.Context(), userID, k.ID)
+	if err != nil {
+		return err
+	}
+	detail, err := s.Keys.Get(r.Context(), userID, k.ID)
+	if err != nil {
+		return err
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(s.OneClick.EdgeURL), "/")
+	if baseURL == "" {
+		baseURL = requestAPIBase(r, "")
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	return ok(w, map[string]any{
+		"key":      plain,
+		"key_id":   k.ID,
+		"key_name": detail.Name,
+		"platform": detail.Platform,
+		"base_url": baseURL,
+		"provider": "闲猫",
+		"client":   client,
+		"user_id":  userID,
+		"account":  account,
+	})
 }
 
 // GET /api/one-click/helper/wallet — 助手用换票得到的买家 Key 查余额（无需网站 JWT）

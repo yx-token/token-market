@@ -244,6 +244,7 @@ function writeBoundCredentials(payload, api) {
     key: String(payload.key || ''),
     key_id: Number(payload.key_id) || 0,
     key_name: String(payload.key_name || ''),
+    platform: String(payload.platform || '').trim().toLowerCase(),
     base_url: pickClientBaseURL(payload.base_url, siteApi),
     provider: '闲猫',
     api: siteApi,
@@ -860,7 +861,125 @@ async function applyAndOpenAgent(payload, client, send, bound) {
   })
 }
 
-function enqueueLocalSetup(client, send) {
+async function fetchModelIds(baseURL, key) {
+  const root = String(baseURL || '').replace(/\/$/, '')
+  const endpoint = /\/v1$/i.test(root) ? `${root}/models` : `${root}/v1/models`
+  const res = await fetch(endpoint, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${key}` },
+    cache: 'no-store',
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg = body?.error?.message || body?.message || `HTTP ${res.status}`
+    throw new Error(`拉取模型列表失败：${msg}`)
+  }
+  const data = body?.data || body?.models || []
+  return Array.isArray(data)
+    ? data.map((m) => String(m?.id || m?.name || '').trim()).filter(Boolean)
+    : []
+}
+
+async function finalizeVendorKey(raw, client, want, api) {
+  const { platformLabel, pickModelForPlatform, defaultModelForPlatform } = require('./vendors.cjs')
+  const platform = String(raw.platform || want).trim().toLowerCase() || want
+  if (platform !== want) {
+    throw new Error(
+      `需要 ${platformLabel(want)} 密钥，但服务端返回的是 ${platformLabel(platform)}。请换厂商后点「重新配置」。`,
+    )
+  }
+  const baseURL = pickClientBaseURL(raw.base_url, api)
+  let modelIds = []
+  try {
+    modelIds = await fetchModelIds(baseURL, raw.key)
+  } catch (err) {
+    throw new Error(err instanceof Error ? err.message : '无法验证密钥可用模型')
+  }
+  const model = pickModelForPlatform(modelIds, want) || defaultModelForPlatform(want)
+  if (modelIds.length && !pickModelForPlatform(modelIds, want)) {
+    const sample = modelIds.slice(0, 4).join('、') || '（空）'
+    throw new Error(
+      `${platformLabel(want)} 保障池没有匹配模型（当前是：${sample}）。Codex 必须用 ChatGPT/OpenAI 池，请到管理端检查该池上游，或换一把 ChatGPT 密钥后再点「重新配置」。`,
+    )
+  }
+  const next = {
+    key: raw.key,
+    key_id: raw.key_id,
+    key_name: raw.key_name,
+    platform: want,
+    base_url: baseURL,
+    provider: raw.provider || '闲猫',
+    model,
+    client,
+  }
+  writeBoundCredentials(next, api)
+  return next
+}
+
+async function resolveVendorKey(creds, client, platform) {
+  const { preferredVendor, platformLabel } = require('./vendors.cjs')
+  const want = String(platform || preferredVendor(client) || '').trim().toLowerCase()
+  const api = resolveSiteAPI()
+  if (!want) {
+    throw new Error('未指定厂商')
+  }
+  // 每次「重新配置 / 一键使用」都向服务端按厂商取密钥，禁止静默沿用别的厂商 key
+  try {
+    const res = await fetch(`${api}/api/one-click/helper/resolve-key`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${creds.key}`,
+      },
+      body: JSON.stringify({ client, platform: want }),
+      cache: 'no-store',
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      const msg = body?.error?.message || body?.message || `HTTP ${res.status}`
+      throw new Error(msg)
+    }
+    const data = body?.data || body
+    return await finalizeVendorKey(
+      {
+        key: data.key,
+        key_id: data.key_id,
+        key_name: data.key_name,
+        platform: data.platform || want,
+        base_url: data.base_url || creds.base_url,
+        provider: data.provider || '闲猫',
+      },
+      client,
+      want,
+      api,
+    )
+  } catch (err) {
+    // 仅当本地已是「同厂商」密钥时，才允许离线复用；跨厂商绝不回退
+    if (creds?.key && String(creds.platform || '').toLowerCase() === want) {
+      try {
+        return await finalizeVendorKey(
+          {
+            key: creds.key,
+            key_id: creds.key_id,
+            key_name: creds.key_name,
+            platform: want,
+            base_url: creds.base_url,
+            provider: '闲猫',
+          },
+          client,
+          want,
+          api,
+        )
+      } catch (verifyErr) {
+        throw verifyErr
+      }
+    }
+    const tip = err instanceof Error ? err.message : String(err)
+    throw new Error(`无法准备 ${platformLabel(want)} 密钥：${tip}`)
+  }
+}
+
+function enqueueLocalSetup(client, send, opts = {}) {
   const { isKnownAgent } = require('./agents.cjs')
   if (!isKnownAgent(client)) {
     send({ step: 'error', status: 'error', message: `不支持的客户端：${client}` })
@@ -884,6 +1003,7 @@ function enqueueLocalSetup(client, send) {
     })
     return Promise.resolve()
   }
+  const platform = String(opts.platform || '').trim()
   const seq = ++oneClickJobSeq
   const epoch = oneClickCancelEpoch
   const jobSend = bindProgress(send)
@@ -902,6 +1022,25 @@ function enqueueLocalSetup(client, send) {
     resetCancel()
     jobSend({
       step: 'exchange',
+      status: 'active',
+      message: '正在按厂商准备密钥…',
+      account: bound,
+      client,
+    })
+    let payload
+    try {
+      payload = await resolveVendorKey(creds, client, platform)
+    } catch (err) {
+      jobSend({
+        step: 'error',
+        status: 'error',
+        message: err instanceof Error ? err.message : '准备密钥失败',
+        client,
+      })
+      return
+    }
+    jobSend({
+      step: 'exchange',
       status: 'done',
       message: '已连接闲猫',
       account: bound,
@@ -911,11 +1050,13 @@ function enqueueLocalSetup(client, send) {
       await withTimeout(
         applyAndOpenAgent(
           {
-            key: creds.key,
-            key_id: creds.key_id,
-            key_name: creds.key_name,
+            key: payload.key,
+            key_id: payload.key_id,
+            key_name: payload.key_name,
+            platform: payload.platform,
+            model: payload.model,
             // 按实际站点写客户端配置，避免局域网场景把 127.0.0.1 写进 Codex/Claude
-            base_url: pickClientBaseURL(creds.base_url, resolveSiteAPI()),
+            base_url: payload.base_url,
             provider: '闲猫',
             client,
           },
@@ -1518,6 +1659,7 @@ ipcMain.handle('one-click:setup-agent', async (_e, clientId, opts) => {
   if (!isKnownAgent(client)) return { ok: false, error: '不支持的客户端' }
   const force = !!(opts && opts.force)
   const skipPreflight = !!(opts && opts.skipPreflight)
+  const platform = String((opts && opts.platform) || '').trim()
   if (!skipPreflight) {
     const pf = runPreflight(client)
     if (!pf.ok && !force) {
@@ -1525,8 +1667,52 @@ ipcMain.handle('one-click:setup-agent', async (_e, clientId, opts) => {
     }
   }
   createWindow()
-  void enqueueLocalSetup(client, sendToUI)
-  return { ok: true, queued: true, client }
+  void enqueueLocalSetup(client, sendToUI, { platform })
+  return { ok: true, queued: true, client, platform }
+})
+
+ipcMain.handle('one-click:vendors', async (_e, clientId) => {
+  const { preferredVendor, platformLabel, AGENT_VENDORS } = require('./vendors.cjs')
+  const client = String(clientId || '').trim()
+  const bound = readBoundAccount()
+  const creds = bound ? readBoundCredentials({ allowMigrate: true }) : null
+  const def = preferredVendor(client)
+  const fallback = () => {
+    const supported = Object.prototype.hasOwnProperty.call(AGENT_VENDORS, client)
+      ? AGENT_VENDORS[client]
+      : null
+    const list = Array.isArray(supported)
+      ? supported
+      : ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'composite']
+    return {
+      ok: true,
+      client,
+      vendors: list.map((p) => ({
+        platform: p,
+        label: platformLabel(p),
+        default: p === def,
+      })),
+    }
+  }
+  if (!creds?.key) return fallback()
+  const api = resolveSiteAPI()
+  try {
+    const res = await fetch(`${api}/api/one-click/helper/vendors?client=${encodeURIComponent(client)}`, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${creds.key}`,
+      },
+      cache: 'no-store',
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) return fallback()
+    const data = body?.data || body
+    const vendors = Array.isArray(data.vendors) ? data.vendors : []
+    if (!vendors.length) return fallback()
+    return { ok: true, client, vendors }
+  } catch {
+    return fallback()
+  }
 })
 
 ipcMain.handle('one-click:open-external', async (_e, url) => {
@@ -1542,7 +1728,22 @@ ipcMain.handle('one-click:open-cli', async (_e, which, binHint) => {
     return { ok: false, error: '请先登录闲猫（点右上角「浏览器登录」，或在网站点「一键使用」）' }
   }
   const { openCLIInTerminal, whichBin } = require('./auto-install.cjs')
-  const name = which === 'claude-code' ? 'claude' : which === 'hermes' ? 'hermes' : which === 'pi' ? 'pi' : ''
+  const cliNameMap = {
+    'claude-code': 'claude',
+    hermes: 'hermes',
+    pi: 'pi',
+    opencode: 'opencode',
+    cline: 'cline',
+    aider: 'aider',
+    'kimi-code': 'kimi',
+    'qwen-code': 'qwen',
+    gemini: 'gemini',
+    goose: 'goose',
+    crush: 'crush',
+    'kilo-code': 'kilo',
+    openclaw: 'openclaw',
+  }
+  const name = cliNameMap[which] || ''
   const bin =
     (typeof binHint === 'string' && binHint) ||
     (name && (whichBin(name) || whichBin(`${name}.cmd`) || whichBin(`${name}.exe`))) ||
@@ -1589,7 +1790,19 @@ ipcMain.handle('one-click:open-app', async (_e, which) => {
                   ? win
                     ? ['ZCode', path.join('ZCode', 'ZCode.exe')]
                     : ['ZCode.app']
-                  : []
+                  : which === 'workbuddy'
+                    ? win
+                      ? ['WorkBuddy', path.join('WorkBuddy', 'WorkBuddy.exe')]
+                      : ['WorkBuddy.app']
+                    : which === 'codebuddy'
+                      ? win
+                        ? ['CodeBuddy', 'CodeBuddy CN', path.join('CodeBuddy', 'CodeBuddy.exe'), path.join('CodeBuddy CN', 'CodeBuddy CN.exe')]
+                        : ['CodeBuddy.app', 'CodeBuddy IDE.app', 'CodeBuddy CN.app']
+                      : which === 'trae'
+                        ? win
+                          ? ['Trae', 'Trae CN', path.join('Trae', 'Trae.exe'), path.join('Trae CN', 'Trae CN.exe')]
+                          : ['Trae.app', 'TRAE.app', 'Trae CN.app']
+                        : []
   let hit = findInstalledApp(names)
   if (!hit && which === 'codex' && win) {
     const { isChatGPTWinPackageInstalled, CHATGPT_WIN_APPPATH } = require('./auto-install.cjs')
