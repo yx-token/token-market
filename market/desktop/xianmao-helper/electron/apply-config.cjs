@@ -114,10 +114,14 @@ function writeCodex(payload) {
   const dir = process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
   fs.mkdirSync(dir, { recursive: true })
   const model = String(payload.model || defaultModelForPlatform(payload.platform || 'openai') || 'gpt-5.5').trim()
-  // 对齐官方 gateway 配置：auth.json 提供 API Key；桌面端走 /v1/responses（含 WebSocket）
+  const key = String(payload.key || '').trim()
+  // Codex 桌面端若 requires_openai_auth=true，会优先发 ChatGPT OAuth 到自定义网关 → 401 invalid api key。
+  // 第三方网关应把 key 写进 provider 的 experimental_bearer_token（与 88API 等一键脚本同款），
+  // 并 preferred_auth_method=apikey，避免被 ChatGPT 登录态覆盖。
   const toml = [
     `model = "${model.replace(/"/g, '')}"`,
     'model_provider = "gateway"',
+    'preferred_auth_method = "apikey"',
     'cli_auth_credentials_store = "file"',
     'web_search = "disabled"',
     '',
@@ -125,10 +129,10 @@ function writeCodex(payload) {
     `name = "${(payload.provider || '闲猫').replace(/"/g, '')}"`,
     `base_url = "${endpoint}"`,
     'wire_api = "responses"',
-    'requires_openai_auth = true',
+    `experimental_bearer_token = "${key.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`,
     '',
   ].join('\n')
-  const auth = JSON.stringify({ OPENAI_API_KEY: payload.key }, null, 2) + '\n'
+  const auth = JSON.stringify({ OPENAI_API_KEY: key }, null, 2) + '\n'
   const configPath = path.join(dir, 'config.toml')
   const authPath = path.join(dir, 'auth.json')
   if (fs.existsSync(configPath)) fs.copyFileSync(configPath, `${configPath}.bak-xianmao`)
@@ -139,7 +143,9 @@ function writeCodex(payload) {
 }
 
 function writeClaudeCode(payload) {
-  const base = String(payload.base_url || '').replace(/\/$/, '')
+  const { defaultModelForPlatform } = require('./vendors.cjs')
+  // Claude Code 会在 base 后追加 /v1/messages，这里不要带 /v1。
+  const base = String(payload.base_url || '').replace(/\/$/, '').replace(/\/v1$/i, '')
   const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')
   fs.mkdirSync(dir, { recursive: true })
   const file = path.join(dir, 'settings.json')
@@ -152,14 +158,77 @@ function writeClaudeCode(payload) {
     }
     fs.copyFileSync(file, `${file}.bak-xianmao`)
   }
+  const key = String(payload.key || '').trim()
+  const model = String(
+    payload.model || defaultModelForPlatform(payload.platform || 'anthropic') || 'claude-sonnet-4-5',
+  ).trim()
   const env = { ...(current.env || {}) }
   env.ANTHROPIC_BASE_URL = base
-  env.ANTHROPIC_API_KEY = payload.key
-  env.ANTHROPIC_AUTH_TOKEN = payload.key
-  env.ANTHROPIC_MODEL = env.ANTHROPIC_MODEL || 'claude-sonnet-4-5'
+  // 网关走 Authorization: Bearer。同时设 ANTHROPIC_API_KEY 会发 x-api-key，
+  // 且可能被当成直连 Anthropic 凭证覆盖网关 → 401。官方/OpenRouter 都要求清空 API_KEY。
+  env.ANTHROPIC_AUTH_TOKEN = key
+  env.ANTHROPIC_API_KEY = ''
+  env.ANTHROPIC_MODEL = model
   const next = { ...current, env }
   fs.writeFileSync(file, JSON.stringify(next, null, 2) + '\n', 'utf8')
   return { wrote: [file], open: null }
+}
+
+function claudeDesktop3pDir() {
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library/Application Support/Claude-3p')
+  }
+  if (process.platform === 'win32') {
+    return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData/Local'), 'Claude-3p')
+  }
+  return path.join(os.homedir(), '.config/Claude-3p')
+}
+
+/** Claude Desktop 不读 ~/.claude/settings.json，要写 3P configLibrary。 */
+function writeClaudeDesktop(payload) {
+  const { defaultModelForPlatform } = require('./vendors.cjs')
+  const base = String(payload.base_url || '').replace(/\/$/, '').replace(/\/v1$/i, '')
+  const key = String(payload.key || '').trim()
+  const model = String(
+    payload.model || defaultModelForPlatform(payload.platform || 'anthropic') || 'claude-sonnet-4-5',
+  ).trim()
+  const root = claudeDesktop3pDir()
+  const lib = path.join(root, 'configLibrary')
+  fs.mkdirSync(lib, { recursive: true })
+  const id = '00000000-0000-4000-8000-7869616e6d61' // fixed idlecat id
+  const cfgPath = path.join(lib, `${id}.json`)
+  const metaPath = path.join(lib, '_meta.json')
+  const deskCfg = path.join(root, 'claude_desktop_config.json')
+  for (const p of [cfgPath, metaPath, deskCfg]) {
+    if (fs.existsSync(p)) fs.copyFileSync(p, `${p}.bak-xianmao`)
+  }
+  const gateway = {
+    inferenceProvider: 'gateway',
+    inferenceCredentialKind: 'static',
+    inferenceGatewayBaseUrl: base,
+    inferenceGatewayApiKey: key,
+    inferenceGatewayAuthScheme: 'bearer',
+    inferenceModels: [{ name: model, labelOverride: model }],
+  }
+  fs.writeFileSync(cfgPath, JSON.stringify(gateway, null, 2) + '\n', 'utf8')
+  fs.writeFileSync(
+    metaPath,
+    JSON.stringify({ appliedId: id, entries: [{ id, name: payload.provider || '闲猫' }] }, null, 2) + '\n',
+    'utf8',
+  )
+  let desk = {}
+  if (fs.existsSync(deskCfg)) {
+    try {
+      desk = JSON.parse(fs.readFileSync(deskCfg, 'utf8'))
+    } catch {
+      desk = {}
+    }
+  }
+  desk.deploymentMode = '3p'
+  fs.writeFileSync(deskCfg, JSON.stringify(desk, null, 2) + '\n', 'utf8')
+  // Claudian / 终端 Claude Code 仍吃 settings.json
+  const code = writeClaudeCode(payload)
+  return { wrote: [cfgPath, metaPath, deskCfg, ...code.wrote], open: null }
 }
 
 function mergeJSONFile(filePath, mergeFn) {
@@ -735,11 +804,13 @@ async function applyClientConfig(payload, client, opts = {}) {
     }
     throwIfCancelled()
     if (!payload.key) throw new Error('还没有拿到闲猫连接信息，请回网站再点一次「一键使用」')
-    const r = writeClaudeCode(payload)
+    const r = writeClaudeDesktop(payload)
     const ok = !!(desk.appPath || desk.already)
     return {
       mode: 'files',
-      detail: ok ? 'Claude Desktop 已配好闲猫，即将打开' : 'Claude Desktop 还没装好，请点「打开安装说明」',
+      detail: ok
+        ? 'Claude Desktop 已配好闲猫（3P 网关），即将打开；若仍走官方登录请完全退出后重开'
+        : 'Claude Desktop 还没装好，请点「打开安装说明」',
       urls: [],
       helpUrl: ok ? undefined : helpUrl || 'https://claude.ai/download',
       wrote: r.wrote,
