@@ -108,15 +108,14 @@ function npmUninstall(pkg) {
   return r.status === 0
 }
 
-function wingetUninstall(id) {
+function wingetUninstall(idOrName, { byName = false } = {}) {
   if (!isWin()) return false
   const winget = whichBin('winget') || whichBin('winget.exe')
   if (!winget) return false
-  const r = spawnSync(
-    winget,
-    ['uninstall', '--id', id, '--exact', '--disable-interactivity', '--accept-source-agreements'],
-    { encoding: 'utf8', timeout: 300000, windowsHide: true },
-  )
+  const args = byName
+    ? ['uninstall', '--name', idOrName, '--disable-interactivity', '--accept-source-agreements', '--silent']
+    : ['uninstall', '--id', idOrName, '--exact', '--disable-interactivity', '--accept-source-agreements', '--silent']
+  const r = spawnSync(winget, args, { encoding: 'utf8', timeout: 300000, windowsHide: true })
   return r.status === 0
 }
 
@@ -126,6 +125,112 @@ function brewUninstallCask(cask) {
   if (!brew) return false
   const r = spawnSync(brew, ['uninstall', '--cask', cask], { encoding: 'utf8', timeout: 300000 })
   return r.status === 0
+}
+
+/** 按 DisplayName 从卸载注册表找 QuietUninstallString / UninstallString 并静默执行（NSIS /S）。 */
+function uninstallWinByDisplayName(nameHints) {
+  if (!isWin()) return false
+  const hints = (Array.isArray(nameHints) ? nameHints : [nameHints])
+    .map((s) => String(s || '').trim().toLowerCase())
+    .filter(Boolean)
+  if (!hints.length) return false
+  const hintJson = JSON.stringify(hints).replace(/'/g, "''")
+  const ps = `
+$ErrorActionPreference = 'SilentlyContinue'
+$hints = ConvertFrom-Json '${hintJson}'
+$paths = @(
+  'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+  'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+  'HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'
+)
+$hit = Get-ItemProperty $paths | Where-Object {
+  if (-not $_.DisplayName) { return $false }
+  $dn = ([string]$_.DisplayName).ToLower()
+  foreach ($h in $hints) { if ($dn.Contains([string]$h)) { return $true } }
+  return $false
+} | Select-Object -First 1
+if (-not $hit) { exit 2 }
+$cmd = $hit.QuietUninstallString
+if (-not $cmd) {
+  $u = [string]$hit.UninstallString
+  if (-not $u) { exit 3 }
+  if ($u -match '(?i)msiexec') {
+    $cmd = ($u -replace '(?i)/I','/X') + ' /qn /norestart'
+  } elseif ($u -match '(?i)\\.exe') {
+    if ($u -match '/S' -or $u -match '/silent' -or $u -match '/VERYSILENT') { $cmd = $u }
+    else { $cmd = $u.Trim() + ' /S' }
+  } else { $cmd = $u }
+}
+$p = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', $cmd) -Wait -PassThru -WindowStyle Hidden
+if ($null -ne $p.ExitCode -and $p.ExitCode -ne 0) { exit $p.ExitCode }
+exit 0
+`
+  try {
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], {
+      encoding: 'utf8',
+      timeout: 360000,
+      windowsHide: true,
+    })
+    return r.status === 0
+  } catch {
+    return false
+  }
+}
+
+function removeMacApp(appNames) {
+  if (!isMac()) return false
+  let ok = false
+  for (const name of appNames || []) {
+    const candidates = [`/Applications/${name}`, path.join(os.homedir(), 'Applications', name)]
+    for (const p of candidates) {
+      if (tryRm(p)) ok = true
+    }
+  }
+  return ok
+}
+
+function killWinProcesses(exeNames) {
+  if (!isWin()) return
+  for (const name of exeNames || []) {
+    try {
+      spawnSync('taskkill', ['/IM', name, '/F', '/T'], {
+        encoding: 'utf8',
+        timeout: 15000,
+        windowsHide: true,
+      })
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * 桌面应用通用卸载：winget id → winget name → 注册表静默卸 → mac brew/删 .app
+ * @returns {boolean} 是否至少跑通过一种卸载命令（不保证探测已空）
+ */
+function uninstallDesktopApp(opts) {
+  const {
+    wingetIds = [],
+    wingetNames = [],
+    displayNames = [],
+    brewCasks = [],
+    macApps = [],
+    killExes = [],
+  } = opts || {}
+  if (killExes.length) killWinProcesses(killExes)
+  let ran = false
+  for (const id of wingetIds) {
+    if (wingetUninstall(id)) ran = true
+  }
+  for (const name of wingetNames) {
+    if (wingetUninstall(name, { byName: true })) ran = true
+  }
+  if (uninstallWinByDisplayName(displayNames.length ? displayNames : wingetNames)) ran = true
+  for (const cask of brewCasks) {
+    if (brewUninstallCask(cask)) ran = true
+  }
+  if (removeMacApp(macApps)) ran = true
+  return ran
 }
 
 function removeChatGPTWinPackage() {
@@ -360,6 +465,7 @@ function uninstallAgent(clientId) {
           path.join(os.homedir(), '.workbuddy-ai', 'models.json'),
           path.join(os.homedir(), '.codebuddy', 'models.json'),
           path.join(os.homedir(), 'workbuddy', 'models.json'),
+          path.join(os.homedir(), '.workbuddy', 'models.json'),
         ],
         codebuddy: [
           path.join(os.homedir(), '.workbuddy-ai', 'models.json'),
@@ -369,7 +475,73 @@ function uninstallAgent(clientId) {
         zcode: [path.join(os.homedir(), 'Downloads', 'xianmao-helper', 'zcode-provider.json')],
       }
       if (confMap[clientId]) cleared.push(...clearFileList(confMap[clientId]))
-      manualHint = `${agent.name} 请在系统「应用」里手动卸载；已清除助手写入的闲猫配置`
+
+      const desk = {
+        workbuddy: {
+          wingetIds: ['Tencent.WorkBuddy'],
+          wingetNames: ['WorkBuddy'],
+          displayNames: ['workbuddy'],
+          brewCasks: ['workbuddy-cn', 'workbuddy-ai'],
+          macApps: ['WorkBuddy.app', 'workbuddy.app'],
+          killExes: ['WorkBuddy.exe'],
+        },
+        codebuddy: {
+          wingetIds: ['Tencent.CodeBuddy', 'Tencent.CodeBuddyCN'],
+          wingetNames: ['CodeBuddy', 'CodeBuddy CN'],
+          displayNames: ['codebuddy'],
+          brewCasks: ['codebuddy-cn', 'codebuddy'],
+          macApps: ['CodeBuddy.app', 'CodeBuddy IDE.app', 'CodeBuddy CN.app'],
+          killExes: ['CodeBuddy.exe', 'CodeBuddy CN.exe'],
+        },
+        trae: {
+          wingetIds: ['ByteDance.Trae', 'ByteDance.TraeCN'],
+          wingetNames: ['Trae', 'Trae CN'],
+          displayNames: ['trae'],
+          brewCasks: ['trae-cn', 'trae'],
+          macApps: ['Trae.app', 'TRAE.app', 'Trae CN.app'],
+          killExes: ['Trae.exe', 'Trae CN.exe'],
+        },
+        'cherry-studio': {
+          wingetIds: ['CherryHQ.CherryStudio'],
+          wingetNames: ['Cherry Studio'],
+          displayNames: ['cherry studio', 'cherrystudio'],
+          brewCasks: ['cherry-studio'],
+          macApps: ['Cherry Studio.app', 'CherryStudio.app'],
+          killExes: ['Cherry Studio.exe'],
+        },
+        chatbox: {
+          wingetIds: ['ChatboxAI.Chatbox'],
+          wingetNames: ['Chatbox'],
+          displayNames: ['chatbox'],
+          brewCasks: ['chatbox'],
+          macApps: ['Chatbox.app', 'chatbox.app'],
+          killExes: ['Chatbox.exe'],
+        },
+        paseo: {
+          wingetNames: ['Paseo'],
+          displayNames: ['paseo'],
+          macApps: ['Paseo.app'],
+          killExes: ['Paseo.exe'],
+        },
+        zcode: {
+          wingetNames: ['ZCode'],
+          displayNames: ['zcode'],
+          macApps: ['ZCode.app'],
+          killExes: ['ZCode.exe'],
+        },
+      }[clientId]
+
+      if (desk && uninstallDesktopApp(desk)) {
+        removedSoft = true
+        notes.push(`已卸载 ${agent.name}`)
+      } else {
+        manualHint = `${agent.name} 未能自动卸掉，请打开系统「应用」手动卸载`
+      }
+      // 给注册表/winget 一点时间落盘再探测
+      const until = Date.now() + 900
+      while (Date.now() < until) {
+        /* spin */
+      }
       break
     }
     default:
@@ -379,18 +551,25 @@ function uninstallAgent(clientId) {
   refreshUserPath()
   const after = probeAgentInstalled(clientId)
   const stillInstalled = !!after.installed
-  const detailParts = [`已清除闲猫配置 ${cleared.length} 项`]
+  if (!stillInstalled) manualHint = ''
+  const detailParts = []
+  if (cleared.length) detailParts.push(`已清除闲猫配置 ${cleared.length} 项`)
   if (notes.length) detailParts.push(notes.join('；'))
-  if (stillInstalled && manualHint) detailParts.push(manualHint)
-  else if (stillInstalled) detailParts.push('软件仍在，请到系统里手动卸完')
-  else if (!removedSoft && !manualHint) detailParts.push('本机已无此客户端')
+  if (stillInstalled) {
+    detailParts.push(manualHint || '软件仍在，请到系统「应用」里手动卸完')
+  } else if (removedSoft) {
+    detailParts.push('本机已检测不到该客户端')
+  } else if (!detailParts.length) {
+    detailParts.push('本机已无此客户端')
+  }
 
   return {
     ok: true,
     detail: detailParts.filter(Boolean).join('。'),
     cleared,
-    manualHint: stillInstalled ? manualHint || '请到系统设置里完成卸载' : '',
+    manualHint: stillInstalled ? manualHint || '请到系统设置 › 应用 里完成卸载' : '',
     stillInstalled,
+    openAppsSettings: stillInstalled && isWin(),
   }
 }
 

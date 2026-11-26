@@ -235,6 +235,7 @@ function clientOpenAction(client, opts = {}) {
 function renderDonePrimary(client, opts = {}) {
   const cfg = clientOpenAction(client, opts)
   if (!donePrimaryBtn) return
+  donePrimaryBtn.classList.remove('hidden')
   donePrimaryBtn.dataset.action = cfg.action
   donePrimaryBtn.textContent = cfg.label
 }
@@ -886,6 +887,11 @@ async function onAction(action) {
     if (lastHelpUrl) await window.xianmaoHelper.openExternal(lastHelpUrl)
     return
   }
+  if (action === 'open-windows-apps') {
+    await window.xianmaoHelper.openExternal?.('ms-settings:appsfeatures')
+    closeModal()
+    return
+  }
   if (action === 'open-site') {
     await refreshSiteLinks()
     await window.xianmaoHelper.openExternal(SITE || 'https://idlicat.com/')
@@ -985,7 +991,7 @@ async function onAction(action) {
       setHelpVisible('')
       return
     }
-    openModal('done', '卸载完成')
+    openModal('done', r.stillInstalled ? '还需手动卸载' : '卸载完成')
     doneMsg.textContent = r.detail || `${name} 已处理`
     if (doneHint) {
       doneHint.textContent = r.stillInstalled
@@ -994,8 +1000,17 @@ async function onAction(action) {
     }
     renderDoneGuide(null)
     if (donePrimaryBtn) {
-      donePrimaryBtn.dataset.action = 'modal-dismiss'
-      donePrimaryBtn.textContent = '好的'
+      if (r.stillInstalled && r.openAppsSettings) {
+        donePrimaryBtn.classList.remove('hidden')
+        donePrimaryBtn.dataset.action = 'open-windows-apps'
+        donePrimaryBtn.textContent = '打开系统应用设置'
+      } else if (r.stillInstalled) {
+        donePrimaryBtn.classList.remove('hidden')
+        donePrimaryBtn.dataset.action = 'modal-dismiss'
+        donePrimaryBtn.textContent = '知道了'
+      } else {
+        donePrimaryBtn.classList.add('hidden')
+      }
     }
     setHelpVisible('')
     return

@@ -1805,7 +1805,9 @@ ipcMain.handle('one-click:vendors', async (_e, clientId) => {
 })
 
 ipcMain.handle('one-click:open-external', async (_e, url) => {
-  if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
+  if (typeof url !== 'string' || !url) return false
+  // 允许网站链接，以及 Windows「应用和功能」设置页
+  if (/^https?:\/\//i.test(url) || /^ms-settings:/i.test(url)) {
     await shell.openExternal(url)
     return true
   }
