@@ -2365,8 +2365,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		c.Request = c.Request.WithContext(ctx)
 	}
 
+	// 反代后 Host 常是 127.0.0.1:端口，而浏览器/Codex 的 Origin 是公网域名；
+	// 默认 Origin↔Host 校验会 403，桌面端表现为 Reconnecting... waiting for network。
 	wsConn, err := coderws.Accept(c.Writer, c.Request, &coderws.AcceptOptions{
-		CompressionMode: coderws.CompressionContextTakeover,
+		CompressionMode:    coderws.CompressionContextTakeover,
+		InsecureSkipVerify: true,
 	})
 	if err != nil {
 		reqLog.Warn("openai.websocket_accept_failed",
@@ -2377,6 +2380,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.String("connection_header", strings.TrimSpace(c.GetHeader("Connection"))),
 			zap.String("sec_websocket_version", strings.TrimSpace(c.GetHeader("Sec-WebSocket-Version"))),
 			zap.Bool("has_sec_websocket_key", strings.TrimSpace(c.GetHeader("Sec-WebSocket-Key")) != ""),
+			zap.String("origin", strings.TrimSpace(c.GetHeader("Origin"))),
+			zap.String("host", strings.TrimSpace(c.Request.Host)),
 		)
 		return
 	}

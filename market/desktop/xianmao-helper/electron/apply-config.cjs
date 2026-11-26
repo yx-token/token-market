@@ -114,10 +114,12 @@ function writeCodex(payload) {
   const dir = process.env.CODEX_HOME || path.join(os.homedir(), '.codex')
   fs.mkdirSync(dir, { recursive: true })
   const model = String(payload.model || defaultModelForPlatform(payload.platform || 'openai') || 'gpt-5.5').trim()
+  // 对齐官方 gateway 配置：auth.json 提供 API Key；桌面端走 /v1/responses（含 WebSocket）
   const toml = [
     `model = "${model.replace(/"/g, '')}"`,
     'model_provider = "gateway"',
     'cli_auth_credentials_store = "file"',
+    'web_search = "disabled"',
     '',
     '[model_providers.gateway]',
     `name = "${(payload.provider || '闲猫').replace(/"/g, '')}"`,
