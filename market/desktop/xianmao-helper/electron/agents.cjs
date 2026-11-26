@@ -88,6 +88,23 @@ function cliGuideFor(clientId) {
   return map[clientId] || ['已打开黑色终端窗口', '在窗口里输入问题即可', ...commonTail]
 }
 
+/** 图形端配完后的操作提示（不会自动切模型的客户端） */
+function guiGuideFor(clientId) {
+  const map = {
+    workbuddy: [
+      '请先完全退出 WorkBuddy（托盘也退出）再打开',
+      '点左下角头像 → 系统设置 → 模型，确认有「闲猫」',
+      '对话底部模型下拉（现在的 Fast）里选「闲猫 · …」',
+      '不会自动切换，必须手动选一次',
+    ],
+    codebuddy: [
+      '请完全退出 CodeBuddy 后重开',
+      '在模型设置里确认闲猫模型，并在对话中选中',
+    ],
+  }
+  return map[clientId] || null
+}
+
 function isKnownAgent(id) {
   return AGENTS.some((a) => a.id === id)
 }
@@ -205,4 +222,5 @@ module.exports = {
   probeAgentInstalled,
   listAgentsStatus,
   cliGuideFor,
+  guiGuideFor,
 }

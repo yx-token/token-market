@@ -852,9 +852,10 @@ async function applyAndOpenAgent(payload, client, send, bound) {
     (result.urls || []).find((u) => typeof u === 'string' && /^https?:\/\//i.test(u)) ||
     null
   send({ step: 'import', status: 'done', message: result.detail, client })
-  const { getAgent, cliGuideFor } = require('./agents.cjs')
+  const { getAgent, cliGuideFor, guiGuideFor } = require('./agents.cjs')
   const agentMeta = getAgent(client)
   const isCliOnly = agentMeta?.open === 'cli' || openedKind === 'cli'
+  const guiTips = !isCliOnly ? guiGuideFor(client) : null
   // 完成页只展示一句人话，不重复路径/密钥名
   const doneMessage =
     openedKind === 'cli'
@@ -877,7 +878,7 @@ async function applyAndOpenAgent(payload, client, send, bound) {
     helpUrl,
     openedKind,
     openMode: agentMeta?.open || '',
-    cliGuide: isCliOnly ? cliGuideFor(client) : null,
+    cliGuide: isCliOnly ? cliGuideFor(client) : guiTips,
   })
 }
 

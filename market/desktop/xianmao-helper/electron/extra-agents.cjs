@@ -554,32 +554,44 @@ function writeQwenCode(payload) {
 }
 
 function writeWorkBuddy(payload) {
+  // WorkBuddy 自定义模型：官方路径是 ~/.workbuddy/models.json 与 ~/.workbuddy-ai/models.json。
+  // vendor 必须是协议名 OpenAI（OpenAI 兼容），展示名用 name；写完需完全退出再开，并在底部模型下拉里选。
   const base = String(payload.base_url || '').replace(/\/$/, '')
   const endpoint = withV1(base)
   const modelID = modelOf(payload)
-  const name = payload.provider || '闲猫'
-  const body = {
-    models: [
-      {
-        id: modelID,
-        name: modelID,
-        vendor: name,
-        apiKey: payload.key,
-        url: `${endpoint}/chat/completions`,
-        supportsToolCall: true,
-      },
-    ],
-    availableModels: [modelID],
+  const display = `闲猫 · ${modelID}`
+  const entry = {
+    id: modelID,
+    name: display,
+    vendor: 'OpenAI',
+    apiKey: String(payload.key || ''),
+    url: `${endpoint}/chat/completions`,
+    supportsToolCall: true,
   }
   const paths = [
+    path.join(os.homedir(), '.workbuddy', 'models.json'),
     path.join(os.homedir(), '.workbuddy-ai', 'models.json'),
     path.join(os.homedir(), '.codebuddy', 'models.json'),
-    path.join(os.homedir(), 'workbuddy', 'models.json'),
   ]
   const wrote = []
   for (const file of paths) {
+    let current = { models: [], availableModels: [] }
+    if (fs.existsSync(file)) {
+      try {
+        current = JSON.parse(fs.readFileSync(file, 'utf8')) || current
+      } catch {
+        current = { models: [], availableModels: [] }
+      }
+      fs.copyFileSync(file, `${file}.bak-xianmao`)
+    }
+    const models = Array.isArray(current.models) ? current.models.filter((m) => m && m.id !== modelID) : []
+    models.unshift(entry)
+    const available = Array.isArray(current.availableModels)
+      ? current.availableModels.filter((id) => id && id !== modelID)
+      : []
+    available.unshift(modelID)
+    const body = { ...current, models, availableModels: available }
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.bak-xianmao`)
     fs.writeFileSync(file, JSON.stringify(body, null, 2) + '\n', 'utf8')
     wrote.push(file)
   }

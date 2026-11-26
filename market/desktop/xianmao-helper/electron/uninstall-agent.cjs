@@ -462,10 +462,10 @@ function uninstallAgent(clientId) {
     case 'zcode': {
       const confMap = {
         workbuddy: [
+          path.join(os.homedir(), '.workbuddy', 'models.json'),
           path.join(os.homedir(), '.workbuddy-ai', 'models.json'),
           path.join(os.homedir(), '.codebuddy', 'models.json'),
           path.join(os.homedir(), 'workbuddy', 'models.json'),
-          path.join(os.homedir(), '.workbuddy', 'models.json'),
         ],
         codebuddy: [
           path.join(os.homedir(), '.workbuddy-ai', 'models.json'),
