@@ -806,6 +806,83 @@ async function resolveGitHubAsset(ownerRepo, predicates) {
   return { tag: rel.tag_name, name: asset.name, url: asset.url }
 }
 
+/** 解压 zip 里的 .app 到 Applications（CodeBuddy 等官方包是 zip）。 */
+function installMacZip(zipPath, preferredAppNames = []) {
+  if (!isMac()) throw new Error('仅支持 macOS 自动安装 zip')
+  const extractRoot = path.join(downloadDir(), `extract-${Date.now()}`)
+  fs.mkdirSync(extractRoot, { recursive: true })
+  try {
+    const unzip = spawnSync('ditto', ['-x', '-k', zipPath, extractRoot], { encoding: 'utf8' })
+    if (unzip.status !== 0) {
+      const tar = spawnSync('unzip', ['-qo', zipPath, '-d', extractRoot], { encoding: 'utf8' })
+      if (tar.status !== 0) {
+        execFileSync('open', [zipPath], { stdio: 'ignore' })
+        return { mode: 'opened-zip', appPath: null }
+      }
+    }
+    const findApps = (dir, depth = 0) => {
+      if (depth > 3) return []
+      let names = []
+      try {
+        names = fs.readdirSync(dir)
+      } catch {
+        return []
+      }
+      const apps = []
+      for (const n of names) {
+        const p = path.join(dir, n)
+        if (n.endsWith('.app')) apps.push(p)
+        else {
+          try {
+            if (fs.statSync(p).isDirectory()) apps.push(...findApps(p, depth + 1))
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      return apps
+    }
+    const apps = findApps(extractRoot)
+    let src = apps[0]
+    for (const want of preferredAppNames) {
+      const base = String(want).replace(/\.app$/, '')
+      const hit = apps.find((p) => path.basename(p).replace(/\.app$/, '') === base || path.basename(p) === want)
+      if (hit) {
+        src = hit
+        break
+      }
+    }
+    if (!src) {
+      execFileSync('open', [zipPath], { stdio: 'ignore' })
+      return { mode: 'opened-zip', appPath: null }
+    }
+    const appName = path.basename(src)
+    const destCandidates = [`/Applications/${appName}`, path.join(os.homedir(), 'Applications', appName)]
+    let dest = destCandidates[0]
+    try {
+      if (fs.existsSync(dest)) execFileSync('rm', ['-rf', dest], { stdio: 'ignore' })
+      execFileSync('cp', ['-R', src, dest], { stdio: 'ignore' })
+    } catch {
+      dest = destCandidates[1]
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      if (fs.existsSync(dest)) execFileSync('rm', ['-rf', dest], { stdio: 'ignore' })
+      execFileSync('cp', ['-R', src, dest], { stdio: 'ignore' })
+    }
+    try {
+      execFileSync('xattr', ['-cr', dest], { stdio: 'ignore' })
+    } catch {
+      /* ignore */
+    }
+    return { mode: 'installed', appPath: dest }
+  } finally {
+    try {
+      fs.rmSync(extractRoot, { recursive: true, force: true })
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /** 挂载 dmg，把里面的 .app 拷到 Applications。 */
 function installMacDmg(dmgPath, preferredAppNames = []) {
   if (!isMac()) throw new Error('仅支持 macOS 自动安装 dmg')
@@ -1096,6 +1173,13 @@ async function downloadAndInstall(spec) {
   if (isMac() && /\.dmg$/i.test(dest)) {
     report(`正在安装 ${label}…`, 100)
     const r = installMacDmg(dest, appNames)
+    if (r.appPath) openInstalledApp(r.appPath)
+    return { ok: true, file: dest, appPath: r.appPath, mode: r.mode }
+  }
+
+  if (isMac() && /\.zip$/i.test(dest)) {
+    report(`正在安装 ${label}…`, 100)
+    const r = installMacZip(dest, appNames)
     if (r.appPath) openInstalledApp(r.appPath)
     return { ok: true, file: dest, appPath: r.appPath, mode: r.mode }
   }

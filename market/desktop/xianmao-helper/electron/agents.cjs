@@ -99,7 +99,21 @@ function guiGuideFor(clientId) {
     ],
     codebuddy: [
       '请完全退出 CodeBuddy 后重开',
-      '在模型设置里确认闲猫模型，并在对话中选中',
+      '在对话模型下拉里选带 custom 标签的「闲猫 · …」',
+    ],
+    trae: [
+      'Trae 不支持静默写入自定义模型，需手动添加一次',
+      '打开 设置 → 模型 → 添加模型 → 自定义模型',
+      '粘贴 Downloads/xianmao-helper/trae-xianmao.json 里的 baseUrl / 模型 / 密钥',
+    ],
+    zcode: [
+      '已写入 ~/.zcode/v2/provider_config.json 并设为默认',
+      '若列表没有闲猫：完全退出 ZCode 后重开，或点模型设置里的刷新',
+    ],
+    obsidian: [
+      '在仓库启用社区插件 Claudian',
+      'Claudian → Claude → 打开「加载用户 Claude 设置」',
+      '密钥已写入 ~/.claude/settings.json',
     ],
   }
   return map[clientId] || null

@@ -320,21 +320,84 @@ function writeHermes(payload) {
   return { wrote: [file], open: null }
 }
 
+/** 写入 ZCode 真正读取的 ~/.zcode/v2/provider_config.json（含默认模型）。 */
 function writeZCodeRef(payload) {
-  const base = String(payload.base_url || '').replace(/\/$/, '')
-  const modelId = payload.model || 'claude-sonnet-4-5'
-  const dir = path.join(os.homedir(), 'Downloads', 'xianmao-helper')
-  fs.mkdirSync(dir, { recursive: true })
-  const file = path.join(dir, 'zcode-provider.json')
-  const data = {
-    name: payload.provider || '闲猫',
-    baseUrl: base,
-    apiFormat: 'anthropic-messages',
-    apiKey: payload.key,
-    models: [{ id: modelId, name: modelId }],
+  const { defaultModelForPlatform } = require('./vendors.cjs')
+  const platform = String(payload.platform || '').toLowerCase()
+  const wantAnthropic = platform === 'anthropic' || /claude/i.test(String(payload.model || ''))
+  const rawBase = String(payload.base_url || '').replace(/\/$/, '')
+  const baseNoV1 = rawBase.replace(/\/v1$/i, '')
+  const modelId = String(
+    payload.model || defaultModelForPlatform(payload.platform || (wantAnthropic ? 'anthropic' : 'openai')) || 'gpt-5.5',
+  ).trim()
+  const providerId = 'xianmao'
+  const providerName = String(payload.provider || '闲猫').trim() || '闲猫'
+  const api = wantAnthropic
+    ? { type: 'anthropic-messages', baseUrl: baseNoV1 }
+    : { type: 'openai-chat-completions', baseUrl: /\/v1$/i.test(rawBase) ? rawBase : `${rawBase}/v1` }
+
+  const file = path.join(os.homedir(), '.zcode', 'v2', 'provider_config.json')
+  let current = { schemaVersion: 1, config: {} }
+  if (fs.existsSync(file)) {
+    try {
+      current = JSON.parse(fs.readFileSync(file, 'utf8')) || current
+    } catch {
+      current = { schemaVersion: 1, config: {} }
+    }
+    fs.copyFileSync(file, `${file}.bak-xianmao`)
   }
-  fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n', 'utf8')
-  return { wrote: [file], open: null }
+  const cfg = { ...(current.config || {}) }
+  const providerRules = Array.isArray(cfg.providerConfigRules?.providerRules)
+    ? cfg.providerConfigRules.providerRules.filter((r) => r && r.providerId !== providerId)
+    : []
+  providerRules.unshift({
+    providerId,
+    providerName,
+    config: {
+      group: 'standard-personal',
+      access: { type: 'api-key', apiKey: String(payload.key || '') },
+      api,
+      personalModelIds: [modelId],
+    },
+  })
+  cfg.providerConfigRules = { ...(cfg.providerConfigRules || {}), providerRules }
+  cfg.modelConfigRules = {
+    providerModelRules: Array.isArray(cfg.modelConfigRules?.providerModelRules)
+      ? cfg.modelConfigRules.providerModelRules
+      : [],
+    manualProviderModelRules: Array.isArray(cfg.modelConfigRules?.manualProviderModelRules)
+      ? cfg.modelConfigRules.manualProviderModelRules
+      : [],
+  }
+  cfg.defaultModelSelection = { providerId, modelId }
+  const body = { schemaVersion: 1, ...current, config: cfg }
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify(body, null, 2) + '\n', 'utf8')
+  try {
+    fs.chmodSync(file, 0o600)
+  } catch {
+    /* win */
+  }
+  // 参考副本，便于用户核对
+  const refDir = path.join(os.homedir(), 'Downloads', 'xianmao-helper')
+  fs.mkdirSync(refDir, { recursive: true })
+  const ref = path.join(refDir, 'zcode-provider.json')
+  fs.writeFileSync(
+    ref,
+    JSON.stringify(
+      {
+        name: providerName,
+        baseUrl: api.baseUrl,
+        apiFormat: api.type,
+        apiKey: payload.key,
+        models: [{ id: modelId, name: modelId }],
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf8',
+  )
+  return { wrote: [file, ref], open: null }
 }
 
 function yamlScalar(value) {
@@ -767,9 +830,15 @@ async function applyClientConfig(payload, client, opts = {}) {
   }
 
   if (client === 'obsidian') {
-    // 先装软件，再写密钥——避免「下完了却没配置」
-    let ob
+    // Claudian 读 ~/.claude/settings.json；同时装 Claude Code CLI + Obsidian
     let helpUrl
+    try {
+      await ensureClaudeCode(onProgress)
+    } catch {
+      /* continue — settings 仍写入 */
+    }
+    await yieldEventLoop()
+    let ob
     try {
       ob = await ensureObsidian(onProgress)
     } catch (err) {
@@ -784,7 +853,7 @@ async function applyClientConfig(payload, client, opts = {}) {
     return {
       mode: 'files',
       detail: ok
-        ? 'Obsidian 已配好闲猫，即将打开'
+        ? 'Obsidian 已写入闲猫（Claude settings）；请在库里启用 Claudian 并打开「加载用户 Claude 设置」'
         : '请先安装 Obsidian，并装上 Claudian 插件',
       urls: [],
       helpUrl: ok ? undefined : helpUrl || 'https://github.com/YishenTu/claudian',
@@ -944,8 +1013,8 @@ async function applyClientConfig(payload, client, opts = {}) {
     return {
       mode: 'files',
       detail: ok
-        ? 'ZCode 已准备好，打开后在设置里选闲猫即可'
-        : 'ZCode 还没装好，请点「打开安装说明」',
+        ? 'ZCode 已写入闲猫并设为默认模型，即将打开'
+        : 'ZCode 还没装好，配置已写入；请点「打开安装说明」',
       urls: [],
       helpUrl: ok ? undefined : zc.fallbackUrl || 'https://zcode.z.ai/en/docs/install',
       wrote: r.wrote,

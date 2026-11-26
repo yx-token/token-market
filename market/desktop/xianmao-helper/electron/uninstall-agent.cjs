@@ -356,7 +356,14 @@ function uninstallAgent(clientId) {
       break
     }
     case 'cline': {
-      cleared.push(...clearFileList([path.join(os.homedir(), '.cline', 'xianmao.json')]))
+      cleared.push(
+        ...clearFileList([
+          path.join(os.homedir(), '.cline', 'xianmao.json'),
+          path.join(os.homedir(), '.cline', 'data', 'globalState.json'),
+          path.join(os.homedir(), '.cline', 'data', 'secrets.json'),
+          path.join(os.homedir(), '.cline', 'data', 'settings', 'providers.json'),
+        ]),
+      )
       if (npmUninstall('cline') || npmUninstall('@cline/cli')) {
         removedSoft = true
         notes.push('已卸载 Cline')
@@ -465,14 +472,23 @@ function uninstallAgent(clientId) {
           path.join(os.homedir(), '.workbuddy', 'models.json'),
           path.join(os.homedir(), '.workbuddy-ai', 'models.json'),
           path.join(os.homedir(), '.codebuddy', 'models.json'),
+          path.join(os.homedir(), '.codebuddycn', 'models.json'),
           path.join(os.homedir(), 'workbuddy', 'models.json'),
         ],
         codebuddy: [
-          path.join(os.homedir(), '.workbuddy-ai', 'models.json'),
           path.join(os.homedir(), '.codebuddy', 'models.json'),
+          path.join(os.homedir(), '.codebuddycn', 'models.json'),
+          path.join(os.homedir(), '.workbuddy-ai', 'models.json'),
         ],
-        trae: [path.join(os.homedir(), '.trae', 'xianmao-provider.json')],
-        zcode: [path.join(os.homedir(), 'Downloads', 'xianmao-helper', 'zcode-provider.json')],
+        trae: [
+          path.join(os.homedir(), '.trae', 'xianmao-provider.json'),
+          path.join(os.homedir(), '.trae-cn', 'xianmao-provider.json'),
+          path.join(os.homedir(), 'Downloads', 'xianmao-helper', 'trae-xianmao.json'),
+        ],
+        zcode: [
+          path.join(os.homedir(), '.zcode', 'v2', 'provider_config.json'),
+          path.join(os.homedir(), 'Downloads', 'xianmao-helper', 'zcode-provider.json'),
+        ],
       }
       if (confMap[clientId]) cleared.push(...clearFileList(confMap[clientId]))
 

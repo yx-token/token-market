@@ -426,14 +426,91 @@ async function ensureWorkBuddy(onProgress) {
   }
 }
 
+async function resolveCodeBuddyDownloadUrl() {
+  const arch = archTag() === 'arm64' ? 'arm64' : 'x64'
+  let ver = '4.12.4.43368774'
+  let hash = '62ef1801'
+  try {
+    // Windows update API 平台名不稳定，用 darwin 探测版本号再拼各平台直链
+    const raw = await fetchText(
+      `https://copilot.tencent.com/v2/update?platform=ide-darwin-${arch}&version=1.0.0&x-machine-id=default`,
+    )
+    const j = JSON.parse(raw)
+    if (j && j.version) ver = String(j.version)
+    const um = String(j.url || '').match(/CodeBuddy-[^-]+-[^-]+-[\d.]+-([0-9a-f]+)-cn/i)
+    if (um) hash = um[1]
+  } catch {
+    /* fallback below */
+  }
+  if (isWin()) {
+    return `https://download.codebuddy.cn/aiide/win32-x64-user/CodeBuddy-win32-x64-user-${ver}-${hash}-cn.exe`
+  }
+  if (isMac()) {
+    return `https://download.codebuddy.cn/aiide/darwin-${arch}/CodeBuddy-darwin-${arch}-${ver}-${hash}-cn.dmg`
+  }
+  return null
+}
+
+async function resolveTraeDownloadUrl() {
+  const api = 'https://api.trae.ai/icube/api/v1/native/version/trae/cn/latest'
+  try {
+    const raw = await fetchText(api)
+    const j = JSON.parse(raw)
+    const manifest = j?.data?.manifest || {}
+    if (isWin()) {
+      const list = manifest.win32?.download || []
+      const cn = list.find((x) => x && x.region === 'cn' && x.x64)
+      if (cn?.x64) return cn.x64
+      const any = list.find((x) => x && x.x64)
+      if (any?.x64) return any.x64
+    }
+    if (isMac()) {
+      const list = manifest.darwin?.download || []
+      const cn = list.find((x) => x && x.region === 'cn')
+      const pick = cn || list[0]
+      if (pick) {
+        if (archTag() === 'arm64' && pick.apple) return pick.apple
+        if (pick.intel) return pick.intel
+        if (pick.apple) return pick.apple
+      }
+    }
+  } catch {
+    /* fallback */
+  }
+  // 已知可用直链兜底（版本可能落后）
+  if (isWin()) {
+    return 'https://lf-cdn.trae.com.cn/obj/trae-com-cn/pkg/app/releases/stable/2.3.108162/win32/TRAE_CN-Setup-x64.exe'
+  }
+  if (archTag() === 'arm64') {
+    return 'https://lf-cdn.trae.com.cn/obj/trae-com-cn/pkg/app/releases/stable/2.3.108162/darwin/TRAE_CN-darwin-arm64.dmg'
+  }
+  return 'https://lf-cdn.trae.com.cn/obj/trae-com-cn/pkg/app/releases/stable/2.3.108162/darwin/TRAE_CN-darwin-x64.dmg'
+}
+
 async function ensureCodeBuddy(onProgress) {
   const names = isWin()
-    ? ['CodeBuddy', path.join('CodeBuddy', 'CodeBuddy.exe'), 'CodeBuddy CN', path.join('CodeBuddy CN', 'CodeBuddy CN.exe')]
+    ? [
+        'CodeBuddy',
+        path.join('CodeBuddy', 'CodeBuddy.exe'),
+        'CodeBuddy CN',
+        path.join('CodeBuddy CN', 'CodeBuddy CN.exe'),
+        path.join('Programs', 'CodeBuddy CN', 'CodeBuddy CN.exe'),
+        path.join('Programs', 'CodeBuddy', 'CodeBuddy.exe'),
+      ]
     : ['CodeBuddy.app', 'CodeBuddy IDE.app', 'CodeBuddy CN.app']
-  const hit = findInstalledApp(names)
+  const hit = findInstalledApp(
+    names,
+    isWin()
+      ? {
+          processExes: ['CodeBuddy.exe', 'CodeBuddy CN.exe'],
+          registryHints: ['codebuddy'],
+          preferExes: ['CodeBuddy.exe', 'CodeBuddy CN.exe'],
+        }
+      : {},
+  )
   if (hit) return { already: true, appPath: hit, installed: true }
 
-  const fallbackUrl = 'https://copilot.tencent.com/ide/'
+  const fallbackUrl = 'https://www.codebuddy.cn/ide/'
   if (isMac()) {
     for (const cask of ['codebuddy-cn', 'codebuddy']) {
       const brew = await brewInstallCask(cask, 'CodeBuddy', onProgress)
@@ -443,17 +520,53 @@ async function ensureCodeBuddy(onProgress) {
       }
     }
   }
-  // Windows：暂无稳定直链时引导官网安装页（配置仍会写入）
-  const err = new Error('请先安装 CodeBuddy')
-  err.fallbackUrl = fallbackUrl
-  throw err
+
+  try {
+    if (typeof onProgress === 'function') onProgress({ message: '正在下载 CodeBuddy…' })
+    const url = await resolveCodeBuddyDownloadUrl()
+    if (!url) {
+      const err = new Error('请先安装 CodeBuddy')
+      err.fallbackUrl = fallbackUrl
+      throw err
+    }
+    throwIfCancelled()
+    const r = await downloadAndInstall({
+      label: 'CodeBuddy',
+      directUrl: url,
+      appNames: isMac() ? ['CodeBuddy CN.app', 'CodeBuddy.app', 'CodeBuddy IDE.app'] : [],
+      onProgress,
+    })
+    await new Promise((r) => setTimeout(r, 2000))
+    const after = findInstalledApp(names)
+    return { already: false, installed: !!(after || r.appPath), appPath: after || r.appPath || null, ...r }
+  } catch (err) {
+    const e = new Error(err instanceof Error ? err.message : String(err))
+    e.fallbackUrl = fallbackUrl
+    throw e
+  }
 }
 
 async function ensureTrae(onProgress) {
   const names = isWin()
-    ? ['Trae', path.join('Trae', 'Trae.exe'), 'Trae CN', path.join('Trae CN', 'Trae CN.exe')]
+    ? [
+        'Trae',
+        'Trae CN',
+        path.join('Trae', 'Trae.exe'),
+        path.join('Trae CN', 'Trae CN.exe'),
+        path.join('Programs', 'Trae CN', 'Trae CN.exe'),
+        path.join('Programs', 'Trae', 'Trae.exe'),
+      ]
     : ['Trae.app', 'TRAE.app', 'Trae CN.app']
-  const hit = findInstalledApp(names)
+  const hit = findInstalledApp(
+    names,
+    isWin()
+      ? {
+          processExes: ['Trae.exe', 'Trae CN.exe'],
+          registryHints: ['trae'],
+          preferExes: ['Trae.exe', 'Trae CN.exe'],
+        }
+      : {},
+  )
   if (hit) return { already: true, appPath: hit, installed: true }
 
   const fallbackUrl = 'https://www.trae.cn/download'
@@ -466,9 +579,25 @@ async function ensureTrae(onProgress) {
       }
     }
   }
-  const err = new Error('请先安装 Trae')
-  err.fallbackUrl = fallbackUrl
-  throw err
+
+  try {
+    if (typeof onProgress === 'function') onProgress({ message: '正在下载 Trae…' })
+    const url = await resolveTraeDownloadUrl()
+    throwIfCancelled()
+    const r = await downloadAndInstall({
+      label: 'Trae',
+      directUrl: url,
+      appNames: isMac() ? ['Trae CN.app', 'Trae.app', 'TRAE.app'] : [],
+      onProgress,
+    })
+    await new Promise((r) => setTimeout(r, 2000))
+    const after = findInstalledApp(names)
+    return { already: false, installed: !!(after || r.appPath), appPath: after || r.appPath || null, ...r }
+  } catch (err) {
+    const e = new Error(err instanceof Error ? err.message : String(err))
+    e.fallbackUrl = fallbackUrl
+    throw e
+  }
 }
 
 function modelOf(payload) {
@@ -498,17 +627,72 @@ function writeOpenCode(payload) {
 }
 
 function writeCline(payload) {
-  // Cline / Roo 系：~/.cline/config.json 或 VS Code settings；写一份 OpenAI 兼容配置供 CLI/扩展读取
+  // Cline CLI 读 ~/.cline/data/{globalState,secrets}.json；新版还会迁到 data/settings/providers.json
   const base = String(payload.base_url || '').replace(/\/$/, '')
-  const file = path.join(os.homedir(), '.cline', 'xianmao.json')
-  const wrote = mergeJSONFile(file, () => ({
-    apiProvider: 'openai',
-    openAiBaseUrl: withV1(base),
-    openAiApiKey: payload.key,
-    openAiModelId: modelOf(payload),
-    providerName: payload.provider || '闲猫',
-  }))
-  return { wrote: [wrote] }
+  const endpoint = withV1(base)
+  const modelID = modelOf(payload)
+  const key = String(payload.key || '')
+  const dataDir = path.join(os.homedir(), '.cline', 'data')
+  const settingsDir = path.join(dataDir, 'settings')
+  fs.mkdirSync(settingsDir, { recursive: true })
+
+  const globalState = path.join(dataDir, 'globalState.json')
+  const secrets = path.join(dataDir, 'secrets.json')
+  const providers = path.join(settingsDir, 'providers.json')
+  const legacy = path.join(os.homedir(), '.cline', 'xianmao.json')
+
+  const wrote = []
+  wrote.push(
+    mergeJSONFile(globalState, (current) => ({
+      ...current,
+      apiProvider: 'openai',
+      actModeApiProvider: 'openai',
+      planModeApiProvider: 'openai',
+      openAiBaseUrl: endpoint,
+      openAiModelId: modelID,
+      planModeOpenAiModelId: modelID,
+      openAiModelInfo: current.openAiModelInfo || undefined,
+    })),
+  )
+  wrote.push(
+    mergeJSONFile(secrets, (current) => ({
+      ...current,
+      openAiApiKey: key,
+    })),
+  )
+  wrote.push(
+    mergeJSONFile(providers, (current) => {
+      const list = Array.isArray(current.providers) ? current.providers.filter((p) => p && p.id !== 'openai') : []
+      list.unshift({
+        id: 'openai',
+        name: payload.provider || '闲猫',
+        apiProvider: 'openai',
+        openAiBaseUrl: endpoint,
+        openAiApiKey: key,
+        openAiModelId: modelID,
+      })
+      return {
+        ...current,
+        activeProviderId: 'openai',
+        providers: list,
+      }
+    }),
+  )
+  wrote.push(
+    mergeJSONFile(legacy, () => ({
+      apiProvider: 'openai',
+      openAiBaseUrl: endpoint,
+      openAiApiKey: key,
+      openAiModelId: modelID,
+      providerName: payload.provider || '闲猫',
+    })),
+  )
+  try {
+    fs.chmodSync(secrets, 0o600)
+  } catch {
+    /* win */
+  }
+  return { wrote }
 }
 
 function writeAider(payload) {
@@ -574,6 +758,7 @@ function writeWorkBuddy(payload) {
     path.join(os.homedir(), '.workbuddy', 'models.json'),
     path.join(os.homedir(), '.workbuddy-ai', 'models.json'),
     path.join(os.homedir(), '.codebuddy', 'models.json'),
+    path.join(os.homedir(), '.codebuddycn', 'models.json'),
   ]
   const wrote = []
   for (const file of paths) {
@@ -615,17 +800,35 @@ function writeCodeBuddy(payload) {
 }
 
 function writeTrae(payload) {
-  // Trae 自定义 OpenAI：写入用户级配置片段，打开后可在设置中看到
+  // Trae 官方不读本地 models 文件（模型在云端/加密库）。写好「一键粘贴」卡片到多处，并尽量塞进 settings 备查。
   const base = String(payload.base_url || '').replace(/\/$/, '')
-  const file = path.join(os.homedir(), '.trae', 'xianmao-provider.json')
-  const wrote = mergeJSONFile(file, () => ({
+  const endpoint = withV1(base)
+  const modelID = modelOf(payload)
+  const card = {
     name: payload.provider || '闲猫',
-    apiKey: payload.key,
-    baseUrl: withV1(base),
-    model: modelOf(payload),
+    apiKey: String(payload.key || ''),
+    baseUrl: endpoint,
+    fullUrl: `${endpoint}/chat/completions`,
+    model: modelID,
     protocol: 'openai',
-  }))
-  return { wrote: [wrote] }
+    apiFormat: 'OpenAI Chat Completions',
+    howTo: [
+      '打开 Trae → 设置 → 模型 → 添加模型 → 自定义模型',
+      'API 格式选 OpenAI Chat Completions',
+      '关闭「完整 URL」，粘贴 baseUrl；或打开后粘贴 fullUrl',
+      '模型 ID / 展示名 / API 密钥按本文件填写',
+    ],
+  }
+  const paths = [
+    path.join(os.homedir(), '.trae', 'xianmao-provider.json'),
+    path.join(os.homedir(), '.trae-cn', 'xianmao-provider.json'),
+    path.join(os.homedir(), 'Downloads', 'xianmao-helper', 'trae-xianmao.json'),
+  ]
+  const wrote = []
+  for (const file of paths) {
+    wrote.push(mergeJSONFile(file, () => card))
+  }
+  return { wrote }
 }
 
 function writeGeminiCLI(payload) {
@@ -745,11 +948,19 @@ async function applyExtraAgent(payload, client, onProgress) {
   const bin = pack?.bin || null
   const appPath = pack?.appPath || null
   const ok = !!(pack?.already || pack?.installed || bin || appPath)
+  let detail
+  if (client === 'trae') {
+    detail = ok
+      ? 'Trae 已装好；自定义模型请按提示粘贴（数值已写到 Downloads/xianmao-helper/trae-xianmao.json）'
+      : 'Trae 还没装好；粘贴卡已写入，请点「打开安装说明」'
+  } else {
+    detail = ok
+      ? `${labelOf(client)} 已配好闲猫${h.cli ? '，即将打开终端' : h.app ? '，即将打开' : ''}`
+      : `${labelOf(client)} 还没装好，配置已写入；请点「打开安装说明」`
+  }
   return {
     mode: 'files',
-    detail: ok
-      ? `${labelOf(client)} 已配好闲猫${h.cli ? '，即将打开终端' : h.app ? '，即将打开' : ''}`
-      : `${labelOf(client)} 还没装好，配置已写入；请点「打开安装说明」`,
+    detail,
     urls: [],
     helpUrl: ok ? undefined : pack?.fallbackUrl || h.help,
     wrote: r.wrote,
