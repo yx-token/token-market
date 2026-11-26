@@ -570,10 +570,11 @@ function writeTrae(payload) {
 }
 
 function writeGeminiCLI(payload) {
-  const base = String(payload.base_url || '').replace(/\/$/, '')
+  // Gemini CLI 走 /v1beta/...，base 不要带 /v1，否则路径会错。
+  const base = String(payload.base_url || '').replace(/\/$/, '').replace(/\/v1$/i, '')
   const modelID = modelOf(payload)
   const envFile = writeEnvFile(path.join(os.homedir(), '.gemini', '.env'), {
-    GOOGLE_GEMINI_BASE_URL: withV1(base),
+    GOOGLE_GEMINI_BASE_URL: base,
     GEMINI_API_KEY: payload.key,
     GEMINI_MODEL: modelID,
   })
@@ -589,19 +590,31 @@ function writeGeminiCLI(payload) {
 }
 
 function writeGoose(payload) {
-  const base = String(payload.base_url || '').replace(/\/$/, '')
-  const file = path.join(os.homedir(), '.config', 'goose', 'config.yaml')
-  fs.mkdirSync(path.dirname(file), { recursive: true })
+  // Goose：OPENAI_HOST 是根地址（无 /v1），会再拼 OPENAI_BASE_PATH=v1/chat/completions。
+  // API Key 写进 config.yaml 会被忽略 → 401；应放 secrets.yaml。
+  const base = String(payload.base_url || '').replace(/\/$/, '').replace(/\/v1$/i, '')
+  const dir = path.join(os.homedir(), '.config', 'goose')
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, 'config.yaml')
+  const secrets = path.join(dir, 'secrets.yaml')
   if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.bak-xianmao`)
+  if (fs.existsSync(secrets)) fs.copyFileSync(secrets, `${secrets}.bak-xianmao`)
   const yml = [
     'GOOSE_PROVIDER: openai',
     `GOOSE_MODEL: ${modelOf(payload)}`,
-    `OPENAI_HOST: ${withV1(base)}`,
-    `OPENAI_API_KEY: ${payload.key}`,
+    `OPENAI_HOST: ${base}`,
+    'OPENAI_BASE_PATH: v1/chat/completions',
     '',
   ].join('\n')
   fs.writeFileSync(file, yml, 'utf8')
-  return { wrote: [file] }
+  const sec = [`OPENAI_API_KEY: ${JSON.stringify(String(payload.key || ''))}`, ''].join('\n')
+  fs.writeFileSync(secrets, sec, 'utf8')
+  try {
+    fs.chmodSync(secrets, 0o600)
+  } catch {
+    /* win */
+  }
+  return { wrote: [file, secrets] }
 }
 
 function writeCrush(payload) {
