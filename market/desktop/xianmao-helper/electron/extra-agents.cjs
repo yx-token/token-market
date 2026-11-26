@@ -567,6 +567,8 @@ function writeWorkBuddy(payload) {
     apiKey: String(payload.key || ''),
     url: `${endpoint}/chat/completions`,
     supportsToolCall: true,
+    // 尽量标成默认；WorkBuddy 内置「快速/均衡/极致」仍可能优先，新会话未必自动切过去
+    isDefault: true,
   }
   const paths = [
     path.join(os.homedir(), '.workbuddy', 'models.json'),
@@ -584,13 +586,22 @@ function writeWorkBuddy(payload) {
       }
       fs.copyFileSync(file, `${file}.bak-xianmao`)
     }
-    const models = Array.isArray(current.models) ? current.models.filter((m) => m && m.id !== modelID) : []
+    const models = Array.isArray(current.models)
+      ? current.models
+          .filter((m) => m && m.id !== modelID)
+          .map((m) => (m && typeof m === 'object' ? { ...m, isDefault: false } : m))
+      : []
     models.unshift(entry)
     const available = Array.isArray(current.availableModels)
       ? current.availableModels.filter((id) => id && id !== modelID)
       : []
     available.unshift(modelID)
-    const body = { ...current, models, availableModels: available }
+    const body = {
+      ...current,
+      models,
+      availableModels: available,
+      defaultModel: modelID,
+    }
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, JSON.stringify(body, null, 2) + '\n', 'utf8')
     wrote.push(file)
