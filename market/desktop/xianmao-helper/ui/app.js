@@ -1169,20 +1169,23 @@ if (window.xianmaoHelper) {
     }
     lastHelpUrl = nextHelp || ''
     if (payload.step) setStep(payload.step, 'done')
-    const isCliDone = payload.openedKind === 'cli' || payload.openMode === 'cli' || !!payload.cliGuide
+    const isCliDone = payload.openedKind === 'cli' || payload.openMode === 'cli'
+    const guideSteps = Array.isArray(payload.cliGuide) ? payload.cliGuide.filter(Boolean) : []
     openModal('done', isCliDone ? '终端已就绪' : '完成')
     doneMsg.textContent =
       payload.message || (isCliDone ? '已配好，请看黑色终端窗口' : '搞定了，已经配好闲猫。')
     if (doneHint) {
       doneHint.textContent = isCliDone
         ? '这是终端版：没有图形窗口，按下面步骤用即可。'
-        : payload.openedKind
-          ? '客户端应该已经打开。如果没有，点下方再打开一次。'
-          : lastHelpUrl
-            ? '还差一步，点「打开安装说明」继续。'
-            : '如果客户端没打开，点下方按钮。'
+        : guideSteps.length
+          ? '配置已写入，还需在客户端里选一次模型：'
+          : payload.openedKind
+            ? '客户端应该已经打开。如果没有，点下方再打开一次。'
+            : lastHelpUrl
+              ? '还差一步，点「打开安装说明」继续。'
+              : '如果客户端没打开，点下方按钮。'
     }
-    renderDoneGuide(isCliDone ? payload.cliGuide : null)
+    renderDoneGuide(guideSteps.length ? guideSteps : null)
     renderDonePrimary(lastClient || payload.client || '', { cli: isCliDone })
     setHelpVisible(lastHelpUrl)
     // 刚装完（尤其 Windows MSIX）探测偶发滞后，稍后再刷一次状态
