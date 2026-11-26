@@ -367,8 +367,12 @@ function renderPreflight(result) {
   if (preflightActions) preflightActions.hidden = false
   if (preflightContinueBtn) {
     preflightContinueBtn.disabled = !result?.ok
-    preflightContinueBtn.textContent = '一键使用'
-    preflightContinueBtn.title = result?.ok ? '' : '请先满足必需要求'
+    preflightContinueBtn.textContent = result?.installed ? '重新配置' : '一键使用'
+    preflightContinueBtn.title = result?.ok
+      ? result?.installed
+        ? '只写入闲猫密钥，不再重复安装'
+        : ''
+      : '请先满足必需要求'
   }
 }
 
@@ -510,7 +514,7 @@ function renderAgents(state) {
       : !hasCredentials
         ? '请先在网站点一次「一键使用」'
         : a.installed
-          ? '按上方厂商重新取密钥并写入客户端'
+          ? '按上方厂商重新取密钥并写入客户端（不再弹安装检测）'
           : '自动安装、按厂商取密钥并打开'
 
     const openBtn = document.createElement('button')
@@ -525,6 +529,19 @@ function renderAgents(state) {
     actions.appendChild(vendorWrap)
     actions.appendChild(setupBtn)
     actions.appendChild(openBtn)
+
+    if (a.installed) {
+      const uninstallBtn = document.createElement('button')
+      uninstallBtn.type = 'button'
+      uninstallBtn.className = 'btn btn-danger btn-uninstall'
+      uninstallBtn.dataset.action = `uninstall-agent:${a.id}`
+      uninstallBtn.textContent = '卸载'
+      uninstallBtn.disabled = !isBound
+      uninstallBtn.title = '卸载本机客户端并清除助手写入的闲猫配置'
+      actions.classList.add('has-uninstall')
+      actions.appendChild(uninstallBtn)
+    }
+
     card.appendChild(top)
     card.appendChild(actions)
     agentList.appendChild(card)
@@ -948,10 +965,53 @@ async function onAction(action) {
     await startSetupAfterPreflight(client)
     return
   }
+  if (action.startsWith('uninstall-agent:')) {
+    const client = action.slice('uninstall-agent:'.length)
+    lastClient = client
+    const agent = (agentsState.agents || []).find((a) => a.id === client)
+    const name = agent?.name || '该客户端'
+    const ok = window.confirm(
+      `确定卸载 ${name}？\n会尽量卸掉本机软件，并清除助手写入的闲猫配置。\n部分桌面应用可能仍需你在系统里手动卸完。`,
+    )
+    if (!ok) return
+    openModal('running', '正在卸载')
+    statusEl.textContent = `正在卸载 ${name}…`
+    resetSteps()
+    const r = await window.xianmaoHelper.uninstallAgent?.(client)
+    await refreshAgents()
+    if (!r?.ok) {
+      openModal('error', '卸载失败')
+      errMsg.textContent = r?.error || '卸载失败'
+      setHelpVisible('')
+      return
+    }
+    openModal('done', '卸载完成')
+    doneMsg.textContent = r.detail || `${name} 已处理`
+    if (doneHint) {
+      doneHint.textContent = r.stillInstalled
+        ? r.manualHint || '软件可能还在，请到系统设置里确认卸载。'
+        : '列表状态已刷新。'
+    }
+    renderDoneGuide(null)
+    if (donePrimaryBtn) {
+      donePrimaryBtn.dataset.action = 'modal-dismiss'
+      donePrimaryBtn.textContent = '好的'
+    }
+    setHelpVisible('')
+    return
+  }
   if (action.startsWith('setup-agent:')) {
     const client = action.slice('setup-agent:'.length)
     lastClient = client
     pendingPreflightClient = client
+
+    // 已安装：直接重新配置，不再弹「安装前检测」
+    const known = (agentsState.agents || []).find((a) => a.id === client)
+    if (known?.installed) {
+      await startSetupAfterPreflight(client)
+      return
+    }
+
     openModal('preflight', '安装前检测')
     if (preflightLead) preflightLead.textContent = '正在检测本机资源是否满足安装需要…'
     if (preflightChecks) preflightChecks.innerHTML = ''
@@ -962,6 +1022,11 @@ async function onAction(action) {
       openModal('error', '检测失败')
       errMsg.textContent = pf?.error || '无法检测本机资源'
       setHelpVisible('')
+      return
+    }
+    // 探测到已装（列表偶发滞后）：同样跳过安装检测，直接写配置
+    if (pf.installed && pf.ok) {
+      await startSetupAfterPreflight(client)
       return
     }
     renderPreflight(pf)
@@ -1105,7 +1170,12 @@ if (window.xianmaoHelper) {
     renderDoneGuide(isCliDone ? payload.cliGuide : null)
     renderDonePrimary(lastClient || payload.client || '', { cli: isCliDone })
     setHelpVisible(lastHelpUrl)
-    void refreshAgents()
+    // 刚装完（尤其 Windows MSIX）探测偶发滞后，稍后再刷一次状态
+    void refreshAgents().then(() => {
+      setTimeout(() => {
+        void refreshAgents()
+      }, 1200)
+    })
   })
 }
 

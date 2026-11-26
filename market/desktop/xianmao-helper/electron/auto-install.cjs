@@ -1599,19 +1599,39 @@ const CHATGPT_WIN_APPPATH = `msix:${CHATGPT_WIN_AUMID}`
 function isChatGPTWinPackageInstalled() {
   if (!isWin()) return false
   try {
+    // 官方包名历史上有 OpenAI.Codex / OpenAI.ChatGPT 等变体，装好后探测漏了会显示「未装」
     const r = spawnSync(
       'powershell.exe',
       [
         '-NoProfile',
         '-Command',
-        "if (Get-AppxPackage -Name 'OpenAI.Codex' -ErrorAction SilentlyContinue) { '1' } else { '0' }",
+        [
+          "$p = Get-AppxPackage -ErrorAction SilentlyContinue | Where-Object {",
+          "  $_.Name -eq 'OpenAI.Codex' -or $_.Name -eq 'OpenAI.ChatGPT' -or",
+          "  $_.Name -match '^OpenAI\\.(Codex|ChatGPT)' -or $_.PackageFullName -match 'ChatGPT|Codex'",
+          '}',
+          "if ($p) { '1' } else { '0' }",
+        ].join(' '),
       ],
-      { encoding: 'utf8', timeout: 20000, windowsHide: true },
+      { encoding: 'utf8', timeout: 25000, windowsHide: true },
     )
-    return String(r.stdout || '').trim() === '1'
+    if (String(r.stdout || '').trim() === '1') return true
   } catch {
-    return false
+    /* fall through */
   }
+  // 再扫开始菜单快捷方式 / 常见安装目录
+  try {
+    const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
+    const candidates = [
+      path.join(local, 'Programs', 'ChatGPT', 'ChatGPT.exe'),
+      path.join(local, 'ChatGPT', 'ChatGPT.exe'),
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'ChatGPT', 'ChatGPT.exe'),
+    ]
+    if (candidates.some((p) => fs.existsSync(p))) return true
+  } catch {
+    /* ignore */
+  }
+  return false
 }
 
 function installChatGPTWinMsix(filePath, onProgress) {

@@ -1936,6 +1936,19 @@ ipcMain.handle('one-click:installed', async () => {
   return map
 })
 
+ipcMain.handle('one-click:uninstall-agent', async (_e, clientId) => {
+  const { isKnownAgent, getAgent } = require('./agents.cjs')
+  const { uninstallAgent } = require('./uninstall-agent.cjs')
+  const client = String(clientId || '').trim()
+  if (!isKnownAgent(client)) return { ok: false, error: '不支持的客户端' }
+  try {
+    const r = uninstallAgent(client)
+    return { ok: true, name: getAgent(client)?.name || client, ...r }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : '卸载失败' }
+  }
+})
+
 ipcMain.handle('one-click:open-agent', async (_e, clientId) => {
   if (!readBoundAccount()) {
     return { ok: false, error: '请先登录闲猫（点右上角「浏览器登录」，或在网站点「一键使用」）' }

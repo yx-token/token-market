@@ -384,6 +384,14 @@ h2 {
   margin-top: auto;
 }
 
+.agent-actions.has-uninstall {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.agent-actions .btn-uninstall {
+  grid-column: 1 / -1;
+}
+
 .agent-actions .agent-vendor {
   grid-column: 1 / -1;
   display: flex;

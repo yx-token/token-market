@@ -97,18 +97,30 @@ function getAgent(id) {
 }
 
 function probeAgentInstalled(id) {
-  const { findInstalledApp, whichBin } = require('./auto-install.cjs')
+  const { findInstalledApp, whichBin, refreshUserPath } = require('./auto-install.cjs')
+  // 安装刚结束时 PATH 可能还没进探测；每次探测前刷新
+  try {
+    refreshUserPath()
+  } catch {
+    /* ignore */
+  }
   const win = process.platform === 'win32'
   switch (id) {
     case 'codex': {
       const { isChatGPTWinPackageInstalled, CHATGPT_WIN_APPPATH } = require('./auto-install.cjs')
       const app = findInstalledApp(
         win
-          ? [path.join('ChatGPT', 'ChatGPT.exe'), 'ChatGPT', path.join('Programs', 'ChatGPT', 'ChatGPT.exe')]
+          ? [
+              path.join('ChatGPT', 'ChatGPT.exe'),
+              'ChatGPT',
+              path.join('Programs', 'ChatGPT', 'ChatGPT.exe'),
+              path.join('Programs', 'ChatGPT'),
+              path.join('OpenAI', 'ChatGPT', 'ChatGPT.exe'),
+            ]
           : ['ChatGPT.app', 'Codex.app', 'ChatGPT Codex.app'],
       )
       const msixApp = win && isChatGPTWinPackageInstalled() ? CHATGPT_WIN_APPPATH : null
-      const cli = whichBin('codex') || whichBin('codex.cmd')
+      const cli = whichBin('codex') || whichBin('codex.cmd') || whichBin('codex.exe')
       const appPath = app || msixApp || null
       return { installed: !!(appPath || cli), appPath, cliBin: cli || null }
     }

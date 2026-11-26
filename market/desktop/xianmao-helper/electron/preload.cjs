@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('xianmaoHelper', {
   setupAgent(clientId, opts) {
     return ipcRenderer.invoke('one-click:setup-agent', clientId, opts || {})
   },
+  uninstallAgent(clientId) {
+    return ipcRenderer.invoke('one-click:uninstall-agent', clientId)
+  },
   vendors(clientId) {
     return ipcRenderer.invoke('one-click:vendors', clientId)
   },
