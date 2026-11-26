@@ -1982,6 +1982,15 @@ ipcMain.handle('one-click:open-agent', async (_e, clientId) => {
     const ok = openCLIInTerminal(st.cliBin)
     return ok ? { ok: true } : { ok: false, error: '无法打开终端' }
   }
+  // 路径探测失败但进程/协议可能仍可用（自定义安装目录）
+  if (agent.id === 'workbuddy') {
+    try {
+      await shell.openExternal('workbuddy://')
+      return { ok: true }
+    } catch {
+      /* fall through */
+    }
+  }
   return { ok: false, error: '未安装，请先点「一键使用」自动安装' }
 })
 
