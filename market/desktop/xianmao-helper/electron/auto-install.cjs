@@ -170,11 +170,111 @@ function resolveLaunchableApp(candidate) {
   return null
 }
 
-function findInstalledApp(names) {
-  for (const p of appLookupPaths(names)) {
+/** 从正在运行的进程反查 exe 完整路径（自定义安装目录时标准路径会漏）。 */
+function findWinAppByRunningProcess(exeNames) {
+  if (!isWin()) return null
+  const names = (Array.isArray(exeNames) ? exeNames : [exeNames])
+    .map((n) => String(n || '').trim())
+    .filter(Boolean)
+  if (!names.length) return null
+  for (const name of names) {
+    const bare = name.replace(/\.exe$/i, '')
+    try {
+      const r = spawnSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-Command',
+          `$p = Get-Process -Name ${JSON.stringify(bare)} -ErrorAction SilentlyContinue | Select-Object -First 1; if ($p -and $p.Path) { $p.Path }`,
+        ],
+        { encoding: 'utf8', timeout: 12000, windowsHide: true },
+      )
+      const p = String(r.stdout || '').trim().split(/\r?\n/)[0]
+      if (p && fs.existsSync(p)) return p
+    } catch {
+      /* ignore */
+    }
+  }
+  return null
+}
+
+/** 从卸载注册表 DisplayIcon / InstallLocation 反查 exe。 */
+function findWinAppByUninstallRegistry(nameHints, preferExeNames) {
+  if (!isWin()) return null
+  const hints = (Array.isArray(nameHints) ? nameHints : [nameHints])
+    .map((s) => String(s || '').trim().toLowerCase())
+    .filter(Boolean)
+  const prefer = (Array.isArray(preferExeNames) ? preferExeNames : [preferExeNames])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+  if (!hints.length) return null
+  const hintJson = JSON.stringify(hints).replace(/'/g, "''")
+  const preferJson = JSON.stringify(prefer.length ? prefer : ['']).replace(/'/g, "''")
+  const ps = `
+$ErrorActionPreference = 'SilentlyContinue'
+$hints = ConvertFrom-Json '${hintJson}'
+$prefer = ConvertFrom-Json '${preferJson}'
+$paths = @(
+  'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+  'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+  'HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'
+)
+$hit = Get-ItemProperty $paths | Where-Object {
+  if (-not $_.DisplayName) { return $false }
+  $dn = ([string]$_.DisplayName).ToLower()
+  foreach ($h in $hints) { if ($dn.Contains([string]$h)) { return $true } }
+  return $false
+} | Select-Object -First 1
+if (-not $hit) { exit 2 }
+# DisplayIcon: "C:\\...\\App.exe,0"
+if ($hit.DisplayIcon) {
+  $icon = ([string]$hit.DisplayIcon).Split(',')[0].Trim().Trim('"')
+  if ($icon -and (Test-Path -LiteralPath $icon)) { Write-Output $icon; exit 0 }
+}
+if ($hit.InstallLocation) {
+  $loc = ([string]$hit.InstallLocation).Trim().Trim('"')
+  foreach ($exe in $prefer) {
+    if (-not $exe) { continue }
+    $c = Join-Path $loc $exe
+    if (Test-Path -LiteralPath $c) { Write-Output $c; exit 0 }
+  }
+  $found = Get-ChildItem -LiteralPath $loc -Filter *.exe -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notmatch 'uninstall|setup|update|crash' } |
+    Select-Object -First 1
+  if ($found) { Write-Output $found.FullName; exit 0 }
+}
+exit 3
+`
+  try {
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], {
+      encoding: 'utf8',
+      timeout: 20000,
+      windowsHide: true,
+    })
+    const p = String(r.stdout || '').trim().split(/\r?\n/).find((l) => l && /\.exe$/i.test(l))
+    if (p && fs.existsSync(p)) return p
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+/**
+ * @param {string[]} names 目录/相对路径候选（走 appLookupPaths）
+ * @param {{ processExes?: string[], registryHints?: string[], preferExes?: string[] }} [opts]
+ */
+function findInstalledApp(names, opts = {}) {
+  for (const p of appLookupPaths(names || [])) {
     const hit = resolveLaunchableApp(p)
     if (hit) return hit
   }
+  const processExes = opts.processExes || []
+  const byProc = findWinAppByRunningProcess(processExes)
+  if (byProc) return byProc
+  const hints = opts.registryHints || []
+  const prefer = opts.preferExes || processExes
+  const byReg = findWinAppByUninstallRegistry(hints, prefer)
+  if (byReg) return byReg
   return undefined
 }
 
@@ -1788,6 +1888,8 @@ module.exports = {
   waitHttpOk,
   whichBin,
   findInstalledApp,
+  findWinAppByRunningProcess,
+  findWinAppByUninstallRegistry,
   appLookupPaths,
   sleep,
   yieldEventLoop,

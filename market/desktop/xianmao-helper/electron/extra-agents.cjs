@@ -307,8 +307,8 @@ async function ensureKiloCode(onProgress) {
   return ensureNpmPkg('kilo', '@kilocode/cli', 'Kilo Code', 'https://kilo.ai/docs/code-with-ai/platforms/cli', onProgress)
 }
 
-function probeDesktop(names) {
-  const app = findInstalledApp(names)
+function probeDesktop(names, opts = {}) {
+  const app = findInstalledApp(names, opts)
   return { installed: !!app, appPath: app || null }
 }
 
@@ -316,8 +316,20 @@ function probeWorkBuddy() {
   const win = isWin()
   return probeDesktop(
     win
-      ? ['WorkBuddy', path.join('WorkBuddy', 'WorkBuddy.exe'), path.join('Tencent', 'WorkBuddy', 'WorkBuddy.exe')]
+      ? [
+          path.join('Programs', 'WorkBuddy', 'WorkBuddy.exe'),
+          path.join('WorkBuddy', 'WorkBuddy.exe'),
+          'WorkBuddy',
+          path.join('Tencent', 'WorkBuddy', 'WorkBuddy.exe'),
+        ]
       : ['WorkBuddy.app', 'workbuddy.app'],
+    win
+      ? {
+          processExes: ['WorkBuddy.exe'],
+          registryHints: ['workbuddy'],
+          preferExes: ['WorkBuddy.exe'],
+        }
+      : {},
   )
 }
 
@@ -333,6 +345,13 @@ function probeCodeBuddy() {
           path.join('Tencent', 'CodeBuddy', 'CodeBuddy.exe'),
         ]
       : ['CodeBuddy.app', 'CodeBuddy IDE.app', 'CodeBuddy CN.app'],
+    win
+      ? {
+          processExes: ['CodeBuddy.exe', 'CodeBuddy CN.exe'],
+          registryHints: ['codebuddy'],
+          preferExes: ['CodeBuddy.exe', 'CodeBuddy CN.exe'],
+        }
+      : {},
   )
 }
 
@@ -342,14 +361,31 @@ function probeTrae() {
     win
       ? ['Trae', 'Trae CN', path.join('Trae', 'Trae.exe'), path.join('Trae CN', 'Trae CN.exe'), path.join('ByteDance', 'Trae', 'Trae.exe')]
       : ['Trae.app', 'TRAE.app', 'Trae CN.app'],
+    win
+      ? {
+          processExes: ['Trae.exe', 'Trae CN.exe'],
+          registryHints: ['trae'],
+          preferExes: ['Trae.exe', 'Trae CN.exe'],
+        }
+      : {},
   )
 }
 
 async function ensureWorkBuddy(onProgress) {
   const names = isWin()
-    ? ['WorkBuddy', path.join('WorkBuddy', 'WorkBuddy.exe'), path.join('Tencent', 'WorkBuddy', 'WorkBuddy.exe')]
+    ? [
+        path.join('Programs', 'WorkBuddy', 'WorkBuddy.exe'),
+        path.join('WorkBuddy', 'WorkBuddy.exe'),
+        'WorkBuddy',
+        path.join('Tencent', 'WorkBuddy', 'WorkBuddy.exe'),
+      ]
     : ['WorkBuddy.app', 'workbuddy.app']
-  const hit = findInstalledApp(names)
+  const hit = findInstalledApp(
+    names,
+    isWin()
+      ? { processExes: ['WorkBuddy.exe'], registryHints: ['workbuddy'], preferExes: ['WorkBuddy.exe'] }
+      : {},
+  )
   if (hit) return { already: true, appPath: hit, installed: true }
 
   if (!isMac() && !isWin()) {
